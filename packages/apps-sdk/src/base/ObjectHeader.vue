@@ -29,7 +29,7 @@ import OperationButton from "./OperationButton.vue";
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
-import { displayFieldText, rawRecordField } from "./record-field";
+import { displayFieldText, recordFieldDisplayValue } from "./record-field";
 
 interface HeaderOperationItem {
   readonly name: string;
@@ -149,7 +149,7 @@ const resolvedSubtitle = computed(() => {
   if (props.subtitle !== undefined) return props.subtitle;
   const current = record.value;
   if (!current) return "";
-  if (props.subtitleField) return displayFieldText(rawRecordField(current, props.subtitleField), locale.value, t);
+  if (props.subtitleField) return displayFieldText(recordFieldDisplayValue(current, props.subtitleField), locale.value, t);
   return current.subtitle ?? "";
 });
 
@@ -157,7 +157,7 @@ const resolvedStatus = computed(() => {
   if (props.status !== undefined) return props.status;
   const current = record.value;
   if (!current || !props.statusField) return "";
-  return displayFieldText(rawRecordField(current, props.statusField), locale.value, t);
+  return displayFieldText(recordFieldDisplayValue(current, props.statusField), locale.value, t);
 });
 
 const resolvedStatusTone = computed(() => {
