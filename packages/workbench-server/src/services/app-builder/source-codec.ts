@@ -85,36 +85,18 @@ export interface LivePanelApplicationSnapshot {
   projections: LiveProjectionResource[];
 }
 
-export interface LiveHostedApplicationSnapshot {
-  kind: "hosted";
-  appId: string;
-  declaration: z.infer<typeof applicationMetadataSchema>;
-  allowStandalone?: boolean;
-  entryPath: string;
-  releaseId: string | null;
-}
-
-export type LiveApplicationSnapshot = LivePanelApplicationSnapshot | LiveHostedApplicationSnapshot;
-
-export const applicationLiveFingerprintSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("panel"),
-    applicationHash: z.string().min(1),
-    panels: z.record(z.string(), z.object({
-      revision: z.number().int().nonnegative(),
-      hash: z.string().min(1),
-    }).strict()),
-    projections: z.record(z.string(), z.object({
-      revision: z.number().int().nonnegative(),
-      hash: z.string().min(1),
-    }).strict()),
-  }).strict(),
-  z.object({
-    kind: z.literal("hosted"),
-    applicationHash: z.string().min(1),
-    releaseId: z.string().nullable(),
-  }).strict(),
-]);
+export const applicationLiveFingerprintSchema = z.object({
+  kind: z.literal("panel"),
+  applicationHash: z.string().min(1),
+  panels: z.record(z.string(), z.object({
+    revision: z.number().int().nonnegative(),
+    hash: z.string().min(1),
+  }).strict()),
+  projections: z.record(z.string(), z.object({
+    revision: z.number().int().nonnegative(),
+    hash: z.string().min(1),
+  }).strict()),
+}).strict();
 export type ApplicationLiveFingerprint = z.infer<typeof applicationLiveFingerprintSchema>;
 
 export interface DriftItem {
@@ -139,10 +121,6 @@ export type ParsedApplicationSource =
   | {
       kind: "legacy-single-panel";
       panel: PanelDefinitionContent;
-    }
-  | {
-      kind: "hosted";
-      hasIndexHtml: true;
     }
   | {
       kind: "empty";
@@ -229,7 +207,7 @@ function parseJsonSource(filePath: string, text: string): unknown {
 
 /**
  * Parses a workspace file set into the canonical panel-app bundle, with read-only fallback
- * for legacy single-panel roots (`panel.json` + `panel.html`) and legacy hosted `index.html`.
+ * for legacy single-panel roots (`panel.json` + `panel.html`).
  */
 export function parseApplicationSource(files: readonly WorkspaceFile[]): ParsedApplicationSource {
   const byPath = new Map<string, WorkspaceFile>();
@@ -319,10 +297,6 @@ export function parseApplicationSource(files: readonly WorkspaceFile[]): ParsedA
     return { kind: "legacy-single-panel", panel };
   }
 
-  if (byPath.has("index.html")) {
-    return { kind: "hosted", hasIndexHtml: true };
-  }
-
   return { kind: "empty" };
 }
 
@@ -354,18 +328,7 @@ export function detectConflictMarkers(files: readonly WorkspaceFile[]): string[]
   return conflicted.sort();
 }
 
-export function computeLiveFingerprint(snapshot: LiveApplicationSnapshot): ApplicationLiveFingerprint {
-  if (snapshot.kind === "hosted") {
-    return {
-      kind: "hosted",
-      applicationHash: sha256Canonical({
-        declaration: snapshot.declaration,
-        allowStandalone: snapshot.allowStandalone ?? null,
-        entryPath: snapshot.entryPath,
-      }),
-      releaseId: snapshot.releaseId,
-    };
-  }
+export function computeLiveFingerprint(snapshot: LivePanelApplicationSnapshot): ApplicationLiveFingerprint {
   const panels: Record<string, { revision: number; hash: string }> = {};
   for (const panel of [...snapshot.panels].sort((a, b) => a.id.localeCompare(b.id))) {
     panels[panel.id] = {
@@ -405,42 +368,27 @@ export function diffFingerprints(
   if (!baseline) return { hasDrift: false, items: [] };
   const items: DriftItem[] = [];
 
-  if (baseline.kind !== live.kind) {
+  if (baseline.applicationHash !== live.applicationHash) {
     items.push({ kind: "application", id: "application", label: labels.applicationLabel, status: "modified" });
-    return { hasDrift: true, items };
   }
-
-  if (baseline.kind === "hosted" && live.kind === "hosted") {
-    if (baseline.applicationHash !== live.applicationHash || baseline.releaseId !== live.releaseId) {
-      items.push({ kind: "application", id: "application", label: labels.applicationLabel, status: "modified" });
-    }
-    return { hasDrift: items.length > 0, items };
+  const panelIds = new Set([...Object.keys(baseline.panels), ...Object.keys(live.panels)]);
+  for (const id of [...panelIds].sort()) {
+    const prev = baseline.panels[id];
+    const curr = live.panels[id];
+    const label = labels.panelLabels?.get(id) ?? id;
+    if (!prev && curr) items.push({ kind: "panel", id, label, status: "added" });
+    else if (prev && !curr) items.push({ kind: "panel", id, label, status: "removed" });
+    else if (prev && curr && prev.hash !== curr.hash) items.push({ kind: "panel", id, label, status: "modified" });
   }
-
-  if (baseline.kind === "panel" && live.kind === "panel") {
-    if (baseline.applicationHash !== live.applicationHash) {
-      items.push({ kind: "application", id: "application", label: labels.applicationLabel, status: "modified" });
-    }
-    const panelIds = new Set([...Object.keys(baseline.panels), ...Object.keys(live.panels)]);
-    for (const id of [...panelIds].sort()) {
-      const prev = baseline.panels[id];
-      const curr = live.panels[id];
-      const label = labels.panelLabels?.get(id) ?? id;
-      if (!prev && curr) items.push({ kind: "panel", id, label, status: "added" });
-      else if (prev && !curr) items.push({ kind: "panel", id, label, status: "removed" });
-      else if (prev && curr && prev.hash !== curr.hash) items.push({ kind: "panel", id, label, status: "modified" });
-    }
-    const projectionIds = new Set([...Object.keys(baseline.projections), ...Object.keys(live.projections)]);
-    for (const id of [...projectionIds].sort()) {
-      const prev = baseline.projections[id];
-      const curr = live.projections[id];
-      const label = labels.projectionLabels?.get(id) ?? id;
-      if (!prev && curr) items.push({ kind: "projection", id, label, status: "added" });
-      else if (prev && !curr) items.push({ kind: "projection", id, label, status: "removed" });
-      else if (prev && curr && prev.hash !== curr.hash) items.push({ kind: "projection", id, label, status: "modified" });
-    }
+  const projectionIds = new Set([...Object.keys(baseline.projections), ...Object.keys(live.projections)]);
+  for (const id of [...projectionIds].sort()) {
+    const prev = baseline.projections[id];
+    const curr = live.projections[id];
+    const label = labels.projectionLabels?.get(id) ?? id;
+    if (!prev && curr) items.push({ kind: "projection", id, label, status: "added" });
+    else if (prev && !curr) items.push({ kind: "projection", id, label, status: "removed" });
+    else if (prev && curr && prev.hash !== curr.hash) items.push({ kind: "projection", id, label, status: "modified" });
   }
-
   return { hasDrift: items.length > 0, items };
 }
 

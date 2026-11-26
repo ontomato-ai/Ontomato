@@ -18,8 +18,6 @@ export const workspaceSchema = z.object({
   activeRunId: workspaceIdSchema.nullable(), createdAt: z.string(), updatedAt: z.string(),
 }).strict();
 export const workspaceExportSchema = z.object({ commit: workspaceCommitSchema, files: z.array(workspaceFileSchema) }).strict();
-export const hostedPublishSchema = z.object({ commit: workspaceCommitSchema, declaration: z.record(z.unknown()) }).strict();
-export const hostedRollbackSchema = z.object({ releaseId: workspaceIdSchema, declaration: z.record(z.unknown()) }).strict();
 export const hostedAppIdSchema = z.string().regex(/^app-[a-zA-Z0-9-]+$/);
 export type WorkspaceFile = z.infer<typeof workspaceFileSchema>;
 export type WorkspaceExport = z.infer<typeof workspaceExportSchema>;
@@ -33,7 +31,3 @@ export interface WorkspaceCommit { id: string; parentIds: string[]; createdAt: s
 export interface WorkspaceCommitPage { items: WorkspaceCommit[] }
 export interface WorkspaceDiff { patch: string }
 export interface WorkspaceSaved { commit: string }
-export interface WorkspacePreviewToken { token: string; expiresAt: string }
-export interface HostedPublication { appId: string; releaseId: string; commit: string }
-export interface HostedRelease extends HostedPublication { createdAt: string }
-export interface HostedReleasePage { items: HostedRelease[] }

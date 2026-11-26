@@ -1,7 +1,5 @@
 # Product assets
 
-For changes to an existing hosted application, use the [hosted application maintenance guide](legacy-hosted-app-maintenance.md).
-
 The current design is [产品层设计与整合说明](产品层设计与整合说明.md). Implementation progress and acceptance limits are recorded in [product-layer-v2-migration.md](product-layer-v2-migration.md).
 
 Product assets have three categories:
@@ -31,20 +29,18 @@ The template-copy arrow describes an operation, not a persistent dependency. A c
 
 Page `layout` owns column proportions, grid mode and spacing. The platform runtime and manual editor consume the same layout; principal overlays only own personal resource selections and interaction preferences. Projection `display` accepts field sorting, row limits, colors and field formats. It cannot contain expressions or percentage scaling.
 
-The full object-view editor now saves product-owned ObjectViews through `/product-assets/object-views/*`. Existing class definitions are read-only import sources. Standalone object entries keep their explicit published revision in the product repository; bundle publications continue to freeze the selected asset revisions independently.
-
-Source manifests may declare `triggerIds` alongside `assetIds`. Each Trigger must have a declared CollectionView for its Definition. Publications freeze the Trigger contract.
+The full object-view editor now saves product-owned ObjectViews through `/product-assets/object-views/*`. Existing class definitions are read-only import sources. Standalone object entries keep their explicit published revision in the product repository.
 
 Authoring saves accept `{name, description, document, revision}`. Authorization is managed separately through use/edit Grants; new assets grant both verbs to their creator. Legacy `visibility` metadata remains readable for migration and historical snapshots, but is rejected by the current HTTP authoring contract and does not control directory access. The shared directory scope means assets created by others for which the current principal has a Grant.
 
-Historical source releases using the earlier network policy remain migration inputs. Retrying their original commit or rolling back to them cannot reactivate that policy: migrate the source to `connectAppContext()`, declare its dependencies, and publish a new reviewed commit. Existing release files and history are retained. The standalone object entry resolves a complete archived asset, including fields and renderer, and overlays only the current edit decision; it never combines a published layout with the current draft definition.
+The standalone object entry resolves a complete archived asset, including fields and renderer, and overlays only the current edit decision; it never combines a published layout with the current draft definition.
 
-Product configuration owns presentation, not business facts, calculations, rules or execution authorization. Personal preferences belong to principal overlays. Published bundles freeze recursive asset revisions and capability contracts; editing a child does not upgrade a release.
+Product configuration owns presentation, not business facts, calculations, rules or execution authorization. Personal preferences belong to principal overlays.
 
-The authoring API, manual editor and Agent authoring commands share the product save boundary. SDK applications use `context.products`, `ProductAsset`, `context.metricViews`, `context.actions`, typed `context.navigate` and server-evaluated `context.subscribe`.
+The authoring API, manual editor and Agent authoring commands share the product save boundary.
 
 The product dependency graph is derived from caller-visible documents and preserves intermediate composition nodes. It does not independently own configuration or permission decisions. Product-index graph visualization does not mean ontology registration is complete; consult the migration status for the actual boundary.
 
 The directory opens its reference graph in a full-screen dialog. Asset details offer the same expanded view. Zoom, fit-to-canvas and original-size controls support inspecting both the entire dependency structure and readable node details. The ontology graph links to this view from its header action “产品关系图”, keeping the ontology canvas available instead of inserting a second graph above it.
 
-Default-projection checking is an advisory coverage check from the V2 design, not a requirement explicitly stated in the V1.1 whitepaper. It lists currently visible published ontology elements without a visible projection marked `isDefault`. Explicit asset references do not require complete default coverage. The check does not create assets or block publication. Results open in a dismissible dialog with type filtering, retry and an explanation of how to mark an existing projection as default.
+Default-projection checking is an advisory coverage check from the V2 design, not a requirement explicitly stated in the V1.1 whitepaper. It lists currently visible published ontology elements without a visible projection marked `isDefault`. Explicit asset references do not require complete default coverage. The check does not create assets. Results open in a dismissible dialog with type filtering, retry and an explanation of how to mark an existing projection as default.

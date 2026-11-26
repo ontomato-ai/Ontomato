@@ -58,7 +58,7 @@ const router = useRouter();
 
 const catalog = useApplicationCatalog();
 const pinnedAppIds=ref<string[]>([]);
-const dynamicAppIds=computed(()=>catalog.mergedApplications.value.filter(app=>['hosted','connected','link'].includes(app.kind)).map(app=>app.id));
+const dynamicAppIds=computed(()=>catalog.mergedApplications.value.filter(app=>['connected','link'].includes(app.kind)).map(app=>app.id));
 async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).favorites.filter(item=>item.kind==='application').map(item=>item.id);}catch{/* Shortcut discovery must not prevent opening the platform. */}}
 const railVisible = ref(false);
 let railDataLoaded = false;

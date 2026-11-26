@@ -9,7 +9,8 @@ import { appBuilderRouter } from "../api/routes/app-builder";
 import { COMPONENT_PACKAGES_PATH } from "@ontomato/contracts/component-packages";
 import { createComponentPackagesRouter, mountComponentPackageAssets } from "../api/routes/component-packages";
 import { checkComponentPackageUpgrade } from "../services/component-packages/upgrade";
-import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
+import { workspaceRouter } from "../api/routes/workspaces";
+import { mountAppsSdkStatic } from "../api/routes/apps-sdk";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import { browserEventsPath } from "@ontomato/contracts/browser-events";
 import { browserEventsRouter } from "../api/routes/browser-events";
@@ -197,9 +198,8 @@ export function createWorkbenchApp(): Express {
     );
   });
 
-  mountHostedStatic(app);
+  mountAppsSdkStatic(app);
   mountComponentPackageAssets(app);
-  app.use("/api/workspaces", workspacePreviewRouter);
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
   app.use("/internal/assistant", governanceStatusRouter, assistantInternalRouter, assistantQualityRouter);
