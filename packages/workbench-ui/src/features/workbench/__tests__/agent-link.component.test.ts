@@ -6,7 +6,7 @@ import ElementPlus, { ElMessage } from "element-plus";
 import { createPinia } from "pinia";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
-import { platformPageAccessKey } from "@ontomato/platform-shell";
+import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
 
 /*
@@ -33,10 +33,14 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
     ...(await importOriginal<typeof import("@ontomato/agent-shell-ui")>()),
     AgentShell: defineComponent({
       name: "AgentShell",
-      props: ["agentId", "sessionId"],
+      props: ["agentId", "sessionId", "display"],
       setup(props, { expose, slots }) {
         expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); }, fill: (text: string) => { filled.push(text); } });
-        return () => h("div", props.sessionId ? slots["artifact-actions"]?.({}) : undefined);
+        return () => h("div", [
+          slots.shortcuts?.(),
+          props.sessionId ? slots["artifact-actions"]?.({}) : undefined,
+          props.display.page.value ? slots.feature?.({ featureId: props.display.page.value.featureId }) : undefined,
+        ]);
       },
     }),
     ShellNavBody: { name: "ShellNavBody", template: "<div />" },
@@ -100,6 +104,7 @@ async function openChat(query: Record<string, string>, standalone = false) {
   await router.push({ path, query });
   const internalPages = standalone ? {
     dashboard: "/applications/app-data-agent-workbench/dashboards",
+    schedules: "/applications/app-data-agent-workbench/schedules",
     agents: "/applications/app-data-agent-workbench/agents",
   } : undefined;
   const wrapper = mount(BusinessWorkbench, {
@@ -108,6 +113,12 @@ async function openChat(query: Record<string, string>, standalone = false) {
         [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess,
         // The platform answers which of its pages the account may open; here, every one.
         [platformPageAccessKey as symbol]: () => true,
+        [pilotPageKey as symbol]: () => (address: string) => address.split("?")[0] === platformRoutes.schedules.path
+          ? {
+              id: "panel-application", instance: platformRoutes.schedules.path, props: { address },
+              component: { props: ["address"], template: '<div :data-panel-address="address" />' },
+            }
+          : null,
       } },
   });
   wrappers.push(wrapper);
@@ -139,6 +150,24 @@ it("opens a dashboard saved from a DataAgent conversation through the dashboard 
     expect(router.currentRoute.value.path).toBe(platformRoutes.dashboards.path);
     expect(router.currentRoute.value.query).toEqual({ dashboardId: "new-dashboard" });
   });
+});
+
+it("opens the platform schedules panel from the DataAgent shortcut without leaving the conversation", async () => {
+  const sessionId = "44444444-4444-4444-8444-444444444444";
+  const page = "/applications/app-data-agent-workbench/schedules";
+  const { router, shell } = await openChat({ standalone: "1", sessionId }, true);
+  const shortcut = shell.get(".legacy-schedules-entry");
+  await shortcut.trigger("click");
+  await vi.waitFor(() => {
+    expect(router.currentRoute.value.path).toBe("/applications/app-data-agent-workbench/workbench");
+    expect(router.currentRoute.value.query).toEqual({ standalone: "1", sessionId, page });
+    expect(shell.get(".legacy-schedules-surface").attributes("data-panel-address")).toBe("/schedules");
+    expect(shortcut.attributes("aria-pressed")).toBe("true");
+  });
+
+  const reopened = await openChat({ standalone: "1", sessionId, page: `${page}?app=agents` }, true);
+  expect(reopened.shell.get(".legacy-schedules-surface").attributes("data-panel-address")).toBe("/schedules?app=agents");
+  expect(reopened.shell.props("sessionId")).toBe(sessionId);
 });
 
 describe("a link to one agent", () => {

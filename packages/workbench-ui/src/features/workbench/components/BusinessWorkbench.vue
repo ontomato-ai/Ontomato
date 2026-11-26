@@ -20,7 +20,7 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import { useDashboardStore } from "../../dashboard";
 import { formatRelativeTime } from "../../../utils/relative-time";
-import { ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, X } from "lucide-vue-next";
+import { CalendarClock, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, X } from "lucide-vue-next";
 import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
 import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
@@ -49,7 +49,7 @@ const props = withDefaults(
     defaultLogo: string;
     defaultBrandName: string;
     splitNavigation?: boolean;
-    internalPages?: { dashboard: string; agents: string };
+    internalPages?: { dashboard: string; agents: string; schedules?: string };
   }>(),
   { features: () => [] },
 );
@@ -98,22 +98,27 @@ const resolvePilot = usePilotPage()((address) => {
     }
     return;
   }
-  const target = props.internalPages && address.split("?")[0] === routes.dashboards.path
-    ? props.internalPages.dashboard + address.slice(routes.dashboards.path.length)
-    : address;
-  void display.navigate(target, { history: "replace" });
+  void display.navigate(internalPageAddress(address), { history: "replace" });
 });
-function dashboardPanelAddress(address: string) {
+function internalPageAddress(address: string) {
   const path = address.split("?")[0];
-  return path === props.internalPages?.dashboard
-    ? routes.dashboards.path + address.slice(path.length)
-    : address;
+  const pages = props.internalPages;
+  if (pages && path === routes.dashboards.path) return pages.dashboard + address.slice(path.length);
+  if (pages?.schedules && path === routes.schedules.path) return pages.schedules + address.slice(path.length);
+  return address;
+}
+function platformPanelAddress(address: string) {
+  const path = address.split("?")[0];
+  if (path === props.internalPages?.dashboard) return routes.dashboards.path + address.slice(path.length);
+  if (path === props.internalPages?.schedules) return routes.schedules.path + address.slice(path.length);
+  return address;
 }
 function pilot(address: string) {
   if (!props.internalPages) return resolvePilot(address);
-  const path = address.split("?")[0];
-  if (path === props.internalPages.dashboard || path === routes.dashboards.path) return resolvePilot(dashboardPanelAddress(address));
-  if (path === props.internalPages.agents) return resolvePilot(address);
+  const target = platformPanelAddress(address);
+  const path = target.split("?")[0];
+  if (path === routes.dashboards.path || (props.internalPages.schedules && path === routes.schedules.path)
+    || path === props.internalPages.agents) return resolvePilot(target);
   return null;
 }
 /** An in-app address that names a page this assembly mounts beside a conversation; a host elsewhere is never one. */
@@ -136,7 +141,7 @@ async function serialize(page: DisplayPage | null, view: DisplayView, history: D
   const to: RouteLocationRaw =
     page && view === "full" && display.view.value === "side" && !props.internalPages
       ? page.address
-      : { query: page ? { ...query, page: page.address } : query };
+      : { query: page ? { ...query, page: internalPageAddress(page.address) } : query };
   const failure = await (history === "push" || router.resolve(to).path !== route.path ? router.push(to) : router.replace(to));
   // The address already saying this is the router's duplicated navigation, however the link that wrote it encoded it.
   return !failure || isNavigationFailure(failure, NavigationFailureType.duplicated);
@@ -148,7 +153,7 @@ const admitPage = usePageAdmission();
 const display = useConversationDisplay({
   features: () => workbench.value.features,
   resolve: resolvePage,
-  ...(admitPage ? { admit: (address: string) => admitPage(dashboardPanelAddress(address)) } : {}),
+  ...(admitPage ? { admit: (address: string) => admitPage(platformPanelAddress(address)) } : {}),
   serialize,
   // The shell's name and address for the page from the moment it opens; selection, highlights, public state and open forms are the page's report.
   context: (page, reported) => ({
@@ -172,14 +177,20 @@ watch(
     const address = queryText(route.query.page);
     return address && pilot(address) ? address : null;
   },
-  (address) => display.follow(address),
+  (address) => {
+    const opensSchedules = address && props.internalPages?.schedules
+      && platformPanelAddress(address).split("?")[0] === routes.schedules.path;
+    display.follow(address, opensSchedules && !display.page.value ? "side" : undefined);
+  },
   { immediate: true },
 );
 /** The page the display shows, mounted from its address by the assembly's registry. */
 const pilotPage = computed(() => (display.page.value ? pilot(display.page.value.address) : null));
 const pageAddress = computed(() => display.page.value?.address ?? null);
 const inStandaloneDashboard = computed(() => Boolean(props.internalPages && pageAddress.value
-  && dashboardPanelAddress(pageAddress.value).split("?")[0] === routes.dashboards.path));
+  && platformPanelAddress(pageAddress.value).split("?")[0] === routes.dashboards.path));
+const inStandaloneSchedules = computed(() => Boolean(props.internalPages?.schedules && pageAddress.value
+  && platformPanelAddress(pageAddress.value).split("?")[0] === routes.schedules.path));
 const selectedDashboardId = computed(() => inStandaloneDashboard.value
   ? new URLSearchParams(pageAddress.value?.split("?")[1]).get("dashboardId")
   : null);
@@ -661,6 +672,12 @@ function openDashboardPage(dashboardId: string) {
   void router.push({ path: routes.dashboards.path, query: { dashboardId } });
 }
 
+function openSchedules() {
+  if (!props.internalPages?.schedules) return;
+  closeDashboards();
+  void display.navigate(props.internalPages.schedules, { view: "side", history: "push" });
+}
+
 onMounted(async () => {
   try {
     appearance.value = await getWorkbenchAppearance();
@@ -713,6 +730,10 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <button class="legacy-footer-item" type="button" :title="allTasksLabel" :aria-pressed="showingTasks" @click="openAllTasks">
         <ListTodo :size="16" aria-hidden="true" /><span>{{ allTasksLabel }}</span>
         <small v-if="taskSessions.length" class="legacy-task-badge">{{ taskSessions.length }}{{ taskCursor ? '+' : '' }}</small>
+      </button>
+      <button v-if="internalPages.schedules" class="legacy-footer-item legacy-schedules-entry" type="button"
+        :title="t('platform.schedules')" :aria-pressed="inStandaloneSchedules" @click="openSchedules">
+        <CalendarClock :size="16" aria-hidden="true" /><span>{{ t('platform.schedules') }}</span>
       </button>
       <section v-if="dashboardsOpen && dashboards" id="data-agent-dashboard-list" class="legacy-dashboard-list" :aria-label="t('analysis.myDashboards')" @keydown.esc.stop="closeDashboards">
         <header>
@@ -784,7 +805,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         v-if="pilotPage"
         :key="display.page.value!.instance"
         v-bind="pilotPage.props"
-        :class="{ 'legacy-dashboard-surface': inStandaloneDashboard }"
+        :class="{ 'legacy-dashboard-surface': inStandaloneDashboard, 'legacy-schedules-surface': inStandaloneSchedules }"
         v-bind:legacy-dashboard-layout="inStandaloneDashboard || undefined"
         :take-opened-entry="display.page.value?.takeOpenedEntry"
         :object-refresh="display.objectRefresh.value"
