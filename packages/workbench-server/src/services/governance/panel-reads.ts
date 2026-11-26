@@ -13,6 +13,7 @@ import {
   type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
@@ -22,6 +23,7 @@ import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-q
 import type { OwnerReadResult } from "../platform-ontology/owners";
 import { listPolicyEntries, policyObjectEntryUsagePayload, readPolicyChangePermission } from "./policy-access";
 import type { PolicyWorkbenchCatalog } from "./policy-catalog";
+import { loadPolicyWorkbenchCatalog } from "./policy-catalog";
 
 /*
  * Direct-panel read adapters for enterprise governance owners: users, roles, permission policies, and organization
@@ -95,16 +97,6 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
     return { rows: [], total };
   }
 
-  async function effectiveAccessBody(id: string, category?: string) {
-    const needsCatalog = !category || category === "productObject" || category === "capabilityObject";
-    const workbenchCatalog = needsCatalog && options.loadPolicyCatalog ? await options.loadPolicyCatalog() : undefined;
-    return {
-      id,
-      ...(category ? { category } : {}),
-      ...(workbenchCatalog ? { workbenchCatalog } : {}),
-    };
-  }
-
   return {
     users: {
       count: () => count("governance-users-count", "/panel/governance/users/query"),
@@ -122,22 +114,6 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       },
       effectivePermissions(id: string): Promise<PanelRecord> {
         return owner("governance-user-effective-permissions", "/panel/governance/users/effective-permissions", { id }, panelRecordSchema);
-      },
-      async effectiveAccess(id: string, category?: string): Promise<PanelRecord[]> {
-        return owner(
-          "governance-user-effective-access",
-          "/panel/governance/users/effective-access",
-          await effectiveAccessBody(id, category),
-          panelRecordListSchema,
-        );
-      },
-      effectiveAccessCounts(id: string): Promise<PanelRecord> {
-        return owner(
-          "governance-user-effective-access-counts",
-          "/panel/governance/users/effective-access-counts",
-          { id },
-          panelRecordSchema,
-        );
       },
       effectiveOrgShares(id: string): Promise<PanelRecord[]> {
         return owner("governance-user-effective-org-shares", "/panel/governance/users/effective-org-shares", { id }, panelRecordListSchema);
@@ -195,24 +171,6 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       /** The workflow steps published to this role: which workflow, which step, and the scope that step grants. */
       contributionWorkflowSteps(id: string): Promise<PanelRecord[]> {
         return owner("governance-role-contribution-workflow-steps", "/panel/governance/roles/contribution/workflow-steps", { id }, panelRecordListSchema);
-      },
-      /** Effective permissions brought by this role across the six governance categories, optionally filtered by category. */
-      async effectiveAccess(id: string, category?: string): Promise<PanelRecord[]> {
-        return owner(
-          "governance-role-effective-access",
-          "/panel/governance/roles/effective-access",
-          await effectiveAccessBody(id, category),
-          panelRecordListSchema,
-        );
-      },
-      /** Category row counts for this role's permission summary dropdown. */
-      effectiveAccessCounts(id: string): Promise<PanelRecord> {
-        return owner(
-          "governance-role-effective-access-counts",
-          "/panel/governance/roles/effective-access-counts",
-          { id },
-          panelRecordSchema,
-        );
       },
     },
     policies: {
@@ -381,4 +339,22 @@ export async function readMemberAccessContext(
     canManage: candidates.length > 0 && await readPolicyChangePermission(viewer, candidates[0]!.id),
     preselectedPolicyId: preselected ? inspectingPolicyId ?? null : null,
   };
+}
+
+/**
+ * Everything the member's effective-permission page shows, in one owner read: the entries he can enter, the system
+ * interfaces, the product-layer and capability-layer objects, the business data he sees, and the workflow steps that
+ * hand him work. Each row carries the roles and policies its right comes from, and each category its count; the owner
+ * names the objects it holds, and the product-layer names come with the Workbench catalog the owner cannot see.
+ */
+export async function readMemberEffectiveAccess(
+  owner: ProductOwner, viewer: AssistantCredentials, subjectId: string,
+): Promise<RuntimeJsonObject> {
+  const workbenchCatalog = await loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale);
+  return governanceOwner(viewer)(
+    "governance-user-effective-access",
+    "/panel/governance/users/effective-access",
+    { id: subjectId, workbenchCatalog },
+    runtimeJsonObjectSchema,
+  );
 }
