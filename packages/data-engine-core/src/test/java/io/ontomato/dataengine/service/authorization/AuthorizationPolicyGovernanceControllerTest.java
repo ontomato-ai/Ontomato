@@ -29,6 +29,7 @@ import io.ontomato.dataengine.service.DataPermissionLookup;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Decision;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.http.MediaType;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -326,10 +328,24 @@ class AuthorizationPolicyGovernanceControllerTest {
 
     @Test
     void ordinaryDomainMembersCanReadOnlyTheirDomainGraphFacts() throws Exception {
+        var entryAuthorization = mock(AuthorizationService.class);
+        ReflectionTestUtils.setField(catalog, "authorization", entryAuthorization);
+        when(entryAuthorization.resolveSubject(any())).thenReturn(mock(AuthorizationService.SubjectContext.class));
+        when(entryAuthorization.decide(any(), any())).thenReturn(Decision.denied("FORBIDDEN", "Access denied"));
+        when(entryAuthorization.decide(any(), eq(new AuthorizationService.Entry(ENTRY)))).thenReturn(Decision.ALLOWED);
+        var app = application("app", "domain", "panel", "frame", null);
+        app.put("panelUses", List.of(
+                new ApplicationPanelUse("main", "landing", "panel", "/applications/app", null, null),
+                new ApplicationPanelUse("private", "private", "panel", "/applications/app/private", null, Map.of("en", "Private"))));
+        when(catalog.all()).thenReturn(List.of(app, application("foreign", "other", "panel", "frame", null)));
+        when(catalog.entriesInDomain("domain")).thenCallRealMethod();
+        when(catalog.visibleEntries(user)).thenCallRealMethod();
+
         when(store.domainObjectGrants("domain")).thenReturn(List.of(
                 grant(ACTION, Verb.EXECUTE, SELF),
                 grant(new ObjectTarget("domain", Kind.WORKFLOW, "one"), Verb.EDIT, null),
-                grant(new ObjectTarget("domain", Kind.WORKFLOW, ""), Verb.CREATE, null)));
+                grant(new ObjectTarget("domain", Kind.WORKFLOW, ""), Verb.CREATE, null),
+                grant(ENTRY, Verb.ENTER, null)));
         when(store.domainRolePolicies("domain")).thenReturn(List.of(new PolicyRef("reviewer", "selected", PolicyKind.OBJECT)));
         when(store.domainPolicy("domain")).thenReturn(new PolicyRef("member", "default", PolicyKind.OBJECT));
         var result = http.perform(post(PREFIX + "graph-facts").header(WorkbenchServiceAuthentication.HEADER, "workbench"));
@@ -341,7 +357,15 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.policyGrants[1].verb").value("EDIT"))
                 .andExpect(jsonPath("$.policyGrants[2].targetKey").value(""))
                 .andExpect(jsonPath("$.policyGrants[2].verb").value("CREATE"))
-                .andExpect(jsonPath("$.rolePolicies[0].roleId").value("reviewer"));
+                .andExpect(jsonPath("$.policyGrants[3].targetKey").value("app/main"))
+                .andExpect(jsonPath("$.policyGrants[3].verb").value("ENTER"))
+                .andExpect(jsonPath("$.rolePolicies[0].roleId").value("reviewer"))
+                .andExpect(jsonPath("$.entries.length()").value(1))
+                .andExpect(jsonPath("$.entries[0].id").value("app/main"))
+                .andExpect(jsonPath("$.entries[0].applicationId").value("app"))
+                .andExpect(jsonPath("$.entries[0].pageKey").value("landing"))
+                .andExpect(jsonPath("$.entries[0].names").isMap())
+                .andExpect(jsonPath("$.entries[0].names").isEmpty());
         verifyNoInteractions(subjects);
         verify(store).domainObjectGrants("domain");
         verifyNoInteractions(workflows);
