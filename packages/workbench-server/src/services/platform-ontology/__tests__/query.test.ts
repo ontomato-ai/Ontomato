@@ -444,7 +444,8 @@ describe("platform-ontology composite query", () => {
     const role = byId.get(ROLE);
     expect(Object.keys(role?.reads ?? {}).sort()).toEqual([
       "contributionPolicies", "contributionWorkflowSteps", "count",
-      "createForm", "form", "memberCandidates", "members", "options",
+      "createForm", "effectiveAccess", "effectiveAccessCounts",
+      "form", "memberCandidates", "members", "options",
       "policies", "policyCandidates", "query", "record", "resolve",
     ]);
     expect(role?.operations?.map((op) => op.id)).toEqual([
