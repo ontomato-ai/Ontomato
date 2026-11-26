@@ -125,8 +125,12 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
   };
 }
 
-function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation): Record<string, Record<string, ReadAdapter>> {
-  const schedules = createScheduledTaskReadAdapter(viewer);
+function readAdapters(
+  owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation,
+  batchCache?: PanelReadBatchCache,
+): Record<string, Record<string, ReadAdapter>> {
+  const schedules = createScheduledTaskReadAdapter(viewer, undefined,
+    batchCache && (load => batchCache.scheduleApplications(viewer.headers?.[BUILD_TEST_HEADER], load)));
   const governance = createGovernanceReadAdapters(viewer, {
     loadPolicyCatalog: () => loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale),
   });
@@ -922,7 +926,7 @@ export async function executeProjectionDataRead(
   const selection = readSelection(data, inputs);
   const read = selection.kind === "customer"
     ? customerReads(owner, viewer, callerUserName)[selection.method]
-    : readAdapters(owner, viewer, callerUserName, location)[selection.typeId]?.[selection.method];
+    : readAdapters(owner, viewer, callerUserName, location, batchCache)[selection.typeId]?.[selection.method];
   if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
   const invoke = () => Promise.resolve(read(selection, params, projection));
   const result = await (batchCache && readScopeKey !== undefined
