@@ -28,7 +28,7 @@ const TABS = [
 
 const ActionDetail = {
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const { instance, navigateBack, notify, t } = usePanelContext();
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
@@ -84,9 +84,8 @@ const ActionDetail = {
       });
     });
 
-    // Route back to the catalog entry so the platform's unified unsaved-changes leave guard intercepts dirty edits.
     function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     function onTrialDone(outcome) {
@@ -108,7 +107,7 @@ const ActionDetail = {
       instance.forms.discard("form");
       if (selectedKey.value) instance.state.set("selected", null);
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     function onFormSaved(saved) {
@@ -134,7 +133,7 @@ const ActionDetail = {
         activeSegmentId: null,
       });
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     // Clicking a parameter reference inside AnnotatedCode switches to Derived definition and highlights that parameter row.

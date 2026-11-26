@@ -409,6 +409,7 @@ it("draws direct RecordGraph in a frame via frameMemberData and edits the paired
           throw new Error("This test reads no member data through the platform");
         },
         navigate: async () => { throw new Error("This test opens no address"); },
+        navigateBack: async () => { throw new Error("This test opens no address"); },
         // A frame panel's own frame is not an application's frame: no current entry, no menu.
         currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       });
@@ -523,7 +524,7 @@ it("shows forbidden and error datum states on direct RecordGraph without pretend
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); }, navigateBack: async () => { throw new Error("This test opens no address"); },
         // A frame panel's own frame is not an application's frame: no current entry, no menu.
         currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       });
@@ -1105,7 +1106,7 @@ it("draws direct InstanceGraph and ObjectRelations in a frame via frameMemberDat
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); }, navigateBack: async () => { throw new Error("This test opens no address"); },
         // A frame panel's own frame is not an application's frame: no current entry, no menu.
         currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       });

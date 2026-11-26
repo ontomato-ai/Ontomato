@@ -102,7 +102,7 @@ const resolvePilot = usePilotPage()((address) => {
     }
     return;
   }
-  void display.navigate(internalPageAddress(address), { history: "replace" });
+  void display.navigate(internalPageAddress(address), { history: "push" });
 });
 function internalPageAddress(address: string) {
   const path = address.split("?")[0];
@@ -175,10 +175,28 @@ const display = useConversationDisplay({
   }),
   leave: { leaves: (address) => leave.leaves(address?.split("?")[0] ?? ""), confirm: () => leave.confirm() },
 });
-// Keep the platform unsaved-changes guard (route leaves and beforeunload) informed when a paired page reports dirty.
+let activePageController: DisplayPageController | null = null;
+function registerActivePageController(instance: string, controller: DisplayPageController) {
+  activePageController = controller;
+  const unregister = display.registerPageController(instance, controller);
+  return () => {
+    if (activePageController === controller) activePageController = null;
+    unregister();
+  };
+}
+// Keep the platform unsaved-changes guard (route leaves, same-path side-pane history Back, and beforeunload) informed.
 useUnsavedChanges({
   dirty: () => display.isDirty.value,
   paths: () => [route.path],
+  guardSamePath: (fullPath) => {
+    const nextPage = queryText(router.resolve(fullPath).query.page);
+    const currentPage = queryText(route.query.page);
+    if (nextPage === currentPage) return Promise.resolve(true);
+    const nextBase = nextPage?.split("?", 1)[0] ?? null;
+    const currentBase = currentPage?.split("?", 1)[0] ?? null;
+    if (nextBase !== currentBase) return leave.confirm();
+    return activePageController?.guardNavigation?.({ address: nextPage! }) ?? Promise.resolve(true);
+  },
 });
 // A native entry becomes resolvable beside the conversation when the reader's application catalog arrives.
 watch(
@@ -880,7 +898,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         :take-opened-entry="display.page.value?.takeOpenedEntry"
         :object-refresh="display.objectRefresh.value"
         :live-state="display.liveState.value"
-        :register-page-controller="(controller: DisplayPageController) => display.registerPageController(display.page.value!.instance, controller)"
+        :register-page-controller="(controller: DisplayPageController) => registerActivePageController(display.page.value!.instance, controller)"
         @context="display.context"
         @display-address="display.address"
         @display-loaded="display.loaded"

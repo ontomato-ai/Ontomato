@@ -26,7 +26,7 @@ function parseCaseArtifactKey(primaryKey) {
 await mountPanel({
   setup() {
     const context = usePanelContext();
-    const { instance, navigate, t } = context;
+    const { instance, navigate, navigateBack, t } = context;
 
     const selected = computed(() => instance.state.values.value.selected ?? null);
     const activeRun = computed(() => instance.state.values.value.activeRun ?? null);
@@ -117,7 +117,7 @@ await mountPanel({
     function goBack() {
       const runId = displayRunId.value;
       const target = runId ? panelAddress(RESULTS_PATH, { selected: runId }) : RESULTS_PATH;
-      void navigate(target).catch(() => undefined);
+      void navigateBack(target);
     }
 
     function openRun(ref) {
@@ -129,7 +129,7 @@ await mountPanel({
     function onRunRowOperationDone(operationName, outcome, rowRef) {
       if (outcome?.kind !== "success") return;
       if (operationName === "delete" && rowRef?.primaryKey && rowRef.primaryKey === displayRunId.value) {
-        void navigate(RESULTS_PATH).catch(() => undefined);
+        void navigateBack(RESULTS_PATH);
         return;
       }
       instance.refreshObjects();

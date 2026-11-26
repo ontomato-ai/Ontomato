@@ -126,6 +126,12 @@ export interface PanelContext {
    */
   navigate(address: string): Promise<void>;
   /**
+   * Leaves the current detail panel by stepping back one entry in browser history when an in-platform previous page
+   * exists, otherwise navigating to `fallback` (typically the owning catalog path). Unsaved edits pass through the
+   * platform's unified leave guard automatically.
+   */
+  navigateBack(fallback: string): Promise<void>;
+  /**
    * Tells the reader briefly how something the page did went — "Exported", "Deleted", why a call failed — in the
    * platform's own message at the top of the window, as its pages do. It fades by itself and is available in panels
    * that run directly on the platform.

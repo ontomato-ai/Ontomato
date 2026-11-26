@@ -15,21 +15,46 @@ export interface PanelBackHandlerRegistration {
   readonly onBack: () => void;
 }
 
+export interface PlatformBackHistoryContext {
+  /**
+   * Whether the panel runs beside a conversation (its address rides in the host route's `?page=` query).
+   * When true, only a previous history entry on the same host route carrying a non-empty `page` query parameter
+   * counts as an in-platform previous page — otherwise stepping back would close or leave the conversation.
+   */
+  beside?: boolean;
+  /** History state object to inspect; defaults to `window.history.state`. */
+  historyState?: unknown;
+}
+
 export interface PanelBackControllerOptions {
   /** Whether this host is currently shown to the reader; kept-alive hidden pages ignore global Back and Escape. */
   active: () => boolean;
   /** Whether this host owns browser history (full page and preview: true; beside conversation or custom frame: false). */
   allowHistory: () => boolean;
+  /** Whether this host is mounted beside a conversation (its address rides in the host route's `?page=` query). */
+  beside?: () => boolean;
   /** Whether the hosted panel currently has unsaved edits. */
   isDirty: () => boolean;
   /** Unified host confirmation for leaving unsaved edits; resolves true when clean or confirmed. */
   confirmLeaveUnsaved: () => Promise<boolean>;
+  /**
+   * Whether `navigateBack` must call `confirmLeaveUnsaved` itself because no enclosing shell router guard intercepts
+   * the navigation (for example, a standalone `PanelHost` outside `PlatformShellLayout`).
+   */
+  guardNavigationBack?: () => boolean;
+  /** Steps one entry back in browser history when `hasPlatformPreviousPage()` is true; defaults to `window.history.back()`. */
+  goHistoryBack?: () => void;
   /** The host surface Escape is scoped to; outside interactions keep their own Escape behavior. */
   scopeElement?: () => HTMLElement | null;
 }
 
 export interface PanelBackController {
   register(registration: PanelBackHandlerRegistration): () => void;
+  /**
+   * Leaves the current panel/detail page by stepping back one browser history entry when an in-platform previous page
+   * exists, otherwise navigating to `fallback`.
+   */
+  navigateBack(fallback: string, navigate: (address: string) => Promise<void>): Promise<void>;
   /** Refreshes the stored URL/state snapshot after the host replaces the address (e.g. deep-link query sync). */
   syncHistorySnapshot(): void;
   dispose(): void;
@@ -106,6 +131,43 @@ const OVERLAY_SELECTOR = [
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSiteRelativePath(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//");
+}
+
+function splitPathAndQuery(address: string): { path: string; search: string } {
+  const hashIndex = address.indexOf("#");
+  const withoutHash = hashIndex >= 0 ? address.slice(0, hashIndex) : address;
+  const queryIndex = withoutHash.indexOf("?");
+  if (queryIndex < 0) return { path: withoutHash, search: "" };
+  return { path: withoutHash.slice(0, queryIndex), search: withoutHash.slice(queryIndex + 1) };
+}
+
+/**
+ * Single rule for whether browser history holds a previous page produced by platform navigation.
+ *
+ * Vue Router writes `{ back, current, forward, position, replaced }` into `history.state`:
+ * - Direct URL entry, new tab, or external link leaves `state.back === null` (or no router state at all).
+ * - In-platform `router.push` records the previous site-relative route address in `state.back`, and `router.replace`
+ *   (such as deep-link state sync) preserves `state.back`.
+ * - Beside a conversation (`beside: true`), the panel rides in the conversation route's `?page=` query parameter, so
+ *   only a previous entry on the same host route carrying a non-empty `page` query parameter counts; otherwise the
+ *   panel falls back to its declared catalog address instead of closing or leaving the conversation.
+ */
+export function hasPlatformPreviousPage(context: PlatformBackHistoryContext = {}): boolean {
+  const state = context.historyState !== undefined
+    ? context.historyState
+    : (typeof window !== "undefined" ? window.history.state : null);
+  if (!isRecord(state) || !isSiteRelativePath(state.back)) return false;
+  if (!context.beside) return true;
+  if (!isSiteRelativePath(state.current)) return false;
+  const current = splitPathAndQuery(state.current);
+  const back = splitPathAndQuery(state.back);
+  if (back.path !== current.path) return false;
+  const backPage = new URLSearchParams(back.search).get("page");
+  return typeof backPage === "string" && backPage.trim().length > 0;
 }
 
 function currentHistoryToken(): string | null {
@@ -322,6 +384,22 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
     })();
   }
 
+  async function navigateBack(fallback: string, navigate: (address: string) => Promise<void>): Promise<void> {
+    if (disposed || !options.active()) return;
+    if (options.guardNavigationBack?.() && options.isDirty()) {
+      const allowed = await options.confirmLeaveUnsaved();
+      if (disposed || !allowed) return;
+    }
+    const beside = options.beside?.() ?? false;
+    const canUseHistory = options.allowHistory() || beside;
+    if (canUseHistory && hasPlatformPreviousPage({ beside })) {
+      if (options.goHistoryBack) options.goHistoryBack();
+      else if (typeof window !== "undefined") window.history.back();
+      return;
+    }
+    await navigate(fallback);
+  }
+
   if (typeof window !== "undefined") {
     installPanelBackPopStateListener();
     popStateHandlers.add(onPopState);
@@ -330,6 +408,7 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
 
   return {
     register,
+    navigateBack,
     syncHistorySnapshot,
     dispose() {
       if (disposed) return;

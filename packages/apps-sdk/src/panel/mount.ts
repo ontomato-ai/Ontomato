@@ -121,6 +121,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     expandPageComposer: contextExpandPageComposer(appContext),
     // A frame is not how a panel runs; it gets nothing new.
     navigate: () => Promise.reject(new Error("Navigating is a panel the platform runs in its own page; a frame has none")),
+    navigateBack: () => Promise.reject(new Error("Navigating is a panel the platform runs in its own page; a frame has none")),
     notify: () => { throw new Error("Telling the reader through the platform's message is a panel the platform runs; a frame has none"); },
     readPanelData: (request) => readPanelData(transport, request),
     // A frame is never an application's frame: the platform runs that panel in its own page.

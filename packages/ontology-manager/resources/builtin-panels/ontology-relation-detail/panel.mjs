@@ -5,7 +5,7 @@ const CATALOG_PATH = "/ontology/relations";
 
 await mountPanel({
   setup() {
-    const { instance, navigate, t } = usePanelContext();
+    const { instance, navigate, navigateBack, t } = usePanelContext();
     const selected = computed(() => instance.state.values.value.selected);
     const selectedKey = computed(() => (selected.value ? selected.value.primaryKey : ""));
 
@@ -53,17 +53,16 @@ await mountPanel({
       when: () => Boolean(selectedKey.value) && showDetailBody.value,
     });
 
-    // Route back to the catalog entry so the platform's unified unsaved-changes leave guard intercepts dirty edits.
     function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function onRemoveDone(outcome) {
       if (outcome?.kind !== "success") return;
-      // Clear selection and wait a tick so any dirty form unmounts before leaving for the catalog.
+      // Clear selection and wait a tick so any dirty form unmounts before leaving.
       if (selectedKey.value) instance.state.set("selected", null);
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     // Open the object types page with the endpoint class emitted by ObjectRefCard.

@@ -46,7 +46,7 @@ const CLOSED_DIALOGS_PATCH = {
 const ProjectionDetailPanel = {
   setup() {
     const ctx = usePanelContext();
-    const { instance, navigate, notify, t } = ctx;
+    const { instance, navigate, navigateBack, notify, t } = ctx;
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
@@ -193,7 +193,7 @@ const ProjectionDetailPanel = {
           instance.refreshObjects();
           notify({ kind: "success", text: t("notify.deleted") });
           await nextTick();
-          void goTo(CATALOG_PATH);
+          void navigateBack(CATALOG_PATH);
         } else if (outcome.kind === "refusal" || outcome.kind === "failure") {
           if (outcome.message) notify({ kind: "error", text: outcome.message });
         }
@@ -605,7 +605,7 @@ const ProjectionDetailPanel = {
 
     // Route back to the catalog entry so the platform's unified unsaved-changes guard intercepts dirty edits.
     function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     function onChoosePanel(item) {

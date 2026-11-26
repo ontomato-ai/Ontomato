@@ -286,6 +286,7 @@ it("contains a projection component error inside Projection without bubbling to 
     resources: async () => {},
     expandPageComposer: async () => {},
     navigate: async () => {},
+    navigateBack: async () => {},
     notify: () => {},
     readPanelData: async () => ({ status: "ready", value: {} as never }),
   };

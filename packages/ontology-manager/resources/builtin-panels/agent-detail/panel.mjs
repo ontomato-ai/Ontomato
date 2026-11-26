@@ -128,7 +128,7 @@ function runtimeSkillFromKey(key) {
 await mountPanel({
   setup() {
     const panel = usePanelContext();
-    const { instance, navigate, notify, t } = panel;
+    const { instance, navigate, navigateBack, notify, t } = panel;
     const state = instance.state;
     const values = state.values;
 
@@ -741,9 +741,8 @@ await mountPanel({
       },
     });
 
-    // Route back to the sibling catalog entry so the platform's unified unsaved-changes leave guard runs.
     function goBack() {
-      void navigate(catalogPath.value).catch(() => undefined);
+      void navigateBack(catalogPath.value);
     }
 
     function retry() {
