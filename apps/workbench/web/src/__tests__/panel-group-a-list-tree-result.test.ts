@@ -111,7 +111,14 @@ function mountDirect(
     ...noOperations,
     operations: mergedOperations,
     ...(options.confirmOperation ? { confirmOperation: options.confirmOperation } : {}),
-    readProjection: async (id) => projections[id]!,
+    // A member's fixed presentation is its config; a test that gives it where the member is placed is giving config.
+    readProjection: async (id) => {
+      const projection = projections[id]!;
+      const [member] = Object.entries(manifest.members)
+        .find(([, declaration]) => "projectionId" in declaration.target && declaration.target.projectionId === id) ?? [];
+      const given = member === undefined ? undefined : options.memberProps?.[member];
+      return given ? { ...projection, config: { ...projection.config, ...given } } : projection;
+    },
     read: async (request) => {
       reads.push(request);
       return answer(request);
@@ -125,12 +132,7 @@ function mountDirect(
       if (options.draftStore) provide(localDraftStoreKey, options.draftStore);
       return () => h("div", memberKeys.map((member) => h(
         PanelMember,
-        {
-          instance,
-          member,
-          key: member,
-          ...(options.memberProps?.[member] ?? {}),
-        },
+        { instance, member, key: member },
         options.memberSlots?.[member],
       )));
     },
