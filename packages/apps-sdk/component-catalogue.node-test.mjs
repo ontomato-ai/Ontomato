@@ -64,6 +64,10 @@ const DECLARED_DATA = {
     selected: ["panelOptionList", "panelRecord"],
     rows: ["panelRecordList", "panelRecordQuery"],
   },
+  PickerDialog: {
+    options: ["panelOptionList"],
+    rows: ["panelRecordList", "panelRecordQuery"],
+  },
   RecordGraph: { nodes: ["panelRecordList", "panelRecordQuery"], edges: ["panelRecordList", "panelRecordQuery"] },
   InstanceGraph: {
     counts: ["panelGraphCounts"],
@@ -151,6 +155,50 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       });
       writePanel("statusField");
       assert.equal(JSON.parse(check()).status, "valid");
+
+      // Verify PickerDialog passes offline panel check with bidirectional open/selected state bindings.
+      const pickerWorkspace = join(out, "picker-config");
+      mkdirSync(pickerWorkspace);
+      writeFileSync(join(pickerWorkspace, "registration.json"), JSON.stringify({
+        panels: [{ id: "picker-config", mode: "create", input: { name: "Picker", description: "", visibility: "domain" } }],
+      }));
+      writeFileSync(join(pickerWorkspace, "panel.html"), '<div id="app"><projection slot="picker"></projection></div>');
+      writeFileSync(join(pickerWorkspace, "panel.json"), JSON.stringify({
+        manifest: {
+          state: {
+            pickerOpen: { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: false },
+            pickedIds: { type: { kind: "list", items: { kind: "scalar", type: "string" } }, default: [], deepLink: false },
+          },
+          members: {
+            picker: {
+              id: "picker-config-users",
+              component: "PickerDialog",
+              type: "platform:User",
+              data: { options: "options" },
+              state: { open: "pickerOpen", selected: "pickedIds" },
+              config: { titleKey: "picker.title", confirmLabelKey: "picker.confirm" },
+            },
+          },
+        },
+      }));
+      const pickerTypeTable = join(out, "picker-config-types.json");
+      writeFileSync(pickerTypeTable, JSON.stringify({
+        objectTypes: {
+          "platform:User": {
+            reads: {
+              options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
+            },
+            operations: [],
+          },
+        },
+        resultSchemas: { panelOptionList: { type: "object" } },
+      }));
+      const pickerCheck = execFileSync(
+        process.execPath,
+        [cli, "panel", "check", pickerWorkspace, "--sdk-dir", sdk, "--type-table", pickerTypeTable],
+        { encoding: "utf8", stdio: "pipe" },
+      );
+      assert.equal(JSON.parse(pickerCheck).status, "valid");
     });
 
     await t.test("an external Vue author can generate a package catalogue and check a panel with this release", (authorTest) => {
@@ -284,6 +332,24 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(declared.get("ReferencePicker").data.selected.required, false);
     assert.equal(declared.get("ReferencePicker").data.rows.required, false);
     assert.deepEqual(declared.get("ReferencePicker").data.rows.runtimeParams, ["search"]);
+    const pickerDialog = declared.get("PickerDialog");
+    assert.ok(pickerDialog, "PickerDialog is published in the SDK component catalogue");
+    assert.equal(pickerDialog.panelUsable, true, "PickerDialog is panel-usable");
+    assert.deepEqual(pickerDialog.inputs, {
+      open: { kind: "scalar", type: "boolean" },
+      selected: { kind: "list", items: { kind: "scalar", type: "string" } },
+    });
+    assert.deepEqual(pickerDialog.outputs, {
+      open: { kind: "scalar", type: "boolean" },
+      selected: { kind: "list", items: { kind: "scalar", type: "string" } },
+    });
+    assert.equal(pickerDialog.data.options.required, false);
+    assert.deepEqual(pickerDialog.data.options.runtimeParams, ["keyword", "page"]);
+    assert.equal(pickerDialog.data.rows.required, false);
+    assert.deepEqual(pickerDialog.data.rows.runtimeParams, ["keyword", "search", "page", "size"]);
+    assert.match(pickerDialog.meaning, /2\.4\.2/u, "PickerDialog meaning documents agent parity (standard 2.4.2)");
+    assert.equal((pickerDialog.config ?? []).some((prop) => prop.name === "open"), false, "PickerDialog config excludes state port open");
+    assert.equal((pickerDialog.config ?? []).some((prop) => prop.name === "selected"), false, "PickerDialog config excludes state port selected");
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
     assert.deepEqual(declared.get("ObjectRefCard").outputs, { navigate: ontologyNode });
@@ -576,6 +642,7 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
       ["ObjectForm", ["showRequiredMark"]],
       ["FileUploadControl", ["overwriteOn"]],
       ["ReferencePicker", ["placeholders"]],
+      ["PickerDialog", ["open", "selected"]],
       ["InteractiveGraphCanvas", ["styleOverrides"]],
       ["InstanceGraph", ["mode", "start", "selected", "selectedType", "selectedGroup", "query", "layers", "showLayerFilter", "showHint", "showAggregateToggle", "showEdgeLabelToggle", "showZoomControls", "showRefreshControl", "neighborFilter"]],
       ["ObjectRelations", ["selected", "visibleRelationKinds"]],
