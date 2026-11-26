@@ -194,6 +194,7 @@ export const REGENERATE_USER_API_KEY = "users.regenerateApiKey";
 export const REVOKE_USER_API_KEY = "users.revokeApiKey";
 export const ISSUE_USER_API_KEY_BATCH = "users.issueApiKeyBatch";
 export const READ_MEMBER_ACCESS_CONTEXT = "users.accessContext";
+export const READ_MEMBER_EFFECTIVE_ACCESS = "users.effectiveAccess";
 export const INSPECT_MEMBER_ACCESS = "users.inspectAccess";
 export const GRANT_MEMBER_ACCESS = "users.grantAccess";
 export const DELETE_ROLE = "roles.delete";
@@ -221,24 +222,6 @@ export const DELETE_ORG_GRANT = "orgGrants.delete";
 const governancePageQuery = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
 } as const;
-const effectiveAccessCountOutputs = {
-  entryCount: { kind: "scalar", type: "number" },
-  systemInterfaceCount: { kind: "scalar", type: "number" },
-  productObjectCount: { kind: "scalar", type: "number" },
-  capabilityObjectCount: { kind: "scalar", type: "number" },
-  businessDataCount: { kind: "scalar", type: "number" },
-  workflowStepCount: { kind: "scalar", type: "number" },
-  totalCount: { kind: "scalar", type: "number" },
-} as const satisfies Readonly<Record<string, PanelReadOutputType>>;
-const effectiveAccessReads = {
-  effectiveAccess: {
-    source: "object", parameterMode: "fixed", params: { category: "keyword" }, result: "panelRecordList",
-  },
-  effectiveAccessCounts: {
-    source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
-    outputs: effectiveAccessCountOutputs,
-  },
-} as const satisfies Readonly<Record<string, PlatformReadDeclaration>>;
 const referenceReads = {
   options: { source: "type", parameterMode: "fixed", params: {}, result: "panelOptionList" },
   resolve: { source: "type", parameterMode: "fixed", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
@@ -673,7 +656,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...governancePageQuery,
       ...modelReads,
       effectivePermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
-      ...effectiveAccessReads,
       effectiveOrgShares: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       effectiveManagementOperations: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       effectiveSubjectDataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
@@ -686,7 +668,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [
       `${USER}.save`, REMOVE_USER, RESET_USER_PASSWORD, ADD_USER_MEMBER,
       GENERATE_USER_API_KEY, REGENERATE_USER_API_KEY, REVOKE_USER_API_KEY, ISSUE_USER_API_KEY_BATCH,
-      READ_MEMBER_ACCESS_CONTEXT, INSPECT_MEMBER_ACCESS, GRANT_MEMBER_ACCESS,
+      READ_MEMBER_ACCESS_CONTEXT, INSPECT_MEMBER_ACCESS, GRANT_MEMBER_ACCESS, READ_MEMBER_EFFECTIVE_ACCESS,
     ],
   },
   [ROLE]: {
@@ -697,7 +679,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
       ...modelReads,
-      ...effectiveAccessReads,
       // The role's current assignments and the candidates not yet assigned to it.
       members: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: USER },
       policies: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
