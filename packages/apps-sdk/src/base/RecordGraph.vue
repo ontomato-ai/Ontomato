@@ -22,6 +22,12 @@ withDefaults(defineProps<{
   categories?: readonly string[];
   /** On the page's canvas, a JSON Pointer into each node record's `fields` naming its category; one colour when absent. */
   nodeCategory?: string;
+  /** The names the legend gives the categories, by category; any other category is named by its own value. */
+  categoryLabels?: Readonly<Record<string, string>>;
+  /** JSON Pointer into each edge record's `fields` naming the one that draws the edge dashed when it holds `true`. */
+  edgeDashedField?: string;
+  /** Offers the categories as a legend the reader clicks to hide and show them. */
+  showCategoryLegend?: boolean;
   /** Automatic placement algorithm for unplaced nodes: column-based `relations` (default) or radial `force`. */
   layout?: "relations" | "force";
   /** Optional subtle operation hint shown at the bottom-right corner of the canvas. */
@@ -69,6 +75,9 @@ defineSlots<{
     :editable="editable"
     :categories="categories"
     :node-category="nodeCategory"
+    :category-labels="categoryLabels"
+    :edge-dashed-field="edgeDashedField"
+    :show-category-legend="showCategoryLegend"
     :layout="layout"
     :hint="hint"
     @choose="emit('choose', $event)"

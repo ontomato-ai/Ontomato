@@ -2,8 +2,8 @@ import { z } from "zod";
 import { missingEntryMessageKeys } from "@ontomato/contracts/panel-conversation-entry";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import {
-  matchesDirectPanelValue, matchesObjectType, panelManifestSchema, panelPlacementSchema, panelPortAccepts, panelStateInputType, type PanelMember,
-  type PanelPlacement,
+  matchesDirectPanelValue, matchesObjectType, objectUnionTypes, panelManifestSchema, panelPlacementSchema, panelPortAccepts, panelStateInputType,
+  type PanelMember, type PanelPlacement, type DirectPanelPortType,
 } from "@ontomato/contracts/panel-manifest";
 import {
   authoredReadParameterSource, directProjectionInputAccepts, directReadDeclaration, missingRequiredReadParameters, panelReadInputMatches, panelReadParameterId,
@@ -72,6 +72,7 @@ type Reference = {
   target: Target;
   wiring: Wiring;
   fromObjectDetail?: { fromState: string; className: string };
+  projectionCandidates?: true;
 };
 
 function fixedTarget(target: PanelPlacement["target"]): Target {
@@ -94,7 +95,8 @@ export function collectReferences(
       if ("panelIds" in candidates) {
         for (const id of candidates.panelIds) add({ kind: "panel", id });
       } else if ("projectionIds" in candidates) {
-        for (const id of candidates.projectionIds) add({ kind: "projection", id });
+        for (const id of candidates.projectionIds)
+          references.push({ key, target: { kind: "projection", id }, wiring, projectionCandidates: true });
       } else if (candidates.rule === "objectDetail") {
         const type = state[target.fromState]?.type;
         if (type?.kind === "object" || type?.kind === "object-union") {
@@ -308,9 +310,50 @@ function ports(definition: PanelDefinition | ProjectionDefinition) {
   return { inputs: external, outputs: external };
 }
 
+// An absent entry is covered. A null entry has not been declared by any candidate yet.
+type CandidateInputs = Map<string, Set<string> | null>;
+
+function narrowCandidateInput(
+  target: DirectPanelPortType, source: DirectPanelPortType | undefined, name: string, uncovered: CandidateInputs,
+) {
+  const wanted = target.kind === "list" && source?.kind === "list" ? target.items : target;
+  const offered = target.kind === "list" && source?.kind === "list" ? source.items : source;
+  if (wanted.kind !== "object" || offered?.kind !== "object-union" || !matchesObjectType(offered, wanted.objectType)) return false;
+  if (uncovered.has(name)) {
+    const remaining = uncovered.get(name) ?? new Set(objectUnionTypes(offered));
+    remaining.delete(wanted.objectType);
+    if (remaining.size) uncovered.set(name, remaining);
+    else uncovered.delete(name);
+  }
+  return true;
+}
+
+async function checkReferences(
+  references: readonly Reference[],
+  check: (reference: Reference, uncovered?: CandidateInputs) => Promise<string | undefined>,
+) {
+  const candidates = new Map<Wiring, { key: string; uncovered: CandidateInputs }>();
+  for (const reference of references) {
+    let group = candidates.get(reference.wiring);
+    if (reference.projectionCandidates && !group) {
+      group = { key: reference.key, uncovered: new Map(Object.keys(reference.wiring.inputs ?? {}).map(name => [name, null])) };
+      candidates.set(reference.wiring, group);
+    }
+    const issue = await check(reference, group?.uncovered);
+    if (issue) return { key: reference.key, issue };
+  }
+  for (const { key, uncovered } of candidates.values()) {
+    for (const [name, remaining] of uncovered) {
+      const issue = remaining === null ? `input '${name}' was removed or is not exposed by any candidate`
+        : `input '${name}' has no candidate for object types ${[...remaining].join(", ")}`;
+      return { key, issue };
+    }
+  }
+}
+
 async function incompatiblePort(
   source: ReferenceManifest, { wiring, fromObjectDetail }: Reference, definition: PanelDefinition | ProjectionDefinition,
-  readCatalogue = readPanelComponentCatalogue, scope?: ComponentScope,
+  readCatalogue = readPanelComponentCatalogue, scope?: ComponentScope, uncovered?: CandidateInputs,
 ) {
   const target = ports(definition);
   let component;
@@ -326,6 +369,7 @@ async function incompatiblePort(
   for (const name of new Set([...Object.keys(wiring.inputs ?? {}), ...Object.keys(wiring.outputs ?? {})])) {
     for (const { datum, declaration } of reads) {
       const selectionInput = "object" in datum.source && "input" in datum.source.object ? datum.source.object.input : undefined;
+      if (uncovered && declaration.parameterMode === "owner" && !Object.hasOwn(wiring.outputs ?? {}, name)) continue;
       if (
         !Object.hasOwn(datum.params, name)
         && (name === selectionInput
@@ -340,13 +384,20 @@ async function incompatiblePort(
       if ("state" in binding && !panelReadInputMatches(parameter, panelStateInputType(binding, source.state[binding.state]?.type)))
         return `read parameter '${name}' does not accept its connected state field`;
       implicit.add(name);
+      if (declaration.parameterMode === "fixed" && !Object.hasOwn(target.inputs, name)) uncovered?.delete(name);
     }
   }
   for (const [name, value] of Object.entries(wiring.inputs ?? {})) {
     const type = target.inputs[name];
-    if (!type && ("state" in value || "output" in value) && implicit.has(name)) continue;
-    if (!type) return `input '${name}' was removed or is not exposed`;
-    if ("item" in value || "output" in value) continue;
+    if (!type) {
+      if (!uncovered && !(("state" in value || "output" in value) && implicit.has(name)))
+        return `input '${name}' was removed or is not exposed`;
+      continue;
+    }
+    if ("item" in value || "output" in value) {
+      uncovered?.delete(name);
+      continue;
+    }
     const rawStateType = "state" in value
       ? (fromObjectDetail && value.state === fromObjectDetail.fromState
         ? { kind: "object" as const, objectType: fromObjectDetail.className }
@@ -356,7 +407,9 @@ async function incompatiblePort(
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
     const accepts = "literal" in value ? type.kind === "json" || matchesDirectPanelValue(type, value.literal)
       : offered !== undefined && directProjectionInputAccepts(type, offered);
-    if (!accepts) return `input '${name}' does not accept its connected value`;
+    if (accepts) uncovered?.delete(name);
+    else if (!uncovered || !narrowCandidateInput(type, offered, name, uncovered))
+      return `input '${name}' does not accept its connected value`;
   }
   for (const [name, value] of Object.entries(wiring.outputs ?? {})) {
     const type = target.outputs[name];
@@ -399,7 +452,9 @@ export async function validateCurrentProductReferences(
     const issue = await checkOperationTarget(input);
     if (issue) throw new HttpError(400, `Projection '${id}': ${issue}`, "PANEL_OPERATION_TARGET_MISMATCH");
   }
-  const checkMember = async (manifest: ReferenceManifest, reference: Reference, definition: PanelDefinition | ProjectionDefinition) => {
+  const checkMember = async (
+    manifest: ReferenceManifest, reference: Reference, definition: PanelDefinition | ProjectionDefinition, uncovered?: CandidateInputs,
+  ) => {
     if ("componentId" in definition && definition.operations) {
       checkOperationTarget ??= (await import("./type-table")).panelOperationTargetCheck(owner, credentials);
       const issue = await checkOperationTarget(definition, toMemberWiring(reference.wiring));
@@ -407,7 +462,7 @@ export async function validateCurrentProductReferences(
     }
     return incompatiblePort(manifest, reference, definition, readCatalogue, {
       domainId: isBuiltinProductId(reference.target.id) ? null : owner.domainId, credentials, client,
-    });
+    }, uncovered);
   };
   if ("manifest" in input) {
     panels.set(id, input);
@@ -427,8 +482,8 @@ export async function validateCurrentProductReferences(
 
     const inspected = new Map<string, PanelDefinition | ProjectionDefinition>();
     const authorized = new Set<string>();
-    for (const reference of references) {
-      const { target, key } = reference;
+    const invalid = await checkReferences(references, async (reference, uncovered) => {
+      const { target } = reference;
       const known = inspected.get(target.id);
       const stored = known ?? (target.kind === "panel" ? panels.get(target.id)
         : (await findCurrentProduct(owner.domainId, "projection", target.id, client))?.definition);
@@ -441,17 +496,21 @@ export async function validateCurrentProductReferences(
       }
       const definition = known ?? (target.kind === "panel" ? panels.get(target.id)! : projectionDefinition(target.id, stored));
       inspected.set(target.id, definition);
-      const issue = await checkMember(input.manifest, reference, definition);
-      if (issue) throw new HttpError(400, `Panel '${id}', member '${key}' – ${issue}`, "PANEL_PORT_MISMATCH");
-    }
+      return checkMember(input.manifest, reference, definition, uncovered);
+    });
+    if (invalid) throw new HttpError(400, `Panel '${id}', member '${invalid.key}' – ${invalid.issue}`, "PANEL_PORT_MISMATCH");
   }
 
   for (const [parentId, panel] of panels) {
-    for (const reference of collectReferences(panel, details, saved.get(parentId))) {
-      if (reference.target.kind !== kind || reference.target.id !== id) continue;
-      const issue = await checkMember(panel.manifest, reference, input);
-      if (issue) throw new HttpError(409, `Connected ${issue}`, "PRODUCT_PORT_IN_USE");
-    }
+    const references = collectReferences(panel, details, saved.get(parentId));
+    const matches = ({ target }: Reference) => target.kind === kind && target.id === id;
+    const groups = new Set(references.filter(reference => reference.projectionCandidates && matches(reference)).map(({ wiring }) => wiring));
+    const connected = references.filter(reference => matches(reference) || groups.has(reference.wiring));
+    const invalid = await checkReferences(connected, async (reference, uncovered) => {
+      const definition = matches(reference) ? input : await requireProjection(owner.domainId, reference.target.id, client);
+      return checkMember(panel.manifest, reference, definition, uncovered);
+    });
+    if (invalid) throw new HttpError(409, `Connected ${invalid.issue}`, "PRODUCT_PORT_IN_USE");
   }
 }
 
@@ -506,18 +565,19 @@ export async function validateBuiltinProductReferences(
     if (issue) throw new Error(`Platform projection '${id}': ${issue}`);
   }
   for (const [id, panel] of panels) {
-    for (const reference of collectReferences(panel, details)) {
+    const invalid = await checkReferences(collectReferences(panel, details), async (reference, uncovered) => {
       const { target, key } = reference;
       const definition = target.kind === "panel" ? panels.get(target.id) : projections.get(target.id);
       if (!definition) throw new Error(`Platform panel '${id}', member '${key}' refers to missing ${target.kind} '${target.id}'`);
       const issue = "componentId" in definition ? await checkOperationTarget(definition, toMemberWiring(reference.wiring)) : undefined;
-      const incompatible = issue ?? await incompatiblePort(panel.manifest, reference, definition, readCatalogue);
-      if (incompatible) throw new Error(`Platform panel '${id}', member '${key}': ${incompatible}`);
+      const incompatible = issue ?? await incompatiblePort(panel.manifest, reference, definition, readCatalogue, undefined, uncovered);
+      if (incompatible) return incompatible;
       // A platform panel ships to every language: the opening sentence its entry names by key is in each one it declares.
       if ("componentId" in definition) {
         const [missing] = missingEntryMessageKeys([definition.conversationEntry], panel.content.messages);
         if (missing) throw new Error(`Platform panel '${id}', member '${key}': prefillKey '${missing.key}' is not in content.messages (${missing.locale ?? "any locale"})`);
       }
-    }
+    });
+    if (invalid) throw new Error(`Platform panel '${id}', member '${invalid.key}': ${invalid.issue}`);
   }
 }

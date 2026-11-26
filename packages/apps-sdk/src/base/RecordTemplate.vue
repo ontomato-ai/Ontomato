@@ -17,7 +17,7 @@ import {
   type TypedFieldFormat,
 } from "./display-value";
 import { resolveLocalizedText } from "./localized-text";
-import { rawRecordField } from "./record-field";
+import { recordFieldDisplayValue } from "./record-field";
 import TypedValue from "./TypedValue.vue";
 
 /**
@@ -173,7 +173,7 @@ const resolvedEmptyText = computed(() =>
 function fieldValueFor(key: string): PanelRecordFieldValue | undefined {
   const { record, row } = resolvedData.value;
   if (record) {
-    const raw = rawRecordField(record, key);
+    const raw = recordFieldDisplayValue(record, key);
     if (raw !== undefined) return raw;
     if (record.tags?.[key]) return [...record.tags[key]!];
   }

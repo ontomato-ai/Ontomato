@@ -91,10 +91,16 @@ class AuthorizationPolicyGovernanceControllerTest {
     @Test
     void returnsDomainEntryRootsAndPublishedActionAndWorkflowFacts() throws Exception {
         permissions(true, false);
+        when(catalog.entriesInDomain("domain")).thenCallRealMethod();
+        var agents = JSONObject.of("id", "agents",
+                "entry", JSONObject.of("renderer", "agents", "entryKey", "agents", "home", "/agents/chat"),
+                "pageSkills", List.of(),
+                "panelUses", List.of(new ApplicationPanelUse("settings", "settings", "agent-settings",
+                        "/agents/settings", null, Map.of("en", "Settings"))));
         when(catalog.all()).thenReturn(List.of(
                 application("app", "domain", "root", "frame", "agent"),
                 application("shared", null, "same", "same", null),
-                application("foreign", "other", "other-panel", "other-frame", "other-agent")));
+                application("foreign", "other", "other-panel", "other-frame", "other-agent"), agents));
         when(subjects.entryEntitlement(ENTRY)).thenReturn(true);
         when(store.policyObjectGrants("domain", "selected")).thenReturn(List.of(grant(ENTRY, Verb.ENTER, null)));
         when(store.policyRoleIds("domain", "selected")).thenReturn(Set.of("reviewer"));
@@ -132,7 +138,7 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.workflowStepActions[0].actionId").value("approve"));
         http.perform(rpc("entry-roots", "{\"entryIds\":[]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.entries[*].entryId", containsInAnyOrder("app/main", "shared/main")))
+                .andExpect(jsonPath("$.entries[*].entryId", containsInAnyOrder("app/main", "shared/main", "agents/settings", "agents/agents")))
                 .andExpect(jsonPath("$.entries[1].panelIds", containsInAnyOrder("same")))
                 .andExpect(jsonPath("$.existingGrants").isEmpty())
                 .andExpect(jsonPath("$.targetPolicyRoleIds").isEmpty());
@@ -282,8 +288,8 @@ class AuthorizationPolicyGovernanceControllerTest {
 
     private static JSONObject application(String id, String domain, String panel, String frame, String agentId) {
         var agent = agentId == null ? null : new DefaultAgentTarget("id", agentId, null);
-        var use = new ApplicationPanelUse("main", "dashboard", panel, "/dashboard", agent, Map.of("en", "Dashboard"));
-        return JSONObject.of("id", id, "domainId", domain, "kind", "panel-app", "entry", JSONObject.of("renderer", "panels"),
+        var use = new ApplicationPanelUse("main", panel, panel, "/applications/" + id, agent, Map.of("en", "Dashboard"));
+        return JSONObject.of("id", id, "domainId", domain, "kind", "panel-app", "entry", JSONObject.of("renderer", "panels", "path", "/applications/" + id),
                 "panelSettings", JSONObject.of("framePanelId", frame), "panelUses", List.of(use));
     }
 

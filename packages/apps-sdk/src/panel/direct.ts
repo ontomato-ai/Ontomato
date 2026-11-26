@@ -7,7 +7,7 @@ import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-m
 import { OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { AppMenuGroup, DirectPanelRun } from "@ontomato/platform-shell";
 import { panelOperationAffectedSchema, panelReadResultSchemas, type PanelCompletedOperation } from "@ontomato/contracts/panel-operations";
-import { authoredReadParameterSource, directReadDeclaration, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import { authoredReadParameterSource, directObjectSourceType, directReadDeclaration, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { ApplicationEntryMenu, CurrentApplicationEntry, DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelCurrentUser, PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
@@ -332,7 +332,10 @@ export function awaitsInputs(
   own: MemberInputs,
   ignoreImplicitParams?: readonly string[],
 ): boolean {
-  if ("object" in data.source && stateObject(sourceObject(data, inputs)) === null) return true;
+  if ("object" in data.source) {
+    const target = stateObject(sourceObject(data, inputs));
+    if (!target || target.className !== directObjectSourceType(projection, data.source.object)) return true;
+  }
   const values = paramValues(projection, data, member, inputs, own, ignoreImplicitParams);
   const declaration = directReadDeclaration(projection, data);
   const required = declaration?.parameterMode === "fixed" ? declaration.requiredParams ?? [] : [];
@@ -587,9 +590,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   /** Runs the panel a member places, publishing into this instance and following it until the member is placed anew. */
   async function placePanel(member: string, scope: EffectScope): Promise<MemberPlacing> {
     const failure = shallowRef<Error | null>(null);
+    const outputs = Object.entries(direct.members[member]!.outputs ?? {});
     const run: DirectPanelRun = {
       pageKey: options.pageKey, url: options.url, label: options.label,
       initial: nestedInputs(member) as never,
+      boundOutputs: new Set(outputs.map(([name]) => name)),
       // The placed panel's state stays its own; what this one takes of it is its declared outputs, read below.
       state: () => {}, context: () => {}, operations: () => {}, dirty: () => {},
       failed: (reason) => { failure.value = reason instanceof Error ? reason : new Error(String(reason)); },
@@ -623,7 +628,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       watch(() => JSON.stringify(nestedInputs(member)), (next, previous) => {
         if (next !== (previous ?? JSON.stringify(run.initial))) placed.state.setState(nestedInputs(member));
       }, { immediate: true });
-      for (const [name, to] of Object.entries(direct.members[member]!.outputs ?? {}))
+      for (const [name, to] of outputs)
         watch(() => placed.state.values.value[name], (value) => instance.state.set(to.state, (value ?? null) as never), { immediate: true });
       onScopeDispose(() => {
         nestedMounts.delete(mount);

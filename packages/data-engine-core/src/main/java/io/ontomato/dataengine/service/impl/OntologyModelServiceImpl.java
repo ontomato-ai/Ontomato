@@ -1,14 +1,19 @@
 package io.ontomato.dataengine.service.impl;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -27,6 +32,7 @@ import io.ontomato.dataengine.service.FormFields;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OntologyModelService;
+import io.ontomato.dataengine.service.PanelFormFields;
 
 import static io.ontomato.dataengine.schedules.ScheduleJson.object;
 
@@ -37,6 +43,11 @@ import static io.ontomato.dataengine.schedules.ScheduleJson.object;
  */
 @Service
 public class OntologyModelServiceImpl implements OntologyModelService {
+
+	static final String OPTION_KEY = "options";
+	private static final Set<String> TEXT_OPTION_TYPES = Set.of("varchar", "text");
+	private static final Set<String> NUMERIC_OPTION_TYPES = Set.of("int", "long", "float", "double");
+	private static final List<String> OPTION_TONES = List.of("default", "info", "success", "warning", "danger");
 
 	private static final String NAME_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
 
@@ -193,7 +204,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	@Override
 	public AttributeView createAttribute(String className, AttributeCreate raw, User user, String lang) {
 		Map<String, Object> rule = rule(user);
-		CheckedAttributeCreate checked = checkedAttributeCreate(rule, className, raw, user, lang);
+		CheckedAttributeCreate checked = checkedAttributeCreate(rule, className, raw, raw.options(), user, lang);
 		AttributeCreate body = checked.body();
 		List<Map<String, Object>> attrs = attrs(checked.classDef());
 
@@ -205,6 +216,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		attrDef.put("bizzkey", Boolean.TRUE.equals(body.businessKey()));
 		attrDef.put("enable", body.enable());
 		attrDef.put("primaryKey", Boolean.TRUE.equals(body.primaryKey()));
+		storeAttributeOptions(attrDef, body.options());
 		if (Boolean.TRUE.equals(body.primaryKey())) {
 			for (Map<String, Object> attr : attrs) {
 				attr.put("primaryKey", false);
@@ -222,12 +234,13 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	@Override
 	public AttributeView updateAttribute(String className, String name, AttributeUpdate raw, User user, String lang) {
 		Map<String, Object> rule = rule(user);
-		CheckedAttributeUpdate checked = checkedAttributeUpdate(rule, className, name, raw, user, lang);
+		CheckedAttributeUpdate checked = checkedAttributeUpdate(rule, className, name, raw, raw.options(), user, lang);
 
 		checked.attrDef().put("showName", checked.body().showName());
 		checked.attrDef().put("attrDesc", checked.body().attrDesc());
 		checked.attrDef().put("enable", checked.body().enable());
 		checked.attrDef().put("bizzkey", Boolean.TRUE.equals(checked.body().businessKey()));
+		storeAttributeOptions(checked.attrDef(), checked.body().options());
 		if (Boolean.TRUE.equals(checked.body().primaryKey()) && !primaryKey(checked.attrDef())) {
 			for (Map<String, Object> attr : attrs(checked.classDef())) {
 				attr.put("primaryKey", attr == checked.attrDef());
@@ -269,6 +282,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		for (Map<String, Object> attr : attrs) {
 			attr.put("primaryKey", attr == target);
 		}
+		target.remove(OPTION_KEY);
 		write(user, rule);
 		return attrs.stream().map(attr -> attributeView(owner, attr)).toList();
 	}
@@ -405,11 +419,23 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 						text(attrDef.get("attrDesc")), enabled(attrDef.get("enable")), businessKey(attrDef),
 						primaryKey(attrDef))
 				: attributeValues("", "", "varchar", "", "", true, false, false);
-		Map<String, Object> values = formValues(body, current);
-		if (draftToCheck(body)) {
-			values = edit ? draftAttributeUpdate(rule, key, values, user, lang) : draftAttributeCreate(rule, values, user, lang);
+		if (!inline) {
+			current.put(OPTION_KEY, edit ? formOptionValues(storedAttributeOptions(attrDef)) : List.of());
 		}
-		return new FormDescription(attributeFields(rule, edit, inline, attrDef, lang), values, attributeFormSave(edit, lang));
+		Map<String, Object> values = formValues(body, current);
+		String type = edit ? text(attrDef.get("type")) : formString(values, "type");
+		boolean primaryKey = edit ? primaryKey(attrDef) : Boolean.TRUE.equals(formBoolean(values, "primaryKey"));
+		boolean showOptions = !inline && supportsAttributeOptions(type, primaryKey);
+		if (draftToCheck(body)) {
+			values = edit
+					? draftAttributeUpdate(rule, key, values, inline ? null : body.values().get(OPTION_KEY), user, lang)
+					: draftAttributeCreate(rule, values, user, lang);
+		}
+		if (!showOptions) {
+			values.remove(OPTION_KEY);
+		}
+		return new FormDescription(attributeFields(rule, edit, inline, attrDef, showOptions, lang),
+				values, attributeFormSave(edit, lang));
 	}
 
 	@Override
@@ -588,7 +614,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private CheckedAttributeCreate checkedAttributeCreate(Map<String, Object> rule, String className,
-			AttributeCreate raw, User user, String lang) {
+			AttributeCreate raw, Object rawOptions, User user, String lang) {
 		String owner = trim(className);
 		List<ObjectNode> errors = new ArrayList<>();
 		required(errors, "className", owner, langService.get(lang, "Admin.class.nameRequired"));
@@ -629,13 +655,15 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				}
 			}
 		}
+		List<AttributeOption> options = validateAttributeOptions(owner, name, type, primaryKey,
+				rawOptions == null ? List.of() : rawOptions, true, errors);
 		fail(errors, lang);
 		return new CheckedAttributeCreate(owner, requireClass(rule, owner, lang),
-				new AttributeCreate(name, showName, type, attrDesc, raw.enable(), raw.businessKey(), primaryKey));
+				new AttributeCreate(name, showName, type, attrDesc, raw.enable(), raw.businessKey(), primaryKey, options));
 	}
 
 	private CheckedAttributeUpdate checkedAttributeUpdate(Map<String, Object> rule, String className, String name,
-			AttributeUpdate raw, User user, String lang) {
+			AttributeUpdate raw, Object rawOptions, User user, String lang) {
 		String owner = trim(className);
 		String attrName = trim(name);
 		List<ObjectNode> errors = new ArrayList<>();
@@ -670,10 +698,168 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 					errors.add(field("primaryKey", "invalid_format", error.getMessage()));
 				}
 			}
-			fail(errors, lang);
 		}
+		String type = text(attrDef.get("type"));
+		if (rawOptions == null) {
+			rawOptions = supportsAttributeOptions(type, nextPrimaryKey)
+					? attrDef.getOrDefault(OPTION_KEY, List.of()) : List.of();
+		}
+		List<AttributeOption> options = validateAttributeOptions(owner, attrName, type, nextPrimaryKey,
+				rawOptions, true, errors);
+		fail(errors, lang);
 		return new CheckedAttributeUpdate(owner, attrName, classDef, attrDef,
-				new AttributeUpdate(showName, attrDesc, raw.enable(), raw.businessKey(), nextPrimaryKey));
+				new AttributeUpdate(showName, attrDesc, raw.enable(), raw.businessKey(), nextPrimaryKey, options));
+	}
+
+	private static boolean supportsAttributeOptions(String type, boolean primaryKey) {
+		return !primaryKey && type != null
+				&& (TEXT_OPTION_TYPES.contains(type) || NUMERIC_OPTION_TYPES.contains(type));
+	}
+
+	static void importAttributeOptions(String className, Map<String, Object> attrDef, Object rawOptions) {
+		List<ObjectNode> errors = new ArrayList<>();
+		List<AttributeOption> options = validateAttributeOptions(className, text(attrDef.get("name")),
+				OntologyModelService.normalizeAttributeType(text(attrDef.get("type"))), primaryKey(attrDef),
+				rawOptions, false, errors);
+		if (!errors.isEmpty()) {
+			throw OntologyModelException.validation(errors, validationReasons(errors));
+		}
+		storeAttributeOptions(attrDef, options);
+	}
+
+	private static List<AttributeOption> validateAttributeOptions(String className, String name, String type,
+			boolean primaryKey, Object input, boolean fromForm, List<ObjectNode> errors) {
+		String attribute = className + "." + name + " options";
+		if (!(input instanceof List<?> rows)) {
+			errors.add(field(OPTION_KEY, "invalid_type", attribute + " must be an array"));
+			return List.of();
+		}
+		if (rows.isEmpty()) {
+			return List.of();
+		}
+		if (!supportsAttributeOptions(type, primaryKey)) {
+			errors.add(field(OPTION_KEY, "invalid_option", attribute + " item 1: "
+					+ (primaryKey ? "options are not allowed on a primary key" : "options are not allowed for type " + type)));
+			return List.of();
+		}
+
+		Set<Object> seen = new HashSet<>();
+		List<AttributeOption> result = new ArrayList<>();
+		for (int index = 0; index < rows.size(); index++) {
+			String item = attribute + " item " + (index + 1) + ": ";
+			Object row = rows.get(index);
+			Object value;
+			Object label;
+			Object tone;
+			if (row instanceof AttributeOption option) {
+				value = option.value();
+				label = option.label();
+				tone = option.tone();
+			} else if (row instanceof Map<?, ?> fields) {
+				value = fields.get("value");
+				label = fields.get("label");
+				tone = fields.get("tone");
+			} else {
+				errors.add(field(OPTION_KEY, "invalid_type", item + "expected an object"));
+				continue;
+			}
+			if (value == null || value instanceof String text && text.isBlank()) {
+				errors.add(field(OPTION_KEY, "required", item + "value is required"));
+				continue;
+			}
+			try {
+				value = parseAttributeOptionValue(type, value, fromForm);
+			} catch (IllegalArgumentException | ArithmeticException error) {
+				errors.add(field(OPTION_KEY, "invalid_type", item + "value must be a valid " + type));
+				continue;
+			}
+			if (!seen.add(value)) {
+				errors.add(field(OPTION_KEY, "duplicate", item + "value is duplicated"));
+				continue;
+			}
+			if (!(label instanceof String labelText) || labelText.isBlank()) {
+				errors.add(field(OPTION_KEY, "required", item + "label must be a non-empty string"));
+				continue;
+			}
+			if (fromForm && "".equals(tone)) {
+				tone = null;
+			}
+			if (tone != null && !OPTION_TONES.contains(tone)) {
+				errors.add(field(OPTION_KEY, "invalid_option", item + "tone must be one of " + OPTION_TONES));
+				continue;
+			}
+			result.add(new AttributeOption(value, labelText, (String) tone));
+		}
+		return result;
+	}
+
+	private static Object parseAttributeOptionValue(String type, Object value, boolean fromForm) {
+		if (TEXT_OPTION_TYPES.contains(type)) {
+			if (value instanceof String) {
+				return value;
+			}
+			throw new IllegalArgumentException();
+		}
+		if (!(value instanceof Number || fromForm && value instanceof String)) {
+			throw new IllegalArgumentException();
+		}
+		BigDecimal number = new BigDecimal(value.toString().trim());
+		return switch (type) {
+			case "int" -> number.intValueExact();
+			case "long" -> number.longValueExact();
+			case "float" -> {
+				float parsed = number.floatValue();
+				if (!Float.isFinite(parsed)) throw new IllegalArgumentException();
+				yield parsed == 0 ? 0f : parsed;
+			}
+			case "double" -> {
+				double parsed = number.doubleValue();
+				if (!Double.isFinite(parsed)) throw new IllegalArgumentException();
+				yield parsed == 0 ? 0d : parsed;
+			}
+			default -> throw new IllegalArgumentException();
+		};
+	}
+
+	private static void storeAttributeOptions(Map<String, Object> attr, List<AttributeOption> options) {
+		if (options.isEmpty()) {
+			attr.remove(OPTION_KEY);
+		} else {
+			attr.put(OPTION_KEY, optionValues(options));
+		}
+	}
+
+	private static List<Map<String, Object>> optionValues(List<AttributeOption> options) {
+		return options.stream().map(option -> {
+			Map<String, Object> fields = new LinkedHashMap<>();
+			fields.put("value", option.value());
+			fields.put("label", option.label());
+			if (option.tone() != null) {
+				fields.put("tone", option.tone());
+			}
+			return fields;
+		}).toList();
+	}
+
+	private static List<Map<String, Object>> formOptionValues(List<AttributeOption> options) {
+		List<Map<String, Object>> values = optionValues(options);
+		for (Map<String, Object> option : values) {
+			// The form's text control reads strings. The save converts numeric values back to the attribute type.
+			option.put("value", option.get("value").toString());
+			option.putIfAbsent("tone", "");
+		}
+		return values;
+	}
+
+	private static List<AttributeOption> storedAttributeOptions(Map<String, Object> attr) {
+		if (!supportsAttributeOptions(text(attr.get("type")), primaryKey(attr))
+				|| !(attr.get(OPTION_KEY) instanceof List<?> rows)) {
+			return List.of();
+		}
+		return rows.stream().map(row -> {
+			Map<?, ?> fields = (Map<?, ?>) row;
+			return new AttributeOption(fields.get("value"), (String) fields.get("label"), (String) fields.get("tone"));
+		}).toList();
 	}
 
 	private CheckedRelationshipCreate checkedRelationshipCreate(Map<String, Object> rule, User user,
@@ -862,20 +1048,24 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				new AttributeCreate(formString(values, "name"), formString(values, "showName"),
 						formString(values, "type"), formString(values, "attrDesc"), formBoolean(values, "enable"),
 						formBoolean(values, "businessKey"), formBoolean(values, "primaryKey")),
-				user, lang);
-		return attributeValues(checked.className(), checked.body().name(), checked.body().type(),
+				values.get(OPTION_KEY), user, lang);
+		Map<String, Object> checkedValues = attributeValues(checked.className(), checked.body().name(), checked.body().type(),
 				checked.body().showName(), checked.body().attrDesc(), checked.body().enable(),
 				checked.body().businessKey(), Boolean.TRUE.equals(checked.body().primaryKey()));
+		checkedValues.put(OPTION_KEY, formOptionValues(checked.body().options()));
+		return checkedValues;
 	}
 
 	private Map<String, Object> draftAttributeUpdate(Map<String, Object> rule, String[] key, Map<String, Object> values,
-			User user, String lang) {
+			Object rawOptions, User user, String lang) {
 		CheckedAttributeUpdate checked = checkedAttributeUpdate(rule, key[0], key[1], new AttributeUpdate(
 				formString(values, "showName"), formString(values, "attrDesc"), formBoolean(values, "enable"),
-				formBoolean(values, "businessKey"), formBoolean(values, "primaryKey")), user, lang);
-		return attributeValues(checked.className(), checked.name(), text(checked.attrDef().get("type")),
+				formBoolean(values, "businessKey"), formBoolean(values, "primaryKey")), rawOptions, user, lang);
+		Map<String, Object> checkedValues = attributeValues(checked.className(), checked.name(), text(checked.attrDef().get("type")),
 				checked.body().showName(), checked.body().attrDesc(), checked.body().enable(),
 				checked.body().businessKey(), Boolean.TRUE.equals(checked.body().primaryKey()));
+		checkedValues.put(OPTION_KEY, formOptionValues(checked.body().options()));
+		return checkedValues;
 	}
 
 	private Map<String, Object> draftRelationshipCreate(Map<String, Object> rule, Map<String, Object> values, User user,
@@ -1039,6 +1229,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			"type", "Admin.form.type",
 			"showName", "Admin.form.showName",
 			"attrDesc", "Admin.form.desc",
+			OPTION_KEY, "Admin.form.options",
 			"enable", "Admin.form.enable",
 			"businessKey", "Admin.form.businessKey",
 			"primaryKey", "Admin.form.primaryKey");
@@ -1090,7 +1281,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private List<ObjectNode> attributeFields(Map<String, Object> rule, boolean edit, boolean inline,
-			Map<String, Object> attrDef, String lang) {
+			Map<String, Object> attrDef, boolean showOptions, String lang) {
 		Map<String, String> label = labels(ATTRIBUTE_LABEL_KEYS, lang);
 		String ownerLabel = label.get("className");
 		String nameLabel = label.get("name");
@@ -1115,6 +1306,9 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 					false, null, false, textSubmitOn));
 			fields.add(panelField("/attrDesc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
 					false, null, false, textSubmitOn));
+			if (showOptions) {
+				fields.add(attributeOptionsField(lang));
+			}
 			fields.add(panelField("/enable", enableLabel, false, switchControl(), booleanSchema(enableLabel), locked,
 					locked ? langService.get(lang, "Admin.form.primaryKeyEnableLocked") : null, false, toggleSubmitOn));
 			fields.add(panelField("/businessKey", businessKeyLabel, false, switchControl(), booleanSchema(businessKeyLabel),
@@ -1134,18 +1328,52 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				textControl(false, 80, langService.get(lang, "Admin.form.exampleAttrName")),
 				stringSchema(nameLabel, 80), false, null, false));
 		fields.add(panelField("/type", typeLabel, true, object("kind", "select", "options", attributeTypeOptions()),
-				enumSchema(typeLabel, ATTRIBUTE_TYPES), false, null, false));
+				enumSchema(typeLabel, ATTRIBUTE_TYPES), false, null, !inline));
 		fields.add(panelField("/showName", showNameLabel, true,
 				textControl(false, 80, langService.get(lang, "Admin.form.exampleAttrShowName")),
 				stringSchema(showNameLabel, 80), false, null, false));
 		fields.add(panelField("/attrDesc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
 				false, null, false));
+		if (showOptions) {
+			fields.add(attributeOptionsField(lang));
+		}
 		fields.add(panelField("/enable", enableLabel, false, switchControl(), booleanSchema(enableLabel), false, null, false));
 		fields.add(panelField("/businessKey", businessKeyLabel, false, switchControl(), booleanSchema(businessKeyLabel),
 				false, null, false));
 		fields.add(panelField("/primaryKey", primaryKeyLabel, false, switchControl(), booleanSchema(primaryKeyLabel),
-				false, null, false));
+				false, null, !inline));
 		return fields;
+	}
+
+	private ObjectNode attributeOptionsField(String lang) {
+		String title = langService.get(lang, ATTRIBUTE_LABEL_KEYS.get(OPTION_KEY));
+		String value = langService.get(lang, "Admin.form.optionValue");
+		String label = langService.get(lang, "Admin.form.optionLabel");
+		String tone = langService.get(lang, "Admin.form.optionTone");
+		JSONArray tones = new JSONArray();
+		tones.add(PanelFormFields.option("", langService.get(lang, "Admin.form.toneNone")));
+		for (String name : OPTION_TONES) {
+			tones.add(PanelFormFields.option(name, langService.get(lang, "Admin.tone." + name)));
+		}
+		JSONArray itemFields = JSONArray.of(
+				PanelFormFields.field("/value", value, PanelFormFields.text(false),
+						JSONObject.of("type", "string", "title", value), true, false, null, null, false),
+				PanelFormFields.field("/label", label, PanelFormFields.text(false),
+						JSONObject.of("type", "string", "title", label), true, false, null, null, false),
+				PanelFormFields.field("/tone", tone, PanelFormFields.select(tones),
+						JSONObject.of("type", List.of("string", "null"), "title", tone), false, false, null, null, false));
+		var control = PanelFormFields.objectArray(itemFields,
+				JSONObject.of("value", "", "label", "", "tone", ""), "/value", "table");
+		return panelField("/" + OPTION_KEY, title, false, ScheduleJson.JSON.valueToTree(control),
+				attributeOptionsSchema(lang), false, null, false);
+	}
+
+	private ObjectNode attributeOptionsSchema(String lang) {
+		return object("type", "array", "title", langService.get(lang, ATTRIBUTE_LABEL_KEYS.get(OPTION_KEY)),
+				"items", objectSchema(List.of("value", "label"),
+						"value", object("type", List.of("string", "number")),
+						"label", stringSchema(langService.get(lang, "Admin.form.optionLabel")),
+						"tone", object("type", List.of("string", "null"))));
 	}
 
 	private List<ObjectNode> relationshipFields(Map<String, Object> rule, boolean edit, Map<String, Object> values,
@@ -1225,7 +1453,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 							stringSchema(label.get("attrDesc")), "enable",
 							booleanSchema(label.get("enable")), "businessKey",
 							booleanSchema(label.get("businessKey")), "primaryKey",
-							booleanSchema(label.get("primaryKey"))));
+							booleanSchema(label.get("primaryKey")), OPTION_KEY, attributeOptionsSchema(lang)));
 		}
 		return new FormSave("POST", "/ontology/model/attribute/create",
 				objectSchema(List.of("className", "name", "showName", "type", "enable", "businessKey"), "className",
@@ -1236,7 +1464,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 						stringSchema(label.get("attrDesc")), "enable",
 						booleanSchema(label.get("enable")), "businessKey",
 						booleanSchema(label.get("businessKey")), "primaryKey",
-						booleanSchema(label.get("primaryKey"))));
+						booleanSchema(label.get("primaryKey")), OPTION_KEY, attributeOptionsSchema(lang)));
 	}
 
 	private FormSave relationshipFormSave(boolean edit, boolean joinRequired, String lang) {
@@ -1330,7 +1558,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	private AttributeView attributeView(String className, Map<String, Object> attr) {
 		return new AttributeView(className, text(attr.get("name")), text(attr.get("showName")),
 				text(attr.get("type")), text(attr.get("attrDesc")), enabled(attr.get("enable")),
-				businessKey(attr), primaryKey(attr));
+				businessKey(attr), primaryKey(attr), storedAttributeOptions(attr));
 	}
 
 	private RelationshipView relationshipView(String relationship, Map<String, String> def,
@@ -1472,9 +1700,13 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	private void fail(List<ObjectNode> errors, String lang) {
 		if (!errors.isEmpty()) {
-			String reasons = String.join("; ", errors.stream().map(error -> error.path("message").asText()).toList());
-			throw OntologyModelException.validation(errors, langService.get(lang, "Admin.validation.failed") + ": " + reasons);
+			throw OntologyModelException.validation(errors,
+					langService.get(lang, "Admin.validation.failed") + ": " + validationReasons(errors));
 		}
+	}
+
+	private static String validationReasons(List<ObjectNode> errors) {
+		return String.join("; ", errors.stream().map(error -> error.path("message").asText()).toList());
 	}
 
 	private void audit(User user, String operation, String description, String parameter) {

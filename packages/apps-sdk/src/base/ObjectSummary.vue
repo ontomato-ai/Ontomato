@@ -15,6 +15,7 @@ import {
   isRecordReference,
   isRecordTag,
   recordFieldArrayItems,
+  recordFieldDisplayValue,
   referenceDisplayLabel,
   scalarFieldText,
   toChildFieldReference,
@@ -190,7 +191,7 @@ const summaryListStyle = computed(() =>
 );
 
 function fieldText(current: PlatformObjectRecord, name: string): string {
-  return displayFieldText(current.fields[name], locale.value, t);
+  return displayFieldText(recordFieldDisplayValue(current, name), locale.value, t);
 }
 
 function recordTagField(current: PlatformObjectRecord, name: string): PanelRecordTagFieldValue | null {

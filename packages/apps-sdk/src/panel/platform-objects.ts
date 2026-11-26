@@ -76,6 +76,8 @@ export interface PlatformObjectRecord {
   tones?: Readonly<Record<string, PlatformFieldTone>>;
   /** Optional tag lists by field name, rendered as tags. */
   tags?: Readonly<Record<string, readonly string[]>>;
+  /** Optional display text the owner gives each field's value, by field name (the value stays in `fields`). */
+  valueLabels?: Readonly<Record<string, string>>;
   /** Optional highlight ranges by field name (or `"label"` / `"subtitle"`), half-open `[start, end)`. */
   highlights?: Readonly<Record<string, readonly TextHighlightRange[]>>;
   /** Optional owner-declared scalar read-only outputs for this record (for example navigation paths). */
