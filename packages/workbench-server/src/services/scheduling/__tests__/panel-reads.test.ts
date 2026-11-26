@@ -421,11 +421,11 @@ it("combines Java's native targets and app entries without resolving private nam
 
 it("looks up active members through the shared domain directory with the viewer's credentials", async () => {
   const fetchOwner = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    expect(new URL(url).pathname).toBe("/product-governance/principals");
+    expect(new URL(url).pathname).toBe("/platform/identity/principals");
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
-    expect(JSON.parse(String(init.body))).toMatchObject({ kind: "principal" });
-    return Response.json({ options: [{ id: "member-jordan", name: "Jordan" }] });
+    expect(JSON.parse(String(init.body))).toMatchObject({ kind: "member" });
+    return Response.json({ options: [{ kind: "member", id: "member-jordan", name: "Jordan" }] });
   });
   vi.stubGlobal("fetch", fetchOwner);
   const reads = createScheduledTaskReadAdapter(owner, viewer);
