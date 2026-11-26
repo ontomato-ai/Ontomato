@@ -17,12 +17,10 @@ public final class PolicyEntryCatalog {
     public static List<EntryRoot> list(ApplicationCatalog catalog, AuthorizationSubjects subjects, String domainId,
             Set<String> entryIds) {
         var result = new ArrayList<EntryRoot>();
-        for (var app : catalog.all()) {
-            var appDomain = app.getString("domainId");
-            if (appDomain != null && !appDomain.isBlank() && !domainId.equals(appDomain)) continue;
+        for (var application : catalog.entriesInDomain(domainId)) {
+            var app = application.application();
             var appId = app.getString("id");
-            var uses = app.getList("panelUses", ApplicationPanelUse.class);
-            if (uses == null) continue;
+            var uses = application.entries();
             var roots = ApplicationEntryEvents.roots(app, uses);
             for (var use : uses) {
                 var entryId = ApplicationEntryEvents.entryId(appId, use.id());
