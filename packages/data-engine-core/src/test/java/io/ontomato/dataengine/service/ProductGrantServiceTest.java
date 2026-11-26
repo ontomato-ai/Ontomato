@@ -151,30 +151,25 @@ class ProductGrantServiceTest {
         verify(db).update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=?", "domain", "projection");
         verify(db).update("DELETE FROM product_resource WHERE domain_id=? AND id=?", "domain", "projection");
     }
-    @Test void ownerlessRegistrationWritesManagementAndSharingGrantsOnce() {
+    @Test void applicationRegistrationWritesAuthorAndAdminGrantsOnce() {
         var db = mock(JdbcTemplate.class);
         var principals = mock(ProductPrincipalLookup.class);
         var service = new ProductGrantService(db, mock(IdentityService.class), principals);
         String register = "INSERT INTO product_resource(domain_id,id) VALUES(?,?) ON CONFLICT DO NOTHING";
-        when(db.update(register, "domain", "retriever")).thenReturn(1, 0);
+        when(db.update(register, "domain", "application")).thenReturn(1, 0);
         var verbs = List.of("use", "view", "edit");
         when(principals.defaultAdminGrants("domain", verbs)).thenReturn(
             verbs.stream().map(verb -> new ProductGrants.Grant("role", "admin", verb)).toList());
-        when(principals.legacyMenuGrants("domain", "analysis-agent", verbs)).thenReturn(
-            verbs.stream().map(verb -> new ProductGrants.Grant("role", "legacy-editor", verb)).toList());
 
-        assertTrue(service.register("domain", "retriever", null, true, verbs, true, "analysis-agent"));
-        assertFalse(service.register("domain", "retriever", null, true, verbs, true, "analysis-agent"));
+        assertTrue(service.register("domain", "application", "author", false, verbs, true));
+        assertFalse(service.register("domain", "application", "author", false, verbs, true));
 
-        verify(db, times(2)).update(register, "domain", "retriever");
+        verify(db, times(2)).update(register, "domain", "application");
         for (String verb : verbs) {
-            verify(db).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("role"), eq("admin"), eq(verb));
-            verify(db).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("role"), eq("legacy-editor"), eq(verb));
+            verify(db).update(eq(INSERT_GRANT), eq("domain"), eq("application"), eq("role"), eq("admin"), eq(verb));
+            verify(db).update(eq(INSERT_GRANT), eq("domain"), eq("application"), eq("principal"), eq("author"), eq(verb));
         }
-        verify(db).update(INSERT_GRANT, "domain", "retriever", "domain", "*", "use");
-        verify(db, never()).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("principal"), any(), any());
         verify(principals).defaultAdminGrants("domain", verbs);
-        verify(principals).legacyMenuGrants("domain", "analysis-agent", verbs);
     }
 
     @Test void grantSetLocksAndAuthorizesBeforeReplacingOnlyTheTargetSubject() {

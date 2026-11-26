@@ -1,14 +1,12 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({query:vi.fn(),get:vi.fn(),describe:vi.fn(),post:vi.fn(),put:vi.fn()}));
-vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,backendPut:mocks.put,buildBackendHeaders:()=>({})}));
-vi.mock('../ontology',()=>({synchronizeProductOntology:async()=>{}}));
-vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(fn:(client:{query:typeof mocks.query})=>unknown)=>fn({query:mocks.query})}));
+const mocks=vi.hoisted(()=>({query:vi.fn(),get:vi.fn(),describe:vi.fn(),post:vi.fn()}));
+vi.mock('../../../utils/backend-client',()=>({backendPost:mocks.post,buildBackendHeaders:()=>({})}));
 vi.mock('../../../infrastructure/postgres',()=>({qualifiedTable:(name:string)=>name,getPostgresPool:()=>({query:mocks.query})}));
-vi.mock('../store',()=>({getProduct:mocks.get,lockProducts:vi.fn()}));
+vi.mock('../store',()=>({getProduct:mocks.get}));
 vi.mock('../grants',()=>({requireProductUse:vi.fn(),withProductGrants:async(_owner:unknown,action:()=>unknown)=>action()}));
 vi.mock('../../dashboard/metric-client',()=>({DashboardMetricClient:class{describe=mocks.describe;}}));
-import {readProductRelease,validateReleaseContracts,contractHash,snapshotAsset,releaseSnapshotSchema,rollbackProductBundle,activeProductBundle,productReleaseIssues,productReleaseDiff,captureProductRelease,synchronizeBundlePublication} from '../releases';
-beforeEach(()=>{vi.resetAllMocks();vi.stubEnv('ONTOMATO_QUERY_SERVICE_TOKEN','fixture-service');mocks.put.mockResolvedValue({text:'{"success":true}'});});
+import {readProductRelease,validateReleaseContracts,contractHash,snapshotAsset,releaseSnapshotSchema,activeProductBundle,productReleaseIssues} from '../releases';
+beforeEach(()=>{vi.resetAllMocks();vi.stubEnv('ONTOMATO_QUERY_SERVICE_TOKEN','fixture-service');});
 afterEach(()=>{vi.unstubAllEnvs();});
 const owner={domainId:'domain',userId:'reader'};
 const snapshot=()=>releaseSnapshotSchema.parse({schemaVersion:1,roots:['root'],assets:[{id:'root',name:'Original',description:'',ownerId:'author',visibility:'domain',revision:1,editable:false,createdAt:'now',updatedAt:'now',document:{kind:'widget',widget:{id:'w',kind:'metric',title:'Count',span:12,resourceId:'metric',valueField:'count'}}}],contracts:[{kind:'metric',id:'metric',hash:contractHash({parameters:[],outputs:[{key:'count'}]})}]});
@@ -37,21 +35,6 @@ it('marks only projections with changed contracts while preserving current acces
   await expect(productReleaseIssues(owner,snapshot(),{})).resolves.toMatchObject([{assetId:'root',code:'PRODUCT_CONTRACT_CHANGED'}]);
   mocks.get.mockRejectedValue(Object.assign(new Error('Denied'),{status:403}));
   await expect(productReleaseIssues(owner,snapshot(),{})).rejects.toMatchObject({status:403});
-});
-it('rolls declarative Applications back through the same immutable bundle records',async()=>{
-  const app={...snapshot().assets[0],id:'app',editable:true,document:{kind:'application',applicationId:'app',children:[]}};
-  const frozen=releaseSnapshotSchema.parse({schemaVersion:1,roots:['app'],assets:[app],contracts:[]});
-  mocks.get.mockResolvedValue(app);
-  mocks.query.mockResolvedValue({rows:[{snapshot:frozen}]});
-  await expect(rollbackProductBundle(owner,'app','release',{})).resolves.toEqual({releaseId:'release'});
-  mocks.get.mockResolvedValue({...app,document:{...app.document,workspaceId:'source-workspace'}});
-  await expect(rollbackProductBundle(owner,'app','release',{})).rejects.toMatchObject({code:'INVALID_PRODUCT_TYPE'});
-});
-it('shows child revision and capability contract changes before an explicit upgrade',()=>{
-  const previous=snapshot(),next=structuredClone(previous);
-  next.assets[0].revision=2;next.contracts[0].hash='changed';
-  expect(productReleaseDiff(previous,next)).toEqual({assets:[{id:'root',change:'updated',fromRevision:1,toRevision:2}],contracts:[{kind:'metric',id:'metric',change:'changed'}]});
-  expect(productReleaseDiff(previous,previous)).toEqual({assets:[],contracts:[]});
 });
 it('rejects incomplete release records instead of silently resolving live children or unpinned contracts',()=>{
   const release=snapshot();
@@ -82,29 +65,6 @@ it('keeps historical object contract hashes readable after adding relationship p
   const release=releaseSnapshotSchema.parse({schemaVersion:1,roots:['view'],assets:[view],contracts:[{kind:'object-type',id:'Person',hash:contractHash({className:'Person',attributes})}]});
   mocks.get.mockResolvedValue(view);mocks.post.mockResolvedValue({text:JSON.stringify({classes:[{className:'Person',attrs:attributes}],relationships:[]})});
   await expect(validateReleaseContracts(owner,release,{})).resolves.toBeUndefined();
-});
-it('requires explicit migration before a new release can pin a legacy widget',async()=>{
-  mocks.get.mockResolvedValue(snapshot().assets[0]);
-  await expect(captureProductRelease(owner,['root'],{})).rejects.toMatchObject({code:'PRODUCT_UNPINNABLE_DEPENDENCY'});
-});
-it('can restore a frozen release with a drifted projection while retaining current permission checks',async()=>{
-  const app={...snapshot().assets[0],id:'app',editable:true,document:{kind:'application',applicationId:'app',children:[]}};
-  const frozen=releaseSnapshotSchema.parse({...snapshot(),roots:['app'],assets:[app,...snapshot().assets]});
-  mocks.get.mockResolvedValue(app);mocks.query.mockResolvedValue({rows:[{snapshot:frozen}]});
-  mocks.describe.mockResolvedValue({status:'PUBLISHED',parameterDefs:[],outputColumns:[{key:'changed'}]});
-  await expect(rollbackProductBundle(owner,'app','release',{})).resolves.toEqual({releaseId:'release'});
-});
-it('retains failed directory publications and retries the frozen declaration rather than the draft',async()=>{
-  const app={...snapshot().assets[0],id:'app-example',name:'Frozen name',editable:true,document:{kind:'application',applicationId:'app-example',children:[]}};
-  const frozen=releaseSnapshotSchema.parse({schemaVersion:1,roots:['app-example'],assets:[app],contracts:[]});
-  mocks.get.mockResolvedValue({...app,name:'Draft name'});
-  mocks.query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM product_publication_outbox')?[{release_id:'release'}]:sql.includes('SELECT snapshot')?[{snapshot:frozen}]:[]}));
-  mocks.put.mockRejectedValueOnce(new Error('Directory unavailable'));
-  await expect(synchronizeBundlePublication(owner,'app-example',{})).rejects.toThrow();
-  expect(mocks.query.mock.calls.some(([sql])=>sql.startsWith('DELETE FROM product_publication_outbox'))).toBe(false);
-  await synchronizeBundlePublication(owner,'app-example',{});
-  expect(mocks.put.mock.lastCall?.[2]).toMatchObject({ownerFacts:{ownerId:'author',state:'current'},declaration:{names:{en:'Frozen name'}}});
-  expect(mocks.query.mock.calls.some(([sql])=>sql.startsWith('DELETE FROM product_publication_outbox'))).toBe(true);
 });
 it('does not run a new active snapshot while its application directory publication is pending',async()=>{
   mocks.get.mockResolvedValue({editable:false});

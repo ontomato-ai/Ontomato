@@ -37,7 +37,6 @@ export interface AppBuilderReleaseRow {
   domainId: string;
   appId: string;
   commitId: string;
-  hostedReleaseId: string | null;
   publishedBy: string;
   createdAt: string;
 }
@@ -269,7 +268,6 @@ export const appBuilderProjectStore = {
       domainId: string;
       appId: string;
       commitId: string;
-      hostedReleaseId?: string | null;
       publishedBy: string;
     },
     client?: PoolClient,
@@ -280,14 +278,13 @@ export const appBuilderProjectStore = {
       domain_id: string;
       app_id: string;
       commit_id: string;
-      hosted_release_id: string | null;
       published_by: string;
       created_at: Date | string;
     }>(
-      `INSERT INTO ${t("app_builder_releases")} (id, domain_id, app_id, commit_id, hosted_release_id, published_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, domain_id, app_id, commit_id, hosted_release_id, published_by, created_at`,
-      [id, params.domainId, params.appId, params.commitId, params.hostedReleaseId ?? null, params.publishedBy],
+      `INSERT INTO ${t("app_builder_releases")} (id, domain_id, app_id, commit_id, published_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, domain_id, app_id, commit_id, published_by, created_at`,
+      [id, params.domainId, params.appId, params.commitId, params.publishedBy],
     );
     const row = rows[0]!;
     return {
@@ -295,7 +292,6 @@ export const appBuilderProjectStore = {
       domainId: row.domain_id,
       appId: row.app_id,
       commitId: row.commit_id,
-      hostedReleaseId: row.hosted_release_id,
       publishedBy: row.published_by,
       createdAt: new Date(row.created_at).toISOString(),
     };
@@ -307,11 +303,10 @@ export const appBuilderProjectStore = {
       domain_id: string;
       app_id: string;
       commit_id: string;
-      hosted_release_id: string | null;
       published_by: string;
       created_at: Date | string;
     }>(
-      `SELECT id, domain_id, app_id, commit_id, hosted_release_id, published_by, created_at
+      `SELECT id, domain_id, app_id, commit_id, published_by, created_at
        FROM ${t("app_builder_releases")}
        WHERE domain_id = $1 AND app_id = $2
        ORDER BY created_at DESC`,
@@ -322,7 +317,6 @@ export const appBuilderProjectStore = {
       domainId: row.domain_id,
       appId: row.app_id,
       commitId: row.commit_id,
-      hostedReleaseId: row.hosted_release_id,
       publishedBy: row.published_by,
       createdAt: new Date(row.created_at).toISOString(),
     }));

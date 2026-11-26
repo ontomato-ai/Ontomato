@@ -55,6 +55,10 @@ export function isPanelApplication(app: Pick<CatalogApplication, "entry">): bool
   return app.entry.renderer === "panels";
 }
 
+export function isPlatformCatalogApplication(app: Pick<CatalogApplication, "kind" | "entry">): boolean {
+  return app.kind !== "hosted" && (app.kind !== "product" || isPanelApplication(app));
+}
+
 export const accountDeletionPageSchema = z.object({
   events: z.array(z.object({
     sequence, type: z.literal("account.deleted"), userId: z.string().min(1), occurredAt: z.string().datetime(),
