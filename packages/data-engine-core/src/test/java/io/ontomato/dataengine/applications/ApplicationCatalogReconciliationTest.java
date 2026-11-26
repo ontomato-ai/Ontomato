@@ -621,6 +621,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk());
 
         deniedEntries.add("owner:browser/main");
+        deniedEntries.add("owner:app-catalogue/hidden");
+        deniedEntries.add("reader:app-catalogue/hidden");
         http.perform(get(CATALOGUE).param("countOnly", "true"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(2))
             .andExpect(jsonPath("$.data.rows").doesNotHaveJsonPath());
@@ -1048,6 +1050,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         catalog.builtins("data-engine", List.of(settings));
 
         var user = new QueryAccessService.GrantUser("admin", "domain-a");
+        for (var use : settings.declaration().panelUses()) {
+            if (use.panelEntry() && !"audit-log".equals(use.id())) {
+                deniedEntries.add(user.getId() + ":settings/" + use.id());
+            }
+        }
         // Visible catalog includes admitted panel + both native entries (system-monitor & edition-merged authorization).
         var view = catalog.view(catalog.require("settings"), user);
         assertFalse(view.getBooleanValue("singleEntry"));

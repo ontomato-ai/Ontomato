@@ -236,8 +236,6 @@ describe("official component generality fixes (Items 1-4)", () => {
           outputs: {
             canMaintain: false,
             canEditEntries: false,
-            canGrant: true,
-            domainShared: true,
             openPath: "/ontology/graph",
             undeclaredBackdoor: "must-be-ignored",
           },
@@ -246,7 +244,7 @@ describe("official component generality fixes (Items 1-4)", () => {
     });
 
     await vi.waitFor(() => {
-      expect(instance.outputs.header?.canGrant).toBe(true);
+      expect(instance.outputs.header?.canMaintain).toBe(false);
       expect(instance.outputs.summary?.openPath).toBe("/ontology/graph");
     });
     // ObjectHeader no longer exposes `fields` bag even if legacy `outputFields` is present in config.
@@ -255,7 +253,7 @@ describe("official component generality fixes (Items 1-4)", () => {
     expect(instance.outputs.header?.undeclaredBackdoor).toBeUndefined();
     // Declared typed outputs are published identically on ObjectSummary (no ObjectHeader required).
     expect(instance.outputs.summary?.canMaintain).toBe(false);
-    expect(instance.outputs.summary?.domainShared).toBe(true);
+    expect(instance.outputs.summary?.canEditEntries).toBe(false);
     // OperationButton with hideWhenUnavailable hides itself when owner reports unavailable.
     expect(container.querySelector(".sdk-operation-button")).toBeNull();
   });
