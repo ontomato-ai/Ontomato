@@ -637,7 +637,7 @@ describe("platform ontology catalogue reads", () => {
     });
     const boundEdges = edges.filter(row => row.fields.relationKind === multi);
     expect(boundEdges.map(row => row.fields.toclass).sort()).toEqual(
-      [PRODUCT_PANEL, PRODUCT_PROJECTION, SDK_COMPONENT, AGENT_DEFINITION, "platform:MetricView", FUNCTION, "platform:Workflow"]
+      [PRODUCT_PANEL, PRODUCT_PROJECTION, SDK_COMPONENT, AGENT_DEFINITION, "platform:MetricView", FUNCTION, "platform:Workflow", TRIGGER]
         .sort(),
     );
     // A kind declared to collapse on the type graph draws no type edges at all

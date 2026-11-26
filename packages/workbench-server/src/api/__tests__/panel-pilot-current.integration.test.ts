@@ -511,7 +511,11 @@ beforeAll(async () => {
   app.get("/platform/triggers/:taskId", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     if (req.params.taskId === task.id) { res.json(task); return; }
-    res.status(404).json({ message: "Task no longer exists" });
+    if (req.params.taskId === createdTaskId && ownerWrites.includes("create")) {
+      res.json({ ...task, id: createdTaskId, title: "New scheduled task" });
+      return;
+    }
+    res.status(404).json({ error: { code: "TASK_NOT_FOUND", message: "Task no longer exists" }, correlationId: "fixture" });
   });
   app.post("/platform/triggers/applications/:appId/form", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -713,13 +717,13 @@ it("reads back stable member keys and named data, and leaves the record intact a
   const read = (member: string, dataName: string, inputs: object, locale?: string) =>
     request("POST", "product-panels/read", { source, memberPath: [{ member }], dataName, inputs }, locale);
   const taskRef = { className: taskType.objectType, primaryKey: task.id };
-  const fieldLabels = { application: "应用", settings: "配置", state: "状态", nextRun: "下次运行", lastRun: "上次运行" };
+  const fieldLabels = { targetName: "目标", settings: "配置", state: "状态", nextRun: "下次运行", lastRun: "上次运行" };
   const record = await (await read("summary", "record", { task: taskRef })).json();
   expect(record).toMatchObject({
     status: "ready", value: { primaryKey: task.id, label: task.title, fieldLabels },
   });
   expect(await (await read("summary", "record", { task: taskRef }, "en")).json()).toMatchObject({
-    status: "ready", value: { primaryKey: task.id, fieldLabels: { application: "Application", state: "Status" } },
+    status: "ready", value: { primaryKey: task.id, fieldLabels: { targetName: "Target", state: "Status" } },
   });
   expect(await (await read("tasks", "rows", {})).json()).toEqual({ status: "empty" });
   ownerTasks = [{ ...task, lastRun, activeRunId: lastRun.id }];
@@ -727,7 +731,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect(rows).toMatchObject({
     status: "ready",
     value: [{ primaryKey: task.id, fieldLabels, fields: {
-      frequency: "每星期一 09:00", lastRunAt: lastRun.startedAt, lastRunSummary: lastRun.resultSummary,
+      frequency: "每 2 小时", lastRunAt: lastRun.startedAt, lastRunSummary: lastRun.resultSummary,
     } }],
   });
   ownerTasks = [task];

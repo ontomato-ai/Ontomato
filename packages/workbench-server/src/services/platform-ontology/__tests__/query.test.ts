@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { triggerFixture } from "../../scheduling/__tests__/fixtures";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
   platformOntologyCountsResponseSchema,
@@ -139,8 +140,6 @@ configureI18n({
 afterEach(() => {
   vi.restoreAllMocks();
 });
-
-import { triggerFixture } from "../../scheduling/__tests__/fixtures";
 
 function okJson(data: unknown) {
   return {
@@ -1902,6 +1901,7 @@ describe("platform-ontology composite query", () => {
             { policyId: "pol-1", targetKind: "PANEL", targetKey: "panel-1", verb: "USE", scope: null },
             { policyId: "pol-1", targetKind: "PROJECTION", targetKey: "proj-1", verb: "EDIT", scope: null },
             { policyId: "pol-1", targetKind: "WORKFLOW", targetKey: "wf-1", verb: "EDIT", scope: null },
+            { policyId: "pol-1", targetKind: "TRIGGER", targetKey: triggerFixture.id, verb: "EDIT", scope: null },
             // A CREATE grant names no record: it is creation authority for that class, so it stays off the graph.
             { policyId: "pol-1", targetKind: "WORKFLOW", targetKey: "", verb: "CREATE", scope: null },
             { policyId: "pol-2", targetKind: "AGENT", targetKey: "agent-1", verb: "USE", scope: null },
@@ -1913,7 +1913,8 @@ describe("platform-ontology composite query", () => {
       }
       return baseImpl(endpoint, url, body, opts);
     });
-    vi.mocked(backendGet).mockImplementation(async (_endpoint, url) => {
+    const readOwner = vi.mocked(backendGet).getMockImplementation()!;
+    vi.mocked(backendGet).mockImplementation(async (endpoint, url, options) => {
       if (url.includes("/platform/applications?purpose=navigation")) {
         return okJson([
           {
@@ -1931,7 +1932,7 @@ describe("platform-ontology composite query", () => {
           },
         ]);
       }
-      throw new Error(`Unexpected GET URL: ${url}`);
+      return readOwner(endpoint, url, options);
     });
 
     const policyCenter = platformOntologyNeighborsResponseSchema.parse(
@@ -1946,6 +1947,7 @@ describe("platform-ontology composite query", () => {
       "permission-policy.can-execute-action:act-1",
       "permission-policy.can-use-object:panel-1",
       "permission-policy.can-use-object:proj-1",
+      "permission-policy.can-use-object:tr-1",
       "permission-policy.can-use-object:wf-1",
     ]);
     expect(policyCenter.edges.find((edge) => edge.relationKind === "permission-policy.can-enter-application")
