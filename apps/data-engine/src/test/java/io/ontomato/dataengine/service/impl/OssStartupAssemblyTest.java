@@ -1,6 +1,13 @@
 package io.ontomato.dataengine.service.impl;
 
+import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,6 +23,8 @@ import io.ontomato.dataengine.service.ProductGrants;
 import io.ontomato.dataengine.service.ProductPrincipalLookup;
 import io.ontomato.dataengine.service.SchemaImportAuthorization;
 import io.ontomato.dataengine.service.SchemaPermissionService;
+import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.authorization.PresetAgentPolicies;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -23,6 +32,24 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class OssStartupAssemblyTest {
+    @Test
+    void presetInstallationPreservesAnonymousAgentAccessWithoutRolePolicies() {
+        var jdbc = mock(JdbcTemplate.class);
+        var legacy = mock(ProductGrantService.class);
+        var authorization = new AnonymousAuthorization(legacy, jdbc);
+        var presets = new PresetAgentPolicies(authorization, legacy, authorization);
+        var target = new ObjectTarget("1", Kind.AGENT, "preset");
+
+        presets.initialize("1", PresetAgentPolicies.Source.WORKBENCH, List.of(target.id()), List.of());
+
+        for (Verb verb : List.of(Verb.USE, Verb.VIEW, Verb.EDIT)) {
+            assertTrue(authorization.objectEntitlement("system", target, verb));
+        }
+        verify(jdbc).update(contains("INSERT INTO object_policy_grant"), eq("1"), eq("AGENT"), eq("preset"), eq("USE"));
+        verifyNoMoreInteractions(jdbc);
+        verifyNoInteractions(legacy);
+    }
+
     @Test
     void fullApplicationStartsWithoutLazyBeansOrCircularReferences(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {

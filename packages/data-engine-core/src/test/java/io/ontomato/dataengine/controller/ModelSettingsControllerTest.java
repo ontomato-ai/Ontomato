@@ -14,7 +14,6 @@ import static io.ontomato.dataengine.service.authorization.AuthorizationService.
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
-import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.agent.*;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -30,7 +29,7 @@ class ModelSettingsControllerTest {
   private final OntologyAgentModelSettings agents = mock(OntologyAgentModelSettings.class);
   private final ManagementRequestAccess management = mock(ManagementRequestAccess.class);
   private final AuthorizationService authorization = mock(AuthorizationService.class);
-  private final RetrieverAccess retrieverAccess = new RetrieverAccess(authorization, mock(AuthorizationStore.class));
+  private final RetrieverAccess retrieverAccess = new RetrieverAccess(authorization);
   private final VerifiedIdentity viewer = new VerifiedIdentity("verified-domain", "user", CredentialLimit.UNRESTRICTED);
   private final SubjectContext subject = new SubjectContext(viewer, null, null, null, null);
 

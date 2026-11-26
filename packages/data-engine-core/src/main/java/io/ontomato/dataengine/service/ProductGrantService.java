@@ -46,6 +46,11 @@ public class ProductGrantService implements InitializingBean {
             (row, index) -> new ProductGrants.Grant(row.getString(1), row.getString(2), row.getString(3)), domainId, id);
     }
 
+    /** Read the recorded audience while an installation is moving to object policies. */
+    public List<ProductGrants.Grant> legacyPresetGrants(String domainId, String id) {
+        return resourceGrants(domainId, id);
+    }
+
     public record OwnerFacts(String ownerId, String state) {}
 
     public Map<String, Boolean> allowedBatch(Collection<String> ids, String verb) {
@@ -103,20 +108,19 @@ public class ProductGrantService implements InitializingBean {
     }
     /** The owning product service imports author and sharing facts; request bodies cannot select the acting user. */
     @Transactional public boolean register(String domainId,String id,String ownerId,boolean shared){
-        return register(domainId, id, ownerId, shared, List.of("use", "edit"), false);
+        return register(domainId, id, ownerId, shared, List.of("use", "edit"));
     }
 
     @Transactional
-    public boolean register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs, boolean grantAdmin) {
-        return register(domainId, id, ownerId, shared, verbs, grantAdmin, null);
+    public boolean register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs) {
+        return register(domainId, id, ownerId, shared, verbs, false);
     }
 
     @Transactional
     public boolean register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs,
-        boolean grantAdmin, String legacyMenuPermission) {
+            boolean grantAdmin) {
         boolean hasOwner = ownerId != null && !ownerId.isBlank();
-        boolean hasLegacyMenu = legacyMenuPermission != null && !legacyMenuPermission.isBlank();
-        if (domainId == null || domainId.isBlank() || id == null || id.isBlank() || (!hasOwner && !grantAdmin && !shared && !hasLegacyMenu))
+        if (domainId == null || domainId.isBlank() || id == null || id.isBlank() || (!hasOwner && !shared && !grantAdmin))
             throw new IllegalArgumentException("Product identity is required");
         requireDomainGrantResource(id);
         var permissions = verbs == null || verbs.isEmpty() ? List.of("use", "edit") : verbs;
@@ -128,8 +132,6 @@ public class ProductGrantService implements InitializingBean {
             for (String verb : permissions) insert(domainId, id, new ProductGrants.Grant("principal", ownerId, verb));
         if (grantAdmin)
             for (var grant : principals.defaultAdminGrants(domainId, permissions)) insert(domainId, id, grant);
-        if (hasLegacyMenu)
-            for (var grant : principals.legacyMenuGrants(domainId, legacyMenuPermission, permissions)) insert(domainId, id, grant);
         if (shared) insert(domainId, id, new ProductGrants.Grant("domain", "*", "use"));
         return true;
     }

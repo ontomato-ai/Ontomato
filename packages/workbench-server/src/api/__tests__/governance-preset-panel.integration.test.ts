@@ -60,7 +60,7 @@ let server: Server | undefined;
 let contentRoot: string;
 
 const panelSourcesByDomain = new Map<string, PanelSkillSource[]>();
-const publications: { domainId: string; ids: string[] }[] = [];
+const publications: { domainId: string; ids: string[]; createdIds: string[] }[] = [];
 const registrations: { domainId: string; id: string }[] = [];
 let failRegistrationFor: string | undefined;
 const startupDomain = "domain-enumerated-by-java";
@@ -308,7 +308,7 @@ it("publishes only domain presets once and retries when publication fails", asyn
   const legacyIds = await presetIds(legacyDomain);
   expect(legacyIds).toHaveLength(builtinKinds.size);
   expect(publications.filter(row => row.domainId === legacyDomain)).toEqual([
-    { domainId: legacyDomain, ids: expect.arrayContaining(legacyIds) },
+    { domainId: legacyDomain, ids: expect.arrayContaining(legacyIds), createdIds: expect.arrayContaining(legacyIds) },
   ]);
   const legacyPublication = publications.find(row => row.domainId === legacyDomain)!;
   expect(legacyPublication.ids).toHaveLength(legacyIds.length);
@@ -329,7 +329,7 @@ it("publishes only domain presets once and retries when publication fails", asyn
   const newIds = await presetIds(newDomain);
   expect(newIds).toHaveLength(builtinKinds.size);
   expect(publications.filter(row => row.domainId === newDomain)).toEqual([
-    { domainId: newDomain, ids: expect.arrayContaining(newIds) },
+    { domainId: newDomain, ids: expect.arrayContaining(newIds), createdIds: expect.arrayContaining(newIds) },
   ]);
   expect(publications.find(row => row.domainId === newDomain)?.ids).toHaveLength(newIds.length);
 

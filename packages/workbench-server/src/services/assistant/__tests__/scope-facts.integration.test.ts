@@ -55,7 +55,7 @@ it("seeds a stable governance preset in both existing and new domains",async()=>
   const second=(await assistantStore.agents("new-domain")).find(agent=>agent.kind==="knowledge-governance")!;
   expect(second.domain_id).toBe("new-domain");expect(second.id).not.toBe(first.id);
   expect(publication.mock.calls.map(([endpoint, , body]) => [endpoint, body])).toEqual([
-    ["published-agent-presets", { domainId: owner.domainId, ids: expect.arrayContaining([first.id]) }],
-    ["published-agent-presets", { domainId: "new-domain", ids: expect.arrayContaining([second.id]) }],
+    ["published-agent-presets", { domainId: owner.domainId, ids: expect.arrayContaining([first.id]), createdIds: expect.arrayContaining([first.id]) }],
+    ["published-agent-presets", { domainId: "new-domain", ids: expect.arrayContaining([second.id]), createdIds: expect.arrayContaining([second.id]) }],
   ]);
 });

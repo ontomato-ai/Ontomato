@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import { z } from "zod";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { config } from "../../config/application";
@@ -42,17 +43,21 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
       `SELECT model_selection FROM ${table("ops_diagnosis_settings")} WHERE domain_id=$1`,
       [domainId],
     )).rows[0]?.model_selection ?? null;
+    const createdIds: string[] = [];
     for (const preset of domainPresets) {
       const icon = "icon" in preset ? preset.icon : null;
       const modelSelection = preset.kind === OPS_DIAGNOSIS_KIND && legacyDiagnosisModel
         ? JSON.stringify(legacyDiagnosisModel)
         : '{"modelId":null}';
-      await client.query(
+      const { rows } = await client.query<{ id: string }>(
         `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,icon,system_prompt,model_selection,skills,sort_order)
-         VALUES($1,$2,$3,$4,$5,$6,NULL,$7::jsonb,$8,$9) ON CONFLICT(domain_id,kind) DO NOTHING`,
+         VALUES($1,$2,$3,$4,$5,$6,NULL,$7::jsonb,$8,$9) ON CONFLICT(domain_id,kind) DO NOTHING RETURNING id`,
         [randomUUID(), domainId, preset.kind, preset.name, preset.description, icon, modelSelection, JSON.stringify(preset.skills), preset.sortOrder],
       );
+      for (const { id } of rows) createdIds.push(id);
     }
+    if (upgradeGovernance) await upgradeGovernancePreset(client, domainId);
+
     const publication = await client.query(
       `INSERT INTO ${table("assistant_preset_upgrades")} (domain_id,kind,version)
        VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
@@ -65,30 +70,31 @@ export async function initializeDomainPresetAgents(domainId: string): Promise<vo
       );
       await backendPost(
         "published-agent-presets", `${config.dataQuery.baseUrl}/authorization/objects/published-agent-presets`,
-        { domainId, ids: rows.map(({ id }) => id) }, { headers: productGovernanceServiceHeaders(), retries: 1 },
+        { domainId, ids: rows.map(({ id }) => id), createdIds }, { headers: productGovernanceServiceHeaders(), retries: 1 },
       );
     }
-    if (!upgradeGovernance) return;
-
-    const recorded = await client.query(
-      `INSERT INTO ${table("assistant_preset_upgrades")} (domain_id,kind,version)
-       VALUES($1,$2,$3) ON CONFLICT(domain_id,kind,version) DO NOTHING`,
-      [domainId, GOVERNANCE_KIND, GOVERNANCE_PRESET_VERSION],
-    );
-    if (!recorded.rowCount) return;
-
-    const ref = panelSkillRef(domainId, GOVERNANCE_PANEL_ID);
-    const key = runtimeSkillKey(ref);
-    const { rows: [agent] } = await client.query<{ id: string; skills: RuntimeSkillRef[] }>(
-      `SELECT id,skills FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2 FOR UPDATE`,
-      [domainId, GOVERNANCE_KIND],
-    );
-    if (agent.skills.some(skill => runtimeSkillKey(skill) === key)) return;
-    await client.query(
-      `UPDATE ${table("assistant_agents")} SET skills=$2::jsonb WHERE id=$1`,
-      [agent.id, JSON.stringify([...agent.skills, ref])],
-    );
   });
+}
+
+async function upgradeGovernancePreset(client: Pick<PoolClient, "query">, domainId: string) {
+  const recorded = await client.query(
+    `INSERT INTO ${table("assistant_preset_upgrades")} (domain_id,kind,version)
+     VALUES($1,$2,$3) ON CONFLICT(domain_id,kind,version) DO NOTHING`,
+    [domainId, GOVERNANCE_KIND, GOVERNANCE_PRESET_VERSION],
+  );
+  if (!recorded.rowCount) return;
+
+  const ref = panelSkillRef(domainId, GOVERNANCE_PANEL_ID);
+  const key = runtimeSkillKey(ref);
+  const { rows: [agent] } = await client.query<{ id: string; skills: RuntimeSkillRef[] }>(
+    `SELECT id,skills FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2 FOR UPDATE`,
+    [domainId, GOVERNANCE_KIND],
+  );
+  if (agent.skills.some(skill => runtimeSkillKey(skill) === key)) return;
+  await client.query(
+    `UPDATE ${table("assistant_agents")} SET skills=$2::jsonb WHERE id=$1`,
+    [agent.id, JSON.stringify([...agent.skills, ref])],
+  );
 }
 
 export async function initializeExistingDomainPresetAgents(): Promise<void> {

@@ -17,13 +17,11 @@ beforeEach(() => {
   mocks.headers.mockClear();
 });
 
-it("registers ownerless resources and forwards the requested management and legacy menu grants", async () => {
+it("registers ownerless shared resources through the authenticated product endpoint", async () => {
   mocks.post.mockResolvedValue({ text: '{"success":true}' });
   const options = {
     ownerId: null,
     verbs: ["use", "view", "edit"] satisfies ProductGrantVerb[],
-    grantAdmin: true,
-    legacyMenuPermission: "analysis-agent",
   };
   await registerProductResource({ domainId: "domain" }, RETRIEVAL_AGENT_ID, true, options);
   expect(mocks.post).toHaveBeenCalledWith("product-grant-registration", "http://java.test/product-governance/register",
