@@ -26,9 +26,11 @@ import io.ontomato.dataengine.service.authorization.AuthorizationTypes.ObjectTar
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import java.util.*;
+import java.util.stream.Stream;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
@@ -347,11 +349,31 @@ public class ApplicationCatalog {
     }
 
     public JSONObject catalogueCount(User user) {
-        var apps = applicationsInDomain(user.getDomainId());
+        return countApplications(user, true);
+    }
+
+    public JSONObject navigationCount(User user) {
+        return countApplications(user, false);
+    }
+
+    private JSONObject countApplications(User user, boolean includeMaintainable) {
+        var apps = db.query("""
+            SELECT id, domain_id, owner_user_id, coauthor_ids, entry, page_skills, panel_uses
+            FROM sys_application WHERE kind IS NOT NULL AND (domain_id IS NULL OR domain_id=?)
+            """, (row, index) -> JSONObject.of(
+                "id", row.getString("id"), "domainId", row.getString("domain_id"),
+                "ownerUserId", row.getString("owner_user_id"),
+                "coauthorIds", JSON.parseArray(row.getString("coauthor_ids"), String.class),
+                "entry", JSON.parseObject(row.getString("entry")),
+                "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Declaration.class),
+                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class)), user.getDomainId());
         var pageKeys = new BuiltinPageKeys(apps);
         var subject = new ApplicationSubject(user);
-        return JSONObject.of("total", apps.stream()
-            .filter(app -> subject.canEdit(app) || canEnter(app, subject, pageKeys)).count());
+        var ids = apps.stream()
+            .filter(app -> (includeMaintainable && subject.canEdit(app)) || canEnter(app, subject, pageKeys))
+            .map(app -> app.getString("id")).toArray(String[]::new);
+        return JSONObject.of("total", db.queryForObject("SELECT COUNT(*) FROM sys_application WHERE id=ANY(?)",
+            Long.class, new SqlArrayValue("varchar", ids)));
     }
 
     private static String catalogueName(JSONObject app, Locale locale) {
@@ -723,14 +745,18 @@ public class ApplicationCatalog {
         return entries;
     }
 
-    private List<ApplicationPanelUse> admittedEntries(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
-        if (subject.user.getDomainId() == null || !inDomain(app, subject.user)) return List.of();
+    private Stream<ApplicationPanelUse> enterableEntries(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
+        if (subject.user.getDomainId() == null || !inDomain(app, subject.user)) return Stream.empty();
         var id = app.getString("id");
-        return actualEntries(app, pageKeys).stream().filter(entry -> subject.decision(id, entry.id()).allowed()).toList();
+        return actualEntries(app, pageKeys).stream().filter(entry -> subject.decision(id, entry.id()).allowed());
+    }
+
+    private List<ApplicationPanelUse> admittedEntries(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
+        return enterableEntries(app, subject, pageKeys).toList();
     }
 
     private boolean canEnter(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
-        return !admittedEntries(app, subject, pageKeys).isEmpty();
+        return enterableEntries(app, subject, pageKeys).findFirst().isPresent();
     }
 
     public boolean canEnter(String id, User user) {

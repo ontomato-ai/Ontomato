@@ -13,9 +13,18 @@ export async function readDefinition(owner:ProductOwner,id:string){
   if(!result.rows[0])throw new HttpError(404,'Published Definition unavailable','DEFINITION_UNAVAILABLE');
   return businessDefinitionSchema.parse(result.rows[0].definition);
 }
+const publishedDefinitionScope = "domain_id=$1 AND status='PUBLISHED'";
+
 export async function listPublishedDefinitions(owner:ProductOwner){
-  const result=await db().query(`SELECT definition FROM ${t('business_definitions')} WHERE domain_id=$1 AND status='PUBLISHED' ORDER BY id`,[owner.domainId]);
+  const result=await db().query(`SELECT definition FROM ${t('business_definitions')} WHERE ${publishedDefinitionScope} ORDER BY id`,[owner.domainId]);
   return result.rows.map(row=>businessDefinitionSchema.parse(row.definition));
+}
+
+export async function countPublishedDefinitions(owner: ProductOwner): Promise<number> {
+  const { rows: [result] } = await db().query<{ total: number }>(
+    `SELECT COUNT(*)::int AS total FROM ${t('business_definitions')} WHERE ${publishedDefinitionScope}`, [owner.domainId],
+  );
+  return result.total;
 }
 export async function saveDefinition(owner:ProductOwner,credentials:AssistantCredentials,value:unknown,expectedRevision:number){
   await assertAppBuilderAccess(credentials);

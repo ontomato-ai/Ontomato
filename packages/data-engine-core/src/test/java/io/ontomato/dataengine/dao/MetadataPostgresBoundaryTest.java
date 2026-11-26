@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.dao;
 
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import com.alibaba.fastjson2.JSON;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
@@ -18,6 +19,25 @@ class MetadataPostgresBoundaryTest extends PostgresTestDatabase {
         var after = jdbc.queryForList("SELECT * FROM json_rule ORDER BY id");
         dao.initIndex();
         assertEquals(after, jdbc.queryForList("SELECT * FROM json_rule ORDER BY id"));
+    }
+
+    @Test
+    void countsNamedModelEntitiesInTheCurrentDomainsStoredRule() {
+        JSONRuleDao dao = wire(new JSONRuleDao());
+        dao.initIndex();
+        var populated = """
+                {"classDef":[
+                    {"className":"Room","attrs":[{"name":"id"},{"name":"alias","enable":false},{"name":" "}]},
+                    {"className":"Floor","attrs":[{"name":"id"}]},
+                    {"className":"","attrs":[{"name":"ignored"}]}
+                ], "relationship_rule":{"contains":{"fromclass":"Floor","toclass":"Room"}, " " : {}}}
+                """;
+        var empty = "{\"classDef\":[],\"relationship_rule\":{}}";
+        jdbc.update("INSERT INTO json_rule VALUES (?, ?), (?, ?)", "populated", populated, "empty", empty);
+
+        assertEquals(Map.of("objectTypes", 2, "attributes", 3, "relationships", 1), dao.countMetadata("populated"));
+        assertEquals(Map.of("objectTypes", 0, "attributes", 0, "relationships", 0), dao.countMetadata("empty"));
+        assertNull(dao.countMetadata("missing"));
     }
 
     @Test

@@ -44,10 +44,10 @@ import { assertManagement } from "../../../identity/management";
 import { getPostgresPool } from "../../../infrastructure/postgres";
 import { AuthFailedError, BackendResponseError, backendGet, backendPost } from "../../../utils/backend-client";
 import { HttpError } from "../../../utils/errors";
-import { listAgentDefinitions } from "../../assistant/definitions";
-import { assistantSkillCatalog } from "../../assistant/skills";
-import { listPublishedDefinitions } from "../../business-definitions/definitions";
 import type { AssistantCredentials } from "../../../platform/agent-runtime/runtime";
+import { countVisibleAgentDefinitions, listAgentDefinitions } from "../../assistant/definitions";
+import { assistantSkillCatalog, countAssistantSkills } from "../../assistant/skills";
+import { countPublishedDefinitions, listPublishedDefinitions } from "../../business-definitions/definitions";
 import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { readPanelComponentCatalogue } from "../../product-panels/component-catalogue";
 import { listObjectDetailPanelMappings } from "../../product-panels/object-detail";
@@ -70,12 +70,15 @@ vi.mock("../../../infrastructure/postgres", async (original) => ({
   getPostgresPool: vi.fn(),
 }));
 vi.mock("../../assistant/definitions", () => ({
+  countVisibleAgentDefinitions: vi.fn(),
   listAgentDefinitions: vi.fn(),
 }));
 vi.mock("../../assistant/skills", () => ({
   assistantSkillCatalog: vi.fn(),
+  countAssistantSkills: vi.fn(),
 }));
 vi.mock("../../business-definitions/definitions", () => ({
+  countPublishedDefinitions: vi.fn(),
   listPublishedDefinitions: vi.fn(),
 }));
 vi.mock("../../product-governance/authorization", async original => ({
@@ -157,18 +160,21 @@ function graphFacts(data: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(assertManagement).mockResolvedValue(undefined);
+  vi.mocked(countVisibleAgentDefinitions).mockResolvedValue(1);
+  vi.mocked(countPublishedDefinitions).mockResolvedValue(1);
+  vi.mocked(countAssistantSkills).mockResolvedValue(1);
 
   vi.mocked(getPostgresPool).mockReturnValue({
     query: async (sql: string, params?: unknown[]) => {
       const result = await pgQueryMock(sql, params);
-      if (sql.startsWith('SELECT id,domain_id AS "domainId",owner_id AS "ownerId"')) {
+      if (sql.startsWith('SELECT id, domain_id AS "domainId", owner_id AS "ownerId"')) {
         expect(params).toEqual([owner.domainId]);
         return { rows: result.rows.map(({ id }: { id: string }) => {
           const builtin = id.startsWith("builtin-product-");
           return { id, domainId: builtin ? null : owner.domainId, ownerId: builtin ? null : owner.userId };
         }) };
       }
-      if (sql.includes('AS definitions') && sql.includes('id=ANY($2::text[])') && Array.isArray(params?.[1])) {
+      if (sql.startsWith('SELECT id, definition') && sql.includes('id=ANY($2::text[])') && Array.isArray(params?.[1])) {
         const ids = new Set(params[1]);
         return { rows: result.rows.filter(({ id }: { id: string }) => ids.has(id)) };
       }
@@ -463,82 +469,36 @@ describe("platform-ontology composite query", () => {
     const ids = (prefix: string) => Array.from({ length: size }, (_, i) => `${prefix}-${i}`);
     const projectionIds = ids("proj-kb");
     const panelIds = ids("panel-main");
-    allowedUseIds.mockReturnValue([...projectionIds, ...panelIds]);
+    allowedUseIds.mockReturnValue([...projectionIds.slice(1), ...panelIds.slice(1)]);
     const { decideObjects } = await vi.importActual<typeof import("../../product-governance/authorization")>("../../product-governance/authorization");
     decideProductObjects.mockImplementation(decideObjects);
-    pgQueryMock.mockImplementation(async (sql: string) => {
-      if (sql.includes("product_projections")) {
-        return {
-          rows: projectionIds.map(id => ({
-            id,
-            definition: {
-              name: "Knowledge List",
-              description: "",
-              visibility: "domain",
-              componentId: "@ontomato/sdk:ObjectList",
-              inputs: {},
-              outputs: {},
-              data: {},
-              config: {},
-            },
-          })),
-        };
+    pgQueryMock.mockImplementation(async (sql: string, params: unknown[]) => {
+      const candidates = sql.includes("product_projections") ? projectionIds : panelIds;
+      if (sql.startsWith("SELECT COUNT(*)")) {
+        expect(params).toEqual([owner.domainId, candidates.slice(1)]);
+        return { rows: [{ total: size - 1 }] };
       }
-      if (sql.includes("product_panels")) {
-        return {
-          rows: panelIds.map(id => ({
-            id,
-            definition: {
-              name: "Knowledge Panel",
-              description: "Main panel",
-              visibility: "domain",
-              content: { html: "<section></section>", module: "export default {};" },
-              manifest: { state: {}, members: {} },
-            },
-          })),
-        };
-      }
-      return { rows: [] };
+      expect(sql).toMatch(/^SELECT id, domain_id AS "domainId", owner_id AS "ownerId"/);
+      return { rows: candidates.map(id => ({ id })) };
     });
     vi.mocked(backendGet).mockImplementation(async (_endpoint, url) => {
-      if (url.includes("/platform/applications?purpose=navigation")) {
-        return okJson([
-          {
-            id: "app-kb",
-            kind: "product",
-            names: { "zh-CN": "知识库", en: "Knowledge Base" },
-            descriptions: {},
-            icon: "book",
-            rail: "apps",
-            category: "business",
-            sort: 1,
-            entry: { path: "/applications/app-kb", renderer: "panels", entryKey: "kb" },
-            scheduleAdapter: null,
-            releaseId: null,
-            panelUses: [],
-          },
-        ]);
-      }
-      throw new Error(`Unexpected GET URL: ${url}`);
+      expect(url).toContain("/platform/applications?purpose=navigation&countOnly=true");
+      return okJson({ total: 1 });
     });
     vi.mocked(backendPost).mockImplementation(async (_endpoint, url, body) => {
       if (url.endsWith("/authorization/objects/decide-batch")) {
         const { requests } = body as { requests: ObjectDecisionRequest[] };
         return { ...okJson(null), text: JSON.stringify({ decisions: productDecisions(requests) }) };
       }
-      if (url.endsWith("/action/queryList") || url.endsWith("/metricView/queryList")) {
-        return okJson((body as { countOnly?: boolean }).countOnly ? { total: size } : ids("asset").map(id => ({ id })));
-      }
+      expect(body).toEqual({ countOnly: true });
+      if (url.endsWith("/action/queryList") || url.endsWith("/metricView/queryList")) return okJson({ total: size });
       if (url.endsWith("/trigger/queryList")) {
         return { text: JSON.stringify({ success: false, message: "Trigger store down" }), headers: new Headers(), status: 200, statusText: "OK" };
       }
-      if (url.endsWith("/admin/getMetas")) {
-        return okJson({
-          classDef: [{ className: "Order", showName: "Order", attrs: [{ name: "id" }] }],
-          relationship_rule: { R1: { fromclass: "Order", toclass: "Order" } },
-        });
-      }
-      return okJson([]);
+      if (url.endsWith("/admin/getMetas")) return okJson({ objectTypes: 1, attributes: 2, relationships: 3 });
+      if (url.endsWith("/platform/governance/organization")) return okJson({ units: 4, positions: 5, grants: 6 });
+      if (url.endsWith("/workflow/grants")) return okJson({ total: 2, outsideDirectory: 1 });
+      return okJson({ total: 1 });
     });
 
     const { counts } = platformOntologyCountsResponseSchema.parse(
@@ -547,28 +507,50 @@ describe("platform-ontology composite query", () => {
     const byType = new Map(counts.map((c) => [c.type, c]));
 
     expect(byType.get("platform:ObjectType")).toMatchObject({ status: "ok", count: 1 });
-    expect(byType.get("platform:Attribute")).toMatchObject({ status: "ok", count: 1 });
-    expect(byType.get("platform:Relationship")).toMatchObject({ status: "ok", count: 1 });
+    expect(byType.get("platform:Attribute")).toMatchObject({ status: "ok", count: 2 });
+    expect(byType.get("platform:Relationship")).toMatchObject({ status: "ok", count: 3 });
+    expect(byType.get(ORG_UNIT)).toMatchObject({ status: "ok", count: 4 });
+    expect(byType.get(ROLE)).toMatchObject({ status: "ok", count: 2 });
     expect(byType.get("platform:Skill")).toMatchObject({ status: "refused" });
     expect(byType.get("platform:AgentDefinition")).toMatchObject({ status: "ok", count: 1 });
     expect(byType.get("platform:Trigger")).toMatchObject({ status: "failed" });
     expect(byType.get("platform:SDKComponent")).toMatchObject({ status: "ok", count: 3 });
     expect(byType.get("platform:Action")).toMatchObject({ status: "ok", count: size });
     expect(byType.get("platform:MetricView")).toMatchObject({ status: "ok", count: size });
-    expect(byType.get("platform:ProductProjection")).toMatchObject({ status: "ok", count: size });
-    expect(byType.get("platform:ProductPanel")).toMatchObject({ status: "ok", count: size });
+    expect(byType.get("platform:ProductProjection")).toMatchObject({ status: "ok", count: size - 1 });
+    expect(byType.get("platform:ProductPanel")).toMatchObject({ status: "ok", count: size - 1 });
     expect(byType.get("platform:Application")).toMatchObject({ status: "ok", count: 1 });
     expect(byType.get("platform:ApplicationPanelUse")).toBeUndefined();
 
     const rpcCalls = [...vi.mocked(backendGet).mock.calls, ...vi.mocked(backendPost).mock.calls];
-    // Object types, attributes, and relationships share a single metadata RPC.
-    expect(rpcCalls.filter(([, url]) => url.endsWith("/admin/getMetas")).length).toBeLessThanOrEqual(1);
-    // Round 2 #3: graph counts still materialize lists; panel and projection candidates span batches.
+    expect(rpcCalls.filter(([, url]) => url.endsWith("/admin/getMetas"))).toHaveLength(1);
+    expect(rpcCalls.filter(([, url]) => url.endsWith("/platform/governance/organization"))).toHaveLength(1);
+    // Panel and projection candidates span authorization batches, not full record reads.
     const authorizationCalls = rpcCalls.filter(([, url]) => url.endsWith("/authorization/objects/decide-batch"));
     expect(authorizationCalls.length).toBeLessThanOrEqual(grantBudget);
     expect(rpcCalls.length).toBeLessThanOrEqual(14 + grantBudget);
-    expect(pgQueryMock.mock.calls.length).toBeLessThanOrEqual(4);
+    expect(pgQueryMock).toHaveBeenCalledTimes(4);
+    expect(countVisibleAgentDefinitions).toHaveBeenCalledWith(owner, credentials);
+    expect(listAgentDefinitions).not.toHaveBeenCalled();
+    expect(listPublishedDefinitions).not.toHaveBeenCalled();
+    expect(countAssistantSkills).not.toHaveBeenCalled();
     expect(assistantSkillCatalog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [true, 3, { ok: true, data: 7 }],
+    [true, null, { ok: true, data: 5 }],
+    [false, 3, { ok: true, data: 3 }],
+    [false, 0, { ok: false, status: "refused" }],
+    [false, null, { ok: false, status: "refused" }],
+  ])("keeps independent owner admission when counting roles (directory: %s, grant roles: %s)", async (directory, grants, expected) => {
+    vi.mocked(backendPost).mockImplementation(async (_endpoint, url, body) => {
+      expect(body).toEqual({ countOnly: true });
+      if (url.endsWith("/workflow/platform-access") && directory) return okJson({ total: 5 });
+      if (url.endsWith("/workflow/grants") && grants !== null) return okJson({ total: grants, outsideDirectory: 2 });
+      throw new BackendResponseError(403, "Not admitted");
+    });
+    await expect(new PlatformOntologyOwnerReaders(owner, credentials).count(ROLE)).resolves.toMatchObject(expected);
   });
 
   it("resolves default start node from subjects, keeps real userId on 403, and aligns OSS hostOwner", async () => {
@@ -1584,6 +1566,7 @@ describe("platform-ontology composite query", () => {
     const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
       if (url.endsWith("/platform/governance/organization")) {
+        if ((body as { countOnly?: boolean }).countOnly) return okJson({ units: 3, positions: 1, grants: 4 });
         return okJson({
           units: [
             { id: "org-root", name: "Headquarters", code: "HQ", parentId: "0" },
@@ -1608,6 +1591,7 @@ describe("platform-ontology composite query", () => {
         });
       }
       if (url.endsWith("/platform/governance/policies")) {
+        if ((body as { countOnly?: boolean }).countOnly) return okJson({ total: 1 });
         return okJson({
           policies: [
             { id: "pol-1", name: "Order Read Policy", type: 2, fullData: false, parentId: "0" },

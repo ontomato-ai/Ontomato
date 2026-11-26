@@ -52,9 +52,9 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), "domain-skills-contract-"))
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: path.resolve("skills") });
 const { skillManager } = await import("../skill-manager");
 const { readSkillView } = await import("../view");
-const { assistantSkillCatalog, hasHiddenAssistantSkillRefs, loadedPageSkillVersion, resolveCurrentPageSkillMember, pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills, visibleAssistantSkillRefs } = await import("../../assistant/skills");
+const { assistantSkillCatalog, countAssistantSkills, hasHiddenAssistantSkillRefs, loadedPageSkillVersion, resolveCurrentPageSkillMember, pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills, visibleAssistantSkillRefs } = await import("../../assistant/skills");
 const { skillRegistryManager } = await import("../../../core/skills/registry/manager");
-const { registerSkillProvider, protectedSkillRef } = await import("../../../core/skills/providers");
+const { registerSkillProvider, protectedSkillRef, SkillSourceRecordError } = await import("../../../core/skills/providers");
 const domain = "contract-domain";
 const credentials = { token: "initiator", locale: "en" };
 const referenceAccess = { credentials, readableAgentIds: async () => new Set<string>() };
@@ -406,6 +406,52 @@ it("publishes one member across admitted entrances alongside the native entry sk
   await expect(resolveCurrentPageSkillMember(view, second, member)).rejects.toThrow();
 });
 
+it("counts catalogue identities without rendering options, excluding denied and invalid page skills", async () => {
+  const countDomain = "count-domain";
+  const count = () => countAssistantSkills(countDomain, credentials);
+  const base = (await assistantSkillCatalog(countDomain, credentials)).skills.length;
+  await skillManager.importSkill(countDomain, zip(), credentials);
+  assertManagement.mockClear();
+
+  const builtin = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" } as const;
+  const publicFile = { namespace: { kind: "provider", provider: "workbench" }, name: "network-graph" } as const;
+  const published = { namespace: { kind: "provider", provider: "test" }, name: "published-skill" } as const;
+  const legacy = { ...published, namespace: { kind: "provider", provider: "legacy" } } as const;
+  const denied = { ...published, name: "denied-skill" } as const;
+  panelOfferings = [published, denied].map(ref => offering(ref.name, { namespace: ref.namespace }));
+  const ref = protectedSkillRef("product-panels", countDomain, "count-panel");
+  const mappings = [builtin, publicFile, published, legacy, legacy, ref].map((skill, index) => ({
+    applicationId: "test", entryKey: `entry-${index}`, pageKey: `page-${index}`, skill,
+  }));
+  const entrances = mappings.map(({ skill: _skill, ...entrance }) => entrance);
+  const readManifest = vi.fn(async (ref: RuntimeSkillRef) => ({ name: ref.name, description: "Admitted member" }));
+  const provide = vi.fn();
+  protectedPanelOfferings = [{ kind: "protected", sourceKey: "count-panel", entrances,
+    resourceIds: ["count-panel"], readManifest, provide }];
+  storedSkillResources(countDomain, { panel: ["count-panel"], projection: [] });
+  let pageSkills = mappings;
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: true, data: {
+    registeredSkills: [builtin, publicFile, published, denied, legacy, ref], pageSkills, admittedEntrances: entrances,
+  } })));
+
+  const describe = vi.spyOn(skillManager, "describeSkill");
+  // Add one domain, one provider, one legacy ref in a distinct namespace, and one admitted member.
+  await expect(count()).resolves.toBe(base + 4);
+  expect(describe).not.toHaveBeenCalled();
+  expect(provide).not.toHaveBeenCalled();
+  expect(panelCalls).toEqual([]);
+  expect(assertManagement).not.toHaveBeenCalled();
+  describe.mockRestore();
+  expect((await assistantSkillCatalog(countDomain, credentials)).skills).toHaveLength(base + 4);
+
+  readManifest.mockRejectedValueOnce(new SkillSourceRecordError({ resourceId: "count-panel", reason: "invalid_definition" }));
+  await expect(count()).resolves.toBe(base + 3);
+
+  decideSkill.mockReturnValue({ allowed: false, code: "FORBIDDEN", reason: "Denied" });
+  pageSkills = mappings.filter(({ skill }) => skill !== builtin);
+  await expect(count()).resolves.toBe(base + 2);
+});
+
 it("fails the whole catalogue when a provider cannot list, and all preparation with it", async () => {
   panelListError = new Error("panel source unavailable");
   let listFailure: Error | undefined;
@@ -413,6 +459,8 @@ it("fails the whole catalogue when a provider cannot list, and all preparation w
   catch (error) { listFailure = error as Error; }
   expect(listFailure?.message).toContain('Skill provider "Test panels" (panel-test) failed to list skills');
   expect((listFailure as Error & { cause?: unknown }).cause).toBe(panelListError);
+  await expect(countAssistantSkills(domain, credentials))
+    .rejects.toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE", cause: panelListError });
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } })));
   await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [] }, {}))
     .rejects.toMatchObject({ code: "SKILL_SOURCE_UNAVAILABLE", cause: panelListError });
@@ -448,6 +496,8 @@ it("rejects a provider skill for another domain, a repeated manageable name, and
   panelOfferings = [offering(governance.name, { namespace: governance.namespace })];
   await expect(assistantSkillCatalog(domain, credentials))
     .rejects.toThrow(/built-in skill/);
+  await expect(countAssistantSkills(domain, credentials))
+    .rejects.toMatchObject({ code: "INVALID_SKILL_PACKAGE" });
 });
 
 it("refuses to overwrite or delete provider content before touching a domain source or reference", async () => {

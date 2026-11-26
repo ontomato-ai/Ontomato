@@ -24,6 +24,11 @@ public class AnonymousSubjectDirectory implements SubjectDirectory {
     }
 
     @Override
+    public long countInDomain(String domainId) {
+        return 0;
+    }
+
+    @Override
     public Map<String, String> displayNamesInDomain(String domainId, Set<String> subjectIds) {
         return Collections.emptyMap();
     }

@@ -201,6 +201,10 @@
                                 <include>**/BusinessConfigControllerModelKeyWriteOnlyTest.java</include>
                                 <include>**/BusinessConfigDaoTest.java</include>
                                 <include>**/MetadataPostgresBoundaryTest.java</include>
+                                <include>**/AdminCountBoundaryTest.java</include>
+                                <include>**/FunctionCountBoundaryTest.java</include>
+                                <include>**/WorkflowCountBoundaryTest.java</include>
+                                <include>**/GovernanceDirectoryControllerTest.java</include>
                                 <include>**/PlatformScheduleTest.java</include>
                                 <include>**/PageSkillsContractTest.java</include>
                                 <include>**/ApplicationCatalogReconciliationTest.java</include>

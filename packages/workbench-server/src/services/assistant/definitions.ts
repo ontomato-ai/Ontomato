@@ -292,6 +292,12 @@ export async function createAgentDefinitionSnapshot(
   });
 }
 
+export async function countVisibleAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials): Promise<number> {
+  const facts = await assistantStore.agentDefinitionAccessFacts(owner.domainId);
+  const visible = await allowedAgents(facts, "VIEW", credentials);
+  return assistantStore.countAgentDefinitions(owner.domainId, visible.map(agent => agent.id));
+}
+
 export async function listAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
   const skillView = await readAssistantSkillView(owner.domainId, credentials);
   const agents = await visibleAgentDefinitions(owner, credentials);

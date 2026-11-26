@@ -8,11 +8,13 @@ import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -194,15 +196,19 @@ public class FunctionController {
     @ResponseBody
     public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
 		@RequestBody JSONObject param) {
+		if (param.getBooleanValue("countOnly")) {
+			User user = SystemUtils.getCurUser();
+			if (param.containsKey("operation") || param.containsKey("className")) {
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "countOnly does not support operation or className");
+			}
+			return JSONObject.of("success", true, "data", JSONObject.of("total", functionService.countVisible(user)));
+		}
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
 			String operation = param.getString("operation");
 			String className = param.getString("className");
-			var subject = definitions.subject(user);
-            List<Function> functions = functionService.queryList(operation, className, user.getDomainId()).stream()
-                    .filter(function -> Function.OPERATION_PRODUCT.equals(function.getOperation())
-                            || definitions.canRead(subject, access(function, Verb.USE))).toList();
+			List<Function> functions = functionService.listVisible(operation, className, user);
 			ret.put("success", true);
 			ret.put("data", withDisplay(functions, lang));
 		} catch (org.springframework.web.server.ResponseStatusException e) {
