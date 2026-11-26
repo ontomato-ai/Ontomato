@@ -1,19 +1,23 @@
+import { z } from "zod";
+import type { PanelRecord } from "@ontomato/contracts/panel-projection";
+import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { isApplicationPanelUse, productPanelSchema, productProjectionSchema } from "@ontomato/contracts/product-panels";
+import { productPanelSchema, productProjectionSchema } from "@ontomato/contracts/product-panels";
 import type { ProductGraph } from "@ontomato/contracts/product-graph";
 import { resolveLocale } from "../../i18n";
 import { getPostgresPool } from "../../infrastructure/postgres";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { config } from "../../config/application";
-import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { assistantName } from "../assistant/labels";
 import { assistantStore } from "../assistant/store";
 import { readDefinition } from "../business-definitions/definitions";
-import { DashboardMetricClient } from "../dashboard/metric-client";
+import { productGraphAuthorizationFactsSchema } from "../governance/policy-access";
+import { presentAuthorizationEdges } from "../product-assets/ontology";
 import type { ProductOwner } from "../product-governance/service-authentication";
-import { applicationCatalogueClient } from "./application-catalogue";
-import { buildProductAssetGraph, resolveObjectTypeLabel } from "./asset-graph";
-import { readAccessibleCurrentDefinitions } from "./current";
+import { buildProductAssetGraph, resolveObjectTypeLabel, type AssetGraphSources } from "./asset-graph";
+import { definitionVisibleInRange } from "./access";
+import { objectVisibilityRangeSchema } from "../product-governance/authorization";
+import { javaPanelReadResultSchema, type JavaPanelRead, type JavaPanelReadResult } from "./java-panel-reads";
+import type { PanelReadSelection } from "./panel-owner-reads";
+import { readCurrentDefinitionRows } from "./current";
 import { currentProductRecord, type CurrentProductRow } from "../../infrastructure/product-current";
 import { listObjectDetailPanelMappings } from "./object-detail";
 
@@ -25,93 +29,148 @@ function readableDefinitions<T>(rows: readonly CurrentProductRow[], schema: { sa
   });
 }
 
-async function readApplications(viewer: AssistantCredentials) {
-  const client = applicationCatalogueClient(viewer);
-  const ids = new Set<string>();
-  let cursor: string | undefined;
-  do {
-    const page = await client.query({ scope: "visible", sort: "id", size: 100, cursor });
-    for (const row of page.rows) ids.add(row.id);
-    cursor = page.nextCursor;
-  } while (cursor !== undefined);
-  return Promise.all([...ids].map(id => client.record(id)));
+async function resolveDefinitionGraphName(owner: ProductOwner, id: string, locale: string) {
+  const definition = await readDefinition(owner, id);
+  return resolveObjectTypeLabel(definition.objectType, locale) ?? definition.name;
 }
 
-async function resolveGraphNames(owner: ProductOwner, graph: ProductGraph, viewer: AssistantCredentials, locale: string) {
-  const headers = buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers);
-  const post = async (path: string, body: unknown) =>
-    JSON.parse((await backendPost("product-graph-label", config.dataQuery.baseUrl + path, body, { headers, retries: 1 })).text);
-  let objectTypeNames: Promise<Map<string, string | undefined>> | undefined;
-  const metrics = new DashboardMetricClient(owner.domainId, viewer);
+async function resolveGraphNames(
+  owner: ProductOwner, graph: ProductGraph, locale: string,
+  javaName: (node: ProductGraph["nodes"][number]) => string | undefined | Promise<string | undefined>,
+) {
   await Promise.all(graph.nodes.map(async node => {
-    const id = node.name;
-    let name: string | undefined;
     try {
-      switch (node.kind) {
-        case "metric":
-          name = (await metrics.describe(id)).name;
-          break;
-        case "definition": {
-          const definition = await readDefinition(owner, id);
-          name = resolveObjectTypeLabel(definition.objectType, locale) ?? definition.name;
-          break;
-        }
-        case "action":
-          name = (await post("/action/queryById", { id })).data?.name;
-          break;
-        case "object-type": {
-          const className = node.id.slice("object-type:".length);
-          if (resolveObjectTypeLabel(className, locale) !== undefined) return;
-          objectTypeNames ??= post("/admin/getMetas", {}).then(result => new Map<string, string | undefined>(
-            (result.data?.classDef ?? []).map((item: { className: string; showName?: string; classDesc?: string }) =>
-              [item.className, item.showName || item.classDesc]),
-          ));
-          name = (await objectTypeNames).get(className);
-          break;
-        }
-        default:
-          return;
-      }
+      const name = node.kind === "definition" ? await resolveDefinitionGraphName(owner, node.name, locale) : await javaName(node);
+      if (name) node.name = name;
     } catch {
       // Keep the source ID when display metadata is unavailable.
-      return;
     }
-    if (name) node.name = name;
   }));
 }
 
-export async function readProductAssetGraph(owner: ProductOwner, viewer: AssistantCredentials) {
-  const locale = resolveLocale(viewer.locale);
-  const [panelRows, projectionRows, details, agents, objectDetailMappings] = await Promise.all([
-    readAccessibleCurrentDefinitions(owner, viewer, "panel"),
-    readAccessibleCurrentDefinitions(owner, viewer, "projection"),
-    readApplications(viewer),
-    assistantStore.agents(owner.domainId),
-    listObjectDetailPanelMappings(owner.domainId, getPostgresPool()),
+const applicationReferencesSchema = z.array(z.object({
+  id: z.string(), names: z.record(z.string()), canMaintain: z.boolean(),
+  framePanelId: z.string().optional(), panelIds: z.array(z.string()), defaultAgentIds: z.array(z.string()),
+}));
+type ApplicationReferences = z.infer<typeof applicationReferencesSchema>;
+
+async function readLocalGraphSources(domainId: string) {
+  const [agents, objectDetailMappings] = await Promise.all([
+    assistantStore.agents(domainId),
+    listObjectDetailPanelMappings(domainId, getPostgresPool()),
   ]);
-  const projections = readableDefinitions(projectionRows, productProjectionSchema);
+  return { agents, objectDetailMappings };
+}
+
+function assembleProductAssetGraph(
+  panels: AssetGraphSources["panels"], projections: AssetGraphSources["projections"],
+  applications: ApplicationReferences, { agents, objectDetailMappings }: Awaited<ReturnType<typeof readLocalGraphSources>>,
+  locale: string,
+) {
   const graph = buildProductAssetGraph({
-    panels: readableDefinitions(panelRows, productPanelSchema),
-    projections: projections.map(projection => ({
-      ...projection, shared: projection.visibility === "domain",
+    panels,
+    projections,
+    applications: applications.map(app => ({
+      ...app, name: localizedApplicationText(app.names, locale) ?? app.id,
     })),
-    applications: details.map(detail => {
-      const entries = detail.panelUses.filter(isApplicationPanelUse);
-      return {
-        id: detail.id,
-        name: localizedApplicationText(detail.names, locale) ?? detail.id,
-        framePanelId: detail.framePanelId,
-        panelIds: entries.map(entry => entry.panelId),
-        defaultAgentIds: entries.flatMap(({ defaultAgent }) => defaultAgent?.kind === "id" ? [defaultAgent.id] : []),
-      };
-    }),
     agents: agents.filter(agent => agent.enabled).map(agent => ({ id: agent.id, name: assistantName(agent, locale) })),
     objectDetailMappings,
     objectTypeLabel: className => resolveObjectTypeLabel(className, locale) ?? className,
   });
-  await resolveGraphNames(owner, graph, viewer, locale);
+  return { graph, maintainableApplicationIds: new Set(applications.filter(app => app.canMaintain).map(app => app.id)) };
+}
+
+function candidateDefinitions(panelRows: readonly CurrentProductRow[], projectionRows: readonly CurrentProductRow[]) {
   return {
-    graph,
-    maintainableApplicationIds: new Set(details.filter(detail => detail.canMaintain).map(detail => detail.id)),
+    panels: readableDefinitions(panelRows, productPanelSchema),
+    projections: readableDefinitions(projectionRows, productProjectionSchema).map(projection => ({
+      ...projection, shared: projection.visibility === "domain",
+    })),
+  };
+}
+
+const graphFactsSchema = z.object({
+  panels: javaPanelReadResultSchema,
+  projections: javaPanelReadResultSchema,
+  applications: javaPanelReadResultSchema,
+  authorization: javaPanelReadResultSchema,
+  objectTypes: z.record(javaPanelReadResultSchema),
+  actions: z.record(javaPanelReadResultSchema),
+  metrics: z.record(javaPanelReadResultSchema),
+});
+
+function graphReferences(panels: AssetGraphSources["panels"], projections: AssetGraphSources["projections"],
+  mappings: AssetGraphSources["objectDetailMappings"], locale: string,
+) {
+  // Before authorization removes candidates, select labels only from the possible business graph.
+  // Removing candidates can detach a standalone projection, but cannot add an ontology reference.
+  const candidates = buildProductAssetGraph({
+    panels, projections, objectDetailMappings: mappings,
+    applications: [], agents: [], objectTypeLabel: id => id,
+  });
+  const objectTypes: string[] = [];
+  const actions: string[] = [];
+  const metrics: string[] = [];
+  for (const node of candidates.nodes) {
+    if (node.kind === "object-type" && resolveObjectTypeLabel(node.name, locale) === undefined) objectTypes.push(node.name);
+    if (node.kind === "action") actions.push(node.name);
+    if (node.kind === "metric") metrics.push(node.name);
+  }
+  return {
+    panelIds: panels.map(panel => panel.id),
+    projectionIds: projections.map(projection => projection.id),
+    objectTypes,
+    actions,
+    metrics,
+  };
+}
+
+function fact<T>(result: JavaPanelReadResult | undefined, schema: z.ZodType<T>): T | undefined {
+  return result?.status === "ready" ? schema.parse(result.payload) : undefined;
+}
+
+function presentProductAssetGraph(graph: ProductGraph): PanelRecord {
+  return { className: OBJECT_TYPE, primaryKey: "product-graph", label: "Product graph",
+    fields: { graph: { kind: "json", value: graph } } };
+}
+
+export function isProductAssetGraphRead(selection: PanelReadSelection) {
+  return selection.typeId === OBJECT_TYPE && selection.method === "productGraph";
+}
+
+export async function prepareProductAssetGraphRead(owner: ProductOwner, locale?: string) {
+  const language = resolveLocale(locale);
+  const { domainId } = owner;
+  const [panelRows, projectionRows, local] = await Promise.all([
+    readCurrentDefinitionRows(domainId, "panel"),
+    readCurrentDefinitionRows(domainId, "projection"),
+    readLocalGraphSources(domainId),
+  ]);
+  const { panels, projections } = candidateDefinitions(panelRows, projectionRows);
+  const call: NonNullable<JavaPanelRead["call"]> = {
+    type: OBJECT_TYPE, name: "productGraph", parameters: graphReferences(panels, projections, local.objectDetailMappings, language),
+  };
+  return {
+    call,
+    async present(payload: unknown) {
+      const facts = graphFactsSchema.parse(payload);
+      const panelUse = fact(facts.panels, objectVisibilityRangeSchema);
+      const projectionUse = fact(facts.projections, objectVisibilityRangeSchema);
+      const readablePanels = panelUse && new Set(panelRows.filter(row => definitionVisibleInRange(row, panelUse, domainId)).map(({ id }) => id));
+      const readableProjections = projectionUse && new Set(projectionRows.filter(row => definitionVisibleInRange(row, projectionUse, domainId)).map(({ id }) => id));
+      const result = assembleProductAssetGraph(
+        panels.filter(panel => readablePanels?.has(panel.id)),
+        projections.filter(projection => readableProjections?.has(projection.id)),
+        fact(facts.applications, applicationReferencesSchema) ?? [], local, language,
+      );
+      await resolveGraphNames(owner, result.graph, language, node => {
+        switch (node.kind) {
+          case "object-type": return fact(facts.objectTypes[node.id.slice("object-type:".length)], z.string());
+          case "action": return fact(facts.actions[node.name], z.string());
+          case "metric": return fact(facts.metrics[node.name], z.string());
+        }
+      });
+      return presentProductAssetGraph(presentAuthorizationEdges(result, fact(facts.authorization, productGraphAuthorizationFactsSchema), locale));
+    },
   };
 }

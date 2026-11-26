@@ -104,9 +104,28 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
     public ObjectAccessPolicies productAccess(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
         requireProductEdit(ctx, target, facts);
         var domain = store.domainPolicy(target.domainId()).policyId();
-        var granted = !store.objectGrants(target, Verb.USE, Set.of(domain)).isEmpty();
+        var granted = productDomainUseGranted(target, domain);
         var others = store.objectGrantViews(target).stream().filter(grant -> !domain.equals(grant.policyId())).toList();
         return new ObjectAccessPolicies(granted, others);
+    }
+
+    public record ProductRecordAccess(boolean editable, Boolean shared) {}
+
+    public ProductRecordAccess productRecordAccess(SubjectContext ctx, ObjectTarget target, OwnerFacts facts, boolean details) {
+        requireProductKind(target);
+        requireObjectDecision(target.kind(), target.id(), Verb.USE);
+        requireObjectDecision(target.kind(), target.id(), Verb.EDIT);
+        var use = authorization.decide(ctx, new ObjectAccess(target, Verb.USE, facts));
+        var edit = authorization.decide(ctx, new ObjectAccess(target, Verb.EDIT, facts));
+        if (!use.allowed() && !(target.kind() == Kind.PANEL && edit.allowed()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    target.kind() == Kind.PANEL ? "Product use Grant required" : use.reason());
+        return new ProductRecordAccess(edit.allowed(), details && edit.allowed()
+                ? productDomainUseGranted(target, store.domainPolicy(target.domainId()).policyId()) : null);
+    }
+
+    private boolean productDomainUseGranted(ObjectTarget target, String policyId) {
+        return !store.objectGrants(target, Verb.USE, Set.of(policyId)).isEmpty();
     }
 
     public void changeProductAccess(SubjectContext ctx, ObjectTarget target, OwnerFacts facts,
@@ -128,9 +147,13 @@ public class AuthorizationPolicies implements DefinitionFirstPublication {
         else revokeObject(ctx, grant);
     }
 
-    private void requireProductEdit(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
+    private static void requireProductKind(ObjectTarget target) {
         if (target.kind() != Kind.PANEL && target.kind() != Kind.PROJECTION && target.kind() != Kind.COMPONENT)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected a registered product definition.");
+    }
+
+    private void requireProductEdit(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
+        requireProductKind(target);
         requireEdit(ctx, target, facts);
     }
 

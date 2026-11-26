@@ -24,8 +24,12 @@ function runsDir(): string {
 }
 
 /** Validate id to prevent path traversal attacks. */
+export function isAutotestResultId(id: string): boolean {
+  return Boolean(id) && !/[/\\:*?"<>|]/.test(id) && !id.includes("..");
+}
+
 function validateId(id: string): void {
-  if (!id || /[/\\:*?"<>|]/.test(id) || id.includes("..")) {
+  if (!isAutotestResultId(id)) {
     throw new Error(`Invalid id: ${id}`);
   }
 }
@@ -82,6 +86,11 @@ export function loadRunMeta(runId: string): RunMeta | null {
   // Scheduling attribution belongs to the file store, not the existing public autotest response.
   const { schedule: _schedule, ...meta } = stored;
   return meta;
+}
+
+export function loadRunMetaForDomain(runId: string, domainId: string): RunMeta | null {
+  const meta = loadRunMeta(runId);
+  return meta?.domainId === domainId ? meta : null;
 }
 
 export function scheduledRunSource(runId: string): ScheduledRunSource | null {

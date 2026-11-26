@@ -17,6 +17,14 @@ public interface AuthorizationStore {
     Map<Verb, Set<String>> objectKeysByVerb(String domainId, Kind kind, Set<Verb> verbs, Set<String> policyIds);
     List<ObjectGrant> policyObjectGrants(String domainId, String policyId);
     List<ObjectGrant> domainObjectGrants(String domainId);
+    List<ObjectGrant> policyEntryGrants(String domainId, String policyId);
+    List<ObjectGrant> applicationEntryGrants(String domainId, String applicationId);
+    List<ObjectGrant> policyActionGrants(String domainId, String policyId);
+    List<ObjectGrant> actionPolicyGrants(String domainId, String actionId);
+    List<ObjectGrant> policyObjectGrants(String domainId, String policyId, Set<Kind> kinds);
+    List<ObjectGrant> targetObjectGrants(String domainId, String targetId, Set<Kind> kinds);
+    List<ObjectGrant> policyCreateGrants(String domainId, Set<String> policyIds, Set<Kind> kinds);
+    Set<String> policyUseKeys(String domainId, String policyId, Kind kind, Set<String> targetIds);
     List<PolicyRef> domainRolePolicies(String domainId);
     Map<String, Set<String>> domainManagementOperations(String domainId);
     Set<String> managementOperations(String domainId, Set<String> policyIds);

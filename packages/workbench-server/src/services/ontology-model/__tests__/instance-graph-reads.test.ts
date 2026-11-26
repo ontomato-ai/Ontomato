@@ -44,7 +44,7 @@ it("returns a sampled overview and joins the connections using the owner's versi
 
   const { version, sampleToken } = overview;
   javaReply("connections", { version, overviewEdges: [edge], overviewEdgesTruncated: true }, { version, sampleToken });
-  expect(panelReadResultSchemas.panelGraphConnections.parse(await graph.connections(version!, sampleToken))).toMatchObject({
+  expect(panelReadResultSchemas.panelGraphConnections.parse(await graph.connections({ version, sampleToken }))).toMatchObject({
     version, truncated: true, edges: [{ from, to, direction: "outgoing", relationKind: "placedBy" }],
   });
 });
@@ -56,7 +56,7 @@ it("keeps graph totals and real instance identities across statistics, search an
   });
 
   javaReply("search", { nodes: [order], total: 65, hasMore: true }, { term: "order", class: from.className, version: "v1" });
-  expect(panelReadResultSchemas.panelRecordQuery.parse(await graph.search("order", from.className, "v1"))).toMatchObject({
+  expect(panelReadResultSchemas.panelRecordQuery.parse(await graph.search({ search: "order", className: from.className, version: "v1" }))).toMatchObject({
     total: 65, hasMore: true, rows: [{ ...from, label: "Order", fields: { ...from, classLabel: "Orders" } }],
   });
 
@@ -109,7 +109,7 @@ it("maps owner relation status codes to actionable localized reasons across neig
     ],
   }, { version: "v3", sampleToken: "tok" });
 
-  const connections = panelReadResultSchemas.panelGraphConnections.parse(await graph.connections("v3", "tok"));
+  const connections = panelReadResultSchemas.panelGraphConnections.parse(await graph.connections({ version: "v3", sampleToken: "tok" }));
   expect(connections.relations).toEqual([
     { relationKind: "placedBy", label: "Placed by", status: "ok", edgeCount: 1 },
     { relationKind: "rel_r014", label: "Related task", status: "unavailable", edgeCount: 0, reason: en["panels.objectDetail.relationMissingJoinFields"] },
@@ -136,7 +136,7 @@ it("replaces raw upstream error text with localized messages on graph failures",
       message: "Ontology changed. Reload the overview.",
     }),
   ));
-  await expect(graph.connections("old", "tok")).rejects.toMatchObject({
+  await expect(graph.connections({ version: "old", sampleToken: "tok" })).rejects.toMatchObject({
     status: 409,
     message: en["panels.objectDetail.graphVersionChanged"],
   });

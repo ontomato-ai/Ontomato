@@ -47,14 +47,14 @@ const countTones = { ok: "success", refused: "warning", failed: "danger", unavai
 
 const detailKey = (typeLabelKey: string) => typeLabelKey.replace("platformOntology.types.", "platformOntology.typeDetails.");
 
-function requireType(type: string) {
+export function requireOntologyCatalogueType(type: string) {
   const spec = PLATFORM_ONTOLOGY_TYPE_MAP.get(type);
   if (!spec) throw new HttpError(404, `Unknown platform ontology type: ${type}`, "OBJECT_NOT_FOUND");
   return spec;
 }
 
 async function readTypeSignatures(type: string) {
-  requireType(type);
+  requireOntologyCatalogueType(type);
   return (await assemblePlatformOntologySchemaTypes()).find(spec => spec.id === type)!;
 }
 
@@ -199,8 +199,7 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
     );
   }
 
-  async function countRows(): Promise<PanelRecord[]> {
-    const { counts } = await readPlatformOntologyCounts(owner, viewer);
+  function presentCountRows(counts: readonly PlatformOntologyTypeCount[]): PanelRecord[] {
     return PLATFORM_ONTOLOGY_LAYERS.flatMap(layer =>
       counts
         .filter(entry => entry.layer === layer)
@@ -210,8 +209,13 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
     );
   }
 
-  async function instanceGraphClasses(): Promise<PanelRecord[]> {
-    const byType = new Map((await countRows()).map(row => [row.primaryKey, row]));
+  async function countRows(): Promise<PanelRecord[]> {
+    const { counts } = await readPlatformOntologyCounts(owner, viewer);
+    return presentCountRows(counts);
+  }
+
+  function presentInstanceGraphClasses(counts: readonly PlatformOntologyTypeCount[]): PanelRecord[] {
+    const byType = new Map(presentCountRows(counts).map(row => [row.primaryKey, row]));
     return list().map(row => {
       const count = byType.get(row.primaryKey)!;
       return {
@@ -223,56 +227,74 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
     });
   }
 
+  async function instanceGraphClasses(): Promise<PanelRecord[]> {
+    const { counts } = await readPlatformOntologyCounts(owner, viewer);
+    return presentInstanceGraphClasses(counts);
+  }
+
+  function presentGraphNodes(counts: readonly PlatformOntologyTypeCount[]): PanelRecord[] {
+    return presentInstanceGraphClasses(counts).map(row => ({
+      ...row,
+      label: row.fields.countStatus === "ok"
+        ? `${row.label} (${row.fields.countDisplay})`
+        : `${row.label} · ${row.fields.countDisplay}`,
+    }));
+  }
+
+  function presentTypeRecord(spec: PlatformOntologyType, count: PlatformOntologyTypeCount): PanelRecord {
+    const catalogRow = typeCatalogRow(spec);
+    const countRow = typeCountRow(count);
+    const detail = detailKey(spec.labelKey);
+    const hasDetails = Boolean(platformTypeDetails[spec.id]);
+    const directory = instanceDirectories[spec.id];
+    const outputs = directory && { directoryPath: directory.path, directoryName: word(directory.name) };
+    return {
+      ...catalogRow,
+      fields: {
+        ...catalogRow.fields,
+        ...countRow.fields,
+        definition: hasDetails ? text(`${detail}.definition`) : word("noDefinition"),
+        rules: hasDetails ? text(`${detail}.rules`) : word("noRules"),
+        ...outputs,
+      },
+      fieldLabels: {
+        ...catalogRow.fieldLabels,
+        ...countRow.fieldLabels,
+        definition: word("definition"),
+        rules: word("rules"),
+        directoryPath: word("directoryPath"),
+      },
+      tones: countRow.tones,
+      ...(outputs && { outputs }),
+    };
+  }
+
   return {
     list,
     countRows,
     instanceGraphClasses,
+    presentCountRows,
+    presentInstanceGraphClasses,
+    presentGraphNodes,
 
     count(): PanelRecordQuery {
       return { rows: [], total: PLATFORM_ONTOLOGY_TYPES.length };
     },
 
     async graphNodes(): Promise<PanelRecord[]> {
-      return (await instanceGraphClasses()).map(row => ({
-        ...row,
-        label: row.fields.countStatus === "ok"
-          ? `${row.label} (${row.fields.countDisplay})`
-          : `${row.label} · ${row.fields.countDisplay}`,
-      }));
+      const { counts } = await readPlatformOntologyCounts(owner, viewer);
+      return presentGraphNodes(counts);
     },
 
     async record(type: string): Promise<PanelRecord> {
-      const spec = requireType(type);
+      const spec = requireOntologyCatalogueType(type);
       const { counts: [count] } = await readPlatformOntologyCounts(owner, viewer, [spec]);
-      const catalogRow = typeCatalogRow(spec);
-      const countRow = typeCountRow(count);
-      const detail = detailKey(spec.labelKey);
-      const hasDetails = Boolean(platformTypeDetails[type]);
-      const directory = instanceDirectories[type];
-      const outputs = directory && { directoryPath: directory.path, directoryName: word(directory.name) };
-      return {
-        ...catalogRow,
-        fields: {
-          ...catalogRow.fields,
-          ...countRow.fields,
-          definition: hasDetails ? text(`${detail}.definition`) : word("noDefinition"),
-          rules: hasDetails ? text(`${detail}.rules`) : word("noRules"),
-          ...outputs,
-        },
-        fieldLabels: {
-          ...catalogRow.fieldLabels,
-          ...countRow.fieldLabels,
-          definition: word("definition"),
-          rules: word("rules"),
-          directoryPath: word("directoryPath"),
-        },
-        tones: countRow.tones,
-        ...(outputs && { outputs }),
-      };
+      return presentTypeRecord(spec, count);
     },
+    presentTypeRecord,
 
     properties(type: string): PanelRecord[] {
-      const spec = requireType(type);
+      const spec = requireOntologyCatalogueType(type);
       const detail = detailKey(spec.labelKey);
       return (platformTypeDetails[type]?.properties ?? []).map(property => {
         const optional = property.optional ?? false;
@@ -293,7 +315,7 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
     },
 
     typeRelations(type: string): PanelRecord[] {
-      requireType(type);
+      requireOntologyCatalogueType(type);
       const edges = graphEdges();
       return [
         ...edges.filter(row => row.fields.fromclass === type).map(row => ({

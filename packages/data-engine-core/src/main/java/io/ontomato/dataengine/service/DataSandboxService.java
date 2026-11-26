@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.dataAdapter.*;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
@@ -336,21 +337,55 @@ public class DataSandboxService {
     }
   }
 
+  private String currentBuildTestId(String workspace, User user) {
+    return jdbc.queryForList("""
+        SELECT id FROM data_sandboxes
+        WHERE owner_id=? AND domain_id=? AND scope_key=? AND purpose='build-test'
+        ORDER BY CASE WHEN state IN ('PREPARING','READY') THEN 0 ELSE 1 END,created_at DESC,id DESC
+        LIMIT 1
+        """, String.class, user.getId(), user.getDomainId(), workspace).stream().findFirst().orElse(null);
+  }
+
   public JSONObject current(String workspace) {
     identity.requireQueryAccess();
-    var user=identity.getCurrentUser();
-    var ids=jdbc.queryForList("SELECT id FROM data_sandboxes WHERE owner_id=? AND domain_id=? AND scope_key=? AND purpose='build-test' ORDER BY CASE WHEN state IN ('PREPARING','READY') THEN 0 ELSE 1 END,created_at DESC,id DESC LIMIT 1",String.class,user.getId(),user.getDomainId(),workspace);
-    return ids.isEmpty()?null:status(ids.get(0));
+    var id = currentBuildTestId(workspace, identity.getCurrentUser());
+    return id == null ? null : status(id);
   }
+
+  public JSONObject currentStatusFact(String workspace, QueryAccessService.Access access) {
+    var id = currentBuildTestId(workspace, access.user());
+    if (id == null) return null;
+    var record = row(id);
+    return JSONObject.of("status", effectiveBuildTestState(record), "expiresAt", record.getLong("expires_at"),
+        "sampleSummary", JSONObject.of("name", record.getJSONObject("data").getString("sampleName")));
+  }
+
+  private static String effectiveBuildTestState(JSONObject record) {
+    String state = record.getString("state");
+    return "READY".equals(state) && record.getLongValue("expires_at") <= System.currentTimeMillis() ? "EXPIRED" : state;
+  }
+
+  private void persistBuildTestExpiry(String id) {
+    jdbc.update("UPDATE data_sandboxes SET state='EXPIRED' WHERE id=? AND state='READY'", id);
+  }
+
   public JSONObject status(String id) {
     identity.requireQueryAccess();
-    var r=row(id);var user=identity.getCurrentUser();buildOwner(r,user.getId(),user.getDomainId());
-    if("READY".equals(r.getString("state")) && r.getLongValue("expires_at")<=System.currentTimeMillis()) {
-      jdbc.update("UPDATE data_sandboxes SET state='EXPIRED' WHERE id=? AND state='READY'",id);r=row(id);
+    var record = row(id);
+    var user = identity.getCurrentUser();
+    buildOwner(record, user.getId(), user.getDomainId());
+    if (!effectiveBuildTestState(record).equals(record.getString("state"))) {
+      persistBuildTestExpiry(id);
+      record = row(id);
     }
-    var data=r.getJSONObject("data");
-    return JSONObject.of("contextId",id,"workspaceId",r.getString("scope_key"),"status",r.getString("state"),"expiresAt",r.getLong("expires_at"),"classNames",data.get("classNames"),"sampleSummary",JSONObject.of("name",data.getString("sampleName"),"classes",data.getJSONArray("classNames").size(),"sha256",data.getString("sampleSha256")),"prepareError",data.get("prepareError"),"cleanupError",r.get("cleanup_error"),"resources",data.get("resources"));
+    var data = record.getJSONObject("data");
+    return JSONObject.of("contextId", id, "workspaceId", record.getString("scope_key"),
+        "status", record.getString("state"), "expiresAt", record.getLong("expires_at"), "classNames", data.get("classNames"),
+        "sampleSummary", JSONObject.of("name", data.getString("sampleName"), "classes",
+            data.getJSONArray("classNames").size(), "sha256", data.getString("sampleSha256")),
+        "prepareError", data.get("prepareError"), "cleanupError", record.get("cleanup_error"), "resources", data.get("resources"));
   }
+
   public ExecutionTarget resolve(HttpServletRequest request) {
     String header=request.getHeader(HEADER);
     if(header==null) return ExecutionTarget.LIVE;
@@ -422,14 +457,23 @@ public class DataSandboxService {
 
   public JSONObject retryCleanup(String id) {
     identity.requireQueryAccess();
-    var captured=row(id);var user=identity.getCurrentUser();buildOwner(captured,user.getId(),user.getDomainId());
-    var workspaceLock=workspaceLock(captured);workspaceLock.lock();
+    var captured = row(id);
+    var user = identity.getCurrentUser();
+    buildOwner(captured, user.getId(), user.getDomainId());
+    var workspaceLock = workspaceLock(captured);
+    workspaceLock.lock();
     try {
-    var r=row(id);
-    if(List.of("READY","PREPARING").contains(r.getString("state"))) throw error(HttpStatus.CONFLICT,"BUILD_TEST_CONTEXT_NOT_READY: end before cleanup");
-    jdbc.update("UPDATE data_sandboxes SET cleanup_attempted=false WHERE id=?",id);
-    cleanup(row(id));return status(id);
-    } finally { workspaceLock.unlock(); }
+      var record = row(id);
+      String state = effectiveBuildTestState(record);
+      if (List.of("READY", "PREPARING").contains(state))
+        throw error(HttpStatus.CONFLICT, "BUILD_TEST_CONTEXT_NOT_READY: end before cleanup");
+      if (!state.equals(record.getString("state"))) persistBuildTestExpiry(id);
+      jdbc.update("UPDATE data_sandboxes SET cleanup_attempted=false WHERE id=?", id);
+      cleanup(row(id));
+      return status(id);
+    } finally {
+      workspaceLock.unlock();
+    }
   }
 
   private void cleanup(JSONObject r) {

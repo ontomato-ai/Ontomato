@@ -261,6 +261,9 @@ async function openBuiltPanel(
       return Response.json({
         applicationId: appId,
         use,
+        allowStandalone: false,
+        frame: null,
+        content: null,
         menu: { singleEntry: false, groups: [], panelUses: [casesUse, dslUse] },
       });
     }

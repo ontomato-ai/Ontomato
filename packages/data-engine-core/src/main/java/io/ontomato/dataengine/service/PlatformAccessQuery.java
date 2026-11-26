@@ -12,5 +12,9 @@ public interface PlatformAccessQuery {
 
     List<RoleAccess> rolesInDomain(String domainId);
 
+    record RoleName(String roleId, String roleCode) {}
+
+    List<RoleName> roleNamesInDomain(String domainId, Set<String> roleIds);
+
     long countRolesInDomain(String domainId);
 }

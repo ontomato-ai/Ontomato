@@ -21,7 +21,7 @@ import type { ProductOwner } from "../product-governance/service-authentication"
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
 import type { OwnerReadResult } from "../platform-ontology/owners";
 import { listPolicyEntries, policyObjectEntryUsagePayload, readPolicyChangePermission } from "./policy-access";
-import type { PolicyWorkbenchCatalog } from "./policy-catalog";
+import { effectiveAccessNeedsWorkbenchCatalog, type PolicyWorkbenchCatalog } from "./policy-catalog";
 
 /*
  * Direct-panel read adapters for enterprise governance owners: users, roles, permission policies, and organization
@@ -96,7 +96,7 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
   }
 
   async function effectiveAccessBody(id: string, category?: string) {
-    const needsCatalog = !category || category === "productObject" || category === "capabilityObject";
+    const needsCatalog = effectiveAccessNeedsWorkbenchCatalog(category);
     const workbenchCatalog = needsCatalog && options.loadPolicyCatalog ? await options.loadPolicyCatalog() : undefined;
     return {
       id,

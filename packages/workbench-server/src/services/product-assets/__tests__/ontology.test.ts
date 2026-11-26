@@ -1,18 +1,14 @@
-import { beforeEach, expect, it, vi } from "vitest";
-const facts = vi.hoisted(() => ({ read: vi.fn() }));
-vi.mock("../../governance/policy-access", () => ({ readAuthorizationGraphFacts: facts.read }));
-import { addAuthorizationEdges } from "../ontology";
+import { expect, it } from "vitest";
+import { presentAuthorizationEdges } from "../ontology";
 
-beforeEach(() => { vi.resetAllMocks(); });
-
-it("reads policy edges once and keeps them within the caller's application maintenance scope", async () => {
+it("keeps policy edges within the caller's application maintenance scope", async () => {
   const nodes = ["managed", "visible"].map(assetId => ({
     id: `asset:${assetId}`, assetId, name: assetId, kind: "application", category: "bundle" as const,
   }));
-  facts.read.mockResolvedValue({
+  const facts = {
     rolePolicies: [
-      { roleId: "reader", policyId: "selected", kind: "OBJECT" },
-      { roleId: "outsider", policyId: "outside", kind: "OBJECT" },
+      { roleId: "reader", policyId: "selected", kind: "OBJECT" as const },
+      { roleId: "outsider", policyId: "outside", kind: "OBJECT" as const },
     ],
     entries: [
       { id: "managed/main", applicationId: "managed", names: { en: "Main" }, pageKey: "main" },
@@ -25,14 +21,10 @@ it("reads policy edges once and keeps them within the caller's application maint
       { policyId: "outside", targetKind: "PANEL", targetKey: "managed", verb: "USE" },
       { policyId: "outside", targetKind: "APPLICATION", targetKey: "managed", verb: "USE" },
     ],
-  });
-  const viewer = { token: "caller" };
-  const graph = await addAuthorizationEdges(
-    { graph: { nodes, edges: [] }, maintainableApplicationIds: new Set(["managed"]) },
-    { domainId: "domain", userId: "human" }, viewer,
+  };
+  const graph = presentAuthorizationEdges(
+    { graph: { nodes, edges: [] }, maintainableApplicationIds: new Set(["managed"]) }, facts,
   );
-  expect(facts.read).toHaveBeenCalledTimes(1);
-  expect(facts.read).toHaveBeenCalledWith(viewer);
   expect(graph.edges.filter(edge => edge.storage === "governance")).toEqual([
     { source: "policy:selected", target: "asset:managed", relation: "edit", storage: "governance" },
     { source: "policy:selected", target: "entry:managed/main", relation: "enter", storage: "governance" },

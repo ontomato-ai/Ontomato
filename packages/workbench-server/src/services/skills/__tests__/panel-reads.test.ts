@@ -165,6 +165,7 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
   expect(page2.rows).toHaveLength(1);
 
   const all = panelRecordQuerySchema.parse(await adapter.query({}));
+  expect(await adapter.count()).toEqual({ rows: [], total: all.rows.length });
   expect(all.rows.map(row => row.primaryKey)).toEqual([
     "builtin-guide",
     "alpha-helper",

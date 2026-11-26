@@ -15,6 +15,11 @@ import { collectReferences } from "./references";
 type Inputs = ReadonlyMap<string, unknown>;
 type Projection = ReturnType<typeof productProjectionInputSchema.parse> | ReturnType<typeof builtinProductProjectionInputSchema.parse>;
 
+export interface CompiledEntryDependencies {
+  dependencies: EntryDependency[];
+}
+
+
 export function dependencyKey({ objectType, objectKey, verb, scope }: EntryDependency) {
   return JSON.stringify([objectType, objectKey, verb, scope ? [scope.kind, scope.className, scope.field] : null]);
 }
@@ -105,7 +110,9 @@ export function entryDependencyCompiler(client: PoolClient, domainId: string | n
     return definition;
   }
 
-  async function compile(panelId: string, input: Inputs, active: Set<string>, path: string): Promise<EntryDependency[]> {
+  async function compile(
+    panelId: string, input: Inputs, active: Set<string>, path: string,
+  ): Promise<EntryDependency[]> {
     if (active.has(panelId)) throw new HttpError(409, `${path} forms a panel reference cycle`, "PANEL_REFERENCE_CYCLE");
     const row = await find("panel", panelId);
     if (!row) throw new HttpError(404, `${path} references unavailable panel '${panelId}'`, "PRODUCT_UNAVAILABLE");
@@ -128,7 +135,8 @@ export function entryDependencyCompiler(client: PoolClient, domainId: string | n
       const projection = await find("projection", id);
       if (!projection) throw new HttpError(404, `${field} references unavailable projection '${id}'`, "PRODUCT_UNAVAILABLE");
       const schema = isBuiltinProductId(id) ? builtinProductProjectionInputSchema : productProjectionInputSchema;
-      dependencies.push(...projectionDependencies(id, schema.parse(projection.definition), inputs));
+      const definition = schema.parse(projection.definition);
+      dependencies.push(...projectionDependencies(id, definition, inputs));
     }
     active.add(panelId);
     // Object detail rules select a separate entry by class. Open-ended usable rules
@@ -151,11 +159,12 @@ export function entryDependencyCompiler(client: PoolClient, domainId: string | n
     return dependencies;
   }
 
-  return async (panelId: string, bindings: ApplicationPanelInputs = {}) => {
+  return async (panelId: string, bindings: ApplicationPanelInputs = {}): Promise<CompiledEntryDependencies> => {
     const inputs = new Map(Object.entries(bindings).map(([name, binding]) => [
       name,
       "literal" in binding ? binding.literal : undefined,
     ]));
-    return mergeDependencies(await compile(panelId, inputs, new Set(), `Panel '${panelId}'`));
+    const dependencies = await compile(panelId, inputs, new Set(), `Panel '${panelId}'`);
+    return { dependencies: mergeDependencies(dependencies) };
   };
 }

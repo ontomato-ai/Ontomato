@@ -18,6 +18,11 @@ const registeredResponseSchema = z.object({
     .extend({ use: panelApplicationEntryUseSchema }),
 });
 
+export function withPanelReadRegistration<T extends Pick<ApplicationEntryResolution, "use" | "framePanelId">>(entry: T) {
+  const use = isApplicationPanelUse(entry.use) ? entry.use : null;
+  return { ...entry, registration: { panelId: use?.panelId ?? null, framePanelId: entry.framePanelId ?? null, inputs: use?.inputs } };
+}
+
 export async function personalEntry<T extends Pick<ApplicationEntryResolution, "applicationId" | "use">>(entry: T, owner?: PlatformHomeOwner): Promise<T> {
   if (entry.applicationId === "home" && entry.use.id === "home" && owner && isApplicationPanelUse(entry.use)) {
     const homePanelId = await platformHomeStore.homePanelId(owner);
@@ -65,7 +70,7 @@ export async function readRegisteredPanelEntry(credentials: AssistantCredentials
     }), retries: 1 });
   const { data } = registeredResponseSchema.parse(JSON.parse(reply.text));
   requireMatchingRef(data, ref);
-  return personalEntry(data, owner);
+  return personalEntry(withPanelReadRegistration(data), owner);
 }
 
 export async function requirePanelUseEntry(

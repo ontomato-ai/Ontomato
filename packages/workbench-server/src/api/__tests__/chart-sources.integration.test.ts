@@ -1,3 +1,5 @@
+import { metricOwnerRead } from "../../__tests__/fixtures/workbench-panel-read-facts";
+import { mountWorkbenchPanelReadsOwner } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
@@ -141,11 +143,15 @@ beforeAll(async () => {
       use: { id: "chart", pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot" },
     } });
   });
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     const caller = req.header("tk");
     Object.assign(req, { userId: caller, token: caller, domainId: "domain" });
     next();
-  });
+  };
+  mountWorkbenchPanelReadsOwner(app, { prefix: "/java", token: "governance", viewer: userId => ({ domainId: "domain", userId }), read: metricOwnerRead });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   installDashboardChartProjectionReferences({ find: findChartProjectionsForCards, remove: deleteChartProjectionsForDashboards });
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/product-projections", createChartProjectionsRouter(createChartProjectionService(dashboardChartSources)));

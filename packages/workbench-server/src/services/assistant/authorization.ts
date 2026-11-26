@@ -1,5 +1,6 @@
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { decideObject, decideObjects, requireObject, type ObjectDefinition, type ObjectVerb } from "../product-governance/authorization";
+import { decideObject, decideObjects, requireObject, type ObjectDefinition, type ObjectVerb, type ObjectVisibilityRange } from "../product-governance/authorization";
+import { definitionVisibleInRange } from "../product-panels/access";
 import type { AgentRow } from "./store";
 
 export type AgentAccessFacts = Pick<AgentRow, "domain_id" | "id" | "owner_id">;
@@ -22,6 +23,10 @@ export async function agentAllowed(agent: AgentRow, verb: ObjectVerb, credential
 export async function allowedAgents<T extends AgentAccessFacts>(agents: readonly T[], verb: ObjectVerb, credentials: AssistantCredentials) {
   const decisions = await decideObjects(agents.map(agent => ({ ...agentObject(agent), verb })), credentials);
   return agents.filter((_, index) => decisions[index].allowed);
+}
+
+export function agentInVisibilityRange(agent: AgentAccessFacts, range: ObjectVisibilityRange, domainId: string) {
+  return definitionVisibleInRange({ id: agent.id, domainId: agent.domain_id, ownerId: agent.owner_id }, range, domainId);
 }
 
 export function requireAgentCreation(credentials: AssistantCredentials) {

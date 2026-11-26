@@ -489,6 +489,9 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
       return Response.json({
         applicationId: APP_ID,
         use: dataBrowserUse,
+        allowStandalone: false,
+        frame: null,
+        content: null,
         menu: { singleEntry: true, names: { en: "Object browser" }, groups: [], panelUses: [dataBrowserUse] },
       });
     }
@@ -608,10 +611,14 @@ describe("builtin-product-data-browser panel", () => {
       });
 
       // Clicking "View full details" navigates to E2-3 /browser/views?selected=Order~ord-1.
-      const detailBtn = Array.from(element.querySelectorAll<HTMLButtonElement>("[data-node-inspector] button")).find(
-        (btn) => btn.textContent?.includes("View full details"),
-      )!;
-      expect(detailBtn).toBeTruthy();
+      const detailBtn = await vi.waitFor(() => {
+        // The header publishes the detail path independently of the summary above.
+        const button = Array.from(element.querySelectorAll<HTMLButtonElement>("[data-node-inspector] button")).find(
+          (btn) => btn.textContent?.includes("View full details"),
+        )!;
+        expect(button).toBeTruthy();
+        return button;
+      });
       detailBtn.click();
       await vi.waitFor(() => {
         expect(route.router.currentRoute.value.fullPath).toBe("/browser/views?selected=Order~ord-1");

@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { defineComponent, h, nextTick, provide, onBeforeUnmount, onMounted, ref } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import type { ApplicationEntryResolution, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import type { ApplicationOpenResponse, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { pageCounterKey, type ConversationDisplay, type SessionRunHandlers } from "@ontomato/agent-shell-ui";
 import { AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
@@ -45,7 +45,7 @@ const appBHomeUse: ApplicationPanelUse = {
   names: { en: "App B home" },
 };
 
-const conversationUse: ApplicationEntryResolution["use"] = {
+const conversationUse: ApplicationOpenResponse["use"] = {
   kind: "frame-conversation", id: "chat", pageKey: "chat", path: "/applications/app-b/chat",
 };
 const runFeed = vi.hoisted(() => ({ subscribe: vi.fn(), detach: vi.fn() }));
@@ -54,11 +54,7 @@ vi.mock("@ontomato/workbench-ui/features/workbench/assistant-host", () => ({
 }));
 
 const catalogApplications = ref<unknown[]>([]);
-const resolveApplicationEntryMock = vi.fn<[{ path?: string; useId?: string }], Promise<ApplicationEntryResolution>>();
-const readApplicationFrameManifestMock = vi.fn<
-  [string, ApplicationPanelUse, string],
-  Promise<Pick<PanelManifest, "state"> | null>
->();
+const resolveApplicationEntryMock = vi.fn<[{ path?: string; useId?: string }], Promise<ApplicationOpenResponse>>();
 const framePanelHostCalls: Array<{ applicationId: string; framePanelId: string; useId: string }> = [];
 const builtinFramePanelHostCalls: Array<{ applicationId: string; framePanelId: string }> = [];
 let frameDisplay: (() => ConversationDisplay) | undefined;
@@ -79,8 +75,6 @@ vi.mock("../catalog", () => ({
 
 vi.mock("../panel-host", () => ({
   resolveApplicationEntry: (query: { path?: string; useId?: string }) => resolveApplicationEntryMock(query),
-  readApplicationFrameManifest: (appId: string, use: ApplicationPanelUse, framePanelId: string) =>
-    readApplicationFrameManifestMock(appId, use, framePanelId),
   cachedApplicationFrameManifest: vi.fn(() => null),
   framePanelHost: (
     applicationId: string,
@@ -289,15 +283,18 @@ const apps: PlatformAppDeclaration[] = [
 
 function resolutionOf(
   applicationId: string,
-  use: ApplicationEntryResolution["use"],
-  panelUses: ApplicationEntryResolution["use"][],
+  use: ApplicationOpenResponse["use"],
+  panelUses: ApplicationOpenResponse["use"][],
   framePanelId?: string,
   singleEntry?: boolean,
-): ApplicationEntryResolution {
+): ApplicationOpenResponse {
   return {
     applicationId,
     use,
     ...(framePanelId ? { framePanelId } : {}),
+    allowStandalone: true,
+    frame: null,
+    content: null,
     menu: { singleEntry: singleEntry ?? panelUses.filter((entry) => Boolean(entry.names)).length <= 1, groups: [], panelUses },
   };
 }
@@ -393,7 +390,6 @@ beforeEach(() => {
     { id: "app-b", framePanelId: appBFrameId, panelUses: [appBHomeUse] },
   ];
   resolveApplicationEntryMock.mockReset();
-  readApplicationFrameManifestMock.mockReset().mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -516,7 +512,7 @@ describe("ApplicationFrameHost single persistent outer frame", () => {
 
   it("starts loading the outer frame at t=0ms without waiting for resolve-entry and displays a loading placeholder until surface-ready", async () => {
     manualFrameSurfaceReady = true;
-    const pendingResolve = deferred<ApplicationEntryResolution>();
+    const pendingResolve = deferred<ApplicationOpenResponse>();
     resolveApplicationEntryMock.mockReturnValueOnce(pendingResolve.promise);
 
     const { wrapper } = await mountPlatformShell("/ontology/playground");
@@ -591,19 +587,25 @@ describe("ApplicationFrameHost single persistent outer frame", () => {
   });
 
   it("renders unframed beside a conversation without ApplicationFrameHost and decodes frame.* manifest defaults and URL overrides", async () => {
-    resolveApplicationEntryMock.mockResolvedValue(
-      resolutionOf("app-b", appBHomeUse, [appBHomeUse], appBFrameId),
-    );
-    readApplicationFrameManifestMock.mockResolvedValue({
-      state: {
-        term: {
-          type: { kind: "scalar", type: "string" },
-          personal: false,
-          deepLink: true,
-          external: true,
-          default: "A",
+    resolveApplicationEntryMock.mockResolvedValue({
+      ...resolutionOf("app-b", appBHomeUse, [appBHomeUse], appBFrameId),
+      frame: {
+        panel: {
+          id: appBFrameId,
+          manifest: {
+            state: {
+              term: {
+                type: { kind: "scalar", type: "string" },
+                personal: false,
+                deepLink: true,
+                external: true,
+                default: "A",
+              },
+            },
+            members: {},
+          },
         },
-      },
+      } as never,
     });
 
     const router = createRouter({

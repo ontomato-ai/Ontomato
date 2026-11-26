@@ -13,6 +13,9 @@ public interface DslService {
 	
 	public Map<String, Object> executeV1(JSONObject dsl, UserDataPermission permission, User user);
 
+    /** Ordinary DSL response with the domain and data permission captured by the caller's owner boundary. */
+    Map<String, Object> executeV1ForDomain(JSONObject dsl, UserDataPermission permission, String domainId);
+
     /** Apply a server-authored row predicate after the projection has passed ordinary field authorization. */
     Map<String, Object> executeGovernedRead(JSONObject query, JSONObject predicate, UserDataPermission permission, User user);
 

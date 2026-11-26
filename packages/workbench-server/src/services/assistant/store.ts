@@ -77,33 +77,43 @@ export type AgentDefinitionSummaryRow = Pick<AgentRow, "id" | "name" | "descript
 
 type AgentDefinitionRead = {
   includeSystem: boolean;
+  ids?: readonly string[];
   editRange?: ObjectVisibilityRange;
   limit?: number;
   after?: { sortOrder: number; name: string; id: string };
 };
 
 export const assistantStore = {
-  async agentDefinitionSummaries(domainId: string, view: ObjectVisibilityRange, { includeSystem, editRange, limit, after }: AgentDefinitionRead) {
+  async agentDefinitionSummaries(domainId: string, view: ObjectVisibilityRange, { includeSystem, ids, editRange, limit, after }: AgentDefinitionRead) {
     const { where, values } = agentDefinitionVisibility(domainId, view, includeSystem);
     const editable = editRange ? objectVisibilitySql(editRange, agentDefinitionColumns, values) : "FALSE";
+    const selected = ids === undefined ? "" : `AND a.id::text = ANY($${values.push(ids)}::text[])`;
     const continuation = after === undefined ? "" :
       `AND (a.sort_order,a.name,a.id) > ($${values.push(after.sortOrder)},$${values.push(after.name)},$${values.push(after.id)})`;
     const pageSize = limit === undefined ? "" : `LIMIT $${values.push(limit)}`;
     const { rows } = await db().query<AgentDefinitionSummaryRow>(
       `SELECT a.id,a.kind,a.name,a.description,a.icon,a.enabled,a.sort_order,${editable} AS editable
-       FROM ${table("assistant_agents")} AS a WHERE ${where} ${continuation}
+       FROM ${table("assistant_agents")} AS a WHERE ${where} ${selected} ${continuation}
        ORDER BY a.sort_order,a.name,a.id ${pageSize}`, values,
     );
     return rows;
   },
-  async agentDefinitionRelationRows<F extends "skills" | "execution_user_id">(
-    domainId: string, view: ObjectVisibilityRange, field: F, agentId?: string,
+  async agentDefinitionExecutionUserId(domainId: string, agentId: string): Promise<string | null> {
+    const { rows: [agent] } = await db().query<Pick<AgentRow, "execution_user_id">>(
+      `SELECT execution_user_id FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope} AND id::text=$2`,
+      [domainId, agentId],
+    );
+    return agent?.execution_user_id ?? null;
+  },
+  async agentDefinitionRelationRows<F extends "skills" | "execution_user_id" | "enabled_mcp_service_ids">(
+    domainId: string, view: ObjectVisibilityRange, field: F, agentId?: string, executionUserIds?: readonly string[],
   ) {
     const { where, values } = agentDefinitionVisibility(domainId, view, false);
     const agent = agentId === undefined ? "" : `AND a.id::text = $${values.push(agentId)}`;
+    const executionUsers = executionUserIds === undefined ? "" : `AND a.execution_user_id = ANY($${values.push(executionUserIds)}::text[])`;
     const { rows } = await db().query<Pick<AgentRow, "id" | "kind" | "name" | F>>(
       `SELECT a.id,a.kind,a.name,a.${field} FROM ${table("assistant_agents")} AS a
-       WHERE ${where} ${agent} ORDER BY a.sort_order,a.name,a.id`, values,
+       WHERE ${where} ${agent} ${executionUsers} ORDER BY a.sort_order,a.name,a.id`, values,
     );
     return rows;
   },

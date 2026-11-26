@@ -10,6 +10,7 @@ import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.KnowledgeTagConfig;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.OwnerRefusal;
 
 /**
  * The business knowledge form, described as the panel form contract takes it: the fields, the values of the target and
@@ -32,12 +33,12 @@ public final class BussinessKnowledgeForm {
             String objectType = string(target.get("objectType"));
             String primaryKey = string(target.get("primaryKey"));
             if (!OBJECT_TYPE.equals(objectType) || primaryKey == null || primaryKey.isBlank())
-                throw new IllegalArgumentException(langService.get(lang, "Admin.knowledge.form.invalidTarget"));
+                throw new OwnerRefusal("KNOWLEDGE_READ_REFUSED", langService.get(lang, "Admin.knowledge.form.invalidTarget"));
             current = knowledgeService.getBussinessKnowledge(domainId).get(primaryKey);
             if (current == null)
-                throw new IllegalArgumentException("Business knowledge not found in the current domain");
+                throw new OwnerRefusal("KNOWLEDGE_READ_REFUSED", "Business knowledge not found in the current domain");
         } else {
-            throw new IllegalArgumentException(langService.get(lang, "Admin.knowledge.form.invalidTarget"));
+            throw new OwnerRefusal("KNOWLEDGE_READ_REFUSED", langService.get(lang, "Admin.knowledge.form.invalidTarget"));
         }
 
         JSONObject values = values(current, request.get("values") == null ? null
@@ -74,7 +75,25 @@ public final class BussinessKnowledgeForm {
         return values;
     }
 
+    static JSONObject statusLabels(String lang, LangService langService) {
+        return JSONObject.of(
+                "pendingName", langService.get(lang, "Admin.knowledge.form.pending"),
+                "approvedName", langService.get(lang, "Admin.knowledge.form.approved"));
+    }
+
+    static JSONObject entryText(String lang, LangService langService) {
+        return statusLabels(lang, langService).fluentPut("fieldLabels", rowFieldLabels(lang, langService));
+    }
+
+    private static JSONObject rowFieldLabels(String lang, LangService langService) {
+        return JSONObject.of(
+                "knowledgeText", langService.get(lang, "Admin.knowledge.form.content"),
+                "knowledgeTags", langService.get(lang, "Admin.knowledge.form.tags"),
+                "status", langService.get(lang, "Admin.knowledge.form.status"));
+    }
+
     private static JSONArray fields(String lang, LangService langService, KnowledgeTagConfig tagConfig) {
+        var labels = rowFieldLabels(lang, langService);
         JSONArray fields = new JSONArray();
         fields.add(field("/knowledgeTitle", langService.get(lang, "Admin.knowledge.form.title"),
                 new JSONObject()
@@ -82,14 +101,14 @@ public final class BussinessKnowledgeForm {
                         .fluentPut("multiline", false)
                         .fluentPut("placeholder", langService.get(lang, "Admin.knowledge.form.titlePlaceholder")),
                 stringSchema(), true));
-        fields.add(field("/knowledgeText", langService.get(lang, "Admin.knowledge.form.content"),
+        fields.add(field("/knowledgeText", labels.getString("knowledgeText"),
                 new JSONObject()
                         .fluentPut("kind", "text")
                         .fluentPut("multiline", true)
                         .fluentPut("rows", 8)
                         .fluentPut("placeholder", langService.get(lang, "Admin.knowledge.form.contentPlaceholder")),
                 stringSchema(), true));
-        fields.add(field("/knowledgeTags", langService.get(lang, "Admin.knowledge.form.tags"),
+        fields.add(field("/knowledgeTags", labels.getString("knowledgeTags"),
                 new JSONObject()
                         .fluentPut("kind", "select")
                         .fluentPut("multiple", true)
@@ -97,7 +116,7 @@ public final class BussinessKnowledgeForm {
                         .fluentPut("placeholder", langService.get(lang, "Admin.knowledge.form.tagsPlaceholder"))
                         .fluentPut("options", tagOptions(lang, langService, tagConfig)),
                 new JSONObject().fluentPut("type", "array").fluentPut("items", stringSchema()), false));
-        fields.add(field("/status", langService.get(lang, "Admin.knowledge.form.status"),
+        fields.add(field("/status", labels.getString("status"),
                 new JSONObject()
                         .fluentPut("kind", "select")
                         .fluentPut("presentation", "radio")
@@ -129,9 +148,8 @@ public final class BussinessKnowledgeForm {
     }
 
     private static JSONArray statusOptions(String lang, LangService langService) {
-        return JSONArray.of(
-                option(0, langService.get(lang, "Admin.knowledge.form.pending")),
-                option(1, langService.get(lang, "Admin.knowledge.form.approved")));
+        var labels = statusLabels(lang, langService);
+        return JSONArray.of(option(0, labels.getString("pendingName")), option(1, labels.getString("approvedName")));
     }
 
     private static JSONObject option(Object value, String label) {
@@ -171,7 +189,7 @@ public final class BussinessKnowledgeForm {
     private static Map<String, Object> object(Object value, String lang, LangService langService, String messageKey) {
         if (value instanceof Map<?, ?> map)
             return (Map<String, Object>) map;
-        throw new IllegalArgumentException(langService.get(lang, messageKey));
+        throw new OwnerRefusal("KNOWLEDGE_READ_REFUSED", langService.get(lang, messageKey));
     }
 
     private static String string(Object value) {

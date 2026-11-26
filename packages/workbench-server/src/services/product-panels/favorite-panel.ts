@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { chartValueText } from "@ontomato/contracts/chart-presentation";
 import {
   dashboardCardPrimaryKey,
   parseDashboardCardPrimaryKey,
-  type DashboardMetricOutput,
   type MetricReferenceEntry,
 } from "@ontomato/contracts/dashboard";
 import type { PanelOperationTargetTypes } from "@ontomato/contracts/panel-operations";
@@ -13,6 +11,7 @@ import {
   favoriteMoveDirectionSchema,
   favoriteTargetGroupSchema,
   type FavoriteTargetGroup,
+  type HomePinnedObject,
 } from "@ontomato/contracts/platform-home";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import {
@@ -31,26 +30,82 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { assistantStore } from "../assistant/store";
 import { getOwnedDashboard } from "../dashboard/access";
-import { DashboardMetricClient } from "../dashboard/metric-client";
-import { requireMatchingOutput } from "../dashboard/metric-data";
 import { listDashboards } from "../dashboard/store";
 import {
   addFavoriteTarget,
   isFavoriteTarget,
   moveFavoriteTarget,
   readAllFavoriteState,
+  readPinnedObjects,
   removeFavoriteTarget,
 } from "../platform-home/service";
-import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
+import { createCustomerOntologyReadAdapter, customerObjectRecordCall, customerObjectRecordResult } from "../ontology-model/customer-reads";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { cleanSessionDisplayTitle, formatShortDateTime, sessionOpenPath } from "./agent-session-panel";
-import { applicationCatalogueClient } from "./application-catalogue";
+import { APPLICATION_NAVIGATION_READ, applicationCatalogueClient, applicationNavigationFactsSchema } from "./application-catalogue";
+import type { JavaPanelReadResult, PanelReadRanges, PanelReadVisibility, PreparedOwnerReadFacts } from "./java-panel-reads";
+import type { PanelReadSelection } from "./panel-owner-reads";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
 export const FAVORITE_TARGET_TYPES: PanelOperationTargetTypes = {
   platformTypes: [APPLICATION, AGENT_DEFINITION, DASHBOARD, DASHBOARD_CARD, AGENT_SESSION],
   customerObjects: true,
 };
+
+export function preparePersonalFavoriteRead(
+  owner: ProductOwner, viewer: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
+) {
+  if (selection.typeId !== FAVORITE || selection.method !== "list") return undefined;
+  const group = params.targetGroup;
+  if (group === "apps") return {
+    visibility: [{ kind: "AGENT", verbs: ["USE"] }] satisfies PanelReadVisibility[],
+    call: APPLICATION_NAVIGATION_READ,
+    async present(facts: unknown, ranges?: PanelReadRanges) {
+      const range = ranges?.AGENT?.USE;
+      if (!range) throw new HttpError(502, "The panel read owner did not provide AGENT/USE visibility", "PANEL_READ_OWNER_RESPONSE_INVALID");
+      const applications = applicationNavigationFactsSchema.parse(facts);
+      const { listAssistantAgentsInRange } = await import("../assistant/agents");
+      return createFavoriteReadAdapter(owner, viewer).list({ targetGroup: group }, {
+        applications: () => Promise.resolve(applications),
+        agents: () => listAssistantAgentsInRange(owner, viewer, range).then(result => result.agents),
+      });
+    },
+  };
+  if (group !== "dashboards" && group !== "dashboardCards" && group !== "sessions") return undefined;
+  return { call: undefined, present: () => createFavoriteReadAdapter(owner, viewer).list({ targetGroup: group }) };
+}
+
+export function isFavoriteObjectRead(selection: PanelReadSelection, params: Record<string, unknown>) {
+  return selection.typeId === FAVORITE && selection.method === "list" && params.targetGroup === "objects";
+}
+
+export async function prepareScopedFavoriteObjectRead(owner: ProductOwner, locale?: string) {
+  const objects = await readPinnedObjects(owner);
+  return {
+    call: {
+      type: "customer:ObjectType", name: "favoriteRecords",
+      parameters: { objects: objects.map(({ className, primaryKey }) => ({ className, primaryKey })) },
+    },
+    present(payload: unknown) {
+      const records = z.array(z.unknown()).length(objects.length).parse(payload);
+      return presentFavoriteObjectRows(objects, records.map((record, index) => readFavoriteObjectTitle(
+        objects[index], record === null ? { status: "empty" } : { status: "ready", payload: record },
+      )), locale);
+    },
+  };
+}
+
+export async function prepareFavoriteObjectRead(
+  owner: ProductOwner, selection: PanelReadSelection, params: Record<string, unknown>, locale?: string,
+): Promise<PreparedOwnerReadFacts | undefined> {
+  if (!isFavoriteObjectRead(selection, params)) return;
+  const objects = await readPinnedObjects(owner);
+  return {
+    facts: objects.map(({ className, primaryKey }) => ({ call: customerObjectRecordCall(className, primaryKey) })),
+    present: (_viewer, facts) => presentFavoriteObjectRows(objects,
+      facts.map((fact, index) => readFavoriteObjectTitle(objects[index], fact)), locale),
+  };
+}
 
 const GALLERY_EXCLUDED_APP_IDS = new Set(["home", "personal-workspace", "workplace", "application-gallery"]);
 
@@ -112,35 +167,92 @@ function shouldInclude(group: FavoriteTargetGroup, candidate: FavoriteTargetGrou
   return group === candidate;
 }
 
+type FavoriteObjectTitle = { title: string; available: boolean };
+
+function favoriteObjectTitle(primaryKey: string, savedTitle?: string, recordLabel?: string) {
+  return recordLabel?.trim() || savedTitle?.trim() || primaryKey;
+}
+
+function readFavoriteObjectTitle(object: HomePinnedObject, fact: JavaPanelReadResult): FavoriteObjectTitle {
+  const { className, primaryKey, title: savedTitle } = object;
+  const unavailable = { title: favoriteObjectTitle(primaryKey, savedTitle), available: false };
+  if (fact.status === "forbidden" || fact.status === "empty") return unavailable;
+  if (fact.status === "error") {
+    if (fact.code === "OBJECT_TYPE_NOT_FOUND") return unavailable;
+    throw new HttpError(502, fact.error, fact.code ?? undefined);
+  }
+  const result = customerObjectRecordResult(className, primaryKey, fact.payload);
+  if (!result.ok) {
+    if (result.error.status === 403 || result.error.status === 404) return unavailable;
+    throw result.error;
+  }
+  return { title: favoriteObjectTitle(primaryKey, savedTitle, result.record.label), available: true };
+}
+
+function favoriteFieldLabels(locale?: string) {
+  return {
+    className: favoriteText(locale, "className"),
+    primaryKey: favoriteText(locale, "primaryKey"),
+    title: favoriteText(locale, "title"),
+  };
+}
+
+function presentFavoriteObjectRows(
+  objects: readonly HomePinnedObject[], titles: readonly FavoriteObjectTitle[], locale?: string,
+): PanelRecord[] {
+  const fieldLabels = favoriteFieldLabels(locale);
+  const unavailableLabel = favoriteText(locale, "unavailable");
+  return objects.map(({ className, primaryKey }, index) => {
+    const { title, available } = titles[index];
+    const label = available ? title : unavailableLabel;
+    const canMoveUp = index > 0;
+    const canMoveDown = index < objects.length - 1;
+    return {
+      className, primaryKey, label, subtitle: className,
+      fields: {
+        className, primaryKey, title: label, favorite: true,
+        canMoveUp, canMoveDown, unavailable: !available,
+      },
+      fieldLabels,
+      outputs: {
+        openPath: available ? customerObjectOpenPath(className, primaryKey) : "",
+        favorited: true, canMoveUp, canMoveDown, unavailable: !available,
+      },
+    };
+  });
+}
+
 async function resolveCustomerObjectTitle(
   owner: ProductOwner,
   viewer: AssistantCredentials,
   className: string,
   primaryKey: string,
   fallback?: string,
-): Promise<{ title: string; available: boolean }> {
+): Promise<FavoriteObjectTitle> {
   try {
     const record = await createCustomerOntologyReadAdapter(owner, viewer).record(className, primaryKey);
-    const label = record.label?.trim();
-    if (label) return { title: label, available: true };
-    return { title: fallback?.trim() || primaryKey, available: true };
+    return { title: favoriteObjectTitle(primaryKey, fallback, record.label), available: true };
   } catch (error) {
     if (error instanceof HttpError && (error.status === 403 || error.status === 404)) {
-      return { title: fallback?.trim() || primaryKey, available: false };
+      return { title: favoriteObjectTitle(primaryKey, fallback), available: false };
     }
-    return { title: fallback?.trim() || primaryKey, available: true };
+    return { title: favoriteObjectTitle(primaryKey, fallback), available: true };
   }
+}
+
+function favoriteDirectory(owner: ProductOwner, viewer: AssistantCredentials) {
+  return {
+    applications: () => applicationCatalogueClient(viewer).navigation().catch(() => []),
+    agents: () => import("../assistant/service").then(({ assistantService }) =>
+      assistantService.agents(owner, viewer).then(result => result.agents)).catch(() => []),
+  };
 }
 
 export function createFavoriteReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const language = resolveLocale(viewer.locale);
   const unavailableLabel = favoriteText(viewer.locale, "unavailable");
   const untitledSession = tForLocale(viewer.locale, "panels.agentSession.untitled");
-  const fieldLabels = {
-    className: favoriteText(viewer.locale, "className"),
-    primaryKey: favoriteText(viewer.locale, "primaryKey"),
-    title: favoriteText(viewer.locale, "title"),
-  };
+  const fieldLabels = favoriteFieldLabels(viewer.locale);
 
   const DEFAULT_PREVIEW_METRICS_PER_BOARD = 3;
   const DEFAULT_PREVIEW_CHARTS_PER_BOARD = 2;
@@ -219,7 +331,7 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
   }
 
   return {
-    async list(params: { targetGroup?: FavoriteTargetGroup } = {}): Promise<PanelRecord[]> {
+    async list(params: { targetGroup?: FavoriteTargetGroup } = {}, directory = favoriteDirectory(owner, viewer)): Promise<PanelRecord[]> {
       const group = favoriteTargetGroupSchema.parse(params.targetGroup ?? "all");
       const state = await readAllFavoriteState(owner);
       const rows: PanelRecord[] = [];
@@ -232,11 +344,9 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
       const needObjects = shouldInclude(group, "objects");
 
       const [catalog, agents, dashboards, sessionsMap] = await Promise.all([
-        needApps ? applicationCatalogueClient(viewer).navigation().catch(() => []) : Promise.resolve([]),
-        needAgents
-          ? import("../assistant/service").then(({ assistantService }) => assistantService.agents(owner, viewer).then(r => r.agents)).catch(() => [])
-          : Promise.resolve([]),
-        needDashboards || needDashboardCards ? listDashboards(owner.userId, owner.domainId).catch(() => []) : Promise.resolve([]),
+        needApps ? directory.applications() : Promise.resolve([]),
+        needAgents ? directory.agents() : Promise.resolve([]),
+        needDashboards ? listDashboards(owner.userId, owner.domainId).catch(() => []) : Promise.resolve([]),
         needSessions && state.pinnedSessions.length > 0
           ? assistantStore.ownedSessionsByIds(owner, state.pinnedSessions).catch(() => new Map())
           : Promise.resolve(new Map()),
@@ -348,43 +458,13 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
 
       if (needDashboardCards) {
         const { items: selectedEntries } = await selectFollowedDashboardCards(state);
-        const metricClient = new DashboardMetricClient(owner.domainId, viewer);
-        const metricSpecs = new Map<string, Promise<Awaited<ReturnType<DashboardMetricClient["describe"]>>>>();
-        const describeMetric = (metricId: string) => {
-          let pending = metricSpecs.get(metricId);
-          if (!pending) {
-            pending = metricClient.describe(metricId);
-            metricSpecs.set(metricId, pending);
-          }
-          return pending;
-        };
-
         const total = selectedEntries.length;
-        const previewRows = await Promise.all(selectedEntries.map(async (item, index) => {
+        rows.push(...selectedEntries.map((item, index): PanelRecord => {
           const { dashboardId, dashboardName, cardId, kind, entry } = item;
           const pk = dashboardCardPrimaryKey({ dashboardId, cardId });
           const isChart = kind === "chart";
 
-          let output: DashboardMetricOutput | null = null;
-          let valueText: string | undefined;
-          let errorText: string | undefined;
-          try {
-            const spec = await describeMetric(entry.query.metricId);
-            const executed = await metricClient.execute(entry.query, spec.revision);
-            requireMatchingOutput(entry, executed);
-            output = executed;
-            if (!("chartFile" in entry) && executed.rows.length > 0) {
-              valueText = chartValueText(
-                executed.rows[0]?.[entry.valueField],
-                entry.formats?.[entry.valueField],
-                language,
-              );
-            }
-          } catch (failure) {
-            errorText = failure instanceof Error ? failure.message : String(failure);
-          }
-
-          const record: PanelRecord = {
+          return {
             className: DASHBOARD_CARD,
             primaryKey: pk,
             label: entry.name,
@@ -406,9 +486,6 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
               ...(!("chartFile" in entry) && entry.unit ? { unit: entry.unit } : {}),
               ...(!("chartFile" in entry) && entry.formats ? { formats: { kind: "json", value: entry.formats } } : {}),
               ...("chartFile" in entry ? { chartFile: { kind: "json", value: entry.chartFile } } : {}),
-              ...(valueText !== undefined ? { value: valueText } : {}),
-              ...(output ? { output: { kind: "json", value: output }, partial: Boolean(output.truncation) } : {}),
-              ...(errorText ? { error: errorText } : {}),
               favorite: true,
               canMoveUp: index > 0,
               canMoveDown: index < total - 1,
@@ -423,10 +500,7 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
               unavailable: false,
             },
           };
-          return record;
         }));
-
-        rows.push(...previewRows);
       }
 
       if (needSessions) {
@@ -472,32 +546,7 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
             resolveCustomerObjectTitle(owner, viewer, item.className, item.primaryKey, item.title),
           ),
         );
-        state.pinnedObjects.forEach((item, index) => {
-          const resolved = resolvedObjects[index]!;
-          rows.push({
-            className: item.className,
-            primaryKey: item.primaryKey,
-            label: resolved.available ? resolved.title : unavailableLabel,
-            subtitle: item.className,
-            fields: {
-              className: item.className,
-              primaryKey: item.primaryKey,
-              title: resolved.available ? resolved.title : unavailableLabel,
-              favorite: true,
-              canMoveUp: index > 0,
-              canMoveDown: index < state.pinnedObjects.length - 1,
-              unavailable: !resolved.available,
-            },
-            fieldLabels,
-            outputs: {
-              openPath: resolved.available ? customerObjectOpenPath(item.className, item.primaryKey) : "",
-              favorited: true,
-              canMoveUp: index > 0,
-              canMoveDown: index < state.pinnedObjects.length - 1,
-              unavailable: !resolved.available,
-            },
-          });
-        });
+        rows.push(...presentFavoriteObjectRows(state.pinnedObjects, resolvedObjects, viewer.locale));
       }
 
       return rows;

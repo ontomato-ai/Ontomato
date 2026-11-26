@@ -360,14 +360,18 @@ async function requireOwnedCaseSet(
 ): Promise<{ domainId: string; caseSet: CaseSet }> {
   await assertManagement(operation, owner, viewer);
   const { domainId } = owner;
+  return { domainId, caseSet: ownedCaseSet(id, domainId, viewer.locale) };
+}
+
+function ownedCaseSet(id: string, domainId: string, locale?: string): CaseSet {
   if (!isValidCaseId(id)) {
     throw new HttpError(400, "Invalid case set id");
   }
   const caseSet = getCaseSet(id, domainId);
   if (!caseSet) {
-    throw new HttpError(404, tForLocale(viewer.locale, "panels.ops.caseSets.errors.notFound"), "NOT_FOUND");
+    throw new HttpError(404, tForLocale(locale, "panels.ops.caseSets.errors.notFound"), "NOT_FOUND");
   }
-  return { domainId, caseSet };
+  return caseSet;
 }
 
 function caseSetRecord(
@@ -400,12 +404,10 @@ function caseSetRecord(
   };
 }
 
-export function createAutotestCaseSetReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const locale = viewer.locale;
-
+function autotestCaseSetReads(owner: ProductOwner, locale: string | undefined, requireAccess: () => Promise<void> | void) {
   return {
     async list(params: { search?: string } = {}): Promise<PanelRecord[]> {
-      await assertManagement(workbenchManagement.opsCaseSetsRead, owner, viewer);
+      await requireAccess();
       const { domainId } = owner;
       const query = params.search?.trim().toLowerCase() ?? "";
       return listCaseSets(domainId)
@@ -414,7 +416,8 @@ export function createAutotestCaseSetReadAdapter(owner: ProductOwner, viewer: As
     },
 
     async record(id: string): Promise<PanelRecord> {
-      const { caseSet } = await requireOwnedCaseSet(workbenchManagement.opsCaseSetsRead, owner, viewer, id);
+      await requireAccess();
+      const caseSet = ownedCaseSet(id, owner.domainId, locale);
       return caseSetRecord(
         {
           id: caseSet.id,
@@ -428,10 +431,21 @@ export function createAutotestCaseSetReadAdapter(owner: ProductOwner, viewer: As
     },
 
     async form(id: string, inputs: CaseSetFormInputs = {}): Promise<PanelFormDescription> {
-      const { caseSet } = await requireOwnedCaseSet(workbenchManagement.opsCaseSetsRead, owner, viewer, id);
+      await requireAccess();
+      const caseSet = ownedCaseSet(id, owner.domainId, locale);
       return buildCaseSetFormDescription(caseSet, inputs, locale);
     },
   };
+}
+
+export function createAutotestCaseSetReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  return autotestCaseSetReads(owner, viewer.locale, () => assertManagement(workbenchManagement.opsCaseSetsRead, owner, viewer));
+}
+
+export function createRegisteredAutotestCaseSetReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
+  return autotestCaseSetReads(owner, locale, () => {
+    z.literal(workbenchManagement.opsCaseSetsRead.id).parse(javaFacts);
+  });
 }
 
 function refusalFromError(error: unknown, fallbackCode: string, fallbackMessage: string): SinglePanelOperationOutcome {
@@ -489,7 +503,7 @@ export const autotestCaseSetServerOperations = [
     targetSchema: z.null(),
     inputSchema: createCaseSetInputSchema,
     resultSchema: createCaseSetResultSchema,
-    describeInputSchema(_host, locale) {
+    describeLocalInputSchema(locale) {
       return {
         type: "object",
         properties: {
@@ -544,7 +558,7 @@ export const autotestCaseSetServerOperations = [
     targetSchema: z.null(),
     inputSchema: importCaseSetInputSchema,
     resultSchema: importCaseSetResultSchema,
-    describeInputSchema(_host, locale) {
+    describeLocalInputSchema(locale) {
       return {
         type: "object",
         properties: {

@@ -9,6 +9,7 @@ import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -50,12 +51,16 @@ public class CapabilityDefinitions {
     }
 
     public boolean allows(SubjectContext subject, Request request) {
-        return authorization.decide(subject, request).allowed();
+        return decide(subject, request).allowed();
     }
 
     public void require(SubjectContext subject, Request request) {
-        var decision = authorization.decide(subject, request);
+        var decision = decide(subject, request);
         if (!decision.allowed()) throw new Denied(decision);
+    }
+
+    public Decision decide(SubjectContext subject, Request request) {
+        return authorization.decide(subject, request);
     }
 
     public static ObjectAccess access(MetricView metric, Verb verb) {
@@ -73,9 +78,13 @@ public class CapabilityDefinitions {
     }
 
     public static ObjectAccess access(Trigger trigger, Verb verb) {
-        var state = Trigger.PENDING_REVIEW.equals(trigger.status()) ? DefinitionState.DRAFT : DefinitionState.PUBLISHED;
-        return new ObjectAccess(new ObjectTarget(trigger.domain(), Kind.TRIGGER, trigger.id()), verb,
-                new OwnerFacts(trigger.creator(), state, trigger.coauthors()));
+        return triggerAccess(trigger.domain(), trigger.id(), trigger.creator(), trigger.status(), trigger.coauthors(), verb);
+    }
+
+    public static ObjectAccess triggerAccess(String domain, String id, String creator, String status,
+            List<String> coauthors, Verb verb) {
+        var state = Trigger.PENDING_REVIEW.equals(status) ? DefinitionState.DRAFT : DefinitionState.PUBLISHED;
+        return new ObjectAccess(new ObjectTarget(domain, Kind.TRIGGER, id), verb, new OwnerFacts(creator, state, coauthors));
     }
 
     public static ObjectAccess access(Workflow workflow, Verb verb) {

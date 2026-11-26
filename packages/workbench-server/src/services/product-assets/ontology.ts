@@ -1,19 +1,21 @@
-import { productGraphSchema } from "@ontomato/contracts/product-graph";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import type { ProductOwner } from "../product-governance/service-authentication";
-import type { readProductAssetGraph } from "../product-panels/asset-graph-read";
-import { addProductGraphAuthorization, type EditableGraphTarget } from "./authorization-edges";
+import { productGraphSchema, type ProductGraph } from "@ontomato/contracts/product-graph";
+import type { AuthorizationGraphFacts } from "../governance/policy-access";
+import { appendProductGraphAuthorization, type EditableGraphTarget } from "./authorization-edges";
 
-export async function addAuthorizationEdges(
-  { graph, maintainableApplicationIds }: Awaited<ReturnType<typeof readProductAssetGraph>>,
-  _owner: ProductOwner,
-  viewer: AssistantCredentials,
-) {
-  const editableTargets = graph.nodes.flatMap<EditableGraphTarget>(node =>
+type AssetGraph = { graph: ProductGraph; maintainableApplicationIds: ReadonlySet<string> };
+
+function editableApplications({ graph, maintainableApplicationIds }: AssetGraph) {
+  return graph.nodes.flatMap<EditableGraphTarget>(node =>
     node.kind === "application" && node.assetId && maintainableApplicationIds.has(node.assetId)
       ? [{ kind: "APPLICATION", key: node.assetId, nodeId: node.id }]
       : [],
   );
-  await addProductGraphAuthorization(graph, editableTargets, viewer);
-  return productGraphSchema.parse(graph);
+}
+
+export function presentAuthorizationEdges(
+  assetGraph: AssetGraph, facts: Pick<AuthorizationGraphFacts, "entries" | "policyGrants" | "rolePolicies"> | undefined,
+  locale?: string,
+) {
+  if (facts) appendProductGraphAuthorization(assetGraph.graph, editableApplications(assetGraph), facts, locale);
+  return productGraphSchema.parse(assetGraph.graph);
 }

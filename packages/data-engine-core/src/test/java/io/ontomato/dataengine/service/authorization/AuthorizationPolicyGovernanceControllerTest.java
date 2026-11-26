@@ -4,6 +4,8 @@ import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -23,6 +25,7 @@ import io.ontomato.dataengine.controller.AuthorizationPolicyGovernanceController
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.WorkflowDao;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.schedules.TaskStore;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
@@ -45,6 +48,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.handler.MappedInterceptor;
+import org.springframework.web.server.ResponseStatusException;
 
 class AuthorizationPolicyGovernanceControllerTest {
     private static final String PREFIX = "/authorization/policies/";
@@ -62,6 +66,7 @@ class AuthorizationPolicyGovernanceControllerTest {
     private final AdminService admin = mock(AdminService.class);
     private final User user = mock(User.class);
     private MockMvc http;
+    private AuthorizationPolicyGovernanceController controller;
 
     @BeforeEach
     void setUp() {
@@ -70,7 +75,7 @@ class AuthorizationPolicyGovernanceControllerTest {
         var authorization = new AuthorizationService(subjects, store, operations, grants, mock(DataPermissionLookup.class));
         var policies = new AuthorizationPolicies(store, operations, authorization, actions, admin);
         var inspector = new AuthorizationAccessInspector(authorization, store, subjects, policies, workflows, grants, actions);
-        var controller = new AuthorizationPolicyGovernanceController(new WorkbenchServiceAuthentication("workbench"),
+        controller = new AuthorizationPolicyGovernanceController(new WorkbenchServiceAuthentication("workbench"),
                 identity, authorization, policies, inspector, catalog, subjects, store, actions, workflows, triggers);
         var beans = new DefaultListableBeanFactory();
         beans.registerSingleton("access", new ManagementRequestAccess(identity, authorization, operations));
@@ -100,6 +105,55 @@ class AuthorizationPolicyGovernanceControllerTest {
         when(user.getDomainId()).thenReturn("");
         http.perform(rpc("graph-facts", "{}")).andExpect(status().isUnauthorized());
         verifyNoInteractions(store, subjects, catalog, actions, workflows, triggers);
+    }
+
+    @Test
+    void policyInstanceCreateKindsReadsOnlySelectedKindsOfCreateGrant() {
+        var subject = new AuthorizationService.SubjectContext(
+                new AuthorizationService.VerifiedIdentity("domain", "reader", AuthorizationService.CredentialLimit.UNRESTRICTED),
+                null, Map.of(), Set.of(), Set.of());
+        var panelCreate = new ObjectGrant("panel-policy", new ObjectTarget("domain", Kind.PANEL, ""), Verb.CREATE, null);
+        when(store.domainObjectGrants("domain")).thenReturn(List.of(panelCreate, panelCreate,
+                new ObjectGrant("function-policy", new ObjectTarget("domain", Kind.READ_FUNCTION, ""), Verb.CREATE, null),
+                new ObjectGrant("not-selected", new ObjectTarget("domain", Kind.WORKFLOW, ""), Verb.CREATE, null),
+                new ObjectGrant("not-create", new ObjectTarget("domain", Kind.PANEL, "p"), Verb.USE, null)));
+        WorkbenchPanelRead read = ReflectionTestUtils.invokeMethod(controller, "policyInstanceCreateKinds");
+
+        assertEquals(List.of(new AuthorizationPolicyGovernanceController.PolicyCreateKind("panel-policy", Kind.PANEL),
+                new AuthorizationPolicyGovernanceController.PolicyCreateKind("function-policy", Kind.READ_FUNCTION)),
+                read.handler().read(subject, Map.of("targetKinds", List.of("PANEL", "READ_FUNCTION"), "domainId", "outside")));
+        assertThrows(ResponseStatusException.class,
+                () -> read.handler().read(subject, Map.of("targetKinds", List.of("PANEL", "ENTRY"))));
+        verify(store).domainObjectGrants("domain");
+        verifyNoMoreInteractions(store);
+        verifyNoInteractions(identity, subjects, catalog, actions, workflows, triggers);
+    }
+
+    @Test
+    void registeredGraphAuthorizationReturnsOnlyEdgesOfMaintainableCandidates() {
+        var subject = new AuthorizationService.SubjectContext(
+                new AuthorizationService.VerifiedIdentity("domain", "reader", AuthorizationService.CredentialLimit.UNRESTRICTED),
+                null, Map.of(), Set.of(), Set.of());
+        var entry = new ApplicationCatalog.VisibleEntry("app/main", "app", Map.of("en", "Open"), "main");
+        var shared = new ApplicationCatalog.VisibleEntry("shared/main", "shared", Map.of("en", "Shared"), "shared");
+        var candidates = List.of(
+                new ApplicationCatalog.ProductGraphCandidate("app", true, new JSONObject(), List.of(entry)),
+                new ApplicationCatalog.ProductGraphCandidate("shared", false, new JSONObject(), List.of(shared)));
+        var edit = new ObjectTarget("domain", Kind.APPLICATION, "app");
+        var unrelated = new ObjectTarget("domain", Kind.APPLICATION, "unrelated");
+        when(store.domainObjectGrants("domain")).thenReturn(List.of(
+                new ObjectGrant("object", edit, Verb.EDIT, null),
+                new ObjectGrant("object", ENTRY, Verb.ENTER, null),
+                new ObjectGrant("hidden", unrelated, Verb.EDIT, null),
+                new ObjectGrant("hidden", new ObjectTarget("domain", Kind.ENTRY, "shared/main"), Verb.ENTER, null)));
+        var visibleRole = new PolicyRef("reader", "object", PolicyKind.OBJECT);
+        when(store.domainRolePolicies("domain")).thenReturn(List.of(visibleRole,
+                new PolicyRef("other", "hidden", PolicyKind.OBJECT)));
+        assertEquals(new AuthorizationPolicyGovernanceController.ProductGraphAuthorization(List.of(visibleRole), List.of(entry), List.of(
+                new AuthorizationPolicyGovernanceController.ProductGraphGrant("object", Kind.APPLICATION, "app", Verb.EDIT),
+                new AuthorizationPolicyGovernanceController.ProductGraphGrant("object", Kind.ENTRY, "app/main", Verb.ENTER))),
+                controller.productGraphAuthorization(subject, candidates));
+        verifyNoInteractions(identity, catalog);
     }
 
     @Test
@@ -406,6 +460,39 @@ class AuthorizationPolicyGovernanceControllerTest {
         verifyNoInteractions(subjects);
         verify(store).domainObjectGrants("domain");
         verifyNoInteractions(workflows);
+
+        clearInvocations(catalog, store);
+        var subject = new AuthorizationService.SubjectContext(new AuthorizationService.VerifiedIdentity(
+                "domain", "operator", AuthorizationService.CredentialLimit.UNRESTRICTED), null, Map.of(), Set.of(), Set.of());
+        var bean = (WorkbenchPanelRead) ReflectionTestUtils.invokeMethod(controller, "ontologyPolicyEntryGrants");
+        var policyType = "platform:PermissionPolicy";
+        var appType = "platform:Application";
+        var point = new AuthorizationPolicyGovernanceController.PolicyGrantFact("selected", Kind.ENTRY, "app/main", Verb.ENTER, null);
+        when(store.policyEntryGrants("domain", "selected")).thenReturn(List.of(grant(ENTRY, Verb.ENTER, null)));
+        when(store.applicationEntryGrants("domain", "app")).thenReturn(List.of(grant(ENTRY, Verb.ENTER, null)));
+        assertEquals(List.of(point), bean.handler().read(subject, Map.of("className", policyType, "primaryKey", "selected",
+                "from", policyType, "to", appType, "direction", "outgoing", "domainId", "other")));
+        assertEquals(List.of(point), bean.handler().read(subject, Map.of("className", appType, "primaryKey", "app",
+                "from", policyType, "to", appType, "direction", "incoming", "domainId", "other")));
+        verify(store).policyEntryGrants("domain", "selected");
+        verify(store).applicationEntryGrants("domain", "app");
+
+        var actionsRead = (WorkbenchPanelRead) ReflectionTestUtils.invokeMethod(controller, "ontologyPolicyActionGrants");
+        var actionType = "platform:Action";
+        var actionGrants = List.of(grant(ACTION, Verb.EDIT, null), grant(ACTION, Verb.EXECUTE, SELF));
+        var actionFacts = List.of(
+                new AuthorizationPolicyGovernanceController.PolicyGrantFact("selected", Kind.ACTION, "approve", Verb.EDIT, null),
+                new AuthorizationPolicyGovernanceController.PolicyGrantFact("selected", Kind.ACTION, "approve", Verb.EXECUTE, SELF));
+        when(store.policyActionGrants("domain", "selected")).thenReturn(actionGrants);
+        when(store.actionPolicyGrants("domain", "approve")).thenReturn(actionGrants);
+        assertEquals(actionFacts, actionsRead.handler().read(subject, Map.of("className", policyType, "primaryKey", "selected",
+                "from", policyType, "to", actionType, "direction", "outgoing", "domainId", "other")));
+        assertEquals(actionFacts, actionsRead.handler().read(subject, Map.of("className", actionType, "primaryKey", "approve",
+                "from", policyType, "to", actionType, "direction", "incoming", "domainId", "other")));
+        verify(store).policyActionGrants("domain", "selected");
+        verify(store).actionPolicyGrants("domain", "approve");
+        verifyNoMoreInteractions(store);
+        verifyNoInteractions(subjects, catalog);
     }
 
     private void permissions(boolean read, boolean change) {
@@ -415,7 +502,7 @@ class AuthorizationPolicyGovernanceControllerTest {
     }
 
     private static RoleResolution roles(Set<String> ids) {
-        return new RoleResolution(ids, ids, List.of(), Set.of(), Map.of(), false);
+        return new RoleResolution(ids, ids, List.of(), Set.of(), Map.of(), false, false);
     }
 
     private static ObjectGrant grant(ObjectTarget target, Verb verb, GrantScope scope) {

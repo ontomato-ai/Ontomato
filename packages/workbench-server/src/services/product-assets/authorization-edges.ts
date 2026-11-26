@@ -1,7 +1,6 @@
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { ProductGraph } from "@ontomato/contracts/product-graph";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { readAuthorizationGraphFacts } from "../governance/policy-access";
+import type { AuthorizationGraphFacts } from "../governance/policy-access";
 
 export interface EditableGraphTarget {
   kind: string;
@@ -12,13 +11,13 @@ export interface EditableGraphTarget {
 const targetKey = (kind: string, key: string) => JSON.stringify([kind, key]);
 const verbs: ReadonlyMap<string, ProductGraph["edges"][number]["relation"]> = new Map([["ENTER", "enter"], ["USE", "use"], ["VIEW", "view"], ["EDIT", "edit"]] as const);
 
-export async function addProductGraphAuthorization(
+export function appendProductGraphAuthorization(
   graph: ProductGraph,
   editableTargets: readonly EditableGraphTarget[],
-  credentials: AssistantCredentials,
-): Promise<void> {
+  facts: Pick<AuthorizationGraphFacts, "entries" | "policyGrants" | "rolePolicies">,
+  locale?: string,
+) {
   if (!editableTargets.length) return;
-  const facts = await readAuthorizationGraphFacts(credentials);
   const targets = new Map(editableTargets.map(target => [targetKey(target.kind, target.key), target]));
   const entries = new Map(facts.entries.map(entry => [entry.id, entry]));
   const nodes = new Map(graph.nodes.map(node => [node.id, node]));
@@ -43,7 +42,7 @@ export async function addProductGraphAuthorization(
       target = `entry:${entry.id}`;
       addNode({
         id: target, kind: "entry", category: "ontology",
-        name: localizedApplicationText(entry.names, credentials.locale ?? "en") || entry.pageKey,
+        name: localizedApplicationText(entry.names, locale ?? "en") || entry.pageKey,
       });
       addEdge(application.nodeId, target, "contains", "product-index");
     }

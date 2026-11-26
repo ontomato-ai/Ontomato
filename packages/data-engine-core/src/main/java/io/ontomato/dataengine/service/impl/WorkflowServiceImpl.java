@@ -19,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import io.ontomato.dataengine.bean.workflow.RunContract;
 import io.ontomato.dataengine.bean.workflow.StepActorPolicy;
 import io.ontomato.dataengine.bean.workflow.Workflow;
+import io.ontomato.dataengine.bean.workflow.WorkflowDirectoryEntry;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.WorkflowDao;
@@ -97,6 +98,11 @@ public class WorkflowServiceImpl implements WorkflowService {
     @Override
     public List<Workflow> queryList(String status, String domainId) {
         return workflows.queryList(status, domainId);
+    }
+
+    @Override
+    public List<WorkflowDirectoryEntry> directoryEntries(String domainId, Set<String> ids) {
+        return workflows.directoryEntries(domainId, ids);
     }
 
     @Override

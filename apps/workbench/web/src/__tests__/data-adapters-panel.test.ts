@@ -180,6 +180,9 @@ async function openDataAdaptersPanel(handlers: {
       return Response.json({
         applicationId: appId,
         use: adaptersUse,
+        allowStandalone: false,
+        frame: null,
+        content: null,
         menu: { singleEntry: false, groups: [], panelUses: [adaptersUse] },
       });
     }

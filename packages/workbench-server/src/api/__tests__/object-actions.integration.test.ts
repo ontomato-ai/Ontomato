@@ -1,3 +1,5 @@
+import { actionOwnerRead } from "../../__tests__/fixtures/workbench-panel-read-facts";
+import { mountWorkbenchPanelReadsOwner } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
@@ -170,11 +172,15 @@ beforeAll(async () => {
     owner.executions.push({ credential: req.header("tk"), id: req.body.id, param: JSON.parse(req.body.param) });
     res.json(owner.execute());
   });
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     const userId = req.header("tk");
     Object.assign(req, { userId, domainId: "domain", token: userId, locale: "en" });
     next();
-  }, buildTestAccess, panelOperationsRouter);
+  };
+  mountWorkbenchPanelReadsOwner(app, { token: "fixture-service", viewer: userId => ({ domainId: "domain", userId }), read: actionOwnerRead });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate, buildTestAccess, panelOperationsRouter);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   server = await new Promise<Server>(resolve => {

@@ -39,7 +39,7 @@ export function panelNavigator(router: Router, beside?: (address: string) => voi
     // A panel entry's route opens on the first address that asks for it, so another page's entry is opened here too.
     if (!served()) servePanelEntries(router);
     // Asked before the owning application's entry table was read: load it once, and only then call the address absent.
-    if (!served()) await readAndServePanelEntries(router, address);
+    const opened = !served() ? await readAndServePanelEntries(router, address) : null;
     if (!served()) {
       const reason = new Error(workbenchI18n().global.t("platform.panelAddressUnavailable", { address }));
       ElMessage.error(reason.message);
@@ -49,6 +49,16 @@ export function panelNavigator(router: Router, beside?: (address: string) => voi
     // otherwise a leaving panel that clears state right before `navigate()` would abort its own navigation.
     await nextTick();
     if (beside) beside(address);
-    else await router.push(address);
+    else {
+      const targetPath = address.split("?")[0]!;
+      const stop = opened && router.beforeResolve((to) => {
+        if (to.path === targetPath) to.meta.openedPanelEntry = opened;
+      });
+      try {
+        await router.push(address);
+      } finally {
+        stop?.();
+      }
+    }
   };
 }

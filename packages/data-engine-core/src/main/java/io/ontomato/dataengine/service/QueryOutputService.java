@@ -25,6 +25,13 @@ public class QueryOutputService {
     return execute(id, recipe, analysis, access, lang, List.of());
   }
 
+  public JSONObject executeMetric(JSONObject request, QueryAccessService.Access access, String lang) throws Exception {
+    var recipe = JSONObject.of("kind", "metric", "metricId", request.getString("id"),
+        "revision", request.getString("revision"), "parameters", request.getJSONObject("parameters"));
+    if (request.containsKey("bindingId")) recipe.put("bindingId", request.getString("bindingId"));
+    return execute(UUID.randomUUID().toString(), recipe, null, access, lang);
+  }
+
   @SuppressWarnings("unchecked")
   public JSONObject execute(String id, JSONObject recipe, JSONObject analysis,
       QueryAccessService.Access access, String lang, List<String> classNames) throws Exception {

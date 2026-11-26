@@ -1,13 +1,20 @@
 package io.ontomato.dataengine.dao;
 
+import static io.ontomato.dataengine.service.OntologyNeighborFacts.ID_PADDING;
+
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Component;
 
 import com.alibaba.fastjson2.JSON;
@@ -15,7 +22,10 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
 import io.ontomato.dataengine.bean.workflow.Workflow;
+import io.ontomato.dataengine.service.UserDefinitionProvenance;
+import io.ontomato.dataengine.bean.workflow.WorkflowDirectoryEntry;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
+import io.ontomato.dataengine.service.OntologyNeighborFacts.Link;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +62,12 @@ public class WorkflowDao {
 			""";
 
 	private static final String EDITABLE = "SELECT w.*, " + HAS_DRAFT + " FROM workflow w LEFT " + REVISION_JOIN;
+
+	// The default workflow directory reads the editable row, including edits to an active workflow.
+	static final String EDITABLE_STEP_ACTIONS = """
+			SELECT NULLIF(BTRIM(step.value ->> 'actionId'), '') AS action_id, step.position
+			FROM jsonb_array_elements(NULLIF(BTRIM(w.steps), '')::jsonb) WITH ORDINALITY AS step(value, position)
+			""";
 
 	private static final String ACTIVE = """
 			SELECT w.id, v.name, v.description, w.domain_id, w.status, w.version, v.steps,
@@ -232,6 +248,67 @@ public class WorkflowDao {
 		List<Object> params = new ArrayList<>();
 		String sql = selection + domainStatusFilter(status, domainId, params) + " ORDER BY w.create_timestamp DESC";
 		return jdbcTemplate.query(sql, (rs, rowNum) -> map(rs), params.toArray());
+	}
+
+	public List<UserDefinitionProvenance> provenanceCandidates(String domainId, Set<String> memberIds) {
+		var ids = memberIds.toArray();
+		return jdbcTemplate.query("""
+				WITH candidates AS (
+					SELECT id FROM workflow WHERE domain_id = ? AND BTRIM(created_by, ?) = ANY (?)
+					UNION
+					SELECT workflow_id FROM workflow_event
+					WHERE domain_id = ? AND event = ? AND BTRIM(principal_id, ?) = ANY (?)
+				)
+				SELECT w.id, w.name, w.created_by, reviewer.principal_id
+				FROM candidates c JOIN workflow w ON w.id = c.id
+				LEFT JOIN LATERAL (
+					SELECT principal_id FROM workflow_event
+					WHERE workflow_id = w.id AND event = ?
+					ORDER BY create_timestamp DESC LIMIT 1
+				) reviewer ON TRUE
+				WHERE w.domain_id = ? AND (BTRIM(w.created_by, ?) = ANY (?) OR BTRIM(reviewer.principal_id, ?) = ANY (?))
+				ORDER BY w.create_timestamp DESC
+				""", (row, index) -> new UserDefinitionProvenance(row.getString("id"), row.getString("name"),
+					row.getString("created_by"), row.getString("principal_id")),
+				domainId, ID_PADDING, new SqlArrayValue("varchar", ids),
+				domainId, Workflow.EVENT_ACTIVATED, ID_PADDING, new SqlArrayValue("varchar", ids),
+				Workflow.EVENT_ACTIVATED, domainId, ID_PADDING, new SqlArrayValue("varchar", ids),
+				ID_PADDING, new SqlArrayValue("varchar", ids));
+	}
+
+	public List<WorkflowDirectoryEntry> directoryEntries(String domainId, Set<String> ids) {
+		if (ids.isEmpty()) return List.of();
+		return jdbcTemplate.query("""
+				SELECT id, name, status, version FROM workflow WHERE domain_id = ? AND id = ANY (?)
+				""", statement -> {
+			statement.setString(1, domainId);
+			statement.setArray(2, statement.getConnection().createArrayOf("varchar", ids.toArray()));
+		}, (row, index) -> directoryEntry(row));
+	}
+
+	private static WorkflowDirectoryEntry directoryEntry(ResultSet row) throws SQLException {
+		return new WorkflowDirectoryEntry(row.getString("id"), row.getString("name"),
+				row.getString("status"), row.getObject("version", Integer.class));
+	}
+
+	public record StepActionLinks(List<Link> links, List<WorkflowDirectoryEntry> workflows) {}
+
+	public StepActionLinks stepActionLinks(String domainId, String centerId, boolean fromWorkflow) {
+		String steps = fromWorkflow
+				? " LEFT JOIN LATERAL (" + EDITABLE_STEP_ACTIONS + ") ref ON TRUE WHERE w.domain_id = ? AND w.id = ?"
+				: " CROSS JOIN LATERAL (" + EDITABLE_STEP_ACTIONS + ") ref WHERE w.domain_id = ? AND ref.action_id = ?";
+		return jdbcTemplate.query("SELECT w.id, w.name, w.status, w.version, ref.action_id FROM workflow w" + steps
+				+ " ORDER BY w.create_timestamp DESC, ref.position", rows -> {
+			var links = new ArrayList<Link>();
+			var directory = new LinkedHashMap<String, WorkflowDirectoryEntry>();
+			while (rows.next()) {
+				var workflow = directoryEntry(rows);
+				directory.putIfAbsent(workflow.id(), workflow);
+				String actionId = rows.getString("action_id");
+				if (actionId != null) links.add(new Link(workflow.id(), actionId));
+			}
+			return new StepActionLinks(links, List.copyOf(directory.values()));
+		}, domainId, centerId);
 	}
 
 	public long count(String id, String status, String domainId) {

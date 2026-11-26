@@ -3,6 +3,7 @@ package io.ontomato.dataengine.service.authorization;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.util.SystemUtils;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -65,8 +66,12 @@ public final class ManagementRequestAccess {
 
         var actor = new AuthorizationService.VerifiedIdentity(domain, identity.workbenchSubjectId(user),
                 AuthorizationService.CredentialLimit.UNRESTRICTED);
-        var decision = authorization.decide(authorization.resolveSubject(actor), new AuthorizationService.Management(operationId));
-        if (!decision.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
+        require(authorization.resolveSubject(actor), operationId);
         return user;
+    }
+
+    public void require(SubjectContext subject, String operationId) {
+        var decision = authorization.decide(subject, new AuthorizationService.Management(operationId));
+        if (!decision.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
     }
 }

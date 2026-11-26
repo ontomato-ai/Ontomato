@@ -2,11 +2,7 @@ import { z } from "zod";
 import { agentSkillTargetSchema } from "./skills";
 
 /**
- * Documented contract of the future `platform:Skill/editorAccess` owner fact. It is intentionally independent of the
- * formal panel-read assembly: the first assembly line can batch this call shape behind its owner boundary without this
- * package opening a formal route by itself.
- *
- * Java backing endpoint: `POST /authorization/objects/skill-editor-access`.
+ * The platform:Skill/editorAccess owner fact shares admission with POST /authorization/objects/skill-editor-access.
  * - draft: target and ownerFacts are absent; Java evaluates `Create(Kind.AGENT)`.
  * - existing agent: target is the same AGENT object as agentTarget and ownerFacts are the workbench-owned row facts;
  *   Java evaluates `ObjectAccess(target, EDIT, ownerFacts)`.

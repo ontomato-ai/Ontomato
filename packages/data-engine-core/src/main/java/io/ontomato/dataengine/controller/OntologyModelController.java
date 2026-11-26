@@ -2,11 +2,6 @@ package io.ontomato.dataengine.controller;
 
 import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
 
-import org.springframework.stereotype.Component;
-
-import io.ontomato.dataengine.service.authorization.ManagementOperations;
-
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -14,6 +9,7 @@ import org.apache.logging.log4j.ThreadContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.stereotype.Component;
 import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,6 +28,7 @@ import io.ontomato.dataengine.schedules.ScheduleJson;
 import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OntologyModelException;
+import io.ontomato.dataengine.service.OntologyModelReadScope;
 import io.ontomato.dataengine.service.OntologyModelService;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeCreate;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeOption;
@@ -50,6 +47,7 @@ import io.ontomato.dataengine.service.OntologyModelService.RelationshipUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.RelationshipView;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SystemUtils;
 import jakarta.servlet.http.HttpServletRequest;
@@ -182,7 +180,7 @@ public class OntologyModelController {
 	private Map<String, Integer> countMetadata(String field, HttpServletRequest request) {
 		User user = SystemUtils.getCurUser();
 		ExecutionTarget target = executionTarget(request, user);
-		return Map.of("total", service.countMetadata(user, isClassScoped(target) ? target.classNames() : null).get(field));
+		return Map.of("total", service.countMetadata(user.getDomainId(), new OntologyModelReadScope(target).applies() ? target.classNames() : null).get(field));
 	}
 
 	@ManagementEndpoint(Operations.READ)
@@ -191,12 +189,8 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		ExecutionTarget target = executionTarget(executionRequest, user);
-		List<ObjectTypeView> types = service.objectTypes(user, lang);
-		if (isClassScoped(target)) {
-			return types.stream().filter(type -> target.classNames().contains(type.className())).toList();
-		}
-		return types;
+		var scope = new OntologyModelReadScope(executionTarget(executionRequest, user));
+		return scope.visibleObjectTypes(service.objectTypes(user.getDomainId(), lang));
 	}
 
 	@ManagementEndpoint(Operations.READ)
@@ -205,8 +199,8 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		requireClassScope(executionTarget(executionRequest, user), className);
-		return service.objectType(className, user, lang);
+		new OntologyModelReadScope(executionTarget(executionRequest, user)).requireClasses(className);
+		return service.objectType(className, user.getDomainId(), lang);
 	}
 
 	@ManagementEndpoint(Operations.READ)
@@ -215,7 +209,7 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		requireClassScope(executionTarget(executionRequest, user), className);
+		new OntologyModelReadScope(executionTarget(executionRequest, user)).requireClasses(className);
 		return service.deletionImpact(className, user, lang);
 	}
 
@@ -225,16 +219,10 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		ExecutionTarget target = executionTarget(executionRequest, user);
-		if (className != null && !className.isBlank()) {
-			requireClassScope(target, className);
-			return service.attributes(className, user, lang);
-		}
-		List<AttributeView> attrs = service.attributes(className, user, lang);
-		if (isClassScoped(target)) {
-			return attrs.stream().filter(attr -> target.classNames().contains(attr.className())).toList();
-		}
-		return attrs;
+		var scope = new OntologyModelReadScope(executionTarget(executionRequest, user));
+		scope.requireRequestedClass(className);
+		var attributes = service.attributes(className, user.getDomainId(), lang);
+		return className == null || className.isBlank() ? scope.visibleAttributes(attributes) : attributes;
 	}
 
 	@ManagementEndpoint(Operations.READ)
@@ -243,19 +231,9 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		ExecutionTarget target = executionTarget(executionRequest, user);
-		if (className != null && !className.isBlank()) {
-			requireClassScope(target, className);
-		}
-		List<RelationshipView> relations = service.relationships(className, user, lang);
-		if (isClassScoped(target)) {
-			// A relationship is visible only when both endpoints are inside the caller's class scope.
-			return relations.stream()
-					.filter(rel -> target.classNames().contains(rel.fromclass())
-							&& target.classNames().contains(rel.toclass()))
-					.toList();
-		}
-		return relations;
+		var scope = new OntologyModelReadScope(executionTarget(executionRequest, user));
+		scope.requireRequestedClass(className);
+		return scope.visibleRelationships(service.relationships(className, user.getDomainId(), lang));
 	}
 
 	@ManagementEndpoint(Operations.READ)
@@ -264,9 +242,9 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		ExecutionTarget target = executionTarget(executionRequest, user);
-		RelationshipView view = service.relationship(relationship, user, lang);
-		requireClassScope(target, view.fromclass(), view.toclass());
+		var scope = new OntologyModelReadScope(executionTarget(executionRequest, user));
+		RelationshipView view = service.relationship(relationship, user.getDomainId(), lang);
+		scope.requireClasses(view.fromclass(), view.toclass());
 		return view;
 	}
 
@@ -367,17 +345,12 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		ExecutionTarget target = executionTarget(executionRequest, user);
-		if (isClassScoped(target) && body != null) {
-			if (isObjectTarget(body)) {
-				requireClassScope(target, body.target().primaryKey());
-			}
-			requireBodyValueClassScope(target, body.values(), "className");
-		}
+		var scope = new OntologyModelReadScope(executionTarget(executionRequest, user));
+		scope.requireObjectTypeForm(body);
 		if ("inline".equals(mode)) {
-			return service.objectTypeInlineForm(body, user, lang);
+			return service.objectTypeInlineForm(body, user.getDomainId(), lang);
 		}
-		return service.objectTypeForm(body, user, lang);
+		return service.objectTypeForm(body, user.getDomainId(), lang);
 	}
 
 	@ManagementEndpoint(Operations.READ)
@@ -387,20 +360,12 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		ExecutionTarget target = executionTarget(executionRequest, user);
-		if (isClassScoped(target) && body != null) {
-			if (isObjectTarget(body)) {
-				String ownerClass = attributeTargetClass(body.target().primaryKey());
-				if (ownerClass != null) {
-					requireClassScope(target, ownerClass);
-				}
-			}
-			requireBodyValueClassScope(target, body.values(), "className");
-		}
+		var scope = new OntologyModelReadScope(executionTarget(executionRequest, user));
+		scope.requireAttributeForm(body);
 		if ("inline".equals(mode)) {
-			return service.attributeInlineForm(body, user, lang);
+			return service.attributeInlineForm(body, user.getDomainId(), lang);
 		}
-		return service.attributeForm(body, user, lang);
+		return service.attributeForm(body, user.getDomainId(), lang);
 	}
 
 	@ManagementEndpoint(Operations.READ)
@@ -409,16 +374,9 @@ public class OntologyModelController {
 			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
 			HttpServletRequest executionRequest) {
 		User user = SystemUtils.getCurUser();
-		ExecutionTarget target = executionTarget(executionRequest, user);
-		if (isClassScoped(target) && body != null) {
-			if (isObjectTarget(body) && body.target().primaryKey() != null && !body.target().primaryKey().isBlank()) {
-				RelationshipView existing = service.relationship(body.target().primaryKey().trim(), user, lang);
-				requireClassScope(target, existing.fromclass(), existing.toclass());
-			}
-			requireBodyValueClassScope(target, body.values(), "fromclass");
-			requireBodyValueClassScope(target, body.values(), "toclass");
-		}
-		return service.relationshipForm(body, user, lang);
+		var scope = new OntologyModelReadScope(executionTarget(executionRequest, user));
+		scope.requireRelationshipForm(body, id -> service.relationship(id, user.getDomainId(), lang));
+		return service.relationshipForm(body, user.getDomainId(), lang);
 	}
 
 	private ExecutionTarget executionTarget(HttpServletRequest executionRequest, User user) {
@@ -429,47 +387,4 @@ public class OntologyModelController {
 		return agentExecutionScope.target(executionRequest, user, permission, ExecutionTarget.LIVE);
 	}
 
-	private static boolean isClassScoped(ExecutionTarget target) {
-		return target.testing() || !target.classNames().isEmpty();
-	}
-
-	private static boolean isObjectTarget(FormRequest body) {
-		return body.target() != null && "object".equals(body.target().kind());
-	}
-
-	private static String attributeTargetClass(String primaryKey) {
-		if (primaryKey == null || primaryKey.isBlank()) {
-			return null;
-		}
-		try {
-			JsonNode node = ScheduleJson.JSON.readTree(primaryKey);
-			if (node.isArray() && node.size() == 2 && node.get(0).isTextual() && node.get(1).isTextual()) {
-				return node.get(0).asText();
-			}
-		} catch (Exception ignored) {
-			// Let the service report malformed keys as 400.
-		}
-		return null;
-	}
-
-	private static void requireBodyValueClassScope(ExecutionTarget target, Map<String, Object> values, String key) {
-		if (values != null && values.get(key) instanceof String className && !className.isBlank()) {
-			requireClassScope(target, className.trim());
-		}
-	}
-
-	private static void requireClassScope(ExecutionTarget target, String... classNames) {
-		if (!isClassScoped(target)) {
-			return;
-		}
-		List<String> requested = new ArrayList<>(classNames.length);
-		for (String name : classNames) {
-			if (name == null || name.isBlank()) {
-				target.requireClasses(List.of());
-				return;
-			}
-			requested.add(name);
-		}
-		target.requireClasses(requested);
-	}
 }

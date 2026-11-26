@@ -74,7 +74,7 @@ class ApplicationIconTest {
         when(subjects.resolveRoles(eq("domain"), anyString())).thenAnswer(call -> {
             String user = call.getArgument(1);
             return new RoleResolution(user.equals("editor") ? Set.of("editors") : Set.of(), Set.of(),
-                List.of(), Set.of(), Map.of(), user.equals("admin"));
+                List.of(), Set.of(), Map.of(), user.equals("admin"), false);
         });
         when(store.policies("domain", Set.of("editors"))).thenReturn(List.of(policy));
         when(store.objectGrants(target, Verb.EDIT, Set.of("policy")))

@@ -662,7 +662,7 @@ export const governanceServerOperations = [
     targetSchema: objectTarget(USER),
     inputSchema: resetPasswordInputSchema,
     secretFields: ["/newPassword"],
-    describeInputSchema: (_host, locale) => ({
+    describeLocalInputSchema: locale => ({
       type: "object",
       properties: {
         newPassword: {

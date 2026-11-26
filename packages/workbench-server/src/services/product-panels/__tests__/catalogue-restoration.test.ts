@@ -10,8 +10,10 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { backendGet } from "../../../utils/backend-client";
 import { readPrincipalDirectory } from "../../identity/principal-directory";
-import { createApplicationReadAdapter, toApplicationPanelRecord } from "../application-catalogue";
-import { currentProductGrants, currentProductUsedBy, listCurrentProductNames, listCurrentProducts } from "../catalog";
+import {
+  createApplicationPanelReadPresenter, createApplicationReadAdapter, presentApplicationCatalogueRecord, toApplicationPanelRecord,
+} from "../application-catalogue";
+import { currentProductGrants, currentProjectionUsedBy, listCurrentProductNames, listCurrentProducts } from "../catalog";
 import { createProductProjectionReadAdapter, toProductProjectionPanelRecord } from "../catalog-reads";
 import { readCurrentProjection } from "../current";
 
@@ -38,7 +40,7 @@ vi.mock("../catalog", async (importOriginal) => ({
   ...await importOriginal<typeof import("../catalog")>(),
   listCurrentProducts: vi.fn(),
   listCurrentProductNames: vi.fn(),
-  currentProductUsedBy: vi.fn(),
+  currentProjectionUsedBy: vi.fn(),
   currentProductGrants: vi.fn(),
 }));
 vi.mock("../current", async (importOriginal) => ({
@@ -83,17 +85,26 @@ it("refreshes the projection form from the component's typed configuration and p
   expect(checked.values.config).toEqual({ custom: { untouched: true } });
 });
 
-it("forwards application catalogue sorting and its opaque cursor to Java", async () => {
+it("forwards application catalogue scope, paging and sort, and shares the owner page presentation", async () => {
+  const cursor = "name-en.app-example.QWxwaGE";
+  const page = { rows: [applicationSummary], total: 3, nextCursor: cursor };
   vi.mocked(backendGet).mockResolvedValueOnce({
-    text: JSON.stringify({ success: true, data: { rows: [] } }),
+    text: JSON.stringify({ success: true, data: page }),
   } as Awaited<ReturnType<typeof backendGet>>);
 
   const adapter = createApplicationReadAdapter(owner, viewer);
-  await adapter.query({ sort: "name", cursor: "name-en.app-example.QWxwaGE" });
+  const result = await adapter.query({
+    search: "Public", scope: "maintainable", sort: "name", cursor, page: { number: 2, size: 20 }, size: 10,
+  });
   const request = new URL(vi.mocked(backendGet).mock.lastCall![1], "http://localhost");
   expect(request.pathname).toBe("/platform/applications/catalogue");
-  expect(request.searchParams.get("sort")).toBe("name");
-  expect(request.searchParams.get("cursor")).toBe("name-en.app-example.QWxwaGE");
+  expect(Object.fromEntries(request.searchParams)).toEqual({
+    search: "Public", scope: "maintainable", sort: "name", cursor, page: "2", size: "10",
+  });
+  const calls = vi.mocked(backendGet).mock.calls.length;
+  expect(createApplicationPanelReadPresenter(viewer.locale).query(page)).toEqual(result);
+  expect(result).toMatchObject({ rows: [{ primaryKey: applicationSummary.id }], total: 3, nextCursor: cursor });
+  expect(backendGet).toHaveBeenCalledTimes(calls);
 });
 
 const applicationSummary = {
@@ -124,13 +135,15 @@ it("maps a Java catalogue row to typed fields with localized display values and 
   expect(row.fields).not.toHaveProperty("path");
 });
 
-it("omits unprovided detail fields and preserves a frame panel as a typed reference", () => {
+it("loads the authorized frame label only when the owner includes a frame panel", async () => {
+  const loadNames = vi.fn(async () => new Map([["frame-panel", "Authorized frame"]]));
   const legacy = applicationCatalogueRecordSchema.parse({
     ...applicationSummary,
     names: { en: "Legacy app" }, descriptions: { en: "" },
     entry: { path: "/applications/app-public" }, groups: [], panelUses: [],
   });
-  const row = panelRecordSchema.parse(toApplicationPanelRecord(legacy, "fr"));
+  const row = panelRecordSchema.parse(await presentApplicationCatalogueRecord(legacy, "fr", loadNames));
+  expect(loadNames).not.toHaveBeenCalled();
   expect(row.label).toBe("Legacy app");
   expect(row).not.toHaveProperty("subtitle");
   expect(row.fields).toMatchObject({ path: legacy.entry.path });
@@ -143,14 +156,15 @@ it("omits unprovided detail fields and preserves a frame panel as a typed refere
     entry: { ...legacy.entry, renderer: "panels", home: "/applications/app-public/start", entryKey: "start" },
     framePanelId: "frame-panel",
   });
-  expect(panelRecordSchema.parse(toApplicationPanelRecord(panels, "en"))).toMatchObject({
+  expect(panelRecordSchema.parse(await presentApplicationCatalogueRecord(panels, "en", loadNames))).toMatchObject({
     fields: {
       home: "/applications/app-public/start", renderer: "panels",
-      framePanel: { kind: "reference", className: "platform:ProductPanel", primaryKey: "frame-panel", label: "frame-panel" },
+      framePanel: { kind: "reference", className: "platform:ProductPanel", primaryKey: "frame-panel", label: "Authorized frame" },
       canMaintain: true, canEditEntries: true,
     },
     tones: { maintenance: "success" },
   });
+  expect(loadNames).toHaveBeenCalledTimes(1);
 });
 
 it("maps projection summaries and details to standard PanelRecord records with outputs and sub-tables", async () => {
@@ -246,7 +260,7 @@ it("maps projection summaries and details to standard PanelRecord records with o
     grants: [{ policyId: "policy-edit", name: "Editors", verb: "EDIT" }],
     shared: true,
   });
-  vi.mocked(currentProductUsedBy).mockResolvedValue({
+  vi.mocked(currentProjectionUsedBy).mockResolvedValue({
     panels: [{ id: "panel-orders", name: "Orders page" }],
     hiddenCount: 2,
   });

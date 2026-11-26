@@ -3,6 +3,7 @@ package io.ontomato.dataengine.controller;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
@@ -26,6 +27,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.i18n.LocaleContextHolder;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -213,11 +217,8 @@ public class MetricViewController {
 				var reason = metricViewService.systemDeletionRefusal(id, user.getDomainId(), lang);
 				return JSONObject.of("success", true, "data", JSONObject.of("reason", reason));
 			}
-			MetricView metricView = metricViewService.queryById(id, user.getDomainId());
-            if (metricView == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
+			ret.put("data", readMetric(id, lang, definitions.subject(user)));
 			ret.put("success", true);
-			definitions.requireRead(definitions.subject(user), access(metricView, Verb.USE));
-			ret.put("data", withDisplay(metricView, subjectNames(user.getDomainId(), List.of(metricView)), lang));
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
 		} catch (org.springframework.web.server.ResponseStatusException e) {
@@ -230,6 +231,19 @@ public class MetricViewController {
 		return ret;
 	}
 	
+	@Bean
+	WorkbenchPanelRead metricViewPanelDeleteRefusal() {
+		return new WorkbenchPanelRead("platform:MetricView", "deleteRefusal", (subject, parameters) ->
+				JSONObject.of("reason", metricViewService.systemDeletionRefusal((String) parameters.get("primaryKey"),
+						LocaleContextHolder.getLocale().toLanguageTag(), subject)));
+	}
+
+	@Bean
+	WorkbenchPanelRead metricViewPanelCount() {
+		return new WorkbenchPanelRead("platform:MetricView", "count", (subject, parameters) ->
+				Map.of("rows", List.of(), "total", metricViewService.count(null, null, null, null, subject)));
+	}
+
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryList")
     @ResponseBody
@@ -242,16 +256,12 @@ public class MetricViewController {
 			String origin = param.getString("origin");
 			String className = param.getString("className");
 			ret.put("success", true);
+            var subject = definitions.subject(user);
             if (param.getBooleanValue("countOnly")) {
-                ret.put("data", JSONObject.of("total", metricViewService.count(status, null, className, origin, user.getDomainId())));
+                ret.put("data", JSONObject.of("total", metricViewService.count(status, null, className, origin, subject)));
                 return ret;
             }
-            var subject = definitions.subject(user);
-            String expectedOrigin = origin == null ? "" : origin.trim();
-            List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId()).stream()
-                    .filter(metric -> expectedOrigin.isEmpty() || expectedOrigin.equals(metric.getOrigin()))
-                    .filter(metric -> definitions.canRead(subject, access(metric, Verb.USE))).toList();
-            ret.put("data", withDisplay(metricViews, user.getDomainId(), lang));
+            ret.put("data", readMetrics(status, className, origin, lang, subject));
 		} catch (org.springframework.web.server.ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
@@ -302,8 +312,7 @@ public class MetricViewController {
 	public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
-			User user = SystemUtils.getCurUser();
-			ret.put("data", metricViewService.form(param, lang, user.getDomainId()));
+			ret.put("data", metricViewService.form(param, lang, definitions.current()));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
@@ -368,7 +377,56 @@ public class MetricViewController {
 		return ids;
 	}
 
-	/** The metric's creator and reviewer ids become the names a reader sees; a missing subject stays null. */
+	@Bean
+	WorkbenchPanelRead metricViewPanelList() {
+		return metricViewCatalogueRead("list");
+	}
+
+	@Bean
+	WorkbenchPanelRead metricViewPanelQuery() {
+		return metricViewCatalogueRead("query");
+	}
+
+	@Bean
+	WorkbenchPanelRead metricViewPanelRecord() {
+		return new WorkbenchPanelRead("platform:MetricView", "record", (subject, parameters) ->
+				readMetric((String) parameters.get("primaryKey"), LocaleContextHolder.getLocale().toLanguageTag(), subject));
+	}
+
+	@Bean
+	WorkbenchPanelRead metricViewPanelForm() {
+		return WorkbenchPanelRead.form("platform:MetricView", false, metricViewService::form);
+	}
+
+	@Bean
+	WorkbenchPanelRead metricViewPanelCreateForm() {
+		return WorkbenchPanelRead.form("platform:MetricView", true, metricViewService::form);
+	}
+
+	private WorkbenchPanelRead metricViewCatalogueRead(String name) {
+		return new WorkbenchPanelRead("platform:MetricView", name, (subject, parameters) ->
+				readMetrics((String) parameters.get("status"), null, (String) parameters.get("origin"),
+						LocaleContextHolder.getLocale().toLanguageTag(), subject));
+	}
+
+	private ObjectNode readMetric(String id, String lang, SubjectContext subject) {
+		String domain = subject.identity().domainId();
+		MetricView metric = metricViewService.queryById(id, domain);
+		if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
+		definitions.requireRead(subject, access(metric, Verb.USE));
+		return withDisplay(metric, subjectNames(domain, List.of(metric)), lang);
+	}
+
+	private ArrayNode readMetrics(String status, String className, String origin, String lang, SubjectContext subject) {
+		String domain = subject.identity().domainId();
+		String expectedOrigin = origin == null ? "" : origin.trim();
+		List<MetricView> metrics = metricViewService.queryList(status, null, className, domain).stream()
+				.filter(metric -> expectedOrigin.isEmpty() || expectedOrigin.equals(metric.getOrigin()))
+				.filter(metric -> definitions.canRead(subject, access(metric, Verb.USE))).toList();
+		return withDisplay(metrics, domain, lang);
+	}
+
+	/** Resolves the metric's creator and reviewer display names. */
 	private ObjectNode withDisplay(MetricView metricView, Map<String, String> names, String lang) {
 		ObjectNode item = objectMapper.valueToTree(metricView);
 		item.put("createdByName", names.get(metricView.getCreatedBy()));

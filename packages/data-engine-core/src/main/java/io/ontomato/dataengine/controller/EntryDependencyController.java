@@ -43,8 +43,8 @@ public final class EntryDependencyController {
     @PostMapping(AFFECTED_ROOTS)
     public R<?> roots(HttpServletRequest request, @RequestBody AffectedRoots input) {
         authentication.authenticate(request);
-        if (input.domainId() == null || input.domainId().isBlank() || input.panelIds() == null)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A domain and panel set are required");
+        if (input.panelIds() == null || input.domainId() != null && input.domainId().isBlank())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A panel set is required");
         return R.of(Map.of("entries", catalog.affectedEntryRoots(input.domainId(), input.panelIds())));
     }
 

@@ -463,6 +463,9 @@ async function openDashboardsPanel(options: {
       return Response.json({
         applicationId: appId,
         use: dashboardsUse,
+        allowStandalone: false,
+        frame: null,
+        content: null,
         menu: { singleEntry: true, groups: [], panelUses: [dashboardsUse] },
       });
     }

@@ -53,6 +53,7 @@ import io.ontomato.dataengine.util.SpringBeanUtil;
  */
 class OntologyModelControllerTest {
 
+	private static final String DOMAIN = "model-test-domain";
 	private final OntologyModelController controller =
 			new OntologyModelController(new AgentExecutionScope(mock(OntologyAgentAccess.class)));
 	private final OntologyModelService service = mock(OntologyModelService.class);
@@ -62,6 +63,7 @@ class OntologyModelControllerTest {
 	void wire() {
 		IdentityService identityService = mock(IdentityService.class);
 		when(identityService.getCurrentUser()).thenReturn(user);
+		when(user.getDomainId()).thenReturn(DOMAIN);
 		GenericApplicationContext context = new GenericApplicationContext();
 		context.registerBean(IdentityService.class, () -> identityService);
 		context.refresh();
@@ -125,7 +127,7 @@ class OntologyModelControllerTest {
 
 	@Test
 	void aMissingObjectTypeAnswers404WithItsCode() throws Exception {
-		when(service.objectType("Missing", user, "en")).thenThrow(
+		when(service.objectType("Missing", DOMAIN, "en")).thenThrow(
 				OntologyModelException.notFound("OBJECT_TYPE_NOT_FOUND", "Class not found"));
 
 		var response = mvc().perform(get("/ontology/model/object-type")
@@ -140,7 +142,7 @@ class OntologyModelControllerTest {
 
 	@Test
 	void anUngrantedReaderIsRefusedWithForbiddenAndTheFieldLabelsAnswerInTheReadersLanguage() throws Exception {
-		when(service.objectTypes(user, "en")).thenThrow(new org.springframework.web.server.ResponseStatusException(
+		when(service.objectTypes(DOMAIN, "en")).thenThrow(new org.springframework.web.server.ResponseStatusException(
 				org.springframework.http.HttpStatus.FORBIDDEN, "Operation permission is required: /ontology/model/object-types"));
 		var refused = mvc().perform(get("/ontology/model/object-types").header("Accept-Language", "en"))
 				.andExpect(status().isForbidden()).andReturn().getResponse();
@@ -215,7 +217,7 @@ class OntologyModelControllerTest {
 
 	@Test
 	void aFormRequestBindsThroughTheRealConverterAndAnswersItsDescription() throws Exception {
-		when(service.objectTypeForm(any(), eq(user), eq("en"))).thenReturn(new FormDescription(
+		when(service.objectTypeForm(any(), eq(DOMAIN), eq("en"))).thenReturn(new FormDescription(
 				List.of(object("path", "/className", "label", "API name", "control", object("kind", "text"),
 						"valueSchema", object("type", "string"), "required", true, "readOnly", true)),
 				Map.of("className", "Device"),
@@ -236,7 +238,7 @@ class OntologyModelControllerTest {
 		assertFalse(body.containsKey("revision"));
 		// The real converter binds the nested objects of the body as Maps, never as fastjson objects.
 		var bound = ArgumentCaptor.forClass(FormRequest.class);
-		verify(service).objectTypeForm(bound.capture(), eq(user), eq("en"));
+		verify(service).objectTypeForm(bound.capture(), eq(DOMAIN), eq("en"));
 		assertEquals(new FormTarget("object", "platform:ObjectType", "Device"), bound.getValue().target());
 		assertTrue(bound.getValue().values().get("nested") instanceof Map);
 		assertEquals(Map.of("className", "Device", "showName", "Devices", "nested", Map.of("a", 1)),
@@ -245,7 +247,7 @@ class OntologyModelControllerTest {
 
 	@Test
 	void anUncheckedFormDraftAnswers422AndABrokenOneAnswers400() throws Exception {
-		when(service.attributeForm(any(), eq(user), eq(null))).thenThrow(OntologyModelException.validation(
+		when(service.attributeForm(any(), eq(DOMAIN), eq(null))).thenThrow(OntologyModelException.validation(
 				List.of(FormFields.error("/values/showName", "required", "A display name is required")),
 				"Some fields are invalid"));
 
@@ -258,7 +260,7 @@ class OntologyModelControllerTest {
 		var fields = JSON.parseObject(response.getContentAsString()).getJSONObject("error").getJSONArray("fields");
 		assertEquals("/values/showName", fields.getJSONObject(0).getString("field"));
 
-		when(service.attributeForm(any(), eq(user), eq(null))).thenThrow(
+		when(service.attributeForm(any(), eq(DOMAIN), eq(null))).thenThrow(
 				new OntologyModelException(400, "INVALID_REQUEST", "Invalid request", Map.of()));
 		mvc().perform(post("/ontology/model/attribute/form")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -270,13 +272,13 @@ class OntologyModelControllerTest {
 
 	@Test
 	void inlineFormModeRoutesToInlineOwnerMethods() throws Exception {
-		when(service.objectTypeInlineForm(any(), eq(user), eq("en"))).thenReturn(new FormDescription(
+		when(service.objectTypeInlineForm(any(), eq(DOMAIN), eq("en"))).thenReturn(new FormDescription(
 				List.of(object("path", "/showName", "label", "Display name", "control", object("kind", "text"),
 						"valueSchema", object("type", "string"), "required", false, "readOnly", false,
 						"submitOn", "blur")),
 				Map.of("className", "Device", "showName", "Device"),
 				new FormSave("POST", "/ontology/model/object-type/update", object("type", "object"))));
-		when(service.attributeInlineForm(any(), eq(user), eq("en"))).thenReturn(new FormDescription(
+		when(service.attributeInlineForm(any(), eq(DOMAIN), eq("en"))).thenReturn(new FormDescription(
 				List.of(object("path", "/enable", "label", "Enabled", "control", object("kind", "switch"),
 						"valueSchema", object("type", "boolean"), "required", false, "readOnly", false,
 						"submitOn", "change")),
@@ -294,7 +296,7 @@ class OntologyModelControllerTest {
 				.andExpect(status().isOk()).andReturn().getResponse();
 		assertEquals("blur", JSON.parseObject(objectResponse.getContentAsString())
 				.getJSONArray("fields").getJSONObject(0).getString("submitOn"));
-		verify(service).objectTypeInlineForm(any(), eq(user), eq("en"));
+		verify(service).objectTypeInlineForm(any(), eq(DOMAIN), eq("en"));
 
 		var attrResponse = mvc().perform(post("/ontology/model/attribute/form")
 				.param("mode", "inline")
@@ -307,7 +309,7 @@ class OntologyModelControllerTest {
 				.andExpect(status().isOk()).andReturn().getResponse();
 		assertEquals("change", JSON.parseObject(attrResponse.getContentAsString())
 				.getJSONArray("fields").getJSONObject(0).getString("submitOn"));
-		verify(service).attributeInlineForm(any(), eq(user), eq("en"));
+		verify(service).attributeInlineForm(any(), eq(DOMAIN), eq("en"));
 	}
 
 	private MockMvc mvc() {

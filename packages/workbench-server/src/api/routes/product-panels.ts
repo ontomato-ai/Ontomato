@@ -12,7 +12,6 @@ import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import {
   PANEL_MEMBER_RENDER_HEADER, PANEL_NESTED_READ_PATH, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema,
-  PANEL_READ_BATCH_PATH, productPanelReadBatchRequestSchema, productPanelReadRequestSchema,
 } from "@ontomato/contracts/panel-host";
 import {
   cancelHumanPanelOperation, cancelPendingAgentPageQuestion, claimPendingLocalConfirmation,
@@ -24,7 +23,7 @@ import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { z } from "zod";
 import {
-  APPLICATION_REGISTRANT_HEADER, applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema,
+  APPLICATION_OPEN_PATH, APPLICATION_REGISTRANT_HEADER, applicationEntryResolutionQuerySchema,
   applicationIconValidationRequestSchema, applicationPanelReferencesRequestSchema,
   chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
   isApplicationPanelUse,
@@ -40,7 +39,7 @@ import { domainProductIdParamsSchema, domainProductIdSchema } from "@ontomato/co
 import { mountProductCatalog } from "./product-catalog";
 import { mountPanelPersonalState } from "./panel-personal-state";
 import { context, wrap } from "../utils/agent-host";
-import { getLocaleFromRequest } from "../utils/request";
+import { getApiKeyFromRequest, getLocaleFromRequest, getTokenFromRequest } from "../utils/request";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { platformService } from "../middleware/platform-service";
 import { workbenchIdentity } from "../../identity/installed";
@@ -51,18 +50,19 @@ import {
 import { HttpError } from "../../utils/errors";
 import { readBundledPanelProjections } from "../../services/product-panels/bundled-projections";
 import { bundledPanelProjectionIds, renderDefinitionJson } from "../../services/product-panels/render-definitions";
-import { tForLocale } from "../../i18n";
+import { resolveLocale, tForLocale } from "../../i18n";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
-import { readProductPanelData, readProductPanelDataBatch } from "../../services/product-panels/data-reads";
 import { readPanelDomainComponents, validateProjectionComponent } from "../../services/product-panels/component-catalogue";
 import { readNestedPanel, requireRegisteredPanelRoot } from "../../services/product-panels/member-path";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions, snapshotPanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
-import { readRegisteredPanelEntry, requirePanelEntry } from "../../services/product-panels/application-use";
+import { readRegisteredPanelEntry } from "../../services/product-panels/application-use";
+import { openApplicationDefinitions } from "../../services/product-panels/open-entry";
 import { panelConfirmation } from "../../services/product-panels/confirmation";
 import { runForOwner } from "../../services/assistant/execution";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
+import { runWithLogContext } from "../../logging/log-context";
 
 type FrameRead = Extract<ProductPanelReadQuery, { source: "frame" }>;
 
@@ -136,41 +136,25 @@ productPanelsRouter.post(PANEL_NESTED_READ_PATH.slice("/product-panels".length),
   const request = productPanelNestedReadRequestSchema.parse(req.body);
   res.json(productPanelNestedReadResponseSchema.parse(await readNestedPanel(owner, credentials, request, true)));
 }));
-productPanelsRouter.post("/read", wrap(async (req, res) => {
-  const { owner, credentials } = context(req);
-  const request = productPanelReadRequestSchema.parse(req.body);
-  const preview = req.header(BUILD_TEST_HEADER);
-  const viewer = request.source.kind === "candidate" || request.source.kind === "app-candidate" || preview === undefined
-    ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
-  res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName, req));
-}));
-productPanelsRouter.post(PANEL_READ_BATCH_PATH.slice("/product-panels".length), wrap(async (req, res) => {
-  const { owner, credentials } = context(req);
-  const { reads } = productPanelReadBatchRequestSchema.parse(req.body);
-  const results = await readProductPanelDataBatch(owner, credentials, reads, {
-    previewHeader: req.header(BUILD_TEST_HEADER),
-    callerUserName: (req as AuthenticatedRequest).userName,
-    location: req,
-  });
-  res.json({ results });
-}));
-productPanelsRouter.get("/application-entry", wrap(async (req, res) => {
-  res.set("Cache-Control", "no-store");
-  const { owner, credentials } = context(req);
+export const productPanelOpeningRouter = Router();
+productPanelOpeningRouter.get(APPLICATION_OPEN_PATH.slice("/product-panels".length), wrap(async (req, res) => {
   const ref = applicationEntryResolutionQuerySchema.parse(req.query);
-  const entry = await requirePanelEntry(credentials, ref, owner);
-  const pageSkillContext = isApplicationPanelUse(entry.use)
-    ? {
-        applicationId: entry.applicationId,
-        entryKey: entry.use.id,
-        pageKey: entry.use.pageKey,
-        useId: entry.use.id,
-        panelId: entry.use.panelId,
-        path: entry.use.path,
-        memberPath: [],
-      }
-    : undefined;
-  res.json(applicationEntryResolutionSchema.parse({ ...entry, ...(pageSkillContext && { pageSkillContext }) }));
+  const credentials = { token: getTokenFromRequest(req), apiKey: getApiKeyFromRequest(req), locale: resolveLocale(getLocaleFromRequest(req)) };
+  const { owner, entry, frame, content, projections, componentUsable } = await openApplicationDefinitions(ref, credentials);
+  await runWithLogContext(owner, async () => {
+    const render = async (root: typeof content) => {
+      if (!root) return "null";
+      const { panel, projectionIds } = root;
+      const [bundled, components] = await Promise.all([
+        readBundledPanelProjections(owner, credentials, projectionIds, { records: projections, componentUsable }),
+        readPanelDomainComponents({ domainId: panel.domainId, credentials, componentUsable }, panel.manifest.components),
+      ]);
+      return renderPanelJson(panel, bundled, components);
+    };
+    const [frameJson, contentJson] = await Promise.all([render(frame), render(content)]);
+    res.set("Cache-Control", "no-store").type("json")
+      .send(`${JSON.stringify(entry).slice(0, -1)},"frame":${frameJson},"content":${contentJson}}`);
+  });
 }));
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");

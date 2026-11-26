@@ -165,6 +165,11 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         return knowledgeDao.countDomainRows(domainId);
     }
 
+    @Override
+    public List<Integer> approvalStatuses(String domainId, List<String> ids) {
+        return knowledgeDao.approvalStatuses(domainId, ids);
+    }
+
   @Override
     public String getBussinessKnowledgeMarkdown(String domainId){
         List<KnowledgeEntity> knowledgeEntityList = knowledgeDao.getAllKnowledge(domainId);

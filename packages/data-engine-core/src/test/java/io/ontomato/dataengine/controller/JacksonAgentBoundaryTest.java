@@ -62,7 +62,7 @@ class JacksonAgentBoundaryTest {
     var roles = Set.of("member");
     var policy = "action-policy";
     when(subjects.resolveRoles(caller.domainId(), caller.userId()))
-        .thenReturn(new RoleResolution(roles, roles, List.of(), Set.of(), Map.of(), false));
+        .thenReturn(new RoleResolution(roles, roles, List.of(), Set.of(), Map.of(), false, false));
     when(policies.policies(caller.domainId(), roles))
         .thenReturn(List.of(new PolicyRef("member", policy, PolicyKind.OBJECT)));
     var createTarget = new ObjectTarget(caller.domainId(), Kind.ACTION, "");
@@ -100,7 +100,7 @@ class JacksonAgentBoundaryTest {
     var state = mock(VectorRebuildState.class);
     when(state.getStatus()).thenReturn(VectorRebuildState.Status.PENDING);
     var gate = spy(new VectorRetrievalGate());
-    doReturn(state).when(gate).stateOf("domain-a", config);
+    doReturn(state).when(gate).effectiveState("domain-a");
     var message = "向量尚未就绪，请在模型配置中开始或继续重建。";
     var messages = mock(LangService.class);
     when(messages.get("en", "Vector.rebuildRequired")).thenReturn("Vector search is paused.");

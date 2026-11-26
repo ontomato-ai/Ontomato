@@ -16,15 +16,21 @@ import {
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { AgentHostOwner } from "../agent-host/types";
 import { HttpError } from "../../utils/errors";
+import type { ObjectVisibilityRange } from "../product-governance/authorization";
 
 export interface ScheduleContext { owner: AgentHostOwner; credentials: AssistantCredentials }
 export interface ScheduleTargetDisplay { name: string | null; summary: PlatformScheduleSummaryItem[] }
+export interface ScheduleTargetLabelAccess {
+  agentUse: ObjectVisibilityRange;
+  inspection: { allowed: boolean; reason?: string | null };
+  caseSets: { allowed: boolean; reason?: string | null };
+}
 export interface ScheduleApplication {
   id: string;
   description(locale?: string): string | null;
   authorize(context: ScheduleContext): Promise<void>;
-  describeTargets(contents: readonly PlatformScheduleContent[], context: ScheduleContext): Promise<ScheduleTargetDisplay[]>;
-  form(input: PlatformScheduleFormRequest, context: ScheduleContext): Promise<PlatformScheduleForm>;
+  describeTargets(contents: readonly PlatformScheduleContent[], context: ScheduleContext, access?: ScheduleTargetLabelAccess): Promise<ScheduleTargetDisplay[]>;
+  form(input: PlatformScheduleFormRequest, context: ScheduleContext, access?: ScheduleTargetLabelAccess): Promise<PlatformScheduleForm>;
   validate(input: PlatformScheduleValidationRequest, context: ScheduleContext): Promise<PlatformScheduleValidation>;
   start(input: PlatformScheduleExecutionRequest, context: ScheduleContext): Promise<PlatformScheduleExecutionState>;
   status(input: PlatformScheduleExecutionStatusRequest): Promise<PlatformScheduleExecutionState>;

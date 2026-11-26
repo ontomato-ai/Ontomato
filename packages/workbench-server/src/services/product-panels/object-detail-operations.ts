@@ -19,6 +19,12 @@ function success(className: string): SinglePanelOperationOutcome {
   };
 }
 
+export async function clearObjectDetailRefusal(domainId: string, className: string, canConfigure: boolean, locale?: string) {
+  if (!canConfigure) return { reason: objectDetailText(locale, "configureForbidden") };
+  if (await findObjectDetailPanelId(domainId, className) === null)
+    return { reason: objectDetailText(locale, "unconfigured") };
+}
+
 export const objectDetailOperations = [
   {
     handlerRef: SAVE_OBJECT_DETAIL_PANEL,
@@ -55,10 +61,8 @@ export const objectDetailOperations = [
     resultSchema,
     async unavailable({ executor, locale }, target) {
       const { primaryKey } = targetSchema.parse(target);
-      if (!await canConfigureObjectDetail(executor.owner, executor.credentials))
-        return { reason: objectDetailText(locale, "configureForbidden") };
-      if (await findObjectDetailPanelId(executor.owner.domainId, primaryKey) === null)
-        return { reason: objectDetailText(locale, "unconfigured") };
+      return clearObjectDetailRefusal(executor.owner.domainId, primaryKey,
+        await canConfigureObjectDetail(executor.owner, executor.credentials), locale);
     },
     async execute({ executor }, target) {
       const { primaryKey } = targetSchema.parse(target);

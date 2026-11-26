@@ -1,4 +1,6 @@
 import { productPanelCatalogQuerySchema } from "@ontomato/contracts/product-catalog-query";
+import { productObjectAccessSchema } from "@ontomato/contracts/object-policy-access";
+import { principalDirectoryResponseSchema, type PrincipalDirectoryRequest } from "@ontomato/contracts/principal-directory";
 import { objectPublicationAccessSchema } from "@ontomato/contracts/object-publication";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -7,6 +9,7 @@ import {
   directProjectionPortsSchema,
   type PanelFormDescription,
   type PanelFormField,
+  type PanelFormValues,
   type PanelRecord,
   type PanelRecordFieldValue,
   type PanelRecordQuery,
@@ -24,6 +27,7 @@ import {
   PRODUCT_PROJECTION,
   RELATIONSHIP,
   SDK_COMPONENT,
+  USER,
   platformObjectTypes,
   platformOntologyLayers,
 } from "@ontomato/contracts/platform-object-types";
@@ -32,13 +36,15 @@ import {
   METRIC_CHART_COMPONENT, currentPanelRecordSchema,
   productPanelInputSchema, productPanelUsedBySchema, productProjectionCatalogQuerySchema,
   productVisibilitySchema, projectionBoundObjectTypes, registerProductPanelRequestSchema,
-  type ProductProjection, type ProductVisibility,
+  type ProductPanelUsedBy, type ProductProjection, type ProductProjectionUsedBy, type ProductVisibility,
   registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
 import { domainProductIdSchema, isBuiltinProductId } from "@ontomato/contracts/product-record-id";
+import { findCurrentProduct } from "../../infrastructure/product-current";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { readPrincipalDirectory } from "../identity/principal-directory";
@@ -47,11 +53,16 @@ import type { ProductOwner } from "../product-governance/service-authentication"
 import { readHomePanel } from "../platform-home/service";
 import { platformHomeStore } from "../platform-home/store";
 import {
-  currentProductGrants, currentProductUsedBy, listCurrentProductNames, listCurrentProductRecords, listCurrentProducts, listProjectionFilterFacets, listUnavailablePanels,
-  readCataloguePanel,
+  catalogueAuthorCandidates, catalogueObject, cataloguePanel, currentProductGrants, currentProductUsedBy, currentProjectionUsedBy, listCurrentProductNames, listCurrentProductRecords, listCurrentProducts, listCurrentProductsInRanges, listPanelPickerInRange, listProjectionFilterFacets, listUnavailablePanels,
+  readCataloguePanel, readProjectionFilterFacets, readScopedPanelNames, readScopedProjectionNames, readScopedProjectionSummaries, readUnavailablePanels, requireCataloguePanelInRanges,
 } from "./catalog";
-import { readAuthorComponentCatalogue } from "./component-catalogue";
-import { readCurrentPanel, readCurrentProjection } from "./current";
+import { currentDefinition, currentProductVisibility, definitionVisibleInRange, panelUseForbidden, type DefinitionVisibilityRange, type ProductUseRanges } from "./access";
+import { panelDefinition, projectionDefinition } from "./render-definitions";
+import { readAuthorComponentCatalogue, readAuthorComponentCatalogueInRange } from "./component-catalogue";
+import { loadCurrentProduct, readCurrentContentInRange, readCurrentPanel, readCurrentProjection } from "./current";
+import { panelUsersInRange, panelsUsingPanelInRange, panelsUsingProjectionInRange } from "./used-by";
+import type { JavaPanelRead, JavaPanelReadResult, PanelReadRanges, PanelReadVisibility, PreparedOwnerReadFacts } from "./java-panel-reads";
+import type { PanelReadSelection } from "./panel-owner-reads";
 import {
   addProjectionGraphReferences, assetGraphNode, createAssetGraph, objectTypeGraphNode, panelGraphMembers, resolveObjectTypeLabel,
 } from "./asset-graph";
@@ -64,6 +75,23 @@ const configStringArraySchema = z.array(z.string());
 type FormParams = { values?: Record<string, unknown>; changedField?: string | null };
 type CatalogueKind = "projection" | "panel";
 const option = (value: string, label: string) => ({ value, label, description: null, disabled: false, disabledReason: null });
+
+type PanelPickerPage = { number: number; size: number };
+
+async function panelPickerOptions(
+  keyword: string | undefined, page: PanelPickerPage | undefined,
+  list: (input: z.output<typeof productPanelCatalogQuerySchema>, picker: { offset: number }) => ReturnType<typeof listCurrentProducts>,
+): Promise<PanelOptionList> {
+  const input = productPanelCatalogQuerySchema.parse({ q: keyword, limit: page?.size });
+  const { items, total } = await list(input, { offset: ((page?.number ?? 1) - 1) * input.limit });
+  return { options: items.map(({ id, name }) => ({ primaryKey: id, value: id, label: name })), total };
+}
+
+export function readScopedPanelPickerOptions(
+  owner: ProductOwner, use: DefinitionVisibilityRange, keyword?: string, page?: PanelPickerPage,
+) {
+  return panelPickerOptions(keyword, page, (input, picker) => listPanelPickerInRange(owner, input, picker, use));
+}
 
 function toReferenceGraphRecord(primaryKey: string, className: string, label: string, graph: ProductGraph): PanelRecord {
   return {
@@ -81,6 +109,18 @@ function catalogueQuery(params: Record<string, unknown>) {
   return { q: search, limit: size, scope, sort, cursor };
 }
 
+function panelCatalogueInput(params: Record<string, unknown>) {
+  return productPanelCatalogQuerySchema.parse({ ...catalogueQuery(params), template: params.template });
+}
+
+function projectionCatalogueInput(params: Record<string, unknown>) {
+  return productProjectionCatalogQuerySchema.parse({
+    ...catalogueQuery(params), componentId: params.componentId, objectType: params.objectType,
+  });
+}
+
+type CataloguePage = Awaited<ReturnType<typeof listCurrentProducts>>;
+
 function catalogueGrants(owner: ProductOwner, viewer: AssistantCredentials, kind: CatalogueKind, id: string) {
   return currentProductGrants(owner, viewer, kind, id);
 }
@@ -88,7 +128,12 @@ function catalogueGrants(owner: ProductOwner, viewer: AssistantCredentials, kind
 async function policyGrantRows(
   owner: ProductOwner, viewer: AssistantCredentials, kind: CatalogueKind, id: string, label: (key: string) => string,
 ): Promise<PanelRecord[]> {
-  const { grants, shared } = await catalogueGrants(owner, viewer, kind, id);
+  return presentPolicyGrantRows(await catalogueGrants(owner, viewer, kind, id), kind, label);
+}
+
+function presentPolicyGrantRows(
+  { grants, shared }: z.infer<typeof productObjectAccessSchema>, kind: CatalogueKind, label: (key: string) => string,
+): PanelRecord[] {
   const className = kind === "panel" ? PRODUCT_PANEL : PRODUCT_PROJECTION;
   const rows = grants.map(({ policyId, name, verb }): PanelRecord => ({
     primaryKey: `${policyId}:${verb}`,
@@ -263,8 +308,165 @@ function panelSourceEntries(panel: CurrentPanelRecord): { path: string; content:
   return entries;
 }
 
-export function createProductPanelReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const rawRecord = (primaryKey: string) => readCurrentPanel(owner, viewer, primaryKey);
+async function homePanelRecord(
+  owner: ProductOwner, locale: string | undefined,
+  readPanel: (id: string) => Promise<{ id: string; name: string; description: string } | null>,
+): Promise<PanelRecord> {
+  const panelWord = (key: string) => tForLocale(locale, `panels.productCatalog.panel.${key}`);
+  const homePanelId = await platformHomeStore.homePanelId(owner);
+  const defaultHome: PanelRecord = {
+    primaryKey: "default",
+    className: PRODUCT_PANEL,
+    label: panelWord("defaultHome"),
+    fields: {
+      panelId: "",
+      panelName: panelWord("defaultHome"),
+      isCustomHome: false,
+      unavailable: false,
+      unavailableReason: "",
+    },
+    outputs: {
+      isCustomHome: false,
+      panelId: "",
+      unavailable: false,
+    },
+  };
+  if (!homePanelId) return defaultHome;
+  try {
+    const panel = await readPanel(homePanelId);
+    if (!panel) return defaultHome;
+    const label = panel.name || panel.id;
+    return {
+      primaryKey: panel.id,
+      className: PRODUCT_PANEL,
+      label,
+      ...(panel.description ? { subtitle: panel.description } : {}),
+      fields: {
+        panelId: panel.id,
+        panelName: label,
+        isCustomHome: true,
+        unavailable: false,
+        unavailableReason: "",
+      },
+      outputs: {
+        isCustomHome: true,
+        panelId: panel.id,
+        unavailable: false,
+      },
+    };
+  } catch (error) {
+    const reason = error instanceof Error && error.message
+      ? error.message
+      : panelWord("homeUnavailable");
+    return {
+      primaryKey: homePanelId,
+      className: PRODUCT_PANEL,
+      label: homePanelId,
+      fields: {
+        panelId: homePanelId,
+        panelName: homePanelId,
+        isCustomHome: true,
+        unavailable: true,
+        unavailableReason: reason,
+      },
+      outputs: {
+        isCustomHome: true,
+        panelId: homePanelId,
+        unavailable: true,
+      },
+    };
+  }
+}
+
+export function readRegisteredHomePanel(owner: ProductOwner, locale: string | undefined, range: DefinitionVisibilityRange) {
+  return homePanelRecord(owner, locale, async id => {
+    const row = await findCurrentProduct(owner.domainId, "panel", id);
+    if (!row) throw new HttpError(404, "Current product definition not found", "PRODUCT_UNAVAILABLE");
+    if (!definitionVisibleInRange(row, range, owner.domainId)) throw panelUseForbidden(locale);
+    return panelDefinition(row, false);
+  });
+}
+
+type PanelMemberLabels = {
+  projections: ReadonlyMap<string, { name: string; description: string | null; componentId?: string | null }>;
+  panels: ReadonlyMap<string, string>;
+};
+
+type PanelCatalogueContent = {
+  record(id: string): ReturnType<typeof readCurrentPanel>;
+  memberLabels(panel: CurrentPanelRecord): Promise<PanelMemberLabels>;
+  usage(id: string): Promise<ProductPanelUsedBy>;
+  graphUsage(id: string): Promise<ProductPanelUsedBy>;
+  graphLabels(panel: CurrentPanelRecord): Promise<{ projections: ReadonlyMap<string, string>; panels: ReadonlyMap<string, string> }>;
+  unavailable(): ReturnType<typeof listUnavailablePanels>;
+};
+
+function panelCatalogueContent(owner: ProductOwner, viewer: AssistantCredentials): PanelCatalogueContent {
+  const usage = async (id: string) => productPanelUsedBySchema.parse(await currentProductUsedBy(owner, viewer, "panel", id));
+  return {
+    record: id => readCurrentPanel(owner, viewer, id),
+    async memberLabels() {
+      const [projections, panels] = await Promise.all([
+        listCurrentProductRecords(owner, viewer, "projection"),
+        listCurrentProductNames(owner, viewer, "panel"),
+      ]);
+      return { projections: new Map([...projections].map(([id, item]) => [id, {
+        name: item.name || id, description: item.description, componentId: item.componentId,
+      }])), panels };
+    },
+    usage,
+    graphUsage: id => usage(id).catch(() => ({ applicationEntries: [], panels: [], classNames: [], hiddenCount: 0 })),
+    async graphLabels() {
+      const [projections, panels] = await Promise.all([
+        listCurrentProductNames(owner, viewer, "projection"),
+        listCurrentProductNames(owner, viewer, "panel"),
+      ]);
+      return { projections, panels };
+    },
+    unavailable: () => listUnavailablePanels(owner, viewer),
+  };
+}
+
+export function createScopedProductPanelReads(
+  owner: ProductOwner, viewer: AssistantCredentials, range: ProductUseRanges, projectionUse?: DefinitionVisibilityRange,
+  applicationEntries?: unknown,
+) {
+  const management = { USE: range.USE, EDIT: range.EDIT! };
+  const graphUsage = (id: string) => panelUsersInRange(owner.domainId, id, range.USE, applicationEntries, viewer.locale);
+  return createProductPanelReadAdapter(owner, viewer, {
+    async record(id) {
+      const { row, editable } = await readCurrentContentInRange(owner.domainId, "panel", id, range, viewer.locale);
+      return panelDefinition(row, editable);
+    },
+    async memberLabels(panel) {
+      const targets = Object.values(panel.manifest.members).map(({ target }) => target);
+      const [projections, panels] = await Promise.all([
+        readScopedProjectionSummaries(owner.domainId, targets.flatMap(target => "projectionId" in target ? [target.projectionId] : []), projectionUse!),
+        readScopedPanelNames(owner.domainId, targets.flatMap(target => "panelId" in target ? [target.panelId] : []), management),
+      ]);
+      return { projections, panels };
+    },
+    async usage(id) {
+      await requireCataloguePanelInRanges(owner.domainId, id, management);
+      return graphUsage(id);
+    },
+    graphUsage,
+    async graphLabels(panel) {
+      const members = panelGraphMembers(panel);
+      const [projections, panels] = await Promise.all([
+        readScopedProjectionNames(owner.domainId, members.filter(member => member.kind === "projection").map(member => member.id), projectionUse!),
+        readScopedPanelNames(owner.domainId, members.filter(member => member.kind === "panel").map(member => member.id), management),
+      ]);
+      return { projections, panels };
+    },
+    unavailable: () => readUnavailablePanels(currentProductVisibility("panel", owner.domainId, range.USE, range.EDIT)),
+  });
+}
+
+export function createProductPanelReadAdapter(
+  owner: ProductOwner, viewer: AssistantCredentials, content = panelCatalogueContent(owner, viewer),
+) {
+  const rawRecord = content.record;
   const locale = viewer.locale;
   const catalogWord = (key: string) => tForLocale(locale, `panels.productCatalog.${key}`);
   const appWord = (key: string) => tForLocale(locale, `panels.productCatalog.application.${key}`);
@@ -331,32 +533,132 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
     ], values, revision);
   }
 
+  function presentRecord(
+    result: ReturnType<typeof cataloguePanel>, ownerLabel: string | undefined, domainShared: boolean | undefined, hiddenUsedByCount: number,
+  ): PanelRecord {
+    const { panel, unavailable } = result;
+    if (unavailable) {
+      const { id, reason, revision } = unavailable;
+      const diagnostics = {
+        unavailable: true,
+        unavailableReason: reason,
+        ...(revision !== undefined && { revision }),
+        canEdit: false,
+        canGrant: false,
+        canDelete: Boolean(revision),
+        isBuiltin: isBuiltinProductId(id),
+        isTemplate: false,
+        ...(domainShared !== undefined && { domainShared }),
+        hiddenUsedByCount: 0,
+      };
+      return {
+        primaryKey: id,
+        className: PRODUCT_PANEL,
+        label: id,
+        subtitle: reason,
+        fields: { id, objectType: PRODUCT_PANEL, ...diagnostics },
+        fieldLabels: {
+          id: panelWord("id"),
+          unavailableReason: panelWord("unavailableReason"),
+          revision: panelWord("revision"),
+          objectType: panelWord("objectType"),
+        },
+        tones: { unavailableReason: "danger" },
+        outputs: diagnostics,
+      };
+    }
+    const isBuiltin = isBuiltinProductId(panel.id);
+    const isTemplate = Boolean(panel.template);
+    const editableLabel = panel.editable ? panelWord("editable") : appWord("readOnly");
+    return {
+      primaryKey: panel.id,
+      className: PRODUCT_PANEL,
+      label: panel.name || panel.id,
+      ...(panel.description ? { subtitle: panel.description } : {}),
+      fields: {
+        id: panel.id,
+        name: panel.name,
+        description: panel.description || "—",
+        owner: panel.ownerId === null ? appWord("platformOwner") : ownerLabel ?? panel.ownerId,
+        visibility: visibilityLabel(locale, panel.visibility),
+        template: panelWord(isTemplate ? "templateYes" : "templateNo"),
+        editable: editableLabel,
+        revision: panel.revision,
+        updatedAt: panel.updatedAt,
+        createdAt: panel.createdAt,
+        objectType: PRODUCT_PANEL,
+        ...(domainShared !== undefined && { domainShared }),
+        hiddenUsedByCount,
+        unavailable: false,
+        unavailableReason: "",
+      },
+      fieldLabels: {
+        id: panelWord("id"),
+        name: catalogWord("name"),
+        description: catalogWord("description"),
+        owner: appWord("owner"),
+        visibility: catalogWord("visibility"),
+        template: panelWord("templateKind"),
+        editable: panelWord("access"),
+        revision: panelWord("revision"),
+        updatedAt: appWord("updatedAt"),
+        createdAt: panelWord("createdAt"),
+        objectType: panelWord("objectType"),
+      },
+      tones: {
+        visibility: visibilityTone(panel.visibility),
+        template: isTemplate ? "info" : "default",
+        editable: panel.editable ? "success" : "info",
+      },
+      outputs: {
+        canEdit: panel.editable,
+        canGrant: panel.editable,
+        canDelete: panel.editable,
+        isBuiltin,
+        isTemplate,
+        ...(domainShared !== undefined && { domainShared }),
+        revision: panel.revision,
+        hiddenUsedByCount,
+        unavailable: false,
+        unavailableReason: "",
+      },
+    };
+  }
+
+  function presentQuery(listed: CataloguePage, ownerNames: ReadonlyMap<string, string>): PanelRecordQuery {
+    const diagnostics = listed.unavailableItems?.map(item => item.id + ": " + item.reason);
+    return {
+      rows: listed.items.map(item => toPanelSummaryRecord(item, ownerNames)),
+      ...(listed.nextCursor ? { nextCursor: listed.nextCursor } : {}),
+      ...(listed.total !== undefined && { total: listed.total }),
+      ...(diagnostics?.length ? { diagnostics } : {}),
+    };
+  }
+
+  function presentCreateForm(params: FormParams) {
+    const id = draftId(params.values);
+
+    return describeForm(id, {
+      name: "", description: "", visibility: "private", publicationAccess: { kind: "domain" }, template: false,
+      content: {
+        html: '<div id="app"><section></section></div>',
+        module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
+      },
+      manifest: { state: {}, members: {} },
+      ...params.values, id,
+    }, true);
+  }
+
   return {
-    async options(keyword?: string, page?: { number: number; size: number }): Promise<PanelOptionList> {
-      const input = productPanelCatalogQuerySchema.parse({ q: keyword, limit: page?.size });
-      const { items, total } = await listCurrentProducts(owner, viewer, "panel", input, {
-        offset: ((page?.number ?? 1) - 1) * input.limit,
-      });
-      return {
-        options: items.map(({ id, name }) => ({ primaryKey: id, value: id, label: name })),
-        total,
-      };
-    },
+    options: (keyword?: string, page?: PanelPickerPage) =>
+      panelPickerOptions(keyword, page, (input, picker) => listCurrentProducts(owner, viewer, "panel", input, picker)),
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
-      const listed = await listCurrentProducts(owner, viewer, "panel", productPanelCatalogQuerySchema.parse({
-        ...catalogueQuery(params), template: params.template,
-      }));
-      const ownerNames = await resolveOwnerNames(listed.items.map(item => item.ownerId), viewer);
-      const diagnostics = listed.unavailableItems?.map(item => `${item.id}: ${item.reason}`);
-      return {
-        rows: listed.items.map(item => toPanelSummaryRecord(item, ownerNames)),
-        ...(listed.nextCursor ? { nextCursor: listed.nextCursor } : {}),
-        ...(listed.total !== undefined && { total: listed.total }),
-        ...(diagnostics?.length ? { diagnostics } : {}),
-      };
+      const listed = await listCurrentProducts(owner, viewer, "panel", panelCatalogueInput(params));
+      return presentQuery(listed, await resolveOwnerNames(listed.items.map(item => item.ownerId), viewer));
     },
+    presentQuery,
     async unavailable(): Promise<PanelRecord[]> {
-      return (await listUnavailablePanels(owner, viewer)).map(({ id, reason, revision }) => ({
+      return (await content.unavailable()).map(({ id, reason, revision }) => ({
         primaryKey: id,
         className: PRODUCT_PANEL,
         label: id,
@@ -372,39 +674,9 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
       }));
     },
     async record(primaryKey: string): Promise<PanelRecord> {
-      const { panel, unavailable } = await readCataloguePanel(owner, viewer, primaryKey);
-      if (unavailable) {
-        const { id, reason, revision } = unavailable;
-        const diagnostics = {
-          unavailable: true,
-          unavailableReason: reason,
-          ...(revision !== undefined && { revision }),
-          canEdit: false,
-          canGrant: false,
-          canDelete: Boolean(revision),
-          isBuiltin: isBuiltinProductId(id),
-          isTemplate: false,
-          domainShared: false,
-          hiddenUsedByCount: 0,
-        };
-        return {
-          primaryKey: id,
-          className: PRODUCT_PANEL,
-          label: id,
-          subtitle: reason,
-          fields: { id, objectType: PRODUCT_PANEL, ...diagnostics },
-          fieldLabels: {
-            id: panelWord("id"),
-            unavailableReason: panelWord("unavailableReason"),
-            revision: panelWord("revision"),
-            objectType: panelWord("objectType"),
-          },
-          tones: { unavailableReason: "danger" },
-          outputs: diagnostics,
-        };
-      }
-      const isBuiltin = isBuiltinProductId(panel.id);
-      const isTemplate = Boolean(panel.template);
+      const result = await readCataloguePanel(owner, viewer, primaryKey);
+      if (result.unavailable) return presentRecord(result, undefined, false, 0);
+      const { panel } = result;
       const [ownerNames, domainShared, hiddenUsedByCount] = await Promise.all([
         resolveOwnerNames([panel.ownerId], viewer),
         panel.editable
@@ -412,74 +684,15 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
           : false,
         currentProductUsedBy(owner, viewer, "panel", primaryKey).then(usage => usage.hiddenCount).catch(() => 0),
       ]);
-      const editableLabel = panel.editable ? panelWord("editable") : appWord("readOnly");
-      return {
-        primaryKey: panel.id,
-        className: PRODUCT_PANEL,
-        label: panel.name || panel.id,
-        ...(panel.description ? { subtitle: panel.description } : {}),
-        fields: {
-          id: panel.id,
-          name: panel.name,
-          description: panel.description || "—",
-          owner: ownerDisplayName(panel.ownerId, ownerNames),
-          visibility: visibilityLabel(locale, panel.visibility),
-          template: panelWord(isTemplate ? "templateYes" : "templateNo"),
-          editable: editableLabel,
-          revision: panel.revision,
-          updatedAt: panel.updatedAt,
-          createdAt: panel.createdAt,
-          objectType: PRODUCT_PANEL,
-          domainShared,
-          hiddenUsedByCount,
-          unavailable: false,
-          unavailableReason: "",
-        },
-        fieldLabels: {
-          id: panelWord("id"),
-          name: catalogWord("name"),
-          description: catalogWord("description"),
-          owner: appWord("owner"),
-          visibility: catalogWord("visibility"),
-          template: panelWord("templateKind"),
-          editable: panelWord("access"),
-          revision: panelWord("revision"),
-          updatedAt: appWord("updatedAt"),
-          createdAt: panelWord("createdAt"),
-          objectType: panelWord("objectType"),
-        },
-        tones: {
-          visibility: visibilityTone(panel.visibility),
-          template: isTemplate ? "info" : "default",
-          editable: panel.editable ? "success" : "info",
-        },
-        outputs: {
-          canEdit: panel.editable,
-          canGrant: panel.editable,
-          canDelete: panel.editable,
-          isBuiltin,
-          isTemplate,
-          domainShared,
-          revision: panel.revision,
-          hiddenUsedByCount,
-          unavailable: false,
-          unavailableReason: "",
-        },
-      };
+      return presentRecord(result, panel.ownerId === null ? undefined : ownerNames.get(panel.ownerId) ?? "", domainShared, hiddenUsedByCount);
     },
+    presentRecord,
     async members(primaryKey: string) {
       return (await rawRecord(primaryKey)).manifest.members;
     },
     async memberRows(primaryKey: string): Promise<PanelRecord[]> {
       const panel = await rawRecord(primaryKey);
-      const [projections, panelNames] = await Promise.all([
-        listCurrentProductRecords(owner, viewer, "projection"),
-        listCurrentProductNames(owner, viewer, "panel"),
-      ]);
-      const projectionsById = new Map([...projections].map(([id, item]) => [
-        id,
-        { name: item.name || id, description: item.description, componentId: item.componentId },
-      ] as const));
+      const { projections: projectionsById, panels: panelNames } = await content.memberLabels(panel);
       const fieldLabels = {
         slot: appWord("memberSlot"),
         kindLabel: appWord("memberKind"),
@@ -579,7 +792,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
       return currentProductUsedBy(owner, viewer, "panel", primaryKey);
     },
     async usedByRows(primaryKey: string): Promise<PanelRecord[]> {
-      const usage = productPanelUsedBySchema.parse(await currentProductUsedBy(owner, viewer, "panel", primaryKey));
+      const usage = await content.usage(primaryKey);
       const fieldLabels = {
         kindLabel: panelWord("usageKind"),
         target: panelWord("usageTarget"),
@@ -639,19 +852,9 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
       return rows;
     },
     async referenceGraph(primaryKey: string): Promise<PanelRecord> {
-      const [panel, rawUsage] = await Promise.all([
-        rawRecord(primaryKey),
-        currentProductUsedBy(owner, viewer, "panel", primaryKey).catch(() => ({
-          applicationEntries: [],
-          panels: [],
-          classNames: [],
-          hiddenCount: 0,
-        })),
-      ]);
-      const usage = productPanelUsedBySchema.parse(rawUsage);
-      const [projectionNames, panelNames] = await Promise.all([
-        listCurrentProductNames(owner, viewer, "projection"),
-        listCurrentProductNames(owner, viewer, "panel"),
+      const panel = await rawRecord(primaryKey);
+      const [usage, { projections: projectionNames, panels: panelNames }] = await Promise.all([
+        content.graphUsage(primaryKey), content.graphLabels(panel),
       ]);
       const graph = createAssetGraph();
       const center = assetGraphNode("panel", panel);
@@ -714,90 +917,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
         },
       };
     },
-    async homePanel(): Promise<PanelRecord> {
-      const homePanelId = await platformHomeStore.homePanelId(owner);
-      if (!homePanelId) {
-        return {
-          primaryKey: "default",
-          className: PRODUCT_PANEL,
-          label: panelWord("defaultHome"),
-          fields: {
-            panelId: "",
-            panelName: panelWord("defaultHome"),
-            isCustomHome: false,
-            unavailable: false,
-            unavailableReason: "",
-          },
-          outputs: {
-            isCustomHome: false,
-            panelId: "",
-            unavailable: false,
-          },
-        };
-      }
-      try {
-        const panel = await readHomePanel(owner, viewer);
-        if (!panel) {
-          return {
-            primaryKey: "default",
-            className: PRODUCT_PANEL,
-            label: panelWord("defaultHome"),
-            fields: {
-              panelId: "",
-              panelName: panelWord("defaultHome"),
-              isCustomHome: false,
-              unavailable: false,
-              unavailableReason: "",
-            },
-            outputs: {
-              isCustomHome: false,
-              panelId: "",
-              unavailable: false,
-            },
-          };
-        }
-        const label = panel.name || panel.id;
-        return {
-          primaryKey: panel.id,
-          className: PRODUCT_PANEL,
-          label,
-          ...(panel.description ? { subtitle: panel.description } : {}),
-          fields: {
-            panelId: panel.id,
-            panelName: label,
-            isCustomHome: true,
-            unavailable: false,
-            unavailableReason: "",
-          },
-          outputs: {
-            isCustomHome: true,
-            panelId: panel.id,
-            unavailable: false,
-          },
-        };
-      } catch (error) {
-        const reason = error instanceof Error && error.message
-          ? error.message
-          : panelWord("homeUnavailable");
-        return {
-          primaryKey: homePanelId,
-          className: PRODUCT_PANEL,
-          label: homePanelId,
-          fields: {
-            panelId: homePanelId,
-            panelName: homePanelId,
-            isCustomHome: true,
-            unavailable: true,
-            unavailableReason: reason,
-          },
-          outputs: {
-            isCustomHome: true,
-            panelId: homePanelId,
-            unavailable: true,
-          },
-        };
-      }
-    },
+    homePanel: () => homePanelRecord(owner, locale, () => readHomePanel(owner, viewer)),
     async form(primaryKey: string, params: FormParams) {
       const panel = await rawRecord(primaryKey);
       const { content, manifest, template, theme } = panel;
@@ -806,17 +926,9 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
     },
     async createForm(params: FormParams) {
       await requireObject({ create: "PANEL" }, viewer);
-      const id = draftId(params.values);
-      return describeForm(id, {
-        name: "", description: "", visibility: "private", publicationAccess: { kind: "domain" }, template: false,
-        content: {
-          html: '<div id="app"><section></section></div>',
-          module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
-        },
-        manifest: { state: {}, members: {} },
-        ...params.values, id,
-      }, true);
+      return presentCreateForm(params);
     },
+    presentCreateForm,
   };
 }
 
@@ -965,7 +1077,7 @@ export function toProductProjectionPanelRecord(
   const accessTone = row.editable ? "success" : "info";
   const kindLabel = word(isChart ? "kindChart" : "kindStandard");
   const kindTone = isChart ? "warning" : "info";
-  const domainShared = extra?.domainShared ?? false;
+  const domainShared = extra?.domainShared;
   const boundObjectTypes = isDetail ? projectionBoundObjectTypes(row) : (row.objectTypes ?? []);
   const objectTypesDisplay = formatBoundObjectTypes(boundObjectTypes, language);
 
@@ -984,7 +1096,7 @@ export function toProductProjectionPanelRecord(
     revision: row.revision,
     updatedAt: row.updatedAt,
     ...(isDetail && {
-      domainShared,
+      ...(domainShared !== undefined && { domainShared }),
       definitionJson: JSON.stringify(row, null, 2),
     }),
   };
@@ -1010,7 +1122,7 @@ export function toProductProjectionPanelRecord(
         canCopy: row.editable && !isChart,
         isBuiltin,
         isChart,
-        domainShared,
+        ...(domainShared !== undefined && { domainShared }),
         revision: row.revision,
         usedByCount: extra?.usedByCount ?? 0,
         hiddenUsedByCount: extra?.hiddenUsedByCount ?? 0,
@@ -1029,14 +1141,55 @@ export function toProductProjectionPanelRecord(
   };
 }
 
-export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const rawRecord = (primaryKey: string) => readCurrentProjection(owner, viewer, primaryKey);
+type ProjectionCatalogueContent = {
+  record(id: string): ReturnType<typeof readCurrentProjection>;
+  facets(): ReturnType<typeof listProjectionFilterFacets>;
+  components(): ReturnType<typeof readAuthorComponentCatalogue>;
+  usage(id: string): Promise<ProductProjectionUsedBy>;
+  graphUsage(id: string): Promise<ProductProjectionUsedBy>;
+};
+
+function projectionCatalogueContent(owner: ProductOwner, viewer: AssistantCredentials): ProjectionCatalogueContent {
+  const usage = (id: string) => currentProjectionUsedBy(owner, viewer, id);
+  return {
+    record: id => readCurrentProjection(owner, viewer, id),
+    facets: () => listProjectionFilterFacets(owner, viewer),
+    components: () => readAuthorComponentCatalogue(owner, viewer),
+    usage,
+    graphUsage: id => usage(id).catch(() => ({ panels: [], hiddenCount: 0 })),
+  };
+}
+
+export function createScopedProductProjectionReads(
+  owner: ProductOwner, viewer: AssistantCredentials, range: ProductUseRanges,
+  componentUse?: DefinitionVisibilityRange, panelUse?: DefinitionVisibilityRange,
+) {
+  const graphUsage = (id: string) => panelsUsingProjectionInRange(owner.domainId, id, panelUse!);
+  return createProductProjectionReadAdapter(owner, viewer, {
+    async record(id) {
+      const { row, editable } = await readCurrentContentInRange(owner.domainId, "projection", id, range, viewer.locale);
+      return projectionDefinition(row, editable);
+    },
+    facets: () => readProjectionFilterFacets(currentProductVisibility("projection", owner.domainId, range.USE)),
+    components: () => readAuthorComponentCatalogueInRange(owner.domainId, componentUse!),
+    async usage(id) {
+      await readCurrentContentInRange(owner.domainId, "projection", id, range, viewer.locale);
+      return graphUsage(id);
+    },
+    graphUsage,
+  });
+}
+
+export function createProductProjectionReadAdapter(
+  owner: ProductOwner, viewer: AssistantCredentials, content = projectionCatalogueContent(owner, viewer),
+) {
+  const rawRecord = content.record;
   const language = resolveLocale(viewer.locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.projection.${key}`);
 
   async function resolveComponentLabels(): Promise<Map<string, string>> {
     try {
-      const catalogue = await readAuthorComponentCatalogue(owner, viewer);
+      const catalogue = await content.components();
       return new Map([...catalogue].map(([componentId, item]) => [componentId, item.label]));
     } catch {
       return new Map();
@@ -1054,7 +1207,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         field("/data", schema.data, { kind: "code", language: "json" }, { readOnly: true }),
       ], values, revision);
     }
-    const components = await readAuthorComponentCatalogue(owner, viewer);
+    const components = await content.components();
     const candidates = [...components].filter(([key, item]) => key !== METRIC_CHART_COMPONENT && item.declaration.data !== undefined);
     const component = typeof values.componentId === "string" ? components.get(values.componentId)?.declaration : undefined;
     return formResult("projection", id, [
@@ -1070,39 +1223,46 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
     ], values, revision);
   }
 
+  function presentQuery(
+    listed: CataloguePage, ownerLabels: ReadonlyMap<string, string>, componentLabels: ReadonlyMap<string, string>,
+  ): PanelRecordQuery {
+    return {
+      rows: listed.items.map(item => toProductProjectionPanelRecord({
+        ...item,
+        componentId: item.componentId ?? "",
+        ...("objectTypes" in item && Array.isArray(item.objectTypes) ? { objectTypes: item.objectTypes } : {}),
+      }, viewer.locale, {
+        ownerLabel: item.ownerId ? ownerLabels.get(item.ownerId) : undefined,
+        componentLabel: item.componentId ? componentLabels.get(item.componentId) : undefined,
+      })),
+      total: listed.total,
+      ...(listed.nextCursor ? { nextCursor: listed.nextCursor } : {}),
+    };
+  }
+
+  function presentCreateForm(params: FormParams) {
+    const id = draftId(params.values);
+
+    return describeForm(id, {
+      name: "", description: "", visibility: "private", publicationAccess: { kind: "domain" }, componentId: "",
+      inputs: {}, outputs: {}, config: {}, data: {}, ...params.values, id,
+    }, true);
+  }
+
   return {
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
-      const listed = await listCurrentProducts(
-        owner,
-        viewer,
-        "projection",
-        productProjectionCatalogQuerySchema.parse({
-          ...catalogueQuery(params),
-          componentId: params.componentId,
-          objectType: params.objectType,
-        }),
-      );
+      const listed = await listCurrentProducts(owner, viewer, "projection", projectionCatalogueInput(params));
       const [ownerLabels, componentLabels] = await Promise.all([
         resolveOwnerNames(listed.items.map(item => item.ownerId), viewer),
         resolveComponentLabels(),
       ]);
-      return {
-        rows: listed.items.map(item => toProductProjectionPanelRecord({
-          ...item,
-          componentId: item.componentId ?? "",
-          ...("objectTypes" in item && Array.isArray(item.objectTypes) ? { objectTypes: item.objectTypes } : {}),
-        }, viewer.locale, {
-          ownerLabel: item.ownerId ? ownerLabels.get(item.ownerId) : undefined,
-          componentLabel: item.componentId ? componentLabels.get(item.componentId) : undefined,
-        })),
-        total: listed.total,
-        ...(listed.nextCursor ? { nextCursor: listed.nextCursor } : {}),
-      };
+      return presentQuery(listed, ownerLabels, componentLabels);
     },
+    presentQuery,
     async componentOptions(): Promise<PanelRecord[]> {
       const [{ componentIds }, catalogue] = await Promise.all([
-        listProjectionFilterFacets(owner, viewer),
-        readAuthorComponentCatalogue(owner, viewer).catch(() => new Map()),
+        content.facets(),
+        content.components().catch(() => new Map()),
       ]);
       const domainPackageLabel = tForLocale(language, "panels.sdkComponent.domain");
       const packageFieldLabel = tForLocale(language, "panels.sdkComponent.package");
@@ -1129,7 +1289,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         );
     },
     async objectTypeOptions(): Promise<PanelRecord[]> {
-      const { objectTypes } = await listProjectionFilterFacets(owner, viewer);
+      const { objectTypes } = await content.facets();
       const layerOrder = new Map<string, number>(platformOntologyLayers.map((layer, index) => [layer, index]));
       const customGroupLabel = word("objectTypeGroupCustom");
       return objectTypes
@@ -1162,7 +1322,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         projection.editable
           ? catalogueGrants(owner, viewer, "projection", primaryKey).then(result => result.shared)
           : false,
-        currentProductUsedBy(owner, viewer, "projection", primaryKey).catch(() => ({ panels: [], hiddenCount: 0 })),
+        currentProjectionUsedBy(owner, viewer, primaryKey).catch(() => ({ panels: [], hiddenCount: 0 })),
       ]);
       return toProductProjectionPanelRecord(projection, viewer.locale, {
         ownerLabel: projection.ownerId ? ownerLabels.get(projection.ownerId) : undefined,
@@ -1173,10 +1333,10 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
       });
     },
     usedBy(primaryKey: string) {
-      return currentProductUsedBy(owner, viewer, "projection", primaryKey);
+      return currentProjectionUsedBy(owner, viewer, primaryKey);
     },
     async usedByRows(primaryKey: string): Promise<PanelRecord[]> {
-      const usage = await currentProductUsedBy(owner, viewer, "projection", primaryKey);
+      const usage = await content.usage(primaryKey);
       return usage.panels.map((panel): PanelRecord => {
         const label = panel.name || panel.id;
         return {
@@ -1196,10 +1356,8 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
       });
     },
     async referenceGraph(primaryKey: string): Promise<PanelRecord> {
-      const [projection, usage] = await Promise.all([
-        rawRecord(primaryKey),
-        currentProductUsedBy(owner, viewer, "projection", primaryKey).catch(() => ({ panels: [], hiddenCount: 0 })),
-      ]);
+      const projection = await rawRecord(primaryKey);
+      const usage = await content.graphUsage(primaryKey);
       const graph = createAssetGraph();
       const center = assetGraphNode("projection", projection);
       graph.addNode(center);
@@ -1311,11 +1469,141 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
     },
     async createForm(params: FormParams) {
       await requireObject({ create: "PROJECTION" }, viewer);
-      const id = draftId(params.values);
-      return describeForm(id, {
-        name: "", description: "", visibility: "private", publicationAccess: { kind: "domain" }, componentId: "",
-        inputs: {}, outputs: {}, config: {}, data: {}, ...params.values, id,
-      }, true);
+      return presentCreateForm(params);
+    },
+    presentCreateForm,
+  };
+}
+
+const productRecordFactsSchema = z.object({
+  editable: z.boolean(),
+  shared: z.boolean().optional(),
+  ownerLabel: z.string().optional(),
+}).strict();
+
+export async function prepareProductCatalogueRead(
+  owner: ProductOwner, viewer: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
+): Promise<{
+  call: JavaPanelRead["call"];
+  visibility?: readonly PanelReadVisibility[];
+  present(payload: unknown, ranges?: PanelReadRanges): unknown;
+} | undefined> {
+  const { typeId, method } = selection;
+  if (typeId !== PRODUCT_PANEL && typeId !== PRODUCT_PROJECTION) return;
+  const kind = typeId === PRODUCT_PANEL ? "panel" : "projection";
+  if (method === "createForm") {
+    const values = params.values as PanelFormValues | undefined;
+    requireFormFieldNames(values, "values");
+    return {
+      call: { type: typeId, name: method, parameters: {} },
+      ...(kind === "projection" && values?.componentId !== METRIC_CHART_COMPONENT && {
+        visibility: [{ kind: "COMPONENT", verbs: ["USE"] }] satisfies PanelReadVisibility[],
+      }),
+      present(payload: unknown, ranges?: PanelReadRanges) {
+        z.literal(true).parse(payload);
+        return kind === "panel" ? createProductPanelReadAdapter(owner, viewer).presentCreateForm({ values })
+          : createProductProjectionReadAdapter(owner, viewer, {
+            ...projectionCatalogueContent(owner, viewer),
+            components: () => readAuthorComponentCatalogueInRange(owner.domainId, ranges!.COMPONENT.USE),
+          }).presentCreateForm({ values });
+      },
+    };
+  }
+  if (method === "record") {
+    const row = await loadCurrentProduct(owner.domainId, kind, selection.primaryKey!);
+    const fixed = row.domainId === null;
+    const details = kind === "projection" || !cataloguePanel(row, false).unavailable;
+    const visibility: PanelReadVisibility[] = [];
+    if (details || (fixed && kind === "panel")) visibility.push({ kind: "PANEL", verbs: ["USE"] });
+    if (kind === "projection") {
+      visibility.push({ kind: "COMPONENT", verbs: ["USE"] });
+      if (fixed) visibility.push({ kind: "PROJECTION", verbs: ["USE"] });
+    }
+    const { target, ownerFacts } = currentDefinition(kind, row, owner.domainId);
+    return {
+      call: fixed ? undefined : { type: typeId, name: method, parameters: { target, ownerFacts, details } },
+      visibility: visibility.length ? visibility : undefined,
+      async present(payload: unknown, ranges?: PanelReadRanges) {
+        if (fixed && !ranges![target.kind].USE.fixed) {
+          if (kind === "panel") throw new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN");
+          throw new HttpError(403, "This platform definition cannot be used.", "OBJECT_FORBIDDEN");
+        }
+        const facts: z.infer<typeof productRecordFactsSchema> = fixed ? { editable: false } : productRecordFactsSchema.parse(payload);
+        if (kind === "panel") {
+          const result = cataloguePanel(row, facts.editable);
+          const hiddenCount = details ? (await panelsUsingPanelInRange(owner.domainId, row.id, ranges!.PANEL.USE)).hiddenCount : 0;
+          return createProductPanelReadAdapter(owner, viewer).presentRecord(result, facts.ownerLabel, facts.shared, hiddenCount);
+        }
+        const projection = projectionDefinition(row, facts.editable);
+        const [components, usage] = await Promise.all([
+          readAuthorComponentCatalogueInRange(owner.domainId, ranges!.COMPONENT.USE),
+          panelsUsingProjectionInRange(owner.domainId, row.id, ranges!.PANEL.USE),
+        ]);
+        return toProductProjectionPanelRecord(projection, viewer.locale, {
+          ownerLabel: facts.ownerLabel ?? projection.ownerId ?? undefined,
+          componentLabel: components.get(projection.componentId)?.label,
+          domainShared: facts.shared,
+          usedByCount: usage.panels.length + usage.hiddenCount,
+          hiddenUsedByCount: usage.hiddenCount,
+        });
+      },
+    };
+  }
+  if (method === "grants" || method === "grantRows") {
+    const { target, ownerFacts } = await catalogueObject(owner, kind, selection.primaryKey!);
+    return {
+      call: { type: typeId, name: "grantRows", parameters: { target, ownerFacts } },
+      present(payload: unknown) {
+        const access = productObjectAccessSchema.parse(payload);
+        if (method === "grants") return access;
+        const prefix = kind === "panel" ? "application" : "projection";
+        return presentPolicyGrantRows(access, kind,
+          key => tForLocale(viewer.locale, "panels.productCatalog." + prefix + "." + key));
+      },
+    };
+  }
+}
+
+function memberDirectoryCall(parameters: PrincipalDirectoryRequest): NonNullable<JavaPanelRead["call"]> {
+  return { type: USER, name: "principalDirectory", parameters };
+}
+
+function requireReadyCatalogueFact(result: JavaPanelReadResult) {
+  if (result.status === "ready") return result;
+  if (result.status === "forbidden") throw new HttpError(403, result.error, result.code ?? undefined);
+  if (result.status === "error") throw new HttpError(502, result.error, result.code ?? undefined);
+  throw new HttpError(502, "The catalogue owner did not return the requested facts", "PANEL_READ_OWNER_RESPONSE_INVALID");
+}
+
+export async function prepareProductCatalogueQuery(
+  owner: ProductOwner, viewer: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
+): Promise<PreparedOwnerReadFacts | undefined> {
+  if (selection.method !== "query" || (selection.typeId !== PRODUCT_PANEL && selection.typeId !== PRODUCT_PROJECTION)) return;
+  const panel = selection.typeId === PRODUCT_PANEL;
+  const kind = panel ? "panel" : "projection";
+  const input = panel ? panelCatalogueInput(params) : projectionCatalogueInput(params);
+  const includeAuthorSearch = panel && input.q.length > 0;
+  const ids = await catalogueAuthorCandidates(owner, kind, input, includeAuthorSearch);
+  return {
+    facts: [{
+      visibleKinds: panel ? [{ kind: "PANEL", verbs: ["USE", "EDIT"] }]
+        : [{ kind: "PROJECTION", verbs: ["USE", "EDIT"] }, { kind: "COMPONENT", verbs: ["USE"] }],
+      ...(ids.length && { call: memberDirectoryCall({ kind: "member", ids }) }),
+    }, ...(includeAuthorSearch ? [{ call: memberDirectoryCall({ kind: "member", keyword: input.q, limit: 100 }) }] : [])],
+    async present(subject, [directoryFact, searchFact]) {
+      const directory = requireReadyCatalogueFact(directoryFact);
+      const names = ids.length ? principalDirectoryResponseSchema.parse(directory.payload).options : [];
+      const matchingAuthors = includeAuthorSearch
+        ? principalDirectoryResponseSchema.parse(requireReadyCatalogueFact(searchFact).payload).options.map(({ id }) => id)
+        : undefined;
+      const { USE, EDIT } = directory.visibility![panel ? "PANEL" : "PROJECTION"];
+      const listed = await listCurrentProductsInRanges(subject, kind, input, { USE, EDIT }, matchingAuthors);
+      const byId = new Map(names.map(({ id, name }) => [id, name]));
+      const pageNames = new Map(listed.items.flatMap(({ ownerId }) => ownerId === null ? [] : [[ownerId, byId.get(ownerId) ?? ownerId] as const]));
+      if (panel) return createProductPanelReadAdapter(subject, viewer).presentQuery(listed, pageNames);
+      const components = await readAuthorComponentCatalogueInRange(subject.domainId, directory.visibility!.COMPONENT.USE);
+      const componentLabels = new Map([...components].map(([id, entry]) => [id, entry.label]));
+      return createProductProjectionReadAdapter(subject, viewer).presentQuery(listed, pageNames, componentLabels);
     },
   };
 }

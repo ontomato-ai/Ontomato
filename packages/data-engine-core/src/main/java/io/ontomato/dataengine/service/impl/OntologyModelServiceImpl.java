@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -20,7 +21,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import cn.hutool.core.lang.UUID;
 
 import io.ontomato.dataengine.bean.AuditLog;
-import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.AuditLogDao;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
@@ -67,34 +67,61 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	private AuditLogDao auditLogDao;
 
 	@Override
-	public Map<String, Integer> countMetadata(User user, List<String> classScope) {
-		return adminService.countModelMetadata(user.getDomainId(), classScope);
+	public Map<String, Integer> countMetadata(String domainId, List<String> classScope) {
+		return adminService.countModelMetadata(domainId, classScope);
 	}
 
 	@Override
-	public List<ObjectTypeView> objectTypes(User user, String lang) {
-		Map<String, Object> rule = rule(user);
+	public List<ObjectTypeView> objectTypes(String domainId, String lang) {
+		Map<String, Object> rule = rule(domainId);
 		Map<String, Map<String, String>> relationships = relationships(rule);
 		return classDefs(rule).stream().map(classDef -> objectTypeView(classDef, relationships)).toList();
 	}
 
 	@Override
-	public ObjectTypeView objectType(String className, User user, String lang) {
-		Map<String, Object> rule = rule(user);
+	public ObjectTypeView objectType(String className, String domainId, String lang) {
+		Map<String, Object> rule = rule(domainId);
 		Map<String, Object> classDef = requireClass(rule, className, lang);
 		return objectTypeView(classDef, relationships(rule));
 	}
 
 	@Override
-	public List<AttributeView> attributes(String className, User user, String lang) {
-		Map<String, Object> rule = rule(user);
-		List<Map<String, Object>> classDefs = classDefs(rule);
+	public List<AttributeView> attributes(String className, String domainId, String lang) {
+		return attributes(rule(domainId), className, lang);
+	}
+
+	@Override
+	public AttributeRows attributeRows(String className, String domainId, String lang) {
+		var rule = rule(domainId);
+		var views = attributes(rule, className, lang);
+		Map<String, String> classLabels = new LinkedHashMap<>();
+		for (var definition : classDefs(rule)) {
+			String name = text(definition.get("className"));
+			classLabels.put(name, objectTypeLabel(name, definition));
+		}
+		return new AttributeRows(views, classLabels);
+	}
+
+	@Override
+	public AttributeRecord attributeRecord(String primaryKey, String domainId, String lang) {
+		var key = attributeKey(primaryKey);
+		var owner = requireClass(rule(domainId), key[0], lang);
+		var view = attributeView(key[0], requireAttribute(owner, key[1], lang));
+		return new AttributeRecord(view, Map.of(key[0], objectTypeLabel(key[0], owner)));
+	}
+
+	private static String objectTypeLabel(String name, Map<String, Object> definition) {
+		String label = text(definition.get("showName"));
+		return label.isEmpty() ? name : label;
+	}
+
+	private List<AttributeView> attributes(Map<String, Object> rule, String className, String lang) {
 		if (!blank(className)) {
 			return attrs(requireClass(rule, className, lang)).stream()
 					.map(attr -> attributeView(className, attr)).toList();
 		}
 		List<AttributeView> result = new ArrayList<>();
-		for (Map<String, Object> classDef : classDefs) {
+		for (Map<String, Object> classDef : classDefs(rule)) {
 			String owner = (String) classDef.get("className");
 			for (Map<String, Object> attr : attrs(classDef)) {
 				result.add(attributeView(owner, attr));
@@ -104,8 +131,8 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	@Override
-	public List<RelationshipView> relationships(String className, User user, String lang) {
-		Map<String, Object> rule = rule(user);
+	public List<RelationshipView> relationships(String className, String domainId, String lang) {
+		Map<String, Object> rule = rule(domainId);
 		Map<String, Map<String, String>> relationships = relationships(rule);
 		Map<String, String> classShowNames = classShowNames(rule);
 		List<RelationshipView> result = new ArrayList<>();
@@ -119,8 +146,8 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	@Override
-	public RelationshipView relationship(String relationship, User user, String lang) {
-		Map<String, Object> rule = rule(user);
+	public RelationshipView relationship(String relationship, String domainId, String lang) {
+		Map<String, Object> rule = rule(domainId);
 		Map<String, String> def = relationships(rule).get(relationship);
 		if (def == null) {
 			throw relationshipNotFound(lang);
@@ -138,7 +165,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	@Override
 	public ObjectTypeView createObjectType(ObjectTypeCreate raw, User user, String lang) {
 		Map<String, Object> rule = rule(user);
-		ObjectTypeCreate body = checkedObjectTypeCreate(rule, user, raw, lang).body();
+		ObjectTypeCreate body = checkedObjectTypeCreate(rule, user.getDomainId(), raw, lang).body();
 
 		Map<String, Object> primaryKey = new HashMap<>();
 		primaryKey.put("name", body.primaryKeyName());
@@ -170,7 +197,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	@Override
 	public ObjectTypeView updateObjectType(String className, ObjectTypeUpdate raw, User user, String lang) {
 		Map<String, Object> rule = rule(user);
-		CheckedObjectTypeUpdate checked = checkedObjectTypeUpdate(rule, className, raw, user, lang);
+		CheckedObjectTypeUpdate checked = checkedObjectTypeUpdate(rule, className, raw, lang);
 
 		checked.classDef().put("showName", checked.body().showName());
 		checked.classDef().put("classDesc", checked.body().classDesc());
@@ -209,7 +236,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	@Override
 	public AttributeView createAttribute(String className, AttributeCreate raw, User user, String lang) {
 		Map<String, Object> rule = rule(user);
-		CheckedAttributeCreate checked = checkedAttributeCreate(rule, className, raw, raw.options(), user, lang);
+		CheckedAttributeCreate checked = checkedAttributeCreate(rule, className, raw, raw.options(), user.getDomainId(), lang);
 		AttributeCreate body = checked.body();
 		List<Map<String, Object>> attrs = attrs(checked.classDef());
 
@@ -239,7 +266,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	@Override
 	public AttributeView updateAttribute(String className, String name, AttributeUpdate raw, User user, String lang) {
 		Map<String, Object> rule = rule(user);
-		CheckedAttributeUpdate checked = checkedAttributeUpdate(rule, className, name, raw, raw.options(), user, lang);
+		CheckedAttributeUpdate checked = checkedAttributeUpdate(rule, className, name, raw, raw.options(), user.getDomainId(), lang);
 
 		checked.attrDef().put("showName", checked.body().showName());
 		checked.attrDef().put("attrDesc", checked.body().attrDesc());
@@ -276,7 +303,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		validateName(attrName, errors, "name", lang, "Admin.attr.formatError");
 		if (errors.stream().noneMatch(error -> "name".equals(fieldName(error)))) {
 			try {
-				adapter(user, rule).validatePrimaryKeyName(attrName);
+				adapter(user.getDomainId(), rule).validatePrimaryKeyName(attrName);
 			} catch (Exception error) {
 				errors.add(field("name", "invalid_format", error.getMessage()));
 			}
@@ -325,7 +352,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	@Override
 	public RelationshipView createRelationship(RelationshipCreate raw, User user, String lang) {
 		Map<String, Object> rule = rule(user);
-		RelationshipCreate body = checkedRelationshipCreate(rule, user, raw, lang).body();
+		RelationshipCreate body = checkedRelationshipCreate(rule, user.getDomainId(), raw, lang).body();
 
 		Map<String, String> relationshipDef = new HashMap<>();
 		relationshipDef.put("fromclass", body.fromclass());
@@ -345,7 +372,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	@Override
 	public RelationshipView updateRelationship(String relationship, RelationshipUpdate raw, User user, String lang) {
 		Map<String, Object> rule = rule(user);
-		CheckedRelationshipUpdate checked = checkedRelationshipUpdate(rule, relationship, raw, user, lang);
+		CheckedRelationshipUpdate checked = checkedRelationshipUpdate(rule, relationship, raw, user.getDomainId(), lang);
 
 		checked.relationshipDef().put("desc", checked.body().desc());
 		checked.relationshipDef().put("fromField", checked.body().fromField());
@@ -377,17 +404,19 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	@Override
-	public FormDescription objectTypeForm(FormRequest body, User user, String lang) {
-		return buildObjectTypeForm(body, user, lang, false);
+	public FormDescription objectTypeForm(FormRequest body, String domainId, String lang) {
+		return objectTypeForm(body, domainId, lang, false, false);
 	}
 
 	@Override
-	public FormDescription objectTypeInlineForm(FormRequest body, User user, String lang) {
-		return buildObjectTypeForm(body, user, lang, true);
+	public FormDescription objectTypeInlineForm(FormRequest body, String domainId, String lang) {
+		return objectTypeForm(body, domainId, lang, true, false);
 	}
 
-	private FormDescription buildObjectTypeForm(FormRequest body, User user, String lang, boolean inline) {
-		Map<String, Object> rule = rule(user);
+	@Override
+	public FormDescription objectTypeForm(FormRequest body, String domainId, String lang, boolean inline,
+			boolean includeErrors) {
+		Map<String, Object> rule = rule(domainId);
 		boolean edit = editTarget(body);
 		String className = trim(body.target().primaryKey());
 		Map<String, Object> classDef = edit ? requireClass(rule, className, lang) : null;
@@ -395,27 +424,27 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				? objectTypeValues(text(classDef.get("className")), null, text(classDef.get("showName")),
 						text(classDef.get("classDesc")))
 				: objectTypeValues("", "", "", "");
-		Map<String, Object> values = formValues(body, current);
-		if (draftToCheck(body)) {
-			values = edit
-					? draftObjectTypeUpdate(rule, className, values, user, lang)
-					: draftObjectTypeCreate(rule, values, user, lang);
-		}
-		return new FormDescription(objectTypeFields(edit, inline, lang), values, objectTypeFormSave(edit, lang));
+		var draft = new FormDraft(body, includeErrors);
+		var values = draft.check(formValues(body, current), input -> edit
+				? draftObjectTypeUpdate(rule, className, input, lang)
+				: draftObjectTypeCreate(rule, input, domainId, lang));
+		return draft.describe(objectTypeFields(edit, inline, lang), values, objectTypeFormSave(edit, lang));
 	}
 
 	@Override
-	public FormDescription attributeForm(FormRequest body, User user, String lang) {
-		return buildAttributeForm(body, user, lang, false);
+	public FormDescription attributeForm(FormRequest body, String domainId, String lang) {
+		return attributeForm(body, domainId, lang, false, false);
 	}
 
 	@Override
-	public FormDescription attributeInlineForm(FormRequest body, User user, String lang) {
-		return buildAttributeForm(body, user, lang, true);
+	public FormDescription attributeInlineForm(FormRequest body, String domainId, String lang) {
+		return attributeForm(body, domainId, lang, true, false);
 	}
 
-	private FormDescription buildAttributeForm(FormRequest body, User user, String lang, boolean inline) {
-		Map<String, Object> rule = rule(user);
+	@Override
+	public FormDescription attributeForm(FormRequest body, String domainId, String lang, boolean inline,
+			boolean includeErrors) {
+		Map<String, Object> rule = rule(domainId);
 		boolean edit = editTarget(body);
 		String[] key = edit ? attributeKey(body.target().primaryKey()) : null;
 		Map<String, Object> attrDef = edit ? requireAttribute(requireClass(rule, key[0], lang), key[1], lang) : null;
@@ -431,21 +460,24 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String type = edit ? text(attrDef.get("type")) : formString(values, "type");
 		boolean primaryKey = edit ? primaryKey(attrDef) : Boolean.TRUE.equals(formBoolean(values, "primaryKey"));
 		boolean showOptions = !inline && supportsAttributeOptions(type, primaryKey);
-		if (draftToCheck(body)) {
-			values = edit
-					? draftAttributeUpdate(rule, key, values, inline ? null : body.values().get(OPTION_KEY), user, lang)
-					: draftAttributeCreate(rule, values, user, lang);
-		}
+		var draft = new FormDraft(body, includeErrors);
+		values = draft.check(values, input -> edit
+				? draftAttributeUpdate(rule, key, input, inline ? null : body.values().get(OPTION_KEY), domainId, lang)
+				: draftAttributeCreate(rule, input, domainId, lang));
 		if (!showOptions) {
 			values.remove(OPTION_KEY);
 		}
-		return new FormDescription(attributeFields(rule, edit, inline, attrDef, showOptions, lang),
-				values, attributeFormSave(edit, lang));
+		return draft.describe(attributeFields(rule, edit, inline, attrDef, showOptions, lang), values, attributeFormSave(edit, lang));
 	}
 
 	@Override
-	public FormDescription relationshipForm(FormRequest body, User user, String lang) {
-		Map<String, Object> rule = rule(user);
+	public FormDescription relationshipForm(FormRequest body, String domainId, String lang) {
+		return relationshipForm(body, domainId, lang, false);
+	}
+
+	@Override
+	public FormDescription relationshipForm(FormRequest body, String domainId, String lang, boolean includeErrors) {
+		Map<String, Object> rule = rule(domainId);
 		boolean edit = editTarget(body);
 		String relationship = trim(body.target().primaryKey());
 		Map<String, String> def = edit ? requireRelationship(rule, relationship, lang) : null;
@@ -454,38 +486,73 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 						text(def.get("toclass")), text(def.get("toField")), text(def.get("desc")))
 				: relationshipValues("", "", "", "", "", "");
 		Map<String, Object> values = formValues(body, current);
-		if (body.changedField() != null) {
-			// A changed end class offers its own attributes; a value held for the class before is no longer one of them.
+		var draft = new FormDraft(body, includeErrors);
+		values = draft.check(values, input -> edit
+				? draftRelationshipUpdate(rule, relationship, input, domainId, lang)
+				: draftRelationshipCreate(rule, input, domainId, lang));
+		if (body.changedField() != null || !draft.errors.isEmpty()) {
+			// A changed end class invalidates a join field that belonged to the former class.
 			values.put("fromField", joinField(rule, formString(values, "fromclass"), formString(values, "fromField")));
 			values.put("toField", joinField(rule, formString(values, "toclass"), formString(values, "toField")));
 		}
-		if (draftToCheck(body)) {
-			values = edit
-					? draftRelationshipUpdate(rule, relationship, values, user, lang)
-					: draftRelationshipCreate(rule, values, user, lang);
+		return draft.describe(relationshipFields(rule, edit, values, domainId, lang), values,
+				relationshipFormSave(edit, joinFieldsRequired(domainId), lang));
+	}
+
+	private static final class FormDraft {
+		private final FormRequest request;
+		private final boolean includeErrors;
+		private List<ObjectNode> errors = List.of();
+
+		private FormDraft(FormRequest request, boolean includeErrors) {
+			this.request = request;
+			this.includeErrors = includeErrors;
 		}
-		return new FormDescription(relationshipFields(rule, edit, values, user, lang), values,
-				relationshipFormSave(edit, joinFieldsRequired(user), lang));
+
+		private Map<String, Object> check(Map<String, Object> values,
+				Function<Map<String, Object>, Map<String, Object>> validate) {
+			if (!draftToCheck(request)) return values;
+			try {
+				return validate.apply(values);
+			} catch (OntologyModelException refusal) {
+				if (!includeErrors || !"FIELD_VALIDATION_FAILED".equals(refusal.code())) throw refusal;
+				// Describe the same draft using the same rule snapshot; only the HTTP API turns field errors into 422.
+				var fields = ScheduleJson.JSON.<JsonNode>valueToTree(refusal.details().get("fields"));
+				var panelErrors = new ArrayList<ObjectNode>(fields.size());
+				for (var item : fields) {
+					var field = (ObjectNode) item;
+					field.put("field", field.get("field").asText().replaceFirst("^/values/", "/"));
+					panelErrors.add(field);
+				}
+				errors = panelErrors;
+				return values;
+			}
+		}
+
+		private FormDescription describe(List<ObjectNode> fields, Map<String, Object> values, FormSave save) {
+			if (!errors.isEmpty()) values.putAll(request.values());
+			return new FormDescription(fields, values, save, includeErrors ? errors : null);
+		}
 	}
 
 	private Map<String, Object> rule(User user) {
-		return adminService.getJSONRule(user.getDomainId());
+		return rule(user.getDomainId());
+	}
+
+	private Map<String, Object> rule(String domainId) {
+		return adminService.getJSONRule(domainId);
 	}
 
 	private void write(User user, Map<String, Object> rule) {
 		adminService.writeJSONRule(rule, user.getDomainId());
 	}
 
-	private BusinessConfig businessConfig(User user) {
-		return businessConfigService.get(user.getDomainId());
-	}
-
 	private String sysLang(User user) {
-		return businessConfig(user).getLang();
+		return businessConfigService.get(user.getDomainId()).getLang();
 	}
 
-	private DataAdapter adapter(User user, Map<String, Object> rule) {
-		return dataAdapterRegistry.create(businessConfig(user), rule);
+	private DataAdapter adapter(String domainId, Map<String, Object> rule) {
+		return dataAdapterRegistry.create(businessConfigService.get(domainId), rule);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -573,7 +640,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			RelationshipUpdate body) {
 	}
 
-	private CheckedObjectTypeCreate checkedObjectTypeCreate(Map<String, Object> rule, User user, ObjectTypeCreate raw,
+	private CheckedObjectTypeCreate checkedObjectTypeCreate(Map<String, Object> rule, String domainId, ObjectTypeCreate raw,
 			String lang) {
 		List<ObjectNode> errors = new ArrayList<>();
 		String className = trim(raw.className());
@@ -587,7 +654,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		if (!blank(className) && findClass(classDefs(rule), className) != null) {
 			errors.add(field("className", "already_exists", langService.get(lang, "Admin.class.exist")));
 		}
-		DataAdapter adapter = adapter(user, rule);
+		DataAdapter adapter = adapter(domainId, rule);
 		if (!blank(className)) {
 			validateClassName(adapter, className, errors, lang);
 		}
@@ -606,7 +673,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private CheckedObjectTypeUpdate checkedObjectTypeUpdate(Map<String, Object> rule, String className,
-			ObjectTypeUpdate raw, User user, String lang) {
+			ObjectTypeUpdate raw, String lang) {
 		String owner = trim(className);
 		List<ObjectNode> errors = new ArrayList<>();
 		String showName = trim(raw.showName());
@@ -619,7 +686,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private CheckedAttributeCreate checkedAttributeCreate(Map<String, Object> rule, String className,
-			AttributeCreate raw, Object rawOptions, User user, String lang) {
+			AttributeCreate raw, Object rawOptions, String domainId, String lang) {
 		String owner = trim(className);
 		List<ObjectNode> errors = new ArrayList<>();
 		required(errors, "className", owner, langService.get(lang, "Admin.class.nameRequired"));
@@ -654,7 +721,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		if (primaryKey && !blank(name)) {
 			if (errors.stream().noneMatch(error -> "name".equals(fieldName(error)))) {
 				try {
-					adapter(user, rule).validatePrimaryKeyName(name);
+					adapter(domainId, rule).validatePrimaryKeyName(name);
 				} catch (Exception error) {
 					errors.add(field("name", "invalid_format", error.getMessage()));
 				}
@@ -668,7 +735,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private CheckedAttributeUpdate checkedAttributeUpdate(Map<String, Object> rule, String className, String name,
-			AttributeUpdate raw, Object rawOptions, User user, String lang) {
+			AttributeUpdate raw, Object rawOptions, String domainId, String lang) {
 		String owner = trim(className);
 		String attrName = trim(name);
 		List<ObjectNode> errors = new ArrayList<>();
@@ -698,7 +765,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			validateName(attrName, errors, "primaryKey", lang, "Admin.attr.formatError");
 			if (errors.stream().noneMatch(error -> "primaryKey".equals(fieldName(error)))) {
 				try {
-					adapter(user, rule).validatePrimaryKeyName(attrName);
+					adapter(domainId, rule).validatePrimaryKeyName(attrName);
 				} catch (Exception error) {
 					errors.add(field("primaryKey", "invalid_format", error.getMessage()));
 				}
@@ -867,7 +934,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		}).toList();
 	}
 
-	private CheckedRelationshipCreate checkedRelationshipCreate(Map<String, Object> rule, User user,
+	private CheckedRelationshipCreate checkedRelationshipCreate(Map<String, Object> rule, String domainId,
 			RelationshipCreate raw, String lang) {
 		List<ObjectNode> errors = new ArrayList<>();
 		String relationship = trim(raw.relationship());
@@ -895,14 +962,14 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		if (!blank(toclass) && toClass == null) {
 			errors.add(field("toclass", "invalid_option", langService.get(lang, "Admin.relationship.toClassNotFound")));
 		}
-		validateJoinFields(user, errors, lang, fromClass, toClass, fromField, toField);
+		validateJoinFields(domainId, errors, lang, fromClass, toClass, fromField, toField);
 		fail(errors, lang);
 		return new CheckedRelationshipCreate(
 				new RelationshipCreate(relationship, fromclass, toclass, desc, fromField, toField));
 	}
 
 	private CheckedRelationshipUpdate checkedRelationshipUpdate(Map<String, Object> rule, String relationship,
-			RelationshipUpdate raw, User user, String lang) {
+			RelationshipUpdate raw, String domainId, String lang) {
 		String name = trim(relationship);
 		List<ObjectNode> errors = new ArrayList<>();
 		required(errors, "relationship", name, langService.get(lang, "Admin.relationship.nameRequired"));
@@ -914,7 +981,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		required(errors, "desc", desc, langService.get(lang, "Admin.relationship.descRequired"));
 		Map<String, Object> fromClass = findClass(classDefs(rule), relationshipDef.get("fromclass"));
 		Map<String, Object> toClass = findClass(classDefs(rule), relationshipDef.get("toclass"));
-		validateJoinFields(user, errors, lang, fromClass, toClass, fromField, toField);
+		validateJoinFields(domainId, errors, lang, fromClass, toClass, fromField, toField);
 		fail(errors, lang);
 		return new CheckedRelationshipUpdate(name, relationshipDef,
 				new RelationshipUpdate(desc, fromField, toField));
@@ -1032,28 +1099,28 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		return classDef != null && hasAttribute(classDef, field) ? field : "";
 	}
 
-	private Map<String, Object> draftObjectTypeCreate(Map<String, Object> rule, Map<String, Object> values, User user,
+	private Map<String, Object> draftObjectTypeCreate(Map<String, Object> rule, Map<String, Object> values, String domainId,
 			String lang) {
-		ObjectTypeCreate body = checkedObjectTypeCreate(rule, user, new ObjectTypeCreate(formString(values, "className"),
+		ObjectTypeCreate body = checkedObjectTypeCreate(rule, domainId, new ObjectTypeCreate(formString(values, "className"),
 				formString(values, "primaryKeyName"), formString(values, "showName"), formString(values, "classDesc")),
 				lang).body();
 		return objectTypeValues(body.className(), body.primaryKeyName(), body.showName(), body.classDesc());
 	}
 
 	private Map<String, Object> draftObjectTypeUpdate(Map<String, Object> rule, String className,
-			Map<String, Object> values, User user, String lang) {
+			Map<String, Object> values, String lang) {
 		CheckedObjectTypeUpdate checked = checkedObjectTypeUpdate(rule, className, new ObjectTypeUpdate(
-				formString(values, "showName"), formString(values, "classDesc")), user, lang);
+				formString(values, "showName"), formString(values, "classDesc")), lang);
 		return objectTypeValues(checked.className(), null, checked.body().showName(), checked.body().classDesc());
 	}
 
-	private Map<String, Object> draftAttributeCreate(Map<String, Object> rule, Map<String, Object> values, User user,
+	private Map<String, Object> draftAttributeCreate(Map<String, Object> rule, Map<String, Object> values, String domainId,
 			String lang) {
 		CheckedAttributeCreate checked = checkedAttributeCreate(rule, formString(values, "className"),
 				new AttributeCreate(formString(values, "name"), formString(values, "showName"),
 						formString(values, "type"), formString(values, "attrDesc"), formBoolean(values, "enable"),
 						formBoolean(values, "businessKey"), formBoolean(values, "primaryKey")),
-				values.get(OPTION_KEY), user, lang);
+				values.get(OPTION_KEY), domainId, lang);
 		Map<String, Object> checkedValues = attributeValues(checked.className(), checked.body().name(), checked.body().type(),
 				checked.body().showName(), checked.body().attrDesc(), checked.body().enable(),
 				checked.body().businessKey(), Boolean.TRUE.equals(checked.body().primaryKey()));
@@ -1062,10 +1129,10 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private Map<String, Object> draftAttributeUpdate(Map<String, Object> rule, String[] key, Map<String, Object> values,
-			Object rawOptions, User user, String lang) {
+			Object rawOptions, String domainId, String lang) {
 		CheckedAttributeUpdate checked = checkedAttributeUpdate(rule, key[0], key[1], new AttributeUpdate(
 				formString(values, "showName"), formString(values, "attrDesc"), formBoolean(values, "enable"),
-				formBoolean(values, "businessKey"), formBoolean(values, "primaryKey")), rawOptions, user, lang);
+				formBoolean(values, "businessKey"), formBoolean(values, "primaryKey")), rawOptions, domainId, lang);
 		Map<String, Object> checkedValues = attributeValues(checked.className(), checked.name(), text(checked.attrDef().get("type")),
 				checked.body().showName(), checked.body().attrDesc(), checked.body().enable(),
 				checked.body().businessKey(), Boolean.TRUE.equals(checked.body().primaryKey()));
@@ -1073,9 +1140,9 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		return checkedValues;
 	}
 
-	private Map<String, Object> draftRelationshipCreate(Map<String, Object> rule, Map<String, Object> values, User user,
+	private Map<String, Object> draftRelationshipCreate(Map<String, Object> rule, Map<String, Object> values, String domainId,
 			String lang) {
-		RelationshipCreate body = checkedRelationshipCreate(rule, user, new RelationshipCreate(
+		RelationshipCreate body = checkedRelationshipCreate(rule, domainId, new RelationshipCreate(
 				formString(values, "relationship"), formString(values, "fromclass"), formString(values, "toclass"),
 				formString(values, "desc"), formString(values, "fromField"), formString(values, "toField")), lang)
 				.body();
@@ -1084,9 +1151,9 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private Map<String, Object> draftRelationshipUpdate(Map<String, Object> rule, String relationship,
-			Map<String, Object> values, User user, String lang) {
+			Map<String, Object> values, String domainId, String lang) {
 		CheckedRelationshipUpdate checked = checkedRelationshipUpdate(rule, relationship, new RelationshipUpdate(
-				formString(values, "desc"), formString(values, "fromField"), formString(values, "toField")), user, lang);
+				formString(values, "desc"), formString(values, "fromField"), formString(values, "toField")), domainId, lang);
 		return relationshipValues(checked.relationship(), text(checked.relationshipDef().get("fromclass")),
 				checked.body().fromField(), text(checked.relationshipDef().get("toclass")), checked.body().toField(),
 				checked.body().desc());
@@ -1385,7 +1452,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private List<ObjectNode> relationshipFields(Map<String, Object> rule, boolean edit, Map<String, Object> values,
-			User user, String lang) {
+			String domainId, String lang) {
 		Map<String, String> label = labels(RELATIONSHIP_LABEL_KEYS, lang);
 		String nameLabel = edit ? langService.get(lang, "Admin.form.apiName") : label.get("relationship");
 		String fromClassLabel = label.get("fromclass");
@@ -1397,7 +1464,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String enterFromField = langService.get(lang, "Admin.form.enterFromField");
 		String selectToClass = langService.get(lang, "Admin.form.selectToclass");
 		String enterToField = langService.get(lang, "Admin.form.enterToField");
-		boolean joinRequired = joinFieldsRequired(user);
+		boolean joinRequired = joinFieldsRequired(domainId);
 		String fromClass = formString(values, "fromclass");
 		String toClass = formString(values, "toclass");
 		List<ObjectNode> fields = new ArrayList<>();
@@ -1624,13 +1691,13 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		}
 	}
 
-	private boolean joinFieldsRequired(User user) {
-		return dataAdapterRegistry.provider(businessConfig(user).getDataAdapter()).requiresJoinFields();
+	private boolean joinFieldsRequired(String domainId) {
+		return dataAdapterRegistry.provider(businessConfigService.get(domainId).getDataAdapter()).requiresJoinFields();
 	}
 
-	private void validateJoinFields(User user, List<ObjectNode> errors, String lang, Map<String, Object> fromClass,
+	private void validateJoinFields(String domainId, List<ObjectNode> errors, String lang, Map<String, Object> fromClass,
 			Map<String, Object> toClass, String fromField, String toField) {
-		boolean required = joinFieldsRequired(user);
+		boolean required = joinFieldsRequired(domainId);
 		if (required && blank(fromField)) {
 			errors.add(field("fromField", "required", langService.get(lang, "Admin.relationship.fromFieldRequired")));
 		}

@@ -3,16 +3,17 @@ import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import { qualifiedTable as t } from "../../infrastructure/postgres";
 import type { CurrentProductKind } from "../../infrastructure/product-current";
-import { dependencyKey, entryDependencyCompiler } from "./entry-dependency-compiler";
+import { dependencyKey, entryDependencyCompiler, type CompiledEntryDependencies } from "./entry-dependency-compiler";
 
 const table = () => t("product_panel_entry_dependencies");
 const boundTable = () => t("product_bound_entry_panel_dependencies");
 type QueryClient = Pick<PoolClient, "query">;
-export type DependencyMap = Map<string, EntryDependency[]>;
+export type DependencyMap = Map<string, CompiledEntryDependencies>;
+export const emptyEntryDependencies: CompiledEntryDependencies = { dependencies: [] };
 type Change = { panelId: string; before: EntryDependency[]; after: EntryDependency[] };
 type BoundInputRoot = Pick<BoundPanelRoot, "panelId" | "inputs">;
-type BoundEntryDependencies = BoundInputRoot & { entryId: string; dependencies: EntryDependency[] };
-type BoundChange = BoundInputRoot & { entryId: string; before: EntryDependency[]; after: EntryDependency[] };
+type BoundEntryDependencies = BoundInputRoot & { entryId: string } & CompiledEntryDependencies;
+type BoundChange = BoundInputRoot & Change & { entryId: string };
 export type EntryDependencyPublication = {
   source: Omit<EntryDependencyChangeRequest["source"], "sequence"> & { id: string };
   panels: Change[];
@@ -24,18 +25,31 @@ export function sameDependencies(before: EntryDependency[], after: EntryDependen
   return before.length === after.length && before.every((item, index) => dependencyKey(item) === dependencyKey(after[index]));
 }
 
-async function saveDependencies(client: QueryClient, domainId: string, panelId: string, dependencies: EntryDependency[]) {
-  await client.query(`INSERT INTO ${table()} (domain_id,panel_id,dependencies) VALUES ($1,$2,$3::jsonb)
-    ON CONFLICT (domain_id,panel_id) DO UPDATE SET dependencies=EXCLUDED.dependencies`,
-  [domainId, panelId, JSON.stringify(dependencies)]);
+function changed(before: CompiledEntryDependencies, after: CompiledEntryDependencies) {
+  return !sameDependencies(before.dependencies, after.dependencies);
 }
 
-export async function readPanelDependencies(client: QueryClient, domainId: string, panelIds: string[]): Promise<DependencyMap> {
+function change(panelId: string, before: CompiledEntryDependencies, after: CompiledEntryDependencies): Change {
+  return { panelId, before: before.dependencies, after: after.dependencies };
+}
+
+function saveDependencies(client: QueryClient, domainId: string, panelId: string, facts: CompiledEntryDependencies) {
+  return client.query(`INSERT INTO ${table()} (domain_id,panel_id,dependencies) VALUES ($1,$2,$3::jsonb)
+    ON CONFLICT (domain_id,panel_id) DO UPDATE SET dependencies=EXCLUDED.dependencies`,
+  [domainId, panelId, JSON.stringify(facts.dependencies)]);
+}
+
+export async function readCompiledPanelDependencies(client: QueryClient, domainId: string, panelIds: string[]): Promise<DependencyMap> {
   if (!panelIds.length) return new Map();
-  const { rows } = await client.query<{ panel_id: string; dependencies: EntryDependency[] }>(
+  const { rows } = await client.query<{ panel_id: string } & CompiledEntryDependencies>(
     `SELECT panel_id,dependencies FROM ${table()} WHERE domain_id IN ($1,'') AND panel_id=ANY($2::text[])`, [domainId, panelIds],
   );
-  return new Map(rows.map(row => [row.panel_id, row.dependencies]));
+  return new Map(rows.map(({ panel_id, ...facts }) => [panel_id, facts]));
+}
+
+export async function readPanelDependencies(client: QueryClient, domainId: string, panelIds: string[]) {
+  const rows = await readCompiledPanelDependencies(client, domainId, panelIds);
+  return new Map([...rows].map(([id, { dependencies }]) => [id, dependencies]));
 }
 
 export async function readBoundEntryDependencies(client: QueryClient, domainId: string, entryIds: string[]) {
@@ -48,12 +62,12 @@ export async function readBoundEntryDependencies(client: QueryClient, domainId: 
 }
 
 export async function saveBoundEntryDependencies(
-  client: QueryClient, domainId: string, entryId: string, root: BoundInputRoot, dependencies: EntryDependency[],
+  client: QueryClient, domainId: string, entryId: string, root: BoundInputRoot, facts: CompiledEntryDependencies,
 ) {
   await client.query(`INSERT INTO ${boundTable()} (domain_id,entry_id,panel_id,inputs,dependencies)
     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb) ON CONFLICT (domain_id,entry_id)
     DO UPDATE SET panel_id=EXCLUDED.panel_id,inputs=EXCLUDED.inputs,dependencies=EXCLUDED.dependencies`,
-  [domainId, entryId, root.panelId, JSON.stringify(root.inputs), JSON.stringify(dependencies)]);
+  [domainId, entryId, root.panelId, JSON.stringify(root.inputs), JSON.stringify(facts.dependencies)]);
 }
 
 export async function deleteBoundEntryDependencies(client: QueryClient, domainId: string, entryId: string) {
@@ -70,7 +84,7 @@ export async function updatePanelDependencies(
 ) {
   const reference = { objectType: kind === "panel" ? "PANEL" : "PROJECTION", objectKey: id };
   const match = JSON.stringify([reference]);
-  const { rows } = await client.query<{ panel_id: string; dependencies: EntryDependency[] }>(
+  const { rows } = await client.query<{ panel_id: string } & CompiledEntryDependencies>(
     `SELECT panel_id,dependencies FROM ${table()} WHERE domain_id=$1 AND dependencies @> $2::jsonb`,
     [domainId, match],
   );
@@ -78,22 +92,22 @@ export async function updatePanelDependencies(
     `SELECT entry_id AS "entryId",panel_id AS "panelId",inputs,dependencies FROM ${boundTable()}
      WHERE domain_id=$1 AND dependencies @> $2::jsonb`, [domainId, match],
   );
-  const previous = new Map(rows.map(row => [row.panel_id, row.dependencies]));
-  if (kind === "panel" && !previous.has(id)) previous.set(id, []);
+  const previous = new Map(rows.map(({ panel_id, ...facts }) => [panel_id, facts]));
+  if (kind === "panel" && !previous.has(id)) previous.set(id, emptyEntryDependencies);
   const compile = entryDependencyCompiler(client, domainId);
   const panels: Change[] = [];
   for (const [panelId, before] of previous) {
     const after = await compile(panelId);
-    if (sameDependencies(before, after)) continue;
+    if (!changed(before, after)) continue;
     await saveDependencies(client, domainId, panelId, after);
-    panels.push({ panelId, before, after });
+    panels.push(change(panelId, before, after));
   }
   const boundPanels: BoundChange[] = [];
-  for (const { entryId, panelId, inputs, dependencies: before } of boundRows) {
+  for (const { entryId, panelId, inputs, ...before } of boundRows) {
     const after = await compile(panelId, inputs);
-    if (sameDependencies(before, after)) continue;
+    if (!changed(before, after)) continue;
     await saveBoundEntryDependencies(client, domainId, entryId, { panelId, inputs }, after);
-    boundPanels.push({ entryId, panelId, inputs, before, after });
+    boundPanels.push({ entryId, inputs, ...change(panelId, before, after) });
   }
   if (panels.length || boundPanels.length) {
     await queueDependencyPublication(client, domainId, { source: { kind: "panel", id, actorId }, panels, boundPanels });
@@ -101,7 +115,7 @@ export async function updatePanelDependencies(
 }
 
 export async function removePanelDependencies(client: PoolClient, domainId: string, actorId: string, panelId: string) {
-  const { rows } = await client.query<{ dependencies: EntryDependency[] }>(
+  const { rows } = await client.query<CompiledEntryDependencies>(
     `DELETE FROM ${table()} WHERE domain_id=$1 AND panel_id=$2 RETURNING dependencies`, [domainId, panelId],
   );
   const { rows: boundRows } = await client.query<BoundEntryDependencies>(
@@ -111,9 +125,9 @@ export async function removePanelDependencies(client: PoolClient, domainId: stri
   );
   if (rows.length || boundRows.length) await queueDependencyPublication(client, domainId, {
     source: { kind: "panel", id: panelId, actorId },
-    panels: rows.map(({ dependencies: before }) => ({ panelId, before, after: [] })),
-    boundPanels: boundRows.map(({ entryId, panelId, inputs, dependencies: before }) =>
-      ({ entryId, panelId, inputs, before, after: [] })),
+    panels: rows.map(before => change(panelId, before, emptyEntryDependencies)),
+    boundPanels: boundRows.map(({ entryId, panelId, inputs, ...before }) =>
+      ({ entryId, inputs, ...change(panelId, before, emptyEntryDependencies) })),
   });
 }
 

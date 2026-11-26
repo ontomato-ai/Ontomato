@@ -3,7 +3,7 @@ import { productProjectionSchema } from "@ontomato/contracts/product-panels";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { readProductPanelData } from "../data-reads";
+import { readScopedPanelData } from "../data-reads";
 
 const mocks = vi.hoisted(() => ({
   resolveMember: vi.fn(),
@@ -87,7 +87,7 @@ describe("owner-parameter reads with state-bound object targets", () => {
   it("does not forward the object selection target input as an owner metric parameter", async () => {
     const projection = makeCardChartProjection();
     mocks.resolveMember.mockResolvedValue({
-      kind: "projection",
+      kind: "projection", trail: [],
       member: {
         target: { projectionId: projection.id },
         inputs: { target: { state: "selectedCard" } },
@@ -95,7 +95,7 @@ describe("owner-parameter reads with state-bound object targets", () => {
       projection,
     });
 
-    const response = await readProductPanelData(owner, viewer, {
+    const response = await readScopedPanelData(owner, viewer, {
       source: { kind: "frame", applicationId: "personal-workspace", useId: "home" },
       memberPath: [{ member: "cardChartPreview" }],
       dataName: "result",
@@ -112,7 +112,7 @@ describe("owner-parameter reads with state-bound object targets", () => {
   it("still forwards implicit owner metric parameters bound on member inputs while omitting target", async () => {
     const projection = makeCardChartProjection();
     mocks.resolveMember.mockResolvedValue({
-      kind: "projection",
+      kind: "projection", trail: [],
       member: {
         target: { projectionId: projection.id },
         inputs: {
@@ -123,7 +123,7 @@ describe("owner-parameter reads with state-bound object targets", () => {
       projection,
     });
 
-    const response = await readProductPanelData(owner, viewer, {
+    const response = await readScopedPanelData(owner, viewer, {
       source: { kind: "frame", applicationId: "personal-workspace", useId: "home" },
       memberPath: [{ member: "cardChartPreview" }],
       dataName: "result",
@@ -144,7 +144,7 @@ describe("owner-parameter reads with state-bound object targets", () => {
       params: { target: { input: "targetMetricParam" } },
     });
     mocks.resolveMember.mockResolvedValue({
-      kind: "projection",
+      kind: "projection", trail: [],
       member: {
         target: { projectionId: projection.id },
         inputs: {
@@ -155,7 +155,7 @@ describe("owner-parameter reads with state-bound object targets", () => {
       projection,
     });
 
-    const response = await readProductPanelData(owner, viewer, {
+    const response = await readScopedPanelData(owner, viewer, {
       source: { kind: "frame", applicationId: "personal-workspace", useId: "home" },
       memberPath: [{ member: "cardChartPreview" }],
       dataName: "result",

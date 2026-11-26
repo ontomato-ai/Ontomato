@@ -1,8 +1,10 @@
 package io.ontomato.dataengine.service;
 
 import java.util.List;
+import java.util.Set;
 
 import io.ontomato.dataengine.bean.workflow.Workflow;
+import io.ontomato.dataengine.bean.workflow.WorkflowDirectoryEntry;
 
 /** Reads and publishes workflows; publishing is what puts a version's grants in force. */
 public interface WorkflowService {
@@ -14,6 +16,8 @@ public interface WorkflowService {
     Workflow queryActiveById(String id, String domainId);
 
     List<Workflow> queryList(String status, String domainId);
+
+    List<WorkflowDirectoryEntry> directoryEntries(String domainId, Set<String> ids);
 
     long count(String id, String status, String domainId);
 

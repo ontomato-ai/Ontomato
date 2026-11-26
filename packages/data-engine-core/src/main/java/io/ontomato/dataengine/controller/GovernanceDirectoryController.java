@@ -1,15 +1,19 @@
 package io.ontomato.dataengine.controller;
 
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
 import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
 import org.springframework.stereotype.Component;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OrganizationDirectory;
 import io.ontomato.dataengine.service.PermissionPolicyDirectory;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import org.springframework.context.annotation.Bean;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -56,6 +60,56 @@ public class GovernanceDirectoryController {
         String domainId = identity.getCurrentUser().getDomainId();
         return countOnly(param) ? Map.of("total", policies.countInDomain(domainId))
             : Map.of("policies", policies.listPolicies(domainId));
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyOrganizationCounts(ManagementRequestAccess management) {
+        return new WorkbenchPanelRead("platform:OntologyType", "organizationCounts", (subject, parameters) -> {
+            management.require(subject, ORGANIZATION_READ);
+            return organization.countInDomain(subject.identity().domainId());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead orgUnitInstanceDirectory(ManagementRequestAccess management) {
+        return organizationInstanceDirectory("platform:OrgUnit", management, organization::unitInstances);
+    }
+
+    @Bean
+    WorkbenchPanelRead orgPositionInstanceDirectory(ManagementRequestAccess management) {
+        return organizationInstanceDirectory("platform:OrgPosition", management, organization::positionInstances);
+    }
+
+    @Bean
+    WorkbenchPanelRead orgGrantInstanceDirectory(ManagementRequestAccess management) {
+        return organizationInstanceDirectory("platform:OrgGrant", management, organization::grantInstances);
+    }
+
+    private static WorkbenchPanelRead organizationInstanceDirectory(String type, ManagementRequestAccess management,
+            Function<String, ?> directory) {
+        return new WorkbenchPanelRead(type, "instanceDirectory", (subject, parameters) -> {
+            management.require(subject, ORGANIZATION_READ);
+            return directory.apply(subject.identity().domainId());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyPolicyCount(ManagementRequestAccess management) {
+        return new WorkbenchPanelRead("platform:OntologyType", "policyCount", (subject, parameters) -> {
+            management.require(subject, AuthorizationPolicies.READ);
+            return Map.of("total", policies.countInDomain(subject.identity().domainId()));
+        });
+    }
+
+    record PolicyInstance(String id, String name) {}
+
+    @Bean
+    WorkbenchPanelRead policyInstanceDirectory(ManagementRequestAccess management) {
+        return new WorkbenchPanelRead("platform:PermissionPolicy", "instanceDirectory", (subject, parameters) -> {
+            management.require(subject, AuthorizationPolicies.READ);
+            return policies.listPolicies(subject.identity().domainId()).stream()
+                .map(policy -> new PolicyInstance(policy.id(), policy.name())).toList();
+        });
     }
 
     private static boolean countOnly(JSONObject param) {

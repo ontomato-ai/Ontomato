@@ -37,10 +37,12 @@ export async function ownerPost<Envelope>(
   return schema.parse(await response.json());
 }
 
+export const deleteRefusalPayloadSchema = z.object({ reason: z.string().min(1).max(500).nullable() }).strict();
+
 const deleteAvailabilitySchema = z.discriminatedUnion("success", [
   ownerEnvelopeSchema.extend({
     success: z.literal(true),
-    data: z.object({ reason: z.string().min(1).max(500).nullable() }).strict(),
+    data: deleteRefusalPayloadSchema,
   }),
   ownerEnvelopeSchema.extend({ success: z.literal(false), code: ownerRefusalCodeSchema }),
 ]);

@@ -77,7 +77,7 @@ class OwnerListQueryBudgetTest {
   @BeforeEach
   void allowPublishedDefinitions() {
     when(subjects.resolveRoles(DOMAIN, AUTHOR))
-        .thenReturn(new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false));
+        .thenReturn(new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false));
     when(subjects.objectEntitlement(eq(AUTHOR), any(), any())).thenReturn(true);
     when(policies.policies(DOMAIN, Set.of())).thenReturn(List.of());
   }
@@ -155,6 +155,7 @@ class OwnerListQueryBudgetTest {
     }).toList());
     var service = new ActionServiceImpl();
     setField(service, "actionDao", dao);
+    setField(service, "authorization", new ActionAuthorization(authorization, null));
     setField(service, "functionDao", functions);
     return service;
   }

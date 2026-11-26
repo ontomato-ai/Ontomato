@@ -1,9 +1,12 @@
 package io.ontomato.dataengine.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import java.util.List;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,7 +37,16 @@ public class PrincipalDirectoryController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
 
-        String domainId = user.getDomainId();
+        return read(user.getDomainId(), request);
+    }
+
+    @Bean
+    WorkbenchPanelRead principalDirectoryPanelRead(ObjectMapper json) {
+        return new WorkbenchPanelRead("platform:User", "principalDirectory", (subject, parameters) ->
+                read(subject.identity().domainId(), json.convertValue(parameters, DirectoryRead.class)));
+    }
+
+    private DirectoryResult read(String domainId, DirectoryRead request) {
         String kind = request.kind();
         boolean members = "member".equals(kind);
         if (!members && !"role".equals(kind)) {
@@ -45,8 +57,9 @@ public class PrincipalDirectoryController {
                     || request.ids().stream().anyMatch(id -> id == null || id.isBlank())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected member IDs for name resolution");
             }
-            var names = directory.principalNames(domainId, request.ids());
-            return new DirectoryResult(request.ids().stream().distinct()
+            var ids = request.ids().stream().distinct().toList();
+            var names = directory.principalNames(domainId, ids);
+            return new DirectoryResult(ids.stream()
                     .filter(names::containsKey)
                     .map(id -> new DirectoryEntry(id, names.get(id), kind))
                     .toList());

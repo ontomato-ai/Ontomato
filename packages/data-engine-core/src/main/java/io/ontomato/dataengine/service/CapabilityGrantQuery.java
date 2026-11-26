@@ -1,7 +1,10 @@
 package io.ontomato.dataengine.service;
 
 import io.ontomato.dataengine.bean.workflow.GrantScope;
+import io.ontomato.dataengine.bean.workflow.WorkflowDirectoryEntry;
+import io.ontomato.dataengine.service.PlatformAccessQuery.RoleName;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Reads the capability grants in force in a domain.
@@ -32,6 +35,15 @@ public interface CapabilityGrantQuery {
 
     /** Every grant in the domain. Read-only and unpaged: a domain's grants are bounded by its roles. */
     List<Grant> grantsInDomain(String domainId);
+
+    List<RoleName> grantRoleNamesInDomain(String domainId, Set<String> roleIds);
+
+    record WorkflowStepLink(String roleId, String roleCode, String workflowId, int stepNo,
+                            String activatedByWorkflowVersion, GrantScope scope) {}
+
+    record WorkflowStepLinks(List<WorkflowStepLink> links, List<WorkflowDirectoryEntry> workflows) {}
+
+    WorkflowStepLinks workflowStepLinks(String domainId, String centerId, boolean outgoing);
 
     /** Distinct grant role IDs, and how many are not present in the current domain's role directory. */
     record RoleCounts(long total, long outsideDirectory) {}

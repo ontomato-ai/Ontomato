@@ -135,20 +135,38 @@ public interface OntologyModelService {
 	}
 
 	/** The whole form for one target: its fields, its current values and how a save writes them. */
-	record FormDescription(List<ObjectNode> fields, Map<String, Object> values, FormSave save) {
+	record FormDescription(List<ObjectNode> fields, Map<String, Object> values, FormSave save,
+			@JsonInclude(JsonInclude.Include.NON_NULL) List<ObjectNode> errors) {
+		public FormDescription(List<ObjectNode> fields, Map<String, Object> values, FormSave save) {
+			this(fields, values, save, null);
+		}
 	}
 
-	Map<String, Integer> countMetadata(User user, List<String> classScope);
+	Map<String, Integer> countMetadata(String domainId, List<String> classScope);
 
-	List<ObjectTypeView> objectTypes(User user, String lang);
+	record AttributeRows(List<AttributeView> views, Map<String, String> classLabels) {}
 
-	ObjectTypeView objectType(String className, User user, String lang);
+	record AttributeRecord(AttributeView view, Map<String, String> classLabels) {}
 
-	List<AttributeView> attributes(String className, User user, String lang);
+	List<ObjectTypeView> objectTypes(String domainId, String lang);
 
-	List<RelationshipView> relationships(String className, User user, String lang);
+	ObjectTypeView objectType(String className, String domainId, String lang);
 
-	RelationshipView relationship(String relationship, User user, String lang);
+	List<AttributeView> attributes(String className, String domainId, String lang);
+
+	AttributeRows attributeRows(String className, String domainId, String lang);
+
+	AttributeRecord attributeRecord(String primaryKey, String domainId, String lang);
+
+	List<RelationshipView> relationships(String className, String domainId, String lang);
+
+	static List<RelationshipView> visibleRelationships(List<RelationshipView> relationships, ExecutionTarget target) {
+		if (!target.testing() && target.classNames().isEmpty()) return relationships;
+		return relationships.stream().filter(relation -> target.classNames().contains(relation.fromclass())
+				&& target.classNames().contains(relation.toclass())).toList();
+	}
+
+	RelationshipView relationship(String relationship, String domainId, String lang);
 
 	DeletionImpact deletionImpact(String className, User user, String lang);
 
@@ -174,13 +192,19 @@ public interface OntologyModelService {
 
 	FieldLabels fieldLabels(String lang);
 
-	FormDescription objectTypeForm(FormRequest body, User user, String lang);
+	FormDescription objectTypeForm(FormRequest body, String domainId, String lang);
 
-	FormDescription objectTypeInlineForm(FormRequest body, User user, String lang);
+	FormDescription objectTypeInlineForm(FormRequest body, String domainId, String lang);
 
-	FormDescription attributeForm(FormRequest body, User user, String lang);
+	FormDescription attributeForm(FormRequest body, String domainId, String lang);
 
-	FormDescription attributeInlineForm(FormRequest body, User user, String lang);
+	FormDescription attributeInlineForm(FormRequest body, String domainId, String lang);
 
-	FormDescription relationshipForm(FormRequest body, User user, String lang);
+	FormDescription relationshipForm(FormRequest body, String domainId, String lang);
+
+	FormDescription objectTypeForm(FormRequest body, String domainId, String lang, boolean inline, boolean includeErrors);
+
+	FormDescription attributeForm(FormRequest body, String domainId, String lang, boolean inline, boolean includeErrors);
+
+	FormDescription relationshipForm(FormRequest body, String domainId, String lang, boolean includeErrors);
 }

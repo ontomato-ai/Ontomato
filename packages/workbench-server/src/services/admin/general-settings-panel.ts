@@ -33,10 +33,8 @@ const languageNames: Record<string, string> = {
   "zh-CN": "简体中文", "zh-TW": "繁體中文", en: "English", ja: "日本語", fr: "Français", it: "Italiano", de: "Deutsch", ar: "العربية",
 };
 
-async function readSettings(host: DataQueryOperationHost) {
-  const response = await host.request(`${DATA_QUERY_GATEWAY}/businessConfig/generalForm`, { method: "GET" });
-  if (!response.ok) throw new HttpError(response.status, "Unable to read general settings", "GENERAL_SETTINGS_UNAVAILABLE");
-  const data = settingsSchema.parse(await response.json());
+function generalSettingsFacts(payload: unknown) {
+  const data = settingsSchema.parse(payload);
   const options = Object.keys(languageNames).filter(lang => data.languages.includes(lang));
   const values = {
     knowledgeMaxResult: Math.max(1, data.knowledgeMaxResult),
@@ -46,17 +44,21 @@ async function readSettings(host: DataQueryOperationHost) {
   return { values, options, captions: data.fields };
 }
 
+async function readSettings(host: DataQueryOperationHost) {
+  const response = await host.request(`${DATA_QUERY_GATEWAY}/businessConfig/generalForm`, { method: "GET" });
+  if (!response.ok) throw new HttpError(response.status, "Unable to read general settings", "GENERAL_SETTINGS_UNAVAILABLE");
+  return generalSettingsFacts(await response.json());
+}
+
 function requireGeneralKey(primaryKey: string) {
   if (primaryKey !== key) throw new HttpError(404, "General settings not found", "NOT_FOUND");
 }
 
-export function createGeneralSettingsReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const locale = actor.credentials.locale;
-  const read = () => readSettings(host);
-  async function record(primaryKey: string): Promise<PanelRecord> {
-    requireGeneralKey(primaryKey);
-    const { values, captions } = await read();
+type GeneralSettingsFacts = ReturnType<typeof generalSettingsFacts>;
+type GeneralSettingsFormInputs = Pick<PanelFormRequest, "values">;
+
+function generalSettingsPresentation(locale?: string) {
+  function record(primaryKey: string, { values, captions }: GeneralSettingsFacts): PanelRecord {
     return {
       primaryKey, label: tForLocale(locale, "panels.simplePages.general"),
       fields: {
@@ -68,11 +70,8 @@ export function createGeneralSettingsReads(actor: PanelOperationActor) {
     };
   }
   return {
-    list: async () => [await record(key)],
     record,
-    async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      requireGeneralKey(primaryKey);
-      const { values: stored, options, captions } = await read();
+    form({ values: stored, options, captions }: GeneralSettingsFacts, inputs: GeneralSettingsFormInputs): PanelFormDescription {
       const values = { ...stored, ...inputs.values };
       const schema = valuesSchema.extend({ lang: z.enum([options[0]!, ...options.slice(1)]) });
       const parsed = schema.safeParse(values);
@@ -97,6 +96,34 @@ export function createGeneralSettingsReads(actor: PanelOperationActor) {
         })),
         save: { method: "POST", path: "/api" + generalSettingsSavePath, bodySchema: cachedZodToRuntimeJsonSchema(generalSettingsPatch) },
       };
+    },
+  };
+}
+
+export function createGeneralSettingsPanelReadPresenter(locale?: string) {
+  const presentation = generalSettingsPresentation(locale);
+  return {
+    list: (payload: unknown) => [presentation.record(key, generalSettingsFacts(payload))],
+    record: (payload: unknown, { primaryKey }: { primaryKey: string }) =>
+      presentation.record(primaryKey, generalSettingsFacts(payload)),
+    form: (payload: unknown, inputs: GeneralSettingsFormInputs) =>
+      presentation.form(generalSettingsFacts(payload), inputs),
+  };
+}
+
+export function createGeneralSettingsReads(actor: PanelOperationActor) {
+  const host = operationHost(actor);
+  const presentation = generalSettingsPresentation(actor.credentials.locale);
+  async function record(primaryKey: string): Promise<PanelRecord> {
+    requireGeneralKey(primaryKey);
+    return presentation.record(primaryKey, await readSettings(host));
+  }
+  return {
+    list: async () => [await record(key)],
+    record,
+    async form(primaryKey: string, inputs: GeneralSettingsFormInputs): Promise<PanelFormDescription> {
+      requireGeneralKey(primaryKey);
+      return presentation.form(await readSettings(host), inputs);
     },
   };
 }
