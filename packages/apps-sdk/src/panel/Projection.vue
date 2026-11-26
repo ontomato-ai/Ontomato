@@ -4,7 +4,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
-import { placementListeners } from "./projection-attrs";
+import { declaredComponentProps, placementListeners } from "./projection-attrs";
 import { frameMemberData } from "./frame-member";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
@@ -180,12 +180,13 @@ provide(projectionKey, {
   },
 } as ProjectionSlot);
 provide(panelMemberKey, () => loaded.value!.member);
-const bound = computed(() => ({
-  ...loaded.value!.projection.config,
-  ...resolvedInputs.value,
-  ...props.values,
-  ...placementListeners(attrs),
-}));
+/** What the component takes as its own props; a value the page gives for a prop it does not declare is dropped. */
+const bound = computed(() => {
+  const { component, projection } = loaded.value!;
+  const declared = declaredComponentProps(component);
+  const values = Object.fromEntries(Object.entries(props.values ?? {}).filter(([name]) => declared.has(name)));
+  return { ...projection.config, ...resolvedInputs.value, ...values, ...placementListeners(attrs) };
+});
 const innerRef = ref<{ refresh?: () => void } | null>(null);
 function refresh() {
   if (typeof innerRef.value?.refresh === "function") {
