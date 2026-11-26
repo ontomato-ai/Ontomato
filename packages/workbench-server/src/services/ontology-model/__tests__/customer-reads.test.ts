@@ -525,3 +525,85 @@ it("propagates semantic tones declared on attribute options to query rows, singl
     ],
   });
 });
+
+it("accepts and saves a value outside an attribute's declared options without rejecting the write", async () => {
+  const attributes = [
+    { className: "order", name: "id", showName: "ID", type: "varchar", attrDesc: "", enable: true, businessKey: false, primaryKey: true },
+    {
+      className: "order", name: "status", showName: "Status", type: "varchar", attrDesc: "", enable: true,
+      businessKey: false, primaryKey: false,
+      options: [{ value: "APPROVED", label: "Approved", tone: "success" }, { value: "DRAFT", label: "Draft" }],
+    },
+    {
+      className: "order", name: "amount", showName: "Amount", type: "double", attrDesc: "", enable: true,
+      businessKey: false, primaryKey: false,
+      options: [{ value: 1, label: "One", tone: "info" }, { value: 2.5, label: "Two and a half" }],
+    },
+  ];
+  stubOwner(request => {
+    if (request.url.pathname === "/ontology/model/attributes") return Response.json(attributes);
+    if (request.url.pathname === "/data/queryInfoByNode")
+      return Response.json({ success: true, data: { data: { id: "o-1", status: "SHIPPED", amount: "7.5" } } });
+    return undefined;
+  });
+  const adapter = createCustomerOntologyReadAdapter(owner, viewer);
+
+  const form = await adapter.form("order", "o-1");
+  expect(panelFormDescriptionSchema.parse(form)).toEqual(form);
+  // Declared choices allow typing another value; the value keeps the attribute's own type.
+  expect(form.fields.find(field => field.path === "/status")?.control)
+    .toMatchObject({ kind: "select", allowCreate: true });
+  expect(form.fields.find(field => field.path === "/status")?.valueSchema).toMatchObject({ type: ["string", "null"] });
+  expect(form.fields.find(field => field.path === "/amount")?.valueSchema).toMatchObject({ type: ["number", "null"] });
+  // Values already outside the declared options are shown as they are.
+  expect(form.values).toMatchObject({ status: "SHIPPED", amount: 7.5 });
+
+  const undeclared = await adapter.form("order", "o-1", {
+    values: { status: "CANCELLED", amount: "12.5" },
+    changedField: null,
+  });
+  expect(undeclared.values).toMatchObject({ status: "CANCELLED", amount: 12.5 });
+  expect(undeclared.errors).toEqual([]);
+
+  const notANumber = await adapter.form("order", "o-1", {
+    values: { status: "APPROVED", amount: "twelve" },
+    changedField: null,
+  });
+  expect(notANumber.errors).toEqual([expect.objectContaining({ field: "/amount", code: "invalid_number" })]);
+});
+
+it("shows a declared option's display name and keeps the raw value in the record", async () => {
+  const attributes = [
+    { className: "order", name: "id", showName: "ID", type: "varchar", attrDesc: "", enable: true, businessKey: false, primaryKey: true },
+    {
+      className: "order", name: "status", showName: "Status", type: "varchar", attrDesc: "", enable: true,
+      businessKey: false, primaryKey: false,
+      options: [
+        { value: "APPROVED", label: "Approved", tone: "success" },
+        { value: "DRAFT", label: "Draft" },
+      ],
+    },
+  ];
+  stubOwner(request => {
+    if (request.url.pathname === "/ontology/model/attributes") return Response.json(attributes);
+    if (request.url.pathname === "/data/getWholeClassDataByPage")
+      return Response.json({
+        success: true,
+        total_count: 2,
+        readable_fields: ["id", "status"],
+        data: [{ id: "o-1", status: "APPROVED" }, { id: "o-2", status: "SHIPPED" }],
+      });
+    return undefined;
+  });
+
+  const page = await createCustomerOntologyReadAdapter(owner, viewer).query("order", {});
+  expect(page.rows[0]).toMatchObject({
+    fields: { id: "o-1", status: "APPROVED" },
+    tags: { status: ["Approved"] },
+    tones: { status: "success" },
+  });
+  // A value outside the options stays as it is, with no tags and no tone.
+  expect(page.rows[1]).toMatchObject({ fields: { id: "o-2", status: "SHIPPED" } });
+  expect(page.rows[1]!.tags).toBeUndefined();
+  expect(page.rows[1]!.tones).toBeUndefined();
+});

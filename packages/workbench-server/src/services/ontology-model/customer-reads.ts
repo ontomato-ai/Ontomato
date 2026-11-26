@@ -142,12 +142,11 @@ function recordLabel(attributes: readonly ClassAttribute[], primaryKey: string, 
   return values.some(value => value !== "") ? values.join(" / ") : primaryKey;
 }
 
-/** Resolve the declared semantic tone for an attribute's option value, if any. */
-function attributeOptionTone(attribute: ClassAttribute | undefined, raw: unknown): PanelFieldTone | undefined {
+/** The declared option an attribute value matches, if the attribute declares option values. */
+function attributeOption(attribute: ClassAttribute | undefined, raw: unknown) {
   if (!attribute?.options || attribute.options.length === 0 || raw == null) return undefined;
   const text = displayText(raw);
-  const matched = attribute.options.find(option => option.value === raw || String(option.value) === text);
-  return matched?.tone;
+  return attribute.options.find(option => option.value === raw || String(option.value) === text);
 }
 
 /** Map one owner row to the panel record shape; only the columns the row carries become fields. */
@@ -156,12 +155,15 @@ function panelRecord(className: string, attributes: readonly ClassAttribute[], r
   const fields: Record<string, string> = {};
   const fieldLabels: Record<string, string> = {};
   const tones: Record<string, PanelFieldTone> = {};
+  const tags: Record<string, string[]> = {};
   for (const [name, value] of Object.entries(row)) {
     const attribute = attributes.find(item => item.name === name);
     fields[name] = displayText(value);
     fieldLabels[name] = attribute?.showName ?? name;
-    const tone = attributeOptionTone(attribute, value);
-    if (tone) tones[name] = tone;
+    const option = attributeOption(attribute, value);
+    if (option?.tone) tones[name] = option.tone;
+    // The value stays as stored; its declared display name is carried beside it.
+    if (option) tags[name] = [option.label];
   }
   return {
     className,
@@ -170,6 +172,7 @@ function panelRecord(className: string, attributes: readonly ClassAttribute[], r
     fields,
     fieldLabels,
     ...(Object.keys(tones).length > 0 ? { tones } : {}),
+    ...(Object.keys(tags).length > 0 ? { tags } : {}),
   };
 }
 
@@ -192,6 +195,11 @@ const ARRAY_TYPES = new Set(["array", "string[]", "list"]);
 
 function normalizedAttributeType(type: string): string {
   return type.trim().toLowerCase();
+}
+
+/** Whether the attribute's choices come from declared option values (with display names and tones) rather than a plain enum. */
+function hasDeclaredOptions(attribute: ClassAttribute): boolean {
+  return Boolean(attribute.options && attribute.options.length > 0);
 }
 
 function attributeSelectOptions(attribute: ClassAttribute): {
@@ -236,13 +244,15 @@ function buildAttributeFormField(attribute: ClassAttribute, mode: "edit" | "crea
   let control: PanelFormField["control"];
   let valueSchema: Record<string, RuntimeJsonValue>;
 
-  if (options) {
+  if (options && hasDeclaredOptions(attribute)) {
+    // Declared option values are a convenience: a value outside them is still accepted and saved as given.
+    control = { kind: "select", options, allowCreate: true };
+    const choiceType = INTEGER_TYPES.has(type) || NUMBER_TYPES.has(type) ? "number" : "string";
+    valueSchema = { title: label, type: required ? choiceType : [choiceType, "null"] };
+  } else if (options) {
     control = { kind: "select", options };
     const optionValues = options.map(option => option.value);
-    valueSchema = {
-      title: label,
-      enum: required ? optionValues : [...optionValues, null],
-    };
+    valueSchema = { title: label, enum: required ? optionValues : [...optionValues, null] };
   } else if (INTEGER_TYPES.has(type)) {
     control = { kind: "number" };
     valueSchema = { title: label, type: required ? "integer" : ["integer", "null"] };
@@ -299,6 +309,17 @@ function normalizeAttributeValue(attribute: ClassAttribute, raw: unknown): Runti
   if (raw === undefined || raw === null) return emptyAttributeValue(attribute);
   const type = normalizedAttributeType(attribute.type);
   const options = attributeSelectOptions(attribute);
+  if (options && hasDeclaredOptions(attribute)) {
+    const numeric = INTEGER_TYPES.has(type) || NUMBER_TYPES.has(type);
+    if (numeric && typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (numeric && typeof raw === "string" && raw.trim() !== "") {
+      const parsed = Number(raw);
+      // A value that does not parse stays as typed, so validation reports it instead of silently emptying the field.
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") return raw;
+    return displayText(raw);
+  }
   if (options) {
     if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") return raw;
     return displayText(raw);
@@ -347,7 +368,7 @@ function validateAttributeValue(
   if (value === undefined || value === null) return null;
   const type = normalizedAttributeType(attribute.type);
   const options = attributeSelectOptions(attribute);
-  if (options) {
+  if (options && !hasDeclaredOptions(attribute)) {
     if (!options.some(option => option.value === value)) {
       return { field: field.path, code: "invalid_option", message: `${field.label} must match one of the declared options` };
     }
@@ -409,7 +430,10 @@ function buildCustomerFormDescription(
       const attribute = enabledAttributes[index]!;
       const field = fields[index]!;
       if (!field.readOnly && Object.hasOwn(submitted, attribute.name)) {
-        values[attribute.name] = submitted[attribute.name]!;
+        // A value typed into a declared-options field keeps the attribute's own type, like the stored value.
+        values[attribute.name] = hasDeclaredOptions(attribute)
+          ? normalizeAttributeValue(attribute, submitted[attribute.name])
+          : submitted[attribute.name]!;
       }
       const error = validateAttributeValue(attribute, field, values[attribute.name], checkRequired);
       if (error) errors.push(error);
