@@ -96,6 +96,17 @@ export const assistantStore = {
     );
     return rows;
   },
+  async agentDefinitionRelationRows<F extends "skills" | "execution_user_id">(
+    domainId: string, view: ObjectVisibilityRange, field: F, agentId?: string,
+  ) {
+    const { where, values } = agentDefinitionVisibility(domainId, view, false);
+    const agent = agentId === undefined ? "" : `AND a.id::text = $${values.push(agentId)}`;
+    const { rows } = await db().query<Pick<AgentRow, "id" | "kind" | "name" | F>>(
+      `SELECT a.id,a.kind,a.name,a.${field} FROM ${table("assistant_agents")} AS a
+       WHERE ${where} ${agent} ORDER BY a.sort_order,a.name,a.id`, values,
+    );
+    return rows;
+  },
   async countVisibleAgentDefinitions(domainId: string, view: ObjectVisibilityRange, { includeSystem }: Pick<AgentDefinitionRead, "includeSystem">) {
     const { where, values } = agentDefinitionVisibility(domainId, view, includeSystem);
     const { rows: [result] } = await db().query<{ total: number }>(

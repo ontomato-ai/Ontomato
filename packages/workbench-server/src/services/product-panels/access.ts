@@ -69,9 +69,12 @@ export async function currentDefinitionAccess(
 export async function usableCurrentDefinitionIds(
   kind: CurrentProductKind, domainId: string, credentials: AssistantCredentials,
 ) {
-  const { source, values } = await readCurrentProductVisibility(kind, domainId, credentials, false);
-  const { rows } = await getPostgresPool().query<{ id: string }>(`SELECT id FROM ${source} AS p`, values);
-  return rows.map(({ id }) => id);
+  const { rows } = await getPostgresPool().query<DefinitionFacts>(
+    `SELECT id, domain_id AS "domainId", owner_id AS "ownerId"
+     FROM ${currentProductRows(kind)} AS definitions WHERE domain_id IS NULL OR domain_id=$1`, [domainId],
+  );
+  const { decisions } = await currentDefinitionAccess(kind, rows, domainId, credentials, false);
+  return rows.filter((_, index) => decisions[index].allowed).map(({ id }) => id);
 }
 
 export async function countUsableCurrentDefinitions(

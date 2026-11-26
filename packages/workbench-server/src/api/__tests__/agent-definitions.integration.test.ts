@@ -45,6 +45,7 @@ import type { WorkbenchIdentity } from "../../identity/types";
 import assistantRouter from "../routes/assistant";
 import { HttpError } from "../../utils/errors";
 import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinition, saveAgentDefinitionSnapshot, validateAgentDefinition, type AgentDefinitionSkillSelection } from "../../services/assistant/definitions";
+import { listAgentExecutionUserRelations, listAgentSkillRelations } from "../../services/assistant/definition-relations";
 import { readAssistantSkillView } from "../../services/assistant/skills";
 import type { PanelOperationHost } from "../../services/product-panels/server-operations";
 import { tForLocale } from "../../i18n";
@@ -146,7 +147,7 @@ describe("agent definitions on PostgreSQL", () => {
     for (const sample of samples)
       await state.pool!.query(`INSERT INTO "${state.schema}".assistant_agents
         (id,domain_id,kind,owner_id,sort_order,name,description,enabled,system_prompt,skills,execution_user_id)
-        VALUES ($1,$2,$3,$4,$5,'Same name','Summary',false,'Hidden prompt','[]','hidden-user')`, sample);
+        VALUES ($1,$2,$3,$4,$5,'Same name','Summary',false,'Hidden prompt',$6,'hidden-user')`, [...sample, JSON.stringify([savedSkill])]);
     state.skillView.mockClear();
     authorization.post.mockClear();
     const first = await fetch(`${base}?limit=1`);
@@ -165,6 +166,16 @@ describe("agent definitions on PostgreSQL", () => {
       ["object-authorization-read-ranges", { kind: "AGENT", verbs: ["VIEW"] }],
     ]);
     expect(state.skillView).not.toHaveBeenCalled();
+
+    const viewer = { token: "editor" };
+    await expect(listAgentExecutionUserRelations(owner, viewer, granted)).resolves.toEqual([
+      { id: granted, name: "Same name", executionUserId: "hidden-user" },
+    ]);
+    expect(state.skillView).not.toHaveBeenCalled();
+    state.skillView.mockResolvedValueOnce({ hidden: true });
+    await expect(listAgentSkillRelations(owner, viewer, granted)).resolves.toEqual([{ id: granted, name: "Same name", skills: [] }]);
+    await expect(listAgentSkillRelations(owner, viewer, granted)).resolves.toEqual([{ id: granted, name: "Same name", skills: [savedSkill] }]);
+    await expect(listAgentSkillRelations(owner, viewer, hidden)).resolves.toEqual([]);
     await state.pool!.query(`DELETE FROM "${state.schema}".assistant_agents WHERE id=ANY($1::uuid[])`, [ids]);
     viewedKeys = [];
   });
