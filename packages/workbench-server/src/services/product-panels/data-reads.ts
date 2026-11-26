@@ -454,6 +454,14 @@ function readAdapters(
       record: selection => governance.roles.record(selection.primaryKey!),
       form: (selection, params) => governance.roles.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => governance.roles.createForm(formParams(params)),
+      members: selection => governance.roles.members(selection.primaryKey!),
+      policies: selection => governance.roles.policies(selection.primaryKey!),
+      memberCandidates: (selection, params) => governance.roles.memberCandidates(
+        selection.primaryKey!, panelReadParameterSchemas.keyword.optional().parse(params.keyword),
+      ),
+      policyCandidates: (selection, params) => governance.roles.policyCandidates(
+        selection.primaryKey!, panelReadParameterSchemas.keyword.optional().parse(params.keyword),
+      ),
       contributionPolicies: selection => governance.roles.contributionPolicies(selection.primaryKey!),
       contributionWorkflowSteps: selection => governance.roles.contributionWorkflowSteps(selection.primaryKey!),
     },

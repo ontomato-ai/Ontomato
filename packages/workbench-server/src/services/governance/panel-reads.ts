@@ -145,6 +145,32 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
       createForm(params: GovernanceFormParams): Promise<PanelFormDescription> {
         return owner("governance-role-create-form", "/panel/governance/roles/form", formBody(undefined, params), panelFormDescriptionSchema);
       },
+      /** Members currently assigned to this role. */
+      members(id: string): Promise<PanelRecord[]> {
+        return owner("governance-role-members", "/panel/governance/roles/members", { id }, panelRecordListSchema);
+      },
+      /** Permission policies currently assigned to this role, including their use by other roles. */
+      policies(id: string): Promise<PanelRecord[]> {
+        return owner("governance-role-policies", "/panel/governance/roles/policies", { id }, panelRecordListSchema);
+      },
+      /** Domain members not yet assigned to this role. */
+      memberCandidates(id: string, keyword?: string): Promise<PanelOptionList> {
+        return owner(
+          "governance-role-member-candidates",
+          "/panel/governance/roles/member-candidates",
+          { id, ...(keyword !== undefined && { keyword }) },
+          panelOptionListSchema,
+        );
+      },
+      /** Domain permission policies not yet assigned to this role. */
+      policyCandidates(id: string, keyword?: string): Promise<PanelOptionList> {
+        return owner(
+          "governance-role-policy-candidates",
+          "/panel/governance/roles/policy-candidates",
+          { id, ...(keyword !== undefined && { keyword }) },
+          panelOptionListSchema,
+        );
+      },
       /** The permission policies this role uses: each policy's name and type. */
       contributionPolicies(id: string): Promise<PanelRecord[]> {
         return owner("governance-role-contribution-policies", "/panel/governance/roles/contribution/permission-policies", { id }, panelRecordListSchema);

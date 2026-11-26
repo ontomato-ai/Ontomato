@@ -5,6 +5,8 @@ import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import {
   ADD_ORG_UNIT_MEMBER,
+  ADD_ROLE_MEMBERS,
+  ADD_ROLE_POLICIES,
   ADD_USER_MEMBER,
   DELETE_ORG_GRANT,
   DELETE_ORG_POSITION,
@@ -28,6 +30,8 @@ import {
   READ_MEMBER_ACCESS_CONTEXT,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
+  REMOVE_ROLE_MEMBERS,
+  REMOVE_ROLE_POLICIES,
   REMOVE_USER,
   RESET_USER_PASSWORD,
   RESOLVE_PENDING_POLICY_GRANT,
@@ -164,6 +168,14 @@ const apiKeyBatchInspectSchema = z.object({
 
 const addOrgUnitMemberInputSchema = z.object({
   userId: z.string().min(1),
+}).strict();
+
+const roleMembersInputSchema = z.object({
+  userIds: z.array(z.string().min(1)).min(1),
+}).strict();
+
+const rolePoliciesInputSchema = z.object({
+  policyIds: z.array(z.string().min(1)).min(1),
 }).strict();
 
 const addOrgUnitMemberResultSchema = z.object({
@@ -370,6 +382,69 @@ async function postAction(
   const envelope = await ownerPost(host, path, body, ownerEnvelopeSchema);
   if (!envelope.success) return ownerWriteFailure(envelope, failureCode, fallbackMessage);
   return onSuccess(runtimeJsonObjectSchema.parse(envelope.data));
+}
+
+async function writeRoleRelation(
+  host: Host,
+  path: string,
+  target: PanelOperationTarget,
+  input: Record<string, unknown>,
+  inputSchema: z.ZodType<Record<string, unknown>>,
+  failureCode: string,
+  fallbackMessage: string,
+): Promise<SinglePanelOperationOutcome> {
+  if (target.kind !== "object") throw new Error("Role relation writes act on a selected role");
+  const ids = inputSchema.parse(input);
+  return postAction(
+    host,
+    path,
+    { id: target.primaryKey, ...ids },
+    failureCode,
+    fallbackMessage,
+    data => {
+      const parsed = runtimeJsonObjectSchema.parse(data);
+      return {
+        kind: "success",
+        data: parsed,
+        affected: affected(ROLE, target.primaryKey, [ROLE, USER, PERMISSION_POLICY]),
+      };
+    },
+  );
+}
+
+function roleRelationOperation(options: {
+  handlerRef: string;
+  labelKey: string;
+  path: string;
+  inputSchema: z.ZodType<Record<string, unknown>>;
+  resultSchema: z.ZodType<Record<string, unknown>>;
+}) {
+  return {
+    handlerRef: options.handlerRef,
+    labelKey: options.labelKey,
+    kind: "action" as const,
+    binding: { kind: "PlatformOperation" as const, id: options.handlerRef },
+    effect: "write" as const,
+    batch: false as const,
+    targetType: ROLE,
+    targetSchema: objectTarget(ROLE),
+    inputSchema: options.inputSchema,
+    resultSchema: options.resultSchema,
+    targetInput: "role",
+    targetLabel: (host: Host, target: PanelRecordTarget) =>
+      governanceTargetLabel(host, target, "/panel/governance/roles/record", "ROLE_UNAVAILABLE"),
+    execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      return writeRoleRelation(
+        host,
+        options.path,
+        target,
+        input,
+        options.inputSchema,
+        "ROLE_RELATION_WRITE_FAILED",
+        "The owner could not update the role assignments",
+      );
+    },
+  };
 }
 
 async function removeWithAffected(
@@ -829,6 +904,35 @@ export const governanceServerOperations = [
       return removeWithAffected(host, "/panel/governance/roles/delete", target, "ROLE_DELETE_FAILED", [ROLE, USER, ORG_GRANT]);
     },
   },
+
+  roleRelationOperation({
+    handlerRef: ADD_ROLE_MEMBERS,
+    labelKey: "panels.governance.role.operations.addMembers",
+    path: "/panel/governance/roles/add-members",
+    inputSchema: roleMembersInputSchema,
+    resultSchema: savedIdSchema,
+  }),
+  roleRelationOperation({
+    handlerRef: REMOVE_ROLE_MEMBERS,
+    labelKey: "panels.governance.role.operations.removeMembers",
+    path: "/panel/governance/roles/remove-members",
+    inputSchema: roleMembersInputSchema,
+    resultSchema: savedIdSchema,
+  }),
+  roleRelationOperation({
+    handlerRef: ADD_ROLE_POLICIES,
+    labelKey: "panels.governance.role.operations.addPolicies",
+    path: "/panel/governance/roles/add-policies",
+    inputSchema: rolePoliciesInputSchema,
+    resultSchema: savedIdSchema,
+  }),
+  roleRelationOperation({
+    handlerRef: REMOVE_ROLE_POLICIES,
+    labelKey: "panels.governance.role.operations.removePolicies",
+    path: "/panel/governance/roles/remove-policies",
+    inputSchema: rolePoliciesInputSchema,
+    resultSchema: savedIdSchema,
+  }),
 
   // -------------------------------------------------------------------------
   // platform:PermissionPolicy
