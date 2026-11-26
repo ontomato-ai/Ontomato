@@ -39,8 +39,9 @@ test("application forms and task trigger definitions round trip", () => {
     assert.equal(task.id, example.headers["Idempotency-Key"]);
     assert.deepEqual(task.content, example.request.content);
   }
+  assert.deepEqual(new Set(examples.creates.map(({ request }) => request.targetKind)), new Set(["application", "action", "workflow"]));
   const covered = new Set(examples.creates.map((example) => example.request.appId));
-  for (const appId of [null, "agents", "operations", "governance"]) assert.ok(covered.has(appId), appId);
+  for (const appId of [null, "agents", "operations"]) assert.ok(covered.has(appId), appId);
 });
 
 test("a form is replaced as a whole: stale hidden values, duplicate field IDs and option IDs are rejected", () => {
