@@ -117,7 +117,7 @@ function mountDirect(
       const [member] = Object.entries(manifest.members)
         .find(([, declaration]) => "projectionId" in declaration.target && declaration.target.projectionId === id) ?? [];
       const given = member === undefined ? undefined : options.memberProps?.[member];
-      return given ? { ...projection, config: { ...projection.config, ...given } } : projection;
+      return given ? ({ ...projection, config: { ...projection.config, ...given } } as DirectProjection) : projection;
     },
     read: async (request) => {
       reads.push(request);
