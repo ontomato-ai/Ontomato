@@ -3,18 +3,16 @@ import { credentialsForDefinition, credentialsForRun } from "../../services/assi
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { productAuthoringSchema, productTypes,productQuerySchema } from "@ontomato/contracts/product-assets";
+import { productAuthoringSchema, productTypes } from "@ontomato/contracts/product-assets";
 import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { context, wrap } from "../utils/agent-host";
-import { listProducts, getProduct, saveProduct, deleteProduct, queryProducts,dependencyProducts,countProductTypes,readProductOverlay,saveProductOverlay } from "../../services/product-assets/store";
-import {personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
+import { listProducts, getProduct, saveProduct, deleteProduct,dependencyProducts } from "../../services/product-assets/store";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import {expandedProductDependencies} from '../../services/product-assets/dependencies';
 import {readProductRelease,productReleaseIssues,snapshotAsset,publishProductBundle,rollbackProductBundle,listProductBundleReleases,synchronizeBundlePublication} from '../../services/product-assets/releases';
 import {assembleAgentProfile,renderAgentObjectContext,executeProfileTool} from '../../services/product-assets/agent-profile';
-import {validatePageState} from '@ontomato/contracts/product-page-state';
 import {discoverProjections,validateDefaultProjections} from '../../services/product-assets/projections';
 import {readProductGrantRecords,changeProductGrant,changeProductDomainGrant} from '../../services/product-governance/grants';
 import {requireProductUse} from '../../services/product-assets/grants';
@@ -31,7 +29,6 @@ import {migrateDashboardPage} from '../../services/product-assets/dashboard-migr
 import {synchronizePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
 import {assertAppBuilderAccess} from '../../services/app-builder/access';
 import {requireManagement} from '../../identity/management';
-import {assertLegacyProductWrite} from '../../services/product-assets/panel-boundary';
 
 const router: ReturnType<typeof Router> = Router();
 router.post(
@@ -51,8 +48,6 @@ router.post('/:id/create-page',wrap(async(req,res)=>{
   res.json({asset:await saveProduct(owner,randomUUID(),{name,description:source.description,visibility:'private',document:{...source.document,kind:'page',isTemplate:false}},0,credentials)});
 }));
 router.get("/types", wrap(async (_req,res) => { res.json({types:productTypes,schema:cachedZodToJsonSchema(productAuthoringSchema,{target:"jsonSchema7"})}); }));
-router.get('/query',wrap(async(req,res)=>{const c=context(req);res.json(await queryProducts(c.owner,productQuerySchema.parse(req.query)));}));
-router.get('/counts',wrap(async(req,res)=>{res.json({counts:await countProductTypes(context(req).owner)});}));
 router.get('/graph',wrap(async(req,res)=>{const {owner,credentials}=context(req);res.json({graph:await registeredProductGraph(owner,await listProducts(owner),credentials)});}));
 router.get('/validation/default-projections',wrap(async(req,res)=>{const c=context(req);res.json(await validateDefaultProjections(c.owner,c.credentials));}));
 router.get('/platform-object-types',wrap(async(_req,res)=>{res.json({objectTypes:platformObjectTypes()});}));
@@ -73,7 +68,6 @@ router.get('/:id/dependencies',wrap(async(req,res)=>{const c=context(req),id=Str
 router.post('/:id/migrate-platform',wrap(async(req,res)=>{const c=context(req),input=z.object({revision:z.number().int().positive(),profileId:z.string().min(1).max(200).optional()}).strict().parse(req.body);res.json({asset:await migratePlatformProjection(c.owner,c.credentials,String(req.params.id),input.revision,input.profileId)});}));
 router.post('/:id/migrate-dashboard',wrap(async(req,res)=>{const c=context(req),input=z.object({revision:z.number().int().positive()}).strict().parse(req.body);res.json({asset:await migrateDashboardPage(c.owner,c.credentials,String(req.params.id),input.revision)});}));
 router.post('/:id/migrate',wrap(async(req,res)=>{const c=context(req),id=String(req.params.id);const source=await getProduct(c.owner,id);const {revision}=z.object({revision:z.number().int().positive()}).strict().parse(req.body);res.json({asset:await saveProduct(c.owner,id,{name:source.name,description:source.description,visibility:source.visibility,document:source.document},revision,c.credentials)});}));
-router.get('/:id/overlay',wrap(async(req,res)=>{res.json(await readProductOverlay(context(req).owner,String(req.params.id)));}));
 router.get('/:id/source-types',wrap(async(req,res)=>{const c=context(req);res.json(await projectionSourceTypes(c.owner,String(req.params.id),c.credentials));}));
 router.post('/:id/object',wrap(async(req,res)=>{const c=context(req);const {primaryKey,revision}=z.object({primaryKey:z.string().min(1).max(1000),revision:z.number().int().positive().optional()}).strict().parse(req.body);res.json(await readPlatformProjectionObject(c.owner,c.credentials,String(req.params.id),primaryKey,revision));}));
 router.get('/:id/grants',wrap(async(req,res)=>{const c=context(req);await getProduct(c.owner,String(req.params.id));res.json(await readProductGrantRecords(String(req.params.id),c.credentials));}));
@@ -123,8 +117,6 @@ router.get('/:id/upgrade',wrap(async(req,res)=>{
 }));
 router.post('/:id/rollback',wrap(async(req,res)=>{const c=context(req);const {releaseId}=z.object({releaseId:z.string().uuid()}).strict().parse(req.body);res.json(await rollbackProductBundle(c.owner,String(req.params.id),releaseId,c.credentials));}));
 router.post('/:id/object-context',wrap(async(req,res)=>{const c=context(req);const selection=z.object({className:z.string().min(1),primaryKey:z.string().min(1)}).strict().parse(req.body);res.json(await renderAgentObjectContext(c.owner,c.credentials,String(req.params.id),selection));}));
-router.post('/:id/state',wrap(async(req,res)=>{const asset=await getProduct(context(req).owner,String(req.params.id));if(asset.document.kind!=='page')throw new HttpError(400,'Expected page','INVALID_REQUEST');const values=z.record(z.unknown()).parse(req.body);try{res.json({state:validatePageState(asset.document.params??{},values)});}catch(error){throw new HttpError(400,error instanceof Error?error.message:'Invalid page state','INVALID_PAGE_STATE');}}));
-router.put('/:id/overlay',wrap(async(req,res)=>{const c=context(req);const input=z.object({revision:z.number().int().nonnegative(),workspace:personalWorkspaceSchema}).strict().parse(req.body);await assertLegacyProductWrite(c.owner,c.credentials,{id:String(req.params.id)});res.json(await saveProductOverlay(c.owner,String(req.params.id),input.workspace,input.revision));}));
 router.put("/:id", wrap(async (req,res) => {
   const {owner,credentials} = context(req);
   const {revision,...input} = productAuthoringSchema.parse(req.body);

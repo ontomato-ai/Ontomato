@@ -1,4 +1,4 @@
-import { productAssetSchema,productPageSchema,productCountsResponseSchema, type ProductQuery, type ProductAssetInput } from "@ontomato/contracts/product-assets";
+import { productAssetSchema, type ProductAssetInput } from "@ontomato/contracts/product-assets";
 import { productGrantsResponseSchema, type ChangeProductGrantRequest } from "@ontomato/contracts/product-governance";
 import type { ManagerRequest } from "../api";
 import {productGraphSchema,defaultProjectionWarningsSchema} from '@ontomato/contracts/product-graph';
@@ -34,12 +34,8 @@ export function createProductsClient(request: Pick<ManagerRequest,"request">) {
     executeProfileTool:async(profileId:string,toolId:string,parameters:Record<string,unknown>)=>send(`/${encodeURIComponent(profileId)}/tools/${encodeURIComponent(toolId)}`,'POST',{parameters}),
     collection:async(id:string,parameters:Record<string,unknown>,fields:string[],offset=0,projectionId?:string)=>send(`/definitions/${encodeURIComponent(id)}/query`,'POST',{parameters,fields,offset,projectionId}),
     list: async () => ((await send("")).assets as unknown[]).map(asset=>productAssetSchema.parse(asset)),
-    query:async(query:Partial<ProductQuery>={})=>productPageSchema.parse(await send('/query?'+new URLSearchParams(Object.entries(query).filter(([,value])=>value!==undefined).map(([key,value])=>[key,String(value)])))),
-    counts:async()=> productCountsResponseSchema.parse(await send('/counts')).counts,
     get: async (id:string) => {const result=await send(`/${encodeURIComponent(id)}`);if(result.issues?.some((issue:{assetId:string})=>issue.assetId===id))throw new Error('A referenced capability contract changed; upgrade this product release');return productAssetSchema.parse(result.asset);},
     dependencies: async(id:string)=>{const result=await send(`/${encodeURIComponent(id)}/dependencies`);return {graph:productGraphSchema.parse(result.graph),references:result.references as import('@ontomato/contracts/product-assets').ProductReference[],usedBy:result.usedBy as {id:string;name:string}[]};},
-    overlay:async(id:string)=>send(`/${encodeURIComponent(id)}/overlay`),
-    saveOverlay:async(id:string,workspace:import('@ontomato/contracts/personal-workspace').PersonalWorkspace,revision:number)=>send(`/${encodeURIComponent(id)}/overlay`,'PUT',{workspace,revision}),
     save: async (id:string, input:ProductAssetInput, revision:number) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}`,"PUT",{name:input.name,description:input.description,document:input.document,revision})).asset),
     copy: async (id:string,name:string) => productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/copy`,"POST",{name})).asset),
     createPage:async(id:string,name:string)=>productAssetSchema.parse((await send(`/${encodeURIComponent(id)}/create-page`,'POST',{name})).asset),
