@@ -213,7 +213,7 @@ it("refuses to open a new conversation for a run's callback, and opens one for a
   expect(refused.status).toBe(403);
   expect(await refused.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
   expect(fake.seen()).toHaveLength(seen);
-  expect((await create({ "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(201);
+  expect((await create({ "X-Ontomato-Execution-Context": 'preview' })).status).toBe(201);
 });
 
 it("refuses a run's callback messaging an existing conversation as its user", async () => {

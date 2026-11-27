@@ -827,8 +827,7 @@ public class ActionController {
     		@RequestParam(value = "file", required = false) List<MultipartFile> files) {
 		JSONObject ret = new JSONObject();
 		List<Path> tempFiles = new ArrayList<Path>();
-		var refused = PreviewExecution.refuseActionExecution(executionRequest);
-		if (refused != null) return refused;
+		PreviewExecution.refuseActionExecution(executionRequest);
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();

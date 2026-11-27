@@ -31,14 +31,14 @@ async function marks(headers: Record<string, string>) {
   return marked;
 }
 
-it("turns a preview caller's header into a marker that reaches Java only at business-data write entries", async () => {
-  expect(await marks({ [EXECUTION_CONTEXT_HEADER]: '{"kind":"preview"}' })).toEqual({
-    "/action/form": null,
-    "/action/execute": '{"kind":"preview"}',
-    "/platform/triggers/t-1/runs": '{"kind":"preview"}',
-    "/metricView/save": null,
-    "/function/save": null,
-    "GET /platform/triggers/t-1/runs": null,
+it("turns a preview caller's header into a marker carried by every Java request it sends", async () => {
+  expect(await marks({ [EXECUTION_CONTEXT_HEADER]: 'preview' })).toEqual({
+    "/action/form": 'preview',
+    "/action/execute": 'preview',
+    "/platform/triggers/t-1/runs": 'preview',
+    "/metricView/save": 'preview',
+    "/function/save": 'preview',
+    "GET /platform/triggers/t-1/runs": 'preview',
   });
 });
 

@@ -803,7 +803,7 @@ it("authenticates the session command, uses its active run, delegates a preview 
     const started = await post(commandUrl(), {
       "X-Ontomato-Callback-Credential": secret,
       "X-Ontomato-Run-Id": runId,
-      "X-Ontomato-Execution-Context": "{\"kind\":\"preview\"}",
+      "X-Ontomato-Execution-Context": "preview",
     }, { op: "start", agent: context.agent, message: "Count active rows" });
     expect(started.status).toBe(200);
     const startedBody = await started.json();

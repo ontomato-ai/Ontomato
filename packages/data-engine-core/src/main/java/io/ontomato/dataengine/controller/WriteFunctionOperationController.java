@@ -74,8 +74,7 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/insert")
     @ResponseBody
     public JSONObject insert(@RequestBody JSONObject param) throws Exception {
-		var refused = previewRefusal();
-		if (refused != null) return refused;
+		previewRefusal();
 		JSONObject ret = new JSONObject();
 		try {
 			String className = requiredText(param, "className");
@@ -97,8 +96,7 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/update")
     @ResponseBody
     public JSONObject update(@RequestBody JSONObject param) throws Exception {
-		var refused = previewRefusal();
-		if (refused != null) return refused;
+		previewRefusal();
 		JSONObject ret = new JSONObject();
 		try {
 			String className = requiredText(param, "className");
@@ -122,8 +120,7 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/delete")
     @ResponseBody
     public JSONObject delete(@RequestBody JSONObject param) throws Exception {
-		var refused = previewRefusal();
-		if (refused != null) return refused;
+		previewRefusal();
 		JSONObject ret = new JSONObject();
 		try {
 			String className = requiredText(param, "className");
@@ -144,8 +141,7 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/createEdge")
     @ResponseBody
     public JSONObject createEdge(@RequestBody JSONObject param) throws Exception {
-		var refused = previewRefusal();
-		if (refused != null) return refused;
+		previewRefusal();
 		JSONObject ret = new JSONObject();
 		try {
 			String relationName = requiredText(param, "relationName");
@@ -169,8 +165,7 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/deleteEdge")
     @ResponseBody
     public JSONObject deleteEdge(@RequestBody JSONObject param) throws Exception {
-		var refused = previewRefusal();
-		if (refused != null) return refused;
+		previewRefusal();
 		JSONObject ret = new JSONObject();
 		try {
 			String relationName = requiredText(param, "relationName");
@@ -202,8 +197,7 @@ public class WriteFunctionOperationController {
 
     @PostMapping("/writeFunctionOperation/appendVector")
     public JSONObject appendVector(@RequestBody JSONObject body) throws Exception {
-		var refused = previewRefusal();
-		if (refused != null) return refused;
+		previewRefusal();
         byte[] bytes=vectorBytes(body);
         try(var input=new ByteArrayInputStream(bytes)) {
             checkClasses(requiredText(body, "className"));
@@ -213,8 +207,7 @@ public class WriteFunctionOperationController {
     }
     @PostMapping("/writeFunctionOperation/updateVector")
     public JSONObject updateVector(@RequestBody JSONObject body) throws Exception {
-		var refused = previewRefusal();
-		if (refused != null) return refused;
+		previewRefusal();
         byte[] bytes=vectorBytes(body);
         try(var input=new ByteArrayInputStream(bytes)) {
             checkClasses(requiredText(body, "className"));
@@ -250,15 +243,14 @@ public class WriteFunctionOperationController {
      * A preview writes business data only inside an action-trial or generation sandbox, where writing and reading it
      * back is the run's own verification; a live write is refused before parameters are read.
      */
-    private JSONObject previewRefusal() {
-        return PreviewExecution.refuseLiveWrite(current(), () -> QueryGrantService.target(grant()));
+    private void previewRefusal() {
+        PreviewExecution.refuseLiveWrite(current(), () -> QueryGrantService.target(grant()));
     }
 
 	@PostMapping("/writeFunctionOperation/deleteVector")
     @ResponseBody
     public JSONObject deleteVector(@RequestBody JSONObject param) throws Exception {
-		var refused = previewRefusal();
-		if (refused != null) return refused;
+		previewRefusal();
 		JSONObject ret = new JSONObject();
 		try {
 			String className = requiredText(param, "className");

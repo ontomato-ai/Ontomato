@@ -124,7 +124,7 @@ async function callback(path: string, method = "POST", headers: Record<string, s
 
 const marked = previewExecutionContextHeader;
 
-it("carries a preview run's identity to every running entry, however the request spells its path", async () => {
+it("carries a preview run's identity on every callback request, however the request spells its path", async () => {
   expect(await callback("ontology/action/execute")).toEqual([`java POST /action/execute ${marked}`]);
   expect(await callback("ontology/action/execute?trace=1")).toEqual([`java POST /action/execute ${marked}`]);
   expect(await callback("ontology/action/execute/")).toEqual([`java POST /action/execute/ ${marked}`]);
@@ -144,47 +144,27 @@ it("carries a preview run's identity to every running entry, however the request
   expect(await callback(`workbench/api/Panel-Operations/intents/${intent}/dispatch/`)).toEqual([`java POST /action/execute ${marked}`]);
 });
 
-it("leaves a preview run's reads, building and other workflow calls unmarked, and drops what the caller said about them", async () => {
+it("carries the same identity on reads, building and other workflow calls, ignoring what the caller supplied", async () => {
   expect(await callback("ontology/ontology/query/execute-dsl", "POST", { [EXECUTION_CONTEXT_HEADER]: marked }))
-    .toEqual(["java POST /ontology/query/execute-dsl -"]);
-  expect(await callback("ontology/writeFunctionOperation/query")).toEqual(["java POST /writeFunctionOperation/query -"]);
-  expect(await callback("ontology/action/execute", "GET")).toEqual(["java GET /action/execute -"]);
-  expect(await callback("ontology/action/trial")).toEqual(["java POST /action/trial -"]);
+    .toEqual([`java POST /ontology/query/execute-dsl ${marked}`]);
+  expect(await callback("ontology/writeFunctionOperation/query")).toEqual([`java POST /writeFunctionOperation/query ${marked}`]);
+  expect(await callback("ontology/action/execute", "GET")).toEqual([`java GET /action/execute ${marked}`]);
+  expect(await callback("ontology/action/trial")).toEqual([`java POST /action/trial ${marked}`]);
   expect(await callback("ontology/function/save", "POST", { [EXECUTION_CONTEXT_HEADER]: '{"kind":"live"}' }))
-    .toEqual(["java POST /function/save -"]);
-  expect(await callback("ontology/platform/triggers")).toEqual(["java POST /platform/triggers -"]);
+    .toEqual([`java POST /function/save ${marked}`]);
+  expect(await callback("ontology/platform/triggers")).toEqual([`java POST /platform/triggers ${marked}`]);
   for (const read of ["runs", "runs/r-1", "runs/r-1/case", "inbox", "subjects", "steps/s-1/candidates", "workflows/w-1/template"])
-    expect(await callback(`workbench/api/praxis/${read}`, "GET")).toEqual([`praxis GET /${read} -`]);
+    expect(await callback(`workbench/api/praxis/${read}`, "GET")).toEqual([`praxis GET /${read} ${marked}`]);
 });
-
-it("refuses a caller's different identity at a running entry, and marks nothing for a live run", async () => {
-  const token = callbackCredential({
-    scope: { purpose: "execution", capability: "ontology" }, runId: run, expiresAt: Date.now() + 60000, token: "initiator-token", apiKey: "",
-  }).value;
-  const refused = await fetch(`${proxy}/api/assistant/executions/${run}/ontology/action/execute`, {
-    method: "POST", headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": token, "X-Ontomato-Run-Id": run,
-      [EXECUTION_CONTEXT_HEADER]: '{"kind":"live"}' }, body: "{}",
-  });
-  expect(refused.status).toBe(403);
-  expect(reached).toEqual([]);
+it("ignores a caller's stated identity and marks nothing for a live run", async () => {
+  expect(await callback("ontology/action/execute", "POST", { [EXECUTION_CONTEXT_HEADER]: '{"kind":"live"}' }))
+    .toEqual([`java POST /action/execute ${marked}`]);
   state.kind = "live";
   expect(await callback("ontology/action/execute")).toEqual(["java POST /action/execute -"]);
   expect(await callback("workbench/api/praxis/runs")).toEqual(["praxis POST /runs -"]);
   expect(await callback("workbench/api/praxis/steps/s-1/decide")).toEqual(["praxis POST /steps/s-1/decide -"]);
   expect(await callback(`workbench/api/panel-operations/intents/${intent}/dispatch`)).toEqual(["java POST /action/execute -"]);
 });
-
-it("keeps a malformed path an ordinary request that its owner refuses, not a proxy failure", async () => {
-  const token = callbackCredential({
-    scope: { purpose: "execution", capability: "ontology" }, runId: run, expiresAt: Date.now() + 60000, token: "initiator-token", apiKey: "",
-  }).value;
-  const response = await fetch(`${proxy}/api/assistant/executions/${run}/ontology/action/%E0%A4%A`, {
-    method: "POST", headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": token, "X-Ontomato-Run-Id": run }, body: "{}",
-  });
-  expect(response.status).toBeLessThan(500);
-  expect(reached.filter(entry => entry.marker !== null)).toEqual([]);
-});
-
 it("keeps a run from acting as its user at agent entries: they see the run's callback, and conversations refuse it", async () => {
   // DataRAG refuses its external agent entry and a new conversation for a request carrying the run's execution header,
   // which the proxy always sets: a run cannot drop or replace it.

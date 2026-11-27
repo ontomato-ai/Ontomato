@@ -4,7 +4,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { createRouter, createMemoryHistory } from "vue-router";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { APP_HOST_GLOBAL, type AppHost } from "@ontomato/contracts/app-host";
-import { previewExecutionContextValue,EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { installAppHost, registerBuildPreview, registerLiveFrame } from "../app-host";
 import ApplicationRoute from "../pages/ApplicationRoute.vue";
 import {installAuthHost} from '@ontomato/workbench-ui/utils/auth';
@@ -38,7 +38,7 @@ describe("explicit frame execution bindings",()=>{
     const source = frame();
     registerLiveFrame(source, "published");
     const preview = frame();
-    registerBuildPreview(preview, previewExecutionContextValue);
+    registerBuildPreview(preview, {kind:"preview" as const});
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("attachment"));
     const path = "/vectorResource/resource/vector-Order-proof-domain/file.pdf";
     const response = await host().request!(source, path, { method: "GET", headers: { tk: "forged" } }, "/data-query");
@@ -51,23 +51,23 @@ describe("explicit frame execution bindings",()=>{
     await expect(host().request!(source, `${path}/extra`, { method: "GET" }, "/data-query")).rejects.toThrow("declared SDK capability");
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it('marks only the business-data write a preview frame sends, from the registered frame rather than the source headers',async()=>{
-    const source=frame();const context=previewExecutionContextValue;registerBuildPreview(source,context);
+  it('marks every request a preview frame sends, from the registered frame rather than the source headers',async()=>{
+    const source=frame();const context={kind:"preview" as const};registerBuildPreview(source,context);
     const request=vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({success:true,data:[]}));
     await host().request!(source,'/action/execute',{method:'POST',headers:{[EXECUTION_CONTEXT_HEADER]:'forged',tk:'forged'},body:'{}'},'/data-query');
     const headers=new Headers(request.mock.calls[0][1]?.headers);
-    expect(headers.get(EXECUTION_CONTEXT_HEADER)).toBe(JSON.stringify({kind:'preview'}));
+    expect(headers.get(EXECUTION_CONTEXT_HEADER)).toBe('preview');
     expect(headers.has('tk')).toBe(false);
-    // A read and a definition write are the caller's own: no preview identity is claimed for them.
+    // Reads and definition writes carry the same identity; their owners simply do not treat it as a write refusal.
     request.mockClear();
     await host().request!(source,'/metricView/execute',{method:'POST',body:'{}'},'/data-query');
-    expect(new Headers(request.mock.calls[0][1]?.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
+    expect(new Headers(request.mock.calls[0][1]?.headers).get(EXECUTION_CONTEXT_HEADER)).toBe('preview');
     request.mockClear();
     await host().request!(source,'/business-definitions',{method:'POST',body:'{}'},'');
-    expect(new Headers(request.mock.calls[0][1]?.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
+    expect(new Headers(request.mock.calls[0][1]?.headers).get(EXECUTION_CONTEXT_HEADER)).toBe('preview');
   });
-  it('opens a conversation from a build preview as the preview, and leaves an agent definition write unmarked and unrefused',async()=>{
-    const source=frame();registerBuildPreview(source,previewExecutionContextValue);
+  it('marks conversation and definition requests from a build preview as the preview',async()=>{
+    const source=frame();registerBuildPreview(source,{kind:"preview" as const});
     const request=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>Response.json({success:true,data:[]}));
     const marker=async(path:string)=>{
       request.mockClear();
@@ -76,14 +76,14 @@ describe("explicit frame execution bindings",()=>{
       return new Headers(request.mock.calls[0][1]?.headers).get(EXECUTION_CONTEXT_HEADER);
     };
     // The conversation and each of its runs are the preview's, so what they execute is refused where it is executed.
-    expect(await marker('/assistant/sessions')).toBe(JSON.stringify({kind:'preview'}));
-    expect(await marker('/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs')).toBe(JSON.stringify({kind:'preview'}));
-    expect(await marker('/assistant/agent-definitions')).toBeNull();
+    expect(await marker('/assistant/sessions')).toBe('preview');
+    expect(await marker('/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs')).toBe('preview');
+    expect(await marker('/assistant/agent-definitions')).toBe('preview');
     // A live frame's conversation runs live.
     const live=frame();registerLiveFrame(live,'published');
     request.mockClear();
     await host().request!(live,'/assistant/sessions',{method:'POST',body:'{}'},'');
-    expect(new Headers(request.mock.calls[0][1]?.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
+    expect(new Headers(request.mock.calls[0][1]?.headers).get(EXECUTION_CONTEXT_HEADER)).toBeNull();
   });
   it("throws for unregistered frames instead of selecting live",()=>{
     const source=frame();
@@ -105,7 +105,7 @@ describe("explicit frame execution bindings",()=>{
     expect(host().executionContext(element.contentWindow!)).toEqual({kind:"live"});
   });
   it("keeps preview bindings preview and requires a new frame to change kinds",()=>{
-    const source=frame(),initial=previewExecutionContextValue;
+    const source=frame(),initial={kind:"preview" as const};
     const registration=registerBuildPreview(source,initial),changed=vi.fn();
     const stop=host().subscribeExecutionContext(source,changed);
     expect(host().executionContext(source)).toEqual(initial);

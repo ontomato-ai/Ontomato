@@ -128,7 +128,7 @@ it("lets a preview claim or cancel a live run's pending confirmation: it is the 
   });
   const ask = async () => (await (await post(endpoint, { agentRun: { sessionId, runId, toolCallId: "discard" }, operationLabel: "Discard",
     targetLabel: "Task", requireConfirmation: true })).json()) as { intentId: string; questionId: string };
-  const preview = { "X-Ontomato-Execution-Context": '{"kind":"preview"}' };
+  const preview = { "X-Ontomato-Execution-Context": 'preview' };
   const claimed = await ask();
   expect(await (await fetch(`${endpoint}/${claimed.questionId}/claim`, { method: "POST", headers: { "Content-Type": "application/json", ...preview }, body: "{}" })).json())
     .toEqual({ ok: true, intentId: claimed.intentId });

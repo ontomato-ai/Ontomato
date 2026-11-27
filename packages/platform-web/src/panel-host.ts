@@ -22,7 +22,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import {
-  EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE, carriesPreviewIdentity, previewExecutionContextHeader,
+  EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE, previewExecutionContextHeader,
 } from "@ontomato/contracts/execution-context";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
@@ -838,13 +838,12 @@ const platformRequests: PlatformRequests = {
 };
 
 /**
- * The same requests for a candidate preview: those that run something, a business-data write or a conversation's run,
- * carry the preview's identity; reads and building travel as the reader's, as they do live.
+ * The same requests for a candidate preview: every one carries the preview's identity, and each write entry refuses
+ * that identity itself. Reads and building travel as the reader's, as they do live.
  */
 const previewRequests: PlatformRequests = {
-  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, carriesPreviewIdentity(service, init.method ?? "GET", path)
-    ? { ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } }
-    : init),
+  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`,
+    { ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } }),
 };
 
 /**
