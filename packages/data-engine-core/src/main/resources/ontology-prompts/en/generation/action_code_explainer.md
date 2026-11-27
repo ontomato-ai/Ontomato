@@ -464,8 +464,8 @@ This is a fallback `code segment`; a logic block in the code with deeply nested 
 
 ## Tools for Exploring Definitions
 You can use the following tools multiple times to obtain the attribute definitions and relationship definitions you want to know
-- Tool for getting object class attribute definitions: the analyst `schema` command (attribute definitions for the specified classes)
-- Tool for getting relationship definitions: the analyst `relationships` command (direct relationships involving the specified classes)
+- Tool for getting object class attribute definitions: the ontology-query `schema` command (attribute definitions for the specified classes)
+- Tool for getting relationship definitions: the ontology-query `relationships` command (direct relationships involving the specified classes)
 
 # Python Code
 ## Parameters

@@ -36,37 +36,39 @@ class OntologyAgentDefinitionsTest {
   }
 
   @Test
-  void retrievalPublishesOnlyDataRetrievalWithItsQueryScripts() throws Exception {
+  void retrievalPublishesOntologyQueryAndDataRetrieval() throws Exception {
     var skills = definitions.publish();
 
-    assertEquals(List.of("data-retrieval"), names(skills));
+    assertEquals(List.of("ontology-query", "data-retrieval"), names(skills));
     assertEquals(1, publications.size());
-    var files = publications.getFirst();
-    var byPath = new java.util.HashMap<String, String>();
-    for (var file : files) byPath.put(file.get("path"), file.get("content"));
+    var paths = publications.getFirst().stream().map(file -> file.get("path")).toList();
     assertEquals(
-        definitions.resource("ontology-skills/ontomato-analyst/ontomato.mjs"),
-        byPath.get("scripts/ontomato.mjs"));
-    assertEquals(
-        definitions.resource("ontology-skills/ontomato-analyst/client.mjs"),
-        byPath.get("scripts/client.mjs"));
+        List.of(
+            "SKILL.md",
+            "scripts/dataset.mjs",
+            "references/dataset.md",
+            "references/query-package.md"),
+        paths);
   }
 
   @Test
-  void generationAgentsKeepTheAnalystSkill() throws Exception {
-    for (var skills :
-        List.of(
-            definitions.publishGeneration(),
-            definitions.publishMetricView(),
-            definitions.publishActionCreation()))
-      assertTrue(names(skills).contains("ontomato-analyst"));
+  void generationAgentsUseOntologyQueryAndTheirGenerationSkill() throws Exception {
+    assertEquals(
+        List.of("ontology-query", "ontology-generation"), names(definitions.publishGeneration()));
+    assertEquals(
+        List.of("ontology-query", "metricview-generation"), names(definitions.publishMetricView()));
+    assertEquals(
+        List.of("ontology-query", "ontology-generation"), names(definitions.publishActionCreation()));
   }
 
   @Test
   void agentDefinitionsMarkOnlyTheirOwnPreloadSkills() {
-    var retrieval = definitions.definition("d", "en", 1000, List.of(new SkillVersion(OntologyAgentDefinitions.DATASET_SKILL, "a".repeat(64))));
+    var retrieval = definitions.definition("d", "en", 1000, List.of(
+        new SkillVersion(RuntimeCodeClient.SKILL, "a".repeat(64)),
+        new SkillVersion(OntologyAgentDefinitions.DATASET_SKILL, "b".repeat(64))));
     var retrievalSkills = retrieval.getList("skills", SkillVersion.class);
-    assertTrue(retrievalSkills.getFirst().preload());
+    assertTrue(retrievalSkills.get(0).preload());
+    assertTrue(retrievalSkills.get(1).preload());
     assertFalse(retrieval.containsKey("openingKnowledgeLimit"));
 
     var generationSkills = List.of(

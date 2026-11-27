@@ -36,9 +36,9 @@ that does not decide whether the action is delivered.
 
 ### Tools for Exploring Definitions
 You can use the following tools multiple times to obtain the attribute definitions and relationship definitions you want to know
-- Tool for getting object class attribute definitions: the analyst `schema` command (attribute definitions for the specified classes)
-- Tool for getting relationship definitions: the analyst `relationships` command (direct relationships involving the specified classes)
-- Tool for getting current DSL syntax: the analyst `dsl-reference` command (class-specific grammar and examples)
+- Tool for getting object class attribute definitions: the ontology-query `schema` command (attribute definitions for the specified classes)
+- Tool for getting relationship definitions: the ontology-query `relationships` command (direct relationships involving the specified classes)
+- Tool for getting current DSL syntax: the ontology-query `dsl-reference` command (class-specific grammar and examples)
 
 ## DSL Syntax
 {{DSL_RULE}}
@@ -170,9 +170,9 @@ This illustrates the available syntax, not a query to execute unchanged. Follow 
 
 You can use the following tools in the process of generating a write function:
 
-1. **Explore the schema**: the analyst `schema` command and the analyst `relationships` command, used to understand class definitions and relationship definitions.
+1. **Explore the schema**: the ontology-query `schema` command and the ontology-query `relationships` command, used to understand class definitions and relationship definitions.
 2. **Explore production database data**: `queryDistinctAttrValue` (performs a like filter on an attribute of an object class and then a deduplicated query), used to probe the real values of varchar/text attributes in the production database.
-Use `ontomato-analyst execute-dsl @dsl.json` for a saved single DSL object. Add a limit when exploring production data.
+Use `ontology-query execute-dsl @dsl.json` for a saved single DSL object. Add a limit when exploring production data.
 4. **Sandbox tools** (used to build the test environment and verify the write results):
    - the ontology-generation `prepare` command: persists the object data, relationship data and vector data to be imported into the sandbox to a json file (** prepareTestData only prepares test data; it does not import the test data into the sandbox **).
    - the ontology-generation `reset` command: after clearing the sandbox data, imports the data just persisted by prepareTestData into the sandbox.
@@ -256,12 +256,12 @@ Carefully understand the user requirement and clarify the goal of the write oper
 2. **Input parameters (variable parts)**: which parts of the requirement are "variable"; they will serve as the parameters of the write function (such as "the name of the added employee", "the target department transferred to", etc.).
 3. **Involved object classes**: which object classes the write operation will touch.
 
-Use the the analyst `schema` command and the analyst `relationships` command tools to understand the attributes of the relevant classes and the relationships between classes. For filter conditions involving varchar/text attributes, you can use `queryDistinctAttrValue` to probe the real values in the production database.
+Use the the ontology-query `schema` command and the ontology-query `relationships` command tools to understand the attributes of the relevant classes and the relationships between classes. For filter conditions involving varchar/text attributes, you can use `queryDistinctAttrValue` to probe the real values in the production database.
 
 ## Step 2: Build Sandbox Test Data
 All testing and DEBUG of the write function are carried out in the **sandbox environment**; you need to first prepare the test data in the sandbox:
 
-1. Use the `ontomato-analyst execute-dsl @dsl.json` tool to query a small batch of data for each object class related to the write operation from the **production database** (** about 20 rows for each related class ** is enough; be careful to control the data volume to avoid it being too large).
+1. Use the `ontology-query execute-dsl @dsl.json` tool to query a small batch of data for each object class related to the write operation from the **production database** (** about 20 rows for each related class ** is enough; be careful to control the data volume to avoid it being too large).
 2. Use the ontology-generation `prepare` command tool to persist this data to a json file; its input parameter format is as follows:
    - Object data (`objDatas`): an array, each element contains `className` and `rows`; `rows` is a group of records of that class, each record must contain `id` (and the `id` must be globally unique and non-empty across all classes), and the fields of a record can only be the enabled attributes of that class. For example:
      ```json

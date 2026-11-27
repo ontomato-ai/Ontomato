@@ -67,7 +67,7 @@ public class MetricSettlementService {
         "calculation", calculation, "outputShape", input.get("outputShape"));
     String prompt = """
         Settle this dataset into one reusable metric. This is a dataset-settlement task.
-        First search published metrics with ontomato-analyst and inspect their full specifications.
+        First search published metrics with ontology-query and inspect their full specifications.
         Compare the entire requested logic: scope, grain, filters, time semantics, aggregation,
         denominators, null handling and output meaning. Equal preview values are not equivalence.
         If equivalent, return kind=reuse with that metricId, its current revision and typed parameters.

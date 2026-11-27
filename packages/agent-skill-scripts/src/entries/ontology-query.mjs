@@ -1,21 +1,13 @@
 #!/usr/bin/env node
-// The main assistant's entry point. Published into the ontomato-analyst-assistant package together with the analyst
-// package's client.mjs, application.yml and retriever-ref.json, so the retriever, the app builder and the ontomap builder
-// never see these commands. `start-retrieval` starts the retriever and recalls published metrics concurrently;
-// `run-metric` opens one formal retrieval run and delivers one table, so the assistant cites a stored dataset instead of
-// a response it stitched together itself.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { analystCommand, readJson, sendAgentCommand } from "./client.mjs";
+import { ontologyQueryCommand, readJson } from "../shared/client.mjs";
 
-const dir = path.dirname(fileURLToPath(import.meta.url)),
-  cfg = {};
+const dir = path.dirname(fileURLToPath(import.meta.url)), cfg = {};
 try {
-  for (const line of fs
-    .readFileSync(path.join(dir, "application.yml"), "utf8")
-    .split(/\r?\n/)) {
+  for (const line of fs.readFileSync(path.join(dir, "../application.yml"), "utf8").split(/\r?\n/)) {
     const text = line.trim();
     if (!text || text.startsWith("#")) continue;
     const at = text.indexOf(":");
@@ -45,18 +37,13 @@ const headers = {
       }),
   ...(process.env.ONTOMATO_CORRELATION_ID ? { "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID } : {}),
 };
-
 const ontology = (cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/u, "");
 const callback = process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL;
 
 async function request(url, body, extra = {}, signal) {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
-    headers: {
-      "content-type": "application/json",
-      ...headers,
-      ...extra,
-    },
+    headers: { "content-type": "application/json", ...headers, ...extra },
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
     signal,
@@ -64,8 +51,7 @@ async function request(url, body, extra = {}, signal) {
   if (response.status === 204) return null;
   const result = await response.json();
   if (!response.ok || result?.error) {
-    const message = typeof result?.error === "string"
-      ? result.error
+    const message = typeof result?.error === "string" ? result.error
       : (result?.error?.message ?? result?.message ?? `HTTP ${response.status}`);
     const error = new Error(message);
     error.status = response.status;
@@ -119,39 +105,12 @@ async function runMetric(selector, question) {
     if (state.running) await new Promise((resolve) => setTimeout(resolve, 250));
   } while (state.running);
   if (state.error) throw new Error(JSON.stringify(state.error));
-  const content = `${route}/content`;
   const bytes = callback
     ? JSON.stringify(await request(callback, named("content", { key })))
-    : await originalBytes(content, runHeaders);
+    : await originalBytes(`${route}/content`, runHeaders);
   await request(callback || `${ontology}/ontology/retrievals/${retrieval}/skill-runs/${retrievalRun}/close`,
     callback ? named("close") : {});
   return { key, dataset: state.dataset, bytes };
-}
-
-function errorValue(error) {
-  return {
-    error: {
-      message: error instanceof Error ? error.message : String(error),
-      ...(error?.status !== undefined ? { status: error.status } : {}),
-      ...(error?.code !== undefined ? { code: error.code } : {}),
-    },
-  };
-}
-
-async function startRetrieval(args) {
-  const question = args.join(" ");
-  if (!question.trim()) throw new Error("start-retrieval requires the complete question");
-  const retrieverRef = JSON.parse(fs.readFileSync(path.join(dir, "retriever-ref.json"), "utf8"));
-  const start = async () => sendAgentCommand({ op: "start", agent: retrieverRef, message: question }, { cfg, headers });
-  const [retrieverResult, recallResult] = await Promise.allSettled([
-    start(),
-    recallMetrics(question),
-  ]);
-  console.log(JSON.stringify({
-    retriever: retrieverResult.status === "fulfilled" ? retrieverResult.value : errorValue(retrieverResult.reason),
-    recall: recallResult.status === "fulfilled" ? recallResult.value : errorValue(recallResult.reason),
-  }));
-  if (retrieverResult.status === "rejected" || recallResult.status === "rejected") process.exitCode = 1;
 }
 
 async function runMetricCommand(args) {
@@ -172,14 +131,16 @@ async function runMetricCommand(args) {
     receiptId: dataset.execution.receiptId }));
 }
 
-// Data questions start the retriever and recall metrics concurrently through `start-retrieval`; follow-ups, reads and
-// cancellation use the native agent tool.
-const metadata = ["dataset-desc", "classes", "schema", "relationships", "knowledge"];
-const [command, ...commandArgs] = process.argv.slice(2);
-const run = command === "start-retrieval" ? () => startRetrieval(commandArgs)
-  : command === "run-metric" ? () => runMetricCommand(commandArgs)
-  : metadata.includes(command) ? () => analystCommand(cfg, process.argv.slice(2), headers)
-  : () => { throw new Error(`Commands: ${metadata.join(", ")}, start-retrieval, run-metric`); };
+const [command, ...args] = process.argv.slice(2);
+const queryCommands = new Set(["dataset-desc", "classes", "schema", "relationships", "dsl-reference", "distinct-values", "execute-dsl", "metrics", "execute-metric", "knowledge"]);
+const unknown = command !== "recall-metrics" && command !== "run-metric" && !queryCommands.has(command);
+const usage = "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, recall-metrics, run-metric";
+const run = unknown ? async () => { throw new Error(usage); } : command === "recall-metrics" ? async () => {
+  const question = args.join(" ");
+  if (!question.trim()) throw new Error("recall-metrics requires a question");
+  console.log(JSON.stringify(await recallMetrics(question)));
+} : command === "run-metric" ? () => runMetricCommand(args)
+  : () => ontologyQueryCommand(cfg, process.argv.slice(2), headers);
 Promise.resolve().then(run).catch((error) => {
   console.error(error.message);
   process.exitCode = 1;

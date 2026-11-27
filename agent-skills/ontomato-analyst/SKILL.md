@@ -1,6 +1,6 @@
 ---
 name: ontomato-analyst
-description: "Query and analyze business objects and relationships through an existing Ontomato ontology. Use for natural-language questions, controlled DSL queries, value exploration and analysis reports; read the current definitions without changing the ontology or business data."
+description: "Connect to an existing Ontomato ontology from outside the product: delegate natural-language data questions, inspect pending work and granted actions, run permitted actions, and use analysis agents; read current definitions without changing the ontology or business data."
 ---
 
 # Ontomato analyst
@@ -22,15 +22,11 @@ Classes and attributes must map to real structures in the selected data source. 
 
 Use one consistent ontology context: deployment, domain where applicable, object identities and resource references. Reuse the business intent, access and scope already established in the session. Resolve technical facts, such as JOIN columns and existing grant sources, through commands, authorized data tools and bundled references. Ask only for missing business decisions or access that those tools cannot supply; do not ask a nontechnical user to guess technical facts. If a required capability is unavailable, explain the missing prerequisite and affected business task while preserving the requested outcome.
 
-The skills cover different tasks on this same platform: `ontomato-ontomap-builder` maintains definitions and mappings; `ontomato-analyst` queries and analyzes them; `ontomato-app-builder` builds applications on their capabilities. Adapter development and enterprise permission management support this platform at their own boundaries. These names explain the roles, not dependencies on other installed skills. Keep this package's files together; its local references travel with it.
+The skills cover different tasks on this same platform: `ontomato-ontomap-builder` maintains definitions and mappings; `ontomato-analyst` connects external agents to them; `ontomato-app-builder` builds applications on their capabilities. Adapter development and enterprise permission management support this platform at their own boundaries. These names explain the roles, not dependencies on other installed skills. Keep this package's files together; its local references travel with it.
 
 ## This skill’s role
 
-If you are already the product retriever, use the direct query commands and data-retrieval
-for delivery; do not delegate the same question to another retriever. Metric lookup, metric
-execution and `pending` are not part of that work: the assistant reuses published metrics itself.
-
-Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Use the accessible retriever from `agent list` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
+Answer business questions using the current ontology and its permitted data. This package delegates data questions and acts on pending work; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Use the accessible retriever from `agent list` for a natural-language question, install `ontology-query` when you need to control the query, or use the separately configured analysis MCP service for a report.
 
 ## Configuration
 
@@ -46,10 +42,7 @@ ONTOMATO_TK and send an explicit run header when the caller supplies ONTOMATO_RU
 Java chooses and verifies the current user's task scope; callers
 never pass user/domain identity or select an elevated execution credential.
 
-The product loads these same files read-only and invokes the commands below using
-bash. Read this file and references on demand; no runtime-specific entry exists.
-Python query programs use the data-retrieval preview/delivery command. Java injects
-the private query_runtime helper only for that execution; it is not part of this skill. Public anonymous access follows the installed policy.
+Read this file and references on demand; no runtime-specific entry exists. Public anonymous access follows the installed policy.
 For enterprise login, obtain an authorized tk before execution; it is not a runtime
 service credential. The enterprise distribution includes a separate login helper.
 
@@ -59,17 +52,9 @@ Run `node <this-skill>/ontomato.mjs <command>` from the workspace root, where `<
 
 | Command | API and result |
 | --- | --- |
-| `dataset-desc`, `classes` | `GET /ontology/query/overview`: description or class names/descriptions |
-| `schema <class>...`, `relationships <class>...` | `POST /ontology/query/schema`: enabled fields and direct relationships |
-| `dsl-reference <class>...` | `POST /ontology/query/dsl-reference`: current class-specific syntax and Markdown examples |
-| `distinct-values <class> <attribute> [--like text] [--limit n]` | `POST /ontology/query/distinct-values`: values and completeness marker |
-| `execute-dsl @query.json` | `POST /ontology/query/execute-dsl`: one read-only DSL object, under your permissions |
-| `metrics <question> [--cursor id] [--limit n]` | `POST /ontology/query/metrics/search`: published read specifications, revision and next cursor; no model call |
-| `execute-metric <id> --revision <revision> [@parameters.json] [--binding id]` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions; --binding selects an owned parameter set |
 | `pending [--flow name] [--limit n]` | Your own pending items, read-only: only published pending metrics of active workflows; each step is restricted by your role, scope and row permissions |
 | `actions` | The actions your roles are granted by an active revision, with the granting process; the same intersection the executor uses |
 | `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
-| `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
 
 ## Agent commands (platform and standalone)
 
@@ -126,27 +111,6 @@ and "this is waiting for me" are different questions; ask both before concluding
 
 Never pass an identity to make a step succeed. A failed business precondition describes the state of the record, not a
 credential problem, and retrying with different parameters will not change it.
-
-## Query workflow and result meaning
-
-Read overview, schema/relationships and knowledge. Outside the product retriever, retrieve
-metric specifications before inventing a calculation. Inspect exact stored values when needed. For DSL,
-follow [the reference entry guide](references/dsl.md) and fetch the rules for the
-actual classes; the Java service owns the grammar. The retriever does this orchestration
-for natural-language questions. It can take several minutes.
-
-An `answer` is data, not permission to claim complete coverage. The platform always
-filters data according to current permissions; the retriever cannot see specific
-filter conditions. When describing result scope, use "within the current permission scope"
-(or in the response language, such as "当前权限范围内"); never assert all records
-across the domain or that there are no scope restrictions. Distinguish "all" from
-all visible results within the current permission scope. Preserve `truncated`,
-`rowLimit` and `truncationHint`, including an empty partial result. Null, false and
-zero are distinct values. Missing relationships/fields are ontology gaps; do not
-invent joins or request elevated credentials to force a result. Report the business
-answer with scope, assumptions and limits. Final datasets from the retriever are rerun
-under the user's authorization and stored as immutable artifacts. This external
-client never requests or selects exploration credentials.
 
 ## Analysis agents (MCP)
 

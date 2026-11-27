@@ -6,7 +6,7 @@ Wire shapes are in [data-retrieval](../packages/contracts/data-retrieval.md);
 
 ## First consumer of the Java host
 
-Retrieval remains one definition: current prompt, `coding` role, `ontomato-analyst`
+Retrieval remains one definition: current prompt, `coding` role, `ontology-query`
 and `data-retrieval` standard skills, both published by provider `ontology`.
 Runtime executes them; Java owns retrieval policy and performs this flow:
 

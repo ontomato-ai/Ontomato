@@ -238,6 +238,12 @@ importers:
         specifier: 3.2.6
         version: 3.2.6(typescript@5.9.3)
 
+  packages/agent-skill-scripts:
+    devDependencies:
+      esbuild:
+        specifier: 0.27.4
+        version: 0.27.4
+
   packages/apps-sdk:
     dependencies:
       '@ontomato/agent-shell-ui':

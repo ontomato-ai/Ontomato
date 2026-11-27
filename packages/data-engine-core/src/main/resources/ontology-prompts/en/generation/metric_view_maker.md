@@ -5,7 +5,7 @@ question: {{USER_QUESTION}}
 
 Read the metricview-generation skill and query-package reference. Investigate
 schema, declared relationships, exact values and relevant business knowledge
-through ontomato-analyst. Do not invent joins, filters, field types or data values.
+through ontology-query. Do not invent joins, filters, field types or data values.
 Ask for a material missing business decision instead of choosing it silently.
 
 Dataset: {{DATASET_DESC}}

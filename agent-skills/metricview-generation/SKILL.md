@@ -6,9 +6,8 @@ description: Generate one reusable MetricView query logic package from a natural
 # MetricView generation
 
 Read the task's business rules and [query packages](references/query-package.md).
-Use ordinary read/write/edit/bash tools and ontomato-analyst for permitted schema,
-relationships, values and DSL exploration. The data-retrieval skill must also be
-installed; the host provides it and this script reuses its package collector.
+Use ordinary read/write/edit/bash tools and ontology-query for permitted schema,
+relationships, values and DSL exploration.
 
 Write the DSL and any necessary Python calculation under outputs/. Prefer DSL
 where it supports the calculation. Python uses `execute_dsl_file`, parameters
@@ -39,7 +38,7 @@ binding consistency and permissions. End with a brief description.
 ## Dataset settlement
 
 Only when the host explicitly identifies a dataset-settlement task, first search
-published metrics with ontomato-analyst. Compare the complete requested logic,
+published metrics with ontology-query. Compare the complete requested logic,
 including grain, scope, filters, time semantics, denominators and null handling.
 Matching preview numbers do not establish equivalence. Read a matching metric's
 current revision and parameter definitions. If equivalent, write

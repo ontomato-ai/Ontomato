@@ -42,10 +42,10 @@ export function builtinSkillEntries(): SkillEntry[] {
     fileBackedSkill("application-design", "Design coherent Ontomato applications and demos using the platform SDK, shared theme and reusable product assets."),
     fileBackedSkill("ontomato-agent-builder", "Create and edit Ontomato agent definitions (prompt, model, skills, classes and external MCP services) on the agent settings page through live page tools or direct CLI outside the platform."),
     fileBackedSkill("ontomato-page-operator", "Discover applications and pages, read the current page, fill forms, and invoke declared page operations."),
-    generatedSkill("ontomato-analyst-assistant", "Answer business data questions: run start-retrieval once to start the data retriever and recall published metrics concurrently, reuse a published metric when one fits, and explain the dataset the answer relies on."),
+    generatedSkill("ontomato-analyst-assistant", "Answer business data questions: delegate them to the data retriever, reuse a published metric when one fits, and explain the dataset the answer relies on."),
+    generatedSkill("ontology-query", "Query ontology structure, DSL syntax, stored values, business knowledge and published metrics through Ontomato."),
     fileBackedSkill("ontomato-app-builder", "Compose and check panel application source with the Ontomato SDK. Use when building a panel or moving an existing page into the product layer.", true),
     fileBackedSkill("ops-diagnosis", "Diagnose an Ontomato question or service fault using authorized read-only evidence: service logs, runtime sessions and artifacts, configuration, health, metadata, DSL queries and operations knowledge.", true),
-    generatedSkill("ontomato-analyst", "Query and analyze business objects and relationships through an existing Ontomato ontology. Use for natural-language questions, controlled DSL queries, value exploration and analysis reports; read the current definitions without changing the ontology or business data.", true),
     generatedSkill("data-retrieval", "Deliver a query logic package as a dataset by rerunning it through Ontomato under the user's authorization.", true),
   ];
 }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectPackage } from "../agent-skills/data-retrieval/scripts/query-package.mjs";
+import { collectPackage } from "../packages/agent-skill-scripts/src/shared/query-package.mjs";
 import { generationCommand } from "../agent-skills/ontology-generation/scripts/generation.mjs";
 import { metricViewCommand } from "../agent-skills/metricview-generation/scripts/generation.mjs";
 
