@@ -263,6 +263,7 @@ final class WorkbenchPanelReads {
             BiFunction<String, String, ApplicationCatalog.PanelReadRegistration> registrations,
             WorkbenchReadRegistration handler) {
         var source = item.source();
+        if (source != null && source.kind() == SourceKind.DIRECT) return admitDirect(subject, item, handler);
         var prepared = item.registration();
         if (source == null || source.kind() == null || blank(source.applicationId()) || blank(source.useId())
                 || prepared == null || blank(prepared.framePanelId())
@@ -288,6 +289,28 @@ final class WorkbenchPanelReads {
             if (!decision.allowed()) return failed(Status.FORBIDDEN, decision.code(), decision.reason());
         }
         var visibility = item.visibleKinds() == null ? null : ranges(subject, item.visibleKinds());
+        if (call != null) {
+            if (blank(call.type()) || blank(call.name()) || call.parameters() == null)
+                throw badRequest("An owner read type, name and parameters are required");
+            if (handler == null) return failed(Status.ERROR, "PANEL_READ_UNKNOWN", "The owner read is not registered");
+        }
+        return new ItemResult(Status.READY, null, null, null, visibility);
+    }
+
+    /**
+     * A direct read carries no application placement: nothing to compare against a registration and no USE admission,
+     * so the owner judges the person's verified identity by itself. Data-query reads capture their access from the
+     * placement request and are not available here.
+     */
+    private ItemResult admitDirect(SubjectContext subject, ReadItem item, WorkbenchReadRegistration handler) {
+        var source = item.source();
+        if (!blank(source.applicationId()) || !blank(source.useId()) || item.registration() != null || item.uses() != null)
+            throw badRequest("A direct read carries no application or registration facts");
+        if (handler instanceof WorkbenchPanelRead.Query || handler instanceof WorkbenchProductGraphRead
+                || handler instanceof WorkbenchPanelRead metadata && metadata.requiresLiveData())
+            return failed(Status.FORBIDDEN, "PANEL_READ_NOT_DIRECT", "The owner read is not available without an application placement");
+        var visibility = item.visibleKinds() == null ? null : ranges(subject, item.visibleKinds());
+        var call = item.call();
         if (call != null) {
             if (blank(call.type()) || blank(call.name()) || call.parameters() == null)
                 throw badRequest("An owner read type, name and parameters are required");

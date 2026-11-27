@@ -48,7 +48,9 @@ public final class WorkbenchPanelReadsController {
     public record Entry(String path, String applicationId, String useId) {}
     public record EntryKey(String applicationId, String useId, SourceKind kind) {}
     public record VisibleKind(Kind kind, Set<Verb> verbs) {}
-    public enum SourceKind { @JsonProperty("registered") REGISTERED, @JsonProperty("frame") FRAME }
+    public enum SourceKind { @JsonProperty("registered") REGISTERED, @JsonProperty("frame") FRAME,
+        /** No application placement: the owner judges the person's own identity directly. */
+        @JsonProperty("direct") DIRECT }
     public record Source(SourceKind kind, String applicationId, String useId) {}
     public record Registration(String panelId, String framePanelId, Map<String, Map<String, Object>> inputs) {}
     public record Use(ObjectTarget target, OwnerFacts ownerFacts) {}
@@ -117,10 +119,14 @@ public final class WorkbenchPanelReadsController {
     private void requireCallerScopedRead(Request request) {
         if (request instanceof Read read && read.reads() != null && read.reads().size() == 1) {
             var item = read.reads().getFirst();
-            if (item != null && item.visibleKinds() == null && reads.acceptsCallerScope(item.call()))
+            if (item != null && item.visibleKinds() == null && !direct(item) && reads.acceptsCallerScope(item.call()))
                 return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Caller scope requires one registered read that accepts it");
+    }
+
+    private static boolean direct(ReadItem item) {
+        return item.source() != null && item.source().kind() == SourceKind.DIRECT;
     }
 
     private AuthorizationService.SubjectContext subject(Viewer viewer) {

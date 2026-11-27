@@ -288,6 +288,45 @@ class WorkbenchPanelReadsTest {
         verifyNoInteractions(callers, relationship, handler, dataPermissions);
     }
 
+    private static String directRead(String type, String name) {
+        return """
+            {"source":{"kind":"direct"},"call":{"type":"%s","name":"%s","parameters":{}}}
+            """.formatted(type, name);
+    }
+
+    @Test
+    void directReadRunsMetadataWithoutRegistrationOrUses() throws Exception {
+        authenticated();
+        when(handler.read(any(), any())).thenReturn("own facts");
+
+        http.perform(request(batch(directRead("example:type", "query"))))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.results[0].status").value("ready"))
+            .andExpect(jsonPath("$.results[0].payload").value("own facts"));
+        verify(handler).read(same(subject), any());
+    }
+
+    @Test
+    void directReadDoesNotAdmitDataQueryReads() throws Exception {
+        authenticated();
+
+        http.perform(request(batch(directRead("customer:ObjectType", "query"))))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.results[0].status").value("forbidden"))
+            .andExpect(jsonPath("$.results[0].code").value("PANEL_READ_NOT_DIRECT"));
+        verify(customer, never()).read(any(), any());
+    }
+
+    @Test
+    void directReadIsRejectedWithCallerScope() throws Exception {
+        authenticated();
+        var deadline = Instant.now().plusSeconds(60);
+        when(callers.serviceCaller(CALLER, "d")).thenReturn(caller("u", List.of("org"), deadline));
+
+        http.perform(request(batch(directRead("customer:ObjectType", "createForm")))
+                .header(AgentExecutionScope.CALLER_HEADER, CALLER))
+            .andExpect(status().isForbidden());
+        verify(customerCreate, never()).read(any(), any(), any());
+    }
+
     private static JSONObject caller(String executor, List<String> classes, Instant deadline) {
         return JSONObject.of("user_id", "initiator", "deadline", deadline.toString(), "closed", false,
                 "input", JSONObject.of("executionUserId", executor, "classNames", classes));
