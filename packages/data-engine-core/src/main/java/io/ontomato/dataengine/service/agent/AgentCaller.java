@@ -95,11 +95,7 @@ public class AgentCaller {
     var classes=authority.getList("classNames",String.class);
     if(purpose == Purpose.QUERY) classes=io.ontomato.dataengine.service.QueryAccessService.classScope(permission,classes);
     var target=io.ontomato.dataengine.service.ExecutionTarget.LIVE;
-    if ("preview".equals(authority.getString("executionKind"))) {
-      if (authority.getString("executionContextId") != null)
-        throw new AgentHttpException(403,"PREVIEW_EXECUTION_FORBIDDEN","Preview authority does not carry an execution context");
-    }
-    long expires=target.testing()?Math.min(actor.expiresAt(),target.expiresAt()):actor.expiresAt();
+    long expires=actor.expiresAt();
     var access=new io.ontomato.dataengine.service.QueryAccessService.Access(executor,permission,null,null,expires,classes,target,executionActor==null?null:executor.getId(),actor.owner().userId());
     String scope=null;
     for (String candidate:query?new LinkedHashSet<>(requestedBy==null?List.of(root.getString("runId")):List.of(root.getString("runId"),requestedBy.getString("runId"))):List.<String>of()) {

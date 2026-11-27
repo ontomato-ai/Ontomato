@@ -9,7 +9,7 @@ import { HarnessRegistry } from "./adapters/registry";
 import { RuntimeError } from "./errors";
 import type { ModelGatewayClient } from "./gateway-client";
 import { litellmEntry, type ModelLease, type ResolvedChatModel } from "./model";
-import { canonical, type ExecutionLane, type RuntimeStore, type Scope } from "./store";
+import { canonical, type RuntimeStore, type Scope } from "./store";
 import { sessionSandboxDirectory, type OpenSessionSandbox } from "./sandbox";
 import { businessCallbackEnvironment } from "./business-callback";
 import { openSkillCallback } from "./skill-callback";
@@ -41,7 +41,6 @@ type EngineOpen = Pick<HarnessOpenRequest, "language" | "limits" | "signal" | "t
 interface LiveSession {
   scope: Scope;
   id: string;
-  lane: ExecutionLane;
   handle: HarnessSession;
   sandbox: OpenSessionSandbox;
   lease: ModelLease;
@@ -52,8 +51,7 @@ interface LiveSession {
 }
 
 const idleMs = 60 * 60 * 1000;
-const lanes: readonly ExecutionLane[] = ["live", "preview"];
-const key = (scope: Scope, id: string, lane: ExecutionLane) => canonical([scope.hostId, scope.domainId, id, lane]);
+const key = (scope: Scope, id: string) => canonical([scope.hostId, scope.domainId, id]);
 const bashEnvironmentFile = "ontomato-bash-env";
 const activeRunFile = "ontomato-run-id";
 const bashEnvironment = [
@@ -67,11 +65,7 @@ const bashEnvironment = [
   'unset _ontomato_run_id_file',
 ].join("\n") + "\n";
 
-/**
- * Owns the native handle, process space and gateway lease for each admitted session, one per identity of the runs in it:
- * a preview's runs and live runs of the same conversation never share a native engine, its process space or its resume
- * reference, so neither sees what the other said.
- */
+/** Owns the native handle, process space and gateway lease for each admitted session. */
 export class SessionEngines {
   private callback?: ReturnType<typeof openSkillCallback>;
   private readonly live = new Map<string, LiveSession>();
@@ -91,22 +85,22 @@ export class SessionEngines {
     return this.registry.get(id);
   }
 
-  needsOpen(scope: Scope, id: string, lane: ExecutionLane) {
-    const entry = this.live.get(key(scope, id, lane));
+  needsOpen(scope: Scope, id: string) {
+    const entry = this.live.get(key(scope, id));
     return !entry || entry.exited();
   }
 
-  admitted(scope: Scope, id: string, lane: ExecutionLane) {
-    const entry = this.live.get(key(scope, id, lane));
+  admitted(scope: Scope, id: string) {
+    const entry = this.live.get(key(scope, id));
     clearTimeout(entry?.idle);
     if (entry) entry.idle = undefined;
   }
 
-  async open(scope: Scope, id: string, lane: ExecutionLane, request: EngineOpen) {
-    const sessionKey = key(scope, id, lane);
+  async open(scope: Scope, id: string, request: EngineOpen) {
+    const sessionKey = key(scope, id);
     const existing = this.live.get(sessionKey);
     if (existing && !existing.exited()) return existing;
-    if (existing) await this.release(scope, id, lane);
+    if (existing) await this.release(scope, id);
 
     const config = await request.config();
     const { workspaceId } = await this.store.session(scope, id);
@@ -118,12 +112,12 @@ export class SessionEngines {
       this.callback ??= openSkillCallback(this.callbackDispatcher);
       const { endpoint: callback } = await this.callback;
       sandbox = await this.sandboxFactory({
-        scope, sessionId: id, sessionDirectory: sessionSandboxDirectory(this.root, scope, id, lane), workspaceId: workspaceId ?? null,
+        scope, sessionId: id, sessionDirectory: sessionSandboxDirectory(this.root, scope, id), workspaceId: workspaceId ?? null,
         skills: request.skills, limits: request.limits, gatewayUrl: lease.url, callback,
       });
       const processSpace = sandbox;
       const engineRef = await this.locked(scope, id, async () => {
-        const { engineRef } = await this.store.sessionEngine(scope, id, lane);
+        const { engineRef } = await this.store.sessionEngine(scope, id);
         if (engineRef === null) {
           for (const name of await readdir(processSpace.hostState))
             await removeWorkerFiles(path.join(processSpace.hostState, name));
@@ -182,8 +176,8 @@ export class SessionEngines {
       });
       // The caller can submit the first prompt only after its native reference is committed.
       // Without that reference, no prompt used the native files and the next open can rebuild them.
-      if (engineRef === null) await this.store.saveEngineRef(scope, id, lane, handle.engineRef);
-      const entry = { scope, id, lane, handle, sandbox, lease, credential, exited: () => exited };
+      if (engineRef === null) await this.store.saveEngineRef(scope, id, handle.engineRef);
+      const entry = { scope, id, handle, sandbox, lease, credential, exited: () => exited };
       this.live.set(sessionKey, entry);
       return entry;
     } catch (error) {
@@ -192,8 +186,8 @@ export class SessionEngines {
     }
   }
 
-  beginRun(scope: Scope, id: string, lane: ExecutionLane, runId: string) {
-    const entry = this.live.get(key(scope, id, lane))!;
+  beginRun(scope: Scope, id: string, runId: string) {
+    const entry = this.live.get(key(scope, id))!;
     entry.runId = runId;
     const directory = entry.sandbox.hostState;
     const temporary = path.join(directory, `.${activeRunFile}.${process.pid}`);
@@ -201,38 +195,36 @@ export class SessionEngines {
     renameSync(temporary, path.join(directory, activeRunFile));
   }
 
-  endRun(scope: Scope, id: string, lane: ExecutionLane) {
-    const entry = this.live.get(key(scope, id, lane));
+  endRun(scope: Scope, id: string) {
+    const entry = this.live.get(key(scope, id));
     if (!entry) return;
     entry.runId = undefined;
     rmSync(path.join(entry.sandbox.hostState, activeRunFile), { force: true });
   }
 
-  /** The run a session's skill callback belongs to: the credential names the engine, and with it the run's identity. */
   callbackRun(scope: Scope, id: string, credential: string | undefined) {
+    const entry = this.live.get(key(scope, id));
     const supplied = Buffer.from(credential ?? "");
-    const entry = lanes.map(lane => this.live.get(key(scope, id, lane))).find(entry =>
-      entry && supplied.length === entry.credential.length && timingSafeEqual(entry.credential, supplied));
-    if (!entry)
+    if (!entry || supplied.length !== entry.credential.length || !timingSafeEqual(entry.credential, supplied))
       throw new RuntimeError(401, "UNAUTHENTICATED", "Invalid session callback credential");
     if (!entry.runId)
       throw new RuntimeError(409, "RUN_CLOSED", "No active run accepts skill commands");
     return entry.runId;
   }
 
-  idle(scope: Scope, id: string, lane: ExecutionLane) {
-    const entry = this.live.get(key(scope, id, lane));
+  idle(scope: Scope, id: string) {
+    const entry = this.live.get(key(scope, id));
     if (!entry) return;
     const timer = setTimeout(() => {
       void this.locked(scope, id, async () => {
-        if (entry.idle === timer) await this.release(scope, id, lane);
+        if (entry.idle === timer) await this.release(scope, id);
       }).catch(this.onCloseError);
     }, idleMs);
     entry.idle = timer.unref();
   }
 
-  async release(scope: Scope, id: string, lane: ExecutionLane) {
-    const sessionKey = key(scope, id, lane);
+  async release(scope: Scope, id: string) {
+    const sessionKey = key(scope, id);
     const entry = this.live.get(sessionKey);
     if (!entry) return;
     clearTimeout(entry.idle);
@@ -242,12 +234,12 @@ export class SessionEngines {
   }
 
   async remove(scope: Scope, id: string) {
-    await this.store.deleteSession(scope, id, async () => { for (const lane of lanes) await this.release(scope, id, lane); });
-    for (const lane of lanes) await removeWorkerFiles(sessionSandboxDirectory(this.root, scope, id, lane));
+    await this.store.deleteSession(scope, id, () => this.release(scope, id));
+    await removeWorkerFiles(sessionSandboxDirectory(this.root, scope, id));
   }
 
   async close() {
-    const outcomes = await Promise.allSettled([...this.live.values()].map(({ scope, id, lane }) => this.release(scope, id, lane)));
+    const outcomes = await Promise.allSettled([...this.live.values()].map(({ scope, id }) => this.release(scope, id)));
     for (const result of outcomes) {
       if (result.status === "rejected") this.onCloseError(result.reason);
     }

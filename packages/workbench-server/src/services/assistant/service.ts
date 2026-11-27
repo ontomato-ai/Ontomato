@@ -96,9 +96,7 @@ export const assistantService = {
     if (project && input.workspaceId !== undefined && input.workspaceId !== project.workspaceId)
       throw new HttpError(409, "Session workspace does not match context.appId", "WORKSPACE_CHANGED");
     const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId, appId ? appWorkspaceSlot(appId) : owner.userId);
-    // A conversation a preview opens is the preview's: its runs run as the preview, wherever they are later sent from.
-    const { row, replayed } = await assistantStore.create(id, owner, input.agentId, origin, project?.workspaceId ?? input.workspaceId,
-      false, credentials.executionKind === "preview");
+    const { row, replayed } = await assistantStore.create(id, owner, input.agentId, origin, project?.workspaceId ?? input.workspaceId);
     try {
       await runtime.createSession(id, row.workspace_id ?? undefined);
     } catch (e) {
@@ -317,12 +315,10 @@ export const assistantService = {
       const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId, slot);
       await runtime.request(`/v1/channel/sessions/${sessionId}/workspace`, "POST", { workspaceId: project.workspaceId, ownerId: slot });
     }
-    const { row: session } = await assistantStore.create(sessionId, owner, a.id, "delegated", project?.workspaceId, true, authority.executionKind === "preview");
+    const { row: session } = await assistantStore.create(sessionId, owner, a.id, "delegated", project?.workspaceId, true);
     const message = input.content;
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
-    // A run keeps the identity it was started or delegated with: an App Builder run is always the preview's, any other
-    // agent's when its caller's run was or its conversation was opened as the preview's.
-    const preview = isAppBuilderKind(a.kind) || authority.executionKind === "preview" || session.preview;
+    const preview = isAppBuilderKind(a.kind) || authority.executionKind === "preview";
     const request = await withDomainSkills(owner.domainId,async () => {
       const prepare = isAppBuilderKind(a.kind)
         ? prepareAppBuilderRun
@@ -335,7 +331,7 @@ export const assistantService = {
       const reader = visibilityReader(body);
       const pageSkillContext = reader === "user" && input.role === "user" && body.root.runId === id
         ? pageSkillContextSchema.optional().parse(body.context?.pageSkillContext) : undefined;
-      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader,lane:preview ? "preview" : "live" }, appId);
+      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader }, appId);
     });
     await assistantStore.admitted(id,message);
     return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: preview ? "preview" : "live" } };
@@ -365,8 +361,8 @@ export const assistantService = {
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId, appId ? appWorkspaceSlot(appId) : owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
-    // The run is the preview's when its agent builds applications, its conversation was opened by a preview, or a preview sends it.
-    const preview = isAppBuilderKind(a.kind) || session.preview || credentials.executionKind === "preview";
+    // The host reports only whether this request itself came from a preview; the runtime owns the conversation identity.
+    const preview = credentials.executionKind === "preview";
     const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: preview ? "preview" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
     const context = {
       ...(appId ? { appId } : {}),

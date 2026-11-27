@@ -141,9 +141,14 @@ export class ChannelStore {
       if (intent.status !== "starting") await c.query(`UPDATE ${this.store.table("sessions")} SET preparing_run_id=NULL WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND preparing_run_id=$4`, [...this.key(scope), intent.session.sessionId, intent.id]);
     });
   }
+  async latestOrNull(scope: Scope, sessionId: string, exceptRunId?: string): Promise<AgentRunIntent | null> {
+    const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND NOT deleted AND intent IS NOT NULL AND ($4::uuid IS NULL OR key<>$4) ORDER BY intent->>'createdAt' DESC,key DESC LIMIT 1`, [...this.key(scope),sessionId,exceptRunId ?? null])).rows[0];
+    return row ? agentRunIntentSchema.parse(row.intent) : null;
+  }
   async latest(scope: Scope, sessionId: string): Promise<AgentRunIntent> {
-    const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND NOT deleted AND intent IS NOT NULL ORDER BY intent->>'createdAt' DESC,key DESC LIMIT 1`, [...this.key(scope),sessionId])).rows[0];
-    return agentRunIntentSchema.parse(row.intent);
+    const intent = await this.latestOrNull(scope, sessionId);
+    if (!intent) throw new RuntimeError(404, "NOT_FOUND", "Agent execution not found");
+    return intent;
   }
   async task(domainId: string, taskId: string): Promise<{ scope: Scope; intent: AgentRunIntent } | null> {
     const row = (await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND NOT deleted AND intent IS NOT NULL`,[domainId,taskId])).rows[0];

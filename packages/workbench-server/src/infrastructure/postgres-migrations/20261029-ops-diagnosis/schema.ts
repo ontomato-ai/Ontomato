@@ -7,7 +7,6 @@ export async function ensureOpsDiagnosisSchema(c: QueryableClient) {
     id uuid PRIMARY KEY, domain_id text NOT NULL, owner_id text NOT NULL, target jsonb,
     title text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now());
-    ALTER TABLE ${t("ops_sessions")} ADD COLUMN IF NOT EXISTS preview boolean NOT NULL DEFAULT false;
     CREATE INDEX IF NOT EXISTS ops_sessions_owner ON ${t("ops_sessions")}(domain_id,owner_id,updated_at DESC,id DESC);
     CREATE TABLE IF NOT EXISTS ${t("ops_run_intents")} (
     id uuid PRIMARY KEY, session_id uuid NOT NULL REFERENCES ${t("ops_sessions")}(id) ON DELETE CASCADE,

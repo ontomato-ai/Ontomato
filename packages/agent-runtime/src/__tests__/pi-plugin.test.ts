@@ -19,7 +19,6 @@ import { HarnessRegistry } from "../adapters/registry";
 import type { ModelGatewayClient } from "../gateway-client";
 import { resolvedModel } from "../model";
 import { SessionEngines } from "../session-engines";
-import { AgentRuntime } from "../runtime";
 import type { RuntimeStore } from "../store";
 import { piPlugin } from "../adapters/pi";
 import { PiEvents } from "../adapters/pi/events";
@@ -187,7 +186,7 @@ describe("PI 1.4.0 RPC plugin", () => {
     const store = {
       session: async () => ({ workspaceId: null }),
       sessionEngine: async () => ({ engineRef: refs.at(-1) ?? null }),
-      saveEngineRef: async (_scope: unknown, _id: string, _lane: string, ref: string) => { refs.push(ref); },
+      saveEngineRef: async (_scope: unknown, _id: string, ref: string) => { refs.push(ref); },
     } as unknown as RuntimeStore;
     const released = deferred<void>();
     const gateway = {
@@ -224,7 +223,7 @@ describe("PI 1.4.0 RPC plugin", () => {
       await mkdir(join(directories.workspace, "outputs"));
       await writeFile(output, "A workspace artifact");
 
-      const opened = await owner.open(scope, id, "live", options);
+      const opened = await owner.open(scope, id, options);
       expect(refs).toEqual([opened.handle.engineRef]);
       expect(opened.handle.engineRef).not.toBe(uncommitted.engineRef);
       expect(await readFile(output, "utf8")).toBe("A workspace artifact");
@@ -233,16 +232,16 @@ describe("PI 1.4.0 RPC plugin", () => {
       expect(first.consumed).toEqual(["first"]);
 
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-      owner.idle(scope, id, "live");
-      owner.admitted(scope, id, "live");
+      owner.idle(scope, id);
+      owner.admitted(scope, id);
       await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-      expect(owner.needsOpen(scope, id, "live")).toBe(false);
-      owner.idle(scope, id, "live");
+      expect(owner.needsOpen(scope, id)).toBe(false);
+      owner.idle(scope, id);
       await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
       vi.useRealTimers();
       await released.promise;
 
-      const resumed = await owner.open(scope, id, "live", options);
+      const resumed = await owner.open(scope, id, options);
       expect(resumed.handle.engineRef).toBe(opened.handle.engineRef);
       expect(await turn(resumed.handle, host(), input("second", "Use earlier context"))).toMatchObject({ stopReason: "stop" });
       expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Keep this context");
@@ -250,112 +249,6 @@ describe("PI 1.4.0 RPC plugin", () => {
       vi.useRealTimers();
       await owner.close();
     }
-  });
-
-  describe("a conversation holding runs of both identities", () => {
-    const scope = { hostId: "host", domainId: "domain" };
-    function engines(gatewayBaseUrl: string) {
-      const refs = { live: [] as string[], preview: [] as string[] };
-      const directoriesOpened: string[] = [];
-      const store = {
-        session: async () => ({ workspaceId: null }),
-        sessionEngine: async (_scope: unknown, _id: string, lane: "live" | "preview") => ({ engineRef: refs[lane].at(-1) ?? null }),
-        saveEngineRef: async (_scope: unknown, _id: string, lane: "live" | "preview", ref: string) => { refs[lane].push(ref); },
-      } as unknown as RuntimeStore;
-      const leases = {
-        lease: async () => ({ id: "lease", token: "test-lease", url: gatewayBaseUrl }),
-        release: async () => {},
-      } as unknown as ModelGatewayClient;
-      const owner = new SessionEngines(store, root, leases, new HarnessRegistry([piPlugin]),
-        async ({ sessionDirectory, callback }) => {
-          directoriesOpened.push(sessionDirectory);
-          const own = { state: join(sessionDirectory, "state"), workspace: join(sessionDirectory, "work"), skills: [] };
-          await Promise.all([mkdir(own.state, { recursive: true }), mkdir(own.workspace, { recursive: true })]);
-          return {
-            ...fixtureSandbox(), directories: own, hostWorkspace: own.workspace, hostState: own.state,
-            gatewayBaseUrl: gatewayBaseUrl + "/v1", callbackBaseUrl: `http://${callback.host}:${callback.port}`,
-            async stop() {},
-          };
-        }, async (_scope, _id, operation) => operation(), {
-          async sessionChannelCommand() {},
-          async withBusinessCallback() {},
-        }, error => { throw error; });
-      const options = (previousContext: () => Promise<RuntimeMessage[] | null>) => ({
-        config: async () => resolvedModel("public-model", "fixture",
-          { apiBase: gatewayBaseUrl, apiKey: "host-only-key", provider: "custom_openai" },
-          { type: "chat", connection: "fixture", model: "native-model" }),
-        plugin: owner.plugin("pi"), skills: [], tools: [declaration],
-        prompt: () => ({ system: "Use the test model." }), previousContext,
-        limits: codeLimitsSchema.parse({}), language: "en", engineTools: false, signal: new AbortController().signal,
-      });
-      return { owner, refs, directoriesOpened, options };
-    }
-    const lastCall = (requests: ChatRequest[]) => JSON.stringify(requests.at(-1)!.messages);
-
-    it("never lets a preview's turns reach the next live model call: own engine, resume reference and directory", async () => {
-      const requests = await configure(() => ({ status: "answer", text: "Noted" }));
-      const { owner, refs, directoriesOpened, options } = engines(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
-      const id = randomUUID();
-      try {
-        const live = await owner.open(scope, id, "live", options(async () => null));
-        expect(await turn(live.handle, host(), input("l1", "LIVE-FIRST"))).toMatchObject({ stopReason: "stop" });
-        const preview = await owner.open(scope, id, "preview", options(async () => null));
-        expect(preview).not.toBe(live);
-        expect(await turn(preview.handle, host(), input("p1", "PREVIEW-ONLY"))).toMatchObject({ stopReason: "stop" });
-        expect(lastCall(requests)).not.toContain("LIVE-FIRST");
-        expect(new Set(directoriesOpened).size).toBe(2);
-        expect(refs.live).toHaveLength(1);
-        expect(refs.preview).toHaveLength(1);
-        expect(refs.preview[0]).not.toBe(refs.live[0]);
-
-        // The live engine still running: the next live call carries live history only.
-        expect(await owner.open(scope, id, "live", options(async () => null))).toBe(live);
-        expect(await turn(live.handle, host(), input("l2", "LIVE-SECOND"))).toMatchObject({ stopReason: "stop" });
-        expect(lastCall(requests)).toContain("LIVE-FIRST");
-        expect(lastCall(requests)).not.toContain("PREVIEW-ONLY");
-
-        // Released and resumed from its own native reference: still no preview turn.
-        await owner.release(scope, id, "live");
-        const resumed = await owner.open(scope, id, "live", options(async () => null));
-        expect(resumed.handle.engineRef).toBe(refs.live[0]);
-        expect(await turn(resumed.handle, host(), input("l3", "LIVE-THIRD"))).toMatchObject({ stopReason: "stop" });
-        expect(lastCall(requests)).toContain("LIVE-SECOND");
-        expect(lastCall(requests)).not.toContain("PREVIEW-ONLY");
-      } finally {
-        await owner.close();
-      }
-    });
-
-    it("rebuilds a fresh engine's context from its own identity's turns and summary only", async () => {
-      const requests = await configure(() => ({ status: "answer", text: "Noted" }));
-      const { owner, options } = engines(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
-      const row = (seq: number, content: string, lane: "live" | "preview") =>
-        ({ id: randomUUID(), runId: randomUUID(), messageSeq: seq, contextSeq: seq, message: user(content), lane });
-      // The runtime's own reading of the stored conversation, as each run's engine is opened with it.
-      const runtime = Object.assign(Object.create(AgentRuntime.prototype), {
-        store: {
-          contextMessages: async () => [row(1, "LIVE-HISTORY", "live"), row(2, "PREVIEW-HISTORY", "preview")],
-          table: (name: string) => name,
-          pool: { query: async () => ({ rows: [{ covered_seq: 0, summary: "LIVE-SUMMARY" }] }) },
-        },
-        channel: { modelMessage: async (_domainId: string, message: RuntimeMessage) => message },
-      }) as { previousContext(scope: object, id: string, lane: "live" | "preview"): Promise<RuntimeMessage[] | null> };
-      const id = randomUUID();
-      try {
-        const live = await owner.open(scope, id, "live", options(() => runtime.previousContext(scope, id, "live")));
-        expect(await turn(live.handle, host(), input("next", "LIVE-NEXT"))).toMatchObject({ stopReason: "stop" });
-        expect(lastCall(requests)).toContain("LIVE-HISTORY");
-        expect(lastCall(requests)).toContain("LIVE-SUMMARY");
-        expect(lastCall(requests)).not.toContain("PREVIEW-HISTORY");
-        const preview = await owner.open(scope, id, "preview", options(() => runtime.previousContext(scope, id, "preview")));
-        expect(await turn(preview.handle, host(), input("next-preview", "PREVIEW-NEXT"))).toMatchObject({ stopReason: "stop" });
-        expect(lastCall(requests)).toContain("PREVIEW-HISTORY");
-        expect(lastCall(requests)).not.toContain("LIVE-HISTORY");
-        expect(lastCall(requests)).not.toContain("LIVE-SUMMARY");
-      } finally {
-        await owner.close();
-      }
-    });
   });
 
   it("opens persisted native state, resumes the same ref and declarations, and rejects missing state", async () => {

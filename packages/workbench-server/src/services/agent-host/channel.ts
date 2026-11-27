@@ -1,6 +1,5 @@
 import {needsRetrievalScope} from "../assistant/skills";
-import { ofIdentity, recentUserMessages } from "../assistant/user-quotes";
-import { sessionRunIdentities } from "./run-identity";
+import { recentUserMessages } from "../assistant/user-quotes";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import path from "node:path";
@@ -56,8 +55,7 @@ export const agentChannelService = {
         const client=new RuntimeClient(owner.domainId,undefined,owner.userId);
         const current=await client.status(body.runId);
         if (turn.retrieval_scope_id && needsRetrievalScope(current.resolvedSkills.map(entry=>entry.skill))) {
-          // The run's own identity decides which of the conversation's messages it may quote.
-          const messages=ofIdentity((await client.session(body.sessionId)).messages,await sessionRunIdentities(owner,body.sessionId),body.authority.executionKind);
+          const messages=(await client.session(body.sessionId)).messages;
           await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).updateUserQuotes(recentUserMessages(messages,body.inputId),credentials);
         }
       }
@@ -67,7 +65,7 @@ export const agentChannelService = {
     // Legacy "observe" provider compatibility layer for `/api/observe/agent/*` and pre-migration ops_sessions.
     if (provider === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID) throw new HttpError(404, "Agent not found", "NOT_FOUND");
-      await createDiagnosis(body.sessionId, owner, credentials, null, true, body.authority.executionKind === "preview");
+      await createDiagnosis(body.sessionId, owner, credentials, null, true);
       // A preview's diagnosis run keeps the account the runtime binds it to; a live one runs as its initiator, as before.
       prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body), body.authority,
         body.authority.executionKind === "preview" ? body.executionActor : undefined);
