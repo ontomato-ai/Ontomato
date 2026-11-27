@@ -8,6 +8,7 @@ import { chartAxisBounds, chartBrandColors } from "@ontomato/contracts/chart-pre
 import { chartMapGeojson } from "@ontomato/contracts/chart-maps";
 import { chartMapNames, reportChartOption } from "./chart-option.mjs";
 import { storedDataset } from "@ontomato/contracts/data-retrieval";
+import { reportCoverImage, reportCoverMaxBytes, reportCoverPathSchema } from "@ontomato/contracts/report-cover";
 import { parseProductMarkdown } from "@ontomato/markdown";
 
 const FONT_ROOT = "/usr/share/fonts/truetype";
@@ -19,8 +20,15 @@ const textStyle = (text) => ({ fontFace: arabic.test(text) ? ARABIC_FONT : FONT_
 const workspacePath = z.string().regex(/^outputs\//).refine(value => !value.split("/").includes(".."));
 const heading = { title: z.string().min(1), takeaway: z.string().optional() };
 const planSchema = z.object({
-  report: workspacePath.refine(value => /^outputs\/reports\/(?:[^/]+\/)*[^/]+\.md$/.test(value)),
+  report: workspacePath.refine(value => /\.md$/i.test(value)),
   title: z.string().min(1),
+  cover: z.union([z.literal(false), z.object({
+    title: z.string().trim().min(1).max(120),
+    subtitle: z.string().trim().max(160).optional(),
+    style: z.enum(["business", "minimal"]).default("business"),
+    accent: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+    image: reportCoverPathSchema.optional(),
+  }).strict()]).optional(),
   slides: z.array(z.discriminatedUnion("layout", [
     z.object({ ...heading, layout: z.literal("text"), bullets: z.array(z.string()).min(1) }).strict(),
     z.object({ ...heading, layout: z.literal("chart"), chart: workspacePath.refine(value => value.endsWith(".chart.json")) }).strict(),
@@ -53,6 +61,44 @@ function sourceNote(slide, text) {
     fit: "shrink", ...textStyle(text) });
 }
 
+function addCover(deck, cover, accent) {
+  const slide = deck.addSlide();
+  const dark = cover.style === "business";
+  const ink = cover.accent ? "221B36" : "172033";
+  slide.background = { color: dark ? ink : cover.accent ? "F8F6FF" : "F7F9FC" };
+  const textWidth = cover.image ? 5.75 : 10.7;
+  if (cover.image) {
+    const file = fs.openSync(cover.image, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    try {
+      const stat = fs.fstatSync(file);
+      if (!stat.isFile() || stat.size > reportCoverMaxBytes) throw new Error("Invalid report cover image");
+      const bytes = fs.readFileSync(file);
+      const image = reportCoverImage(bytes);
+      if (!image || !cover.image.endsWith(`.${image.extension}`)) throw new Error("Invalid report cover image");
+      const scale = Math.min(5.35 / image.width, 5.6 / image.height);
+      const w = image.width * scale, h = image.height * scale;
+      const mime = image.extension === "jpg" ? "jpeg" : "png";
+      slide.addImage({ data: `image/${mime};base64,${bytes.toString("base64")}`, x: 10 - w / 2, y: 3.75 - h / 2, w, h });
+    } finally {
+      fs.closeSync(file);
+    }
+  }
+  slide.addShape(deck.ShapeType.rect, {
+    x: 0.83, y: 2.13, w: 0.12, h: 2.85,
+    line: { transparency: 100 }, fill: { color: cover.accent?.slice(1) ?? accent },
+  });
+  slide.addText(cover.title, {
+    x: 1.25, y: 2.2, w: textWidth, h: 1.65, fontSize: 38, bold: true,
+    color: dark ? "FFFFFF" : ink, fit: "shrink", margin: 0, ...textStyle(cover.title),
+  });
+  if (cover.subtitle) {
+    slide.addText(cover.subtitle, {
+      x: 1.25, y: 4.1, w: textWidth, h: 0.8, fontSize: 20,
+      color: dark ? (cover.accent ? "D4CBEA" : "B8C5E0") : "4B5563", fit: "shrink", margin: 0, ...textStyle(cover.subtitle),
+    });
+  }
+}
+
 async function main() {
   const [planFile, ...args] = process.argv.slice(2);
   if (!planFile || args.length && (args.length !== 2 || args[0] !== "--font-root"))
@@ -75,6 +121,10 @@ async function main() {
   deck.author = "Ontomato";
   deck.theme = { headFontFace: FONT_FAMILY, bodyFontFace: FONT_FAMILY, lang: "zh-CN" };
   const ink = theme.textStyle.color.replace(/^#/, "");
+  if (plan.cover) {
+    const accent = (theme.color?.[0] ?? "#5B3FFF").replace(/^#/, "");
+    addCover(deck, { ...plan.cover, ...(plan.cover.accent && { accent: plan.cover.accent.toUpperCase() }) }, accent);
+  }
   for (const entry of plan.slides) {
     const source = entry.layout === "chart" ? entry.chart : entry.layout === "table" ? entry.dataset : plan.report;
     if (source !== plan.report && !referenced.has(source)) throw new Error(`Source is not referenced by ${plan.report}: ${source}`);
@@ -134,7 +184,7 @@ async function main() {
       }
     }
   }
-  const output = plan.report.replace(/\.md$/, ".pptx");
+  const output = plan.report.replace(/\.md$/i, ".pptx");
   await deck.writeFile({ fileName: output });
   console.log(output);
 }

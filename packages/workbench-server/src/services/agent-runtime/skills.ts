@@ -4,7 +4,7 @@ import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { readSkillPackage } from "../../core/skills/package";
 import type { SkillPackage } from "../../core/skills/providers";
 import fs from "node:fs";
-import { exportChartTheme } from "../chart-theme";
+import { exportAssistantReportChartTheme } from "../chart-theme";
 import path from "node:path";
 import { publicSkillTranslationsRoot } from "../../content/layout";
 import { translatedSkillRelativePath, workbenchBuiltinSkillRoot } from "../skills/builtin-paths";
@@ -27,7 +27,7 @@ export async function publishSkillPackage(pkg: SkillPackage, domainId?: string) 
 export async function publishSkill(root: string, skill: RuntimeSkillRef, domainId?: string) {
   const pkg = await readSkillPackage(root, skill);
   if (skill.namespace.kind === "provider" && skill.namespace.provider === "workbench" && skill.name === "assistant-report")
-    pkg.files.push({ path: "resources/chart-theme.json", content: JSON.stringify(exportChartTheme()) });
+    pkg.files.push({ path: "resources/chart-theme.json", content: JSON.stringify(exportAssistantReportChartTheme()) });
   const translations = publicSkillTranslationsRoot();
   const relative = translatedSkillRelativePath(root);
   if (skill.namespace.kind === "provider" && translations && relative) {
