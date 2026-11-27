@@ -4,7 +4,7 @@ import {
   ACTION, ADD_ROLE_MEMBERS, ADD_ROLE_POLICIES, AGENT_DEFINITION, APPLICATION, APPLICATION_PUBLISH_BUILDER_SOURCE, APPLICATION_RESTART_BUILD_TEST,
   APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
   APPROVE_KNOWLEDGE, ATTRIBUTE, BUSINESS_KNOWLEDGE, CLEAR_OBJECT_DETAIL_PANEL, DELETE_ACTION, DELETE_AGENT, DELETE_ATTRIBUTE,
-  DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_POSITION, DELETE_ORG_UNIT, DELETE_PERMISSION_POLICY, DELETE_ROLE, DELETE_SKILL,
+  DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_POSITION, DELETE_ORG_UNIT, DELETE_PERMISSION_POLICY, DELETE_ROLE, DELETE_SKILL, EXPORT_SKILL,
   FUNCTION, GENERATE_USER_API_KEY, ISSUE_USER_API_KEY_BATCH, METRIC_VIEW, OBJECT_TYPE, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
   PERMISSION_POLICY, REGENERATE_USER_API_KEY, RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_ROLE_MEMBERS, REMOVE_ROLE_POLICIES,
   REMOVE_USER, REVOKE_USER_API_KEY, ROLE, SET_ACTION_STATUS, SET_PRIMARY_KEY, USER, WORKFLOW,
@@ -30,6 +30,7 @@ import { readCataloguePanelInRanges } from "./catalog";
 import { applicationDeleteRefusal, panelDeleteRefusal } from "./catalog-operations";
 import { deleteRefusalPayloadSchema } from "./data-query-operations";
 import { prepareOperationDescriptions } from "./direct-operations";
+import { operationHost } from "./operation-host";
 import type { JavaPanelRead, JavaPanelReadResult, JavaPanelViewer, PanelReadVisibility } from "./java-panel-reads";
 import { clearObjectDetailRefusal } from "./object-detail-operations";
 import { attributeListPayloadSchema, readAttributeRelationshipUses } from "./registered-attribute-reads";
@@ -110,6 +111,7 @@ type PlannedDescription =
     attributeFacts?: AttributeFacts;
     workflowFacts?: { action: NonNullable<ReturnType<typeof workflowLifecycleAction>>; reads: number[] };
     builderProject?: string;
+    localAvailability?: true;
   });
 
 export async function prepareRegisteredOperationRead(
@@ -183,6 +185,7 @@ export async function prepareRegisteredOperationRead(
         skillDeleteRead ??= addCall(skillDeleteAccessCall);
         return { ...description, skillDeletion: availability.target.primaryKey };
       }
+      if (operation === EXPORT_SKILL) return { ...description, localAvailability: true as const };
       if (operation === DELETE_AGENT) {
         const definition = await prepareAgentDeletionTarget({ initiator: { owner: viewer, credentials }, locale }, availability.target);
         if ("restriction" in definition) return { ...description, agentDeletion: definition.restriction };
@@ -381,6 +384,14 @@ export async function prepareRegisteredOperationRead(
           }
         }
         const descriptor = await describeServerOperation(description.handler, locale, placement.slot, target, inputSchema);
+        if (description.localAvailability) {
+          const availabilityTarget = description.availability?.kind === "single" ? description.availability.target : null;
+          const unavailable = await description.handler.unavailable?.(
+            operationHost({ owner: viewer, credentials }), availabilityTarget,
+          );
+          entries.push([name, unavailable ? { ...descriptor, unavailable } : descriptor]);
+          continue;
+        }
         if (description.builderProject !== undefined) {
           const reasons = builderReasons.get(description.builderProject)!;
           const operation = description.handler.handlerRef;

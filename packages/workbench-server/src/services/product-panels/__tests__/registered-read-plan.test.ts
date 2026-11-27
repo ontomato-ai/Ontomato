@@ -7,7 +7,7 @@ import {
   APPLICATION_RESTART_BUILD_TEST, APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
   AUTOTEST_RUN, BUSINESS_KNOWLEDGE, CLEAR_OBJECT_DETAIL_PANEL, DASHBOARD, DASHBOARD_CARD, DATA_ADAPTER_CONFIG, DEACTIVATE_WORKFLOW,
   DELETE_ACTION, DELETE_AGENT, DELETE_ATTRIBUTE, DELETE_AUTOTEST_RUN, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_UNIT,
-  DELETE_ORG_POSITION, DELETE_PERMISSION_POLICY, DELETE_ROLE, DELETE_SKILL, DELETE_WORKFLOW, DOWNLOAD_AUTOTEST_CASE_ARTIFACT, DOWNLOAD_TURN_EVIDENCE, DSL_QUERY,
+  DELETE_ORG_POSITION, DELETE_PERMISSION_POLICY, DELETE_ROLE, DELETE_SKILL, DELETE_WORKFLOW, DOWNLOAD_AUTOTEST_CASE_ARTIFACT, EXPORT_SKILL, DOWNLOAD_TURN_EVIDENCE, DSL_QUERY,
   EXTERNAL_MCP_SERVICE, FAVORITE, FEEDBACK_RECORD, FUNCTION, GENERAL_SETTINGS, GENERATE_USER_API_KEY, KEEP_AUTOTEST_RUN,
   KEEP_TURN_EVIDENCE, METRIC_VIEW, MODEL_CONNECTION, MODEL_ENTRY, MODEL_OPTION, MODEL_USAGE, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, OPS_KNOWLEDGE, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
@@ -1298,13 +1298,18 @@ it("uses the P1 skill editor decision for a draft and the stored agent before re
 it("keeps four skill library reads and describes fixed and row deletion from the same library facts", async () => {
   const fixed: RegisteredDataRead = { source, memberPath: [{ member: "remove" }], operations: true, inputs: {} };
   const remove = { operation: { kind: "PlatformOperation", id: DELETE_SKILL } };
+  const exportOperation = { operation: { kind: "PlatformOperation", id: EXPORT_SKILL } };
   const fixedProjection = { inputs: {}, data: {}, operations: {
-    remove: { ...remove, target: { literal: { className: SKILL, primaryKey: "builtin" } } },
+    remove: { ...remove, target: { literal: { className: SKILL, primaryKey: "knowledge-governance" } } },
+    export: { ...exportOperation, target: { literal: { className: SKILL, primaryKey: "knowledge-governance" } } },
   } };
-  const queryProjection = { inputs: {}, data: {}, operations: { remove: { ...remove, target: { row: true } } } };
+  const queryProjection = { inputs: {}, data: {}, operations: {
+    remove: { ...remove, target: { row: true } },
+    export: { ...exportOperation, target: { row: true } },
+  } };
   const readonlySkill = {
-    skill: { name: "builtin", namespace: { kind: "provider", provider: "workbench" } },
-    source: { kind: "public", path: "/fixture/builtin" }, manifest: { description: "Public package" },
+    skill: { name: "knowledge-governance", namespace: { kind: "provider", provider: "ontology" } },
+    source: { kind: "generated" }, manifest: { description: "Generated package" },
   };
   const domainSkill = {
     skill: { name: "local", namespace: { kind: "domain", domainId: viewer.domainId } },
@@ -1314,7 +1319,7 @@ it("keeps four skill library reads and describes fixed and row deletion from the
   const catalogue = {
     registry: {
       getSkills: () => [readonlySkill, domainSkill],
-      getSkillById: (id: string) => id === "builtin" ? readonlySkill : domainSkill,
+      getSkillById: (id: string) => id === "knowledge-governance" ? readonlySkill : domainSkill,
     },
     requireSkillById: () => domainSkill,
   };
@@ -1344,19 +1349,27 @@ it("keeps four skill library reads and describes fixed and row deletion from the
     expect(mocks.skills).not.toHaveBeenCalled();
     const output = await runPreparedDataReads(credentials, prepared);
     const readOnly = tForLocale("en", "panels.skill.readOnlyPublic");
+    const noExport = tForLocale("en", "panels.skill.generatedExportUnavailable");
     const key = (id: string) => `${SKILL}:${id}`;
     expect(output).toMatchObject([
       { status: "ready", value: { total: 2 }, rowOperations: {
-        [key("builtin")]: { remove: { available: false, unavailable: { reason: readOnly } } },
-        [key("local")]: { remove: { available: true } },
+        [key("knowledge-governance")]: {
+          export: { available: false, unavailable: { reason: noExport } },
+          remove: { available: false, unavailable: { reason: readOnly } },
+        },
+        [key("local")]: { export: { available: true }, remove: { available: true } },
       } },
       { status: "ready", value: { primaryKey: "local" } },
       { status: "ready", value: [{ primaryKey: "SKILL.md" }] },
       { status: "ready", value: { fields: { content: "Skill instructions" } } },
       { status: "ready", value: { total: 2 }, rowOperations: {
-        [key("local")]: { remove: { available: false, unavailable: { reason: "CHANGE required" } } },
+        [key("knowledge-governance")]: { export: { available: false, unavailable: { reason: noExport } } },
+        [key("local")]: { export: { available: true }, remove: { available: false, unavailable: { reason: "CHANGE required" } } },
       } },
-      { status: "ready", value: { remove: { unavailable: { reason: readOnly } } } },
+      { status: "ready", value: {
+        export: { unavailable: { reason: noExport } },
+        remove: { unavailable: { reason: readOnly } },
+      } },
       { status: "ready", value: { remove: { unavailable: { reason: "CHANGE required" } } } },
     ]);
     expect(mocks.read.mock.lastCall?.[1].map(({ call }: JavaPanelRead) => call?.name)).toEqual([
