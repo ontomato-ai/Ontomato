@@ -12,7 +12,9 @@ import {
 import { panelFormDescriptionSchema, panelOptionListSchema, panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { createOntologyModelReadAdapter, renderModelRead } from "../model-reads";
+import { PanelReadBatchCache } from "../../product-panels/member-path";
+import type { RegisteredDataReadContext } from "../../product-panels/registered-data-read";
+import { createOntologyModelReadAdapter, ontologyModelDataReadRegistrations, renderModelRead } from "../model-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
 
@@ -218,6 +220,39 @@ afterEach(() => {
 });
 
 describe("ontology model read adapter", () => {
+  it("publishes object type detail outputs alongside the modeling path", async () => {
+    const registration = ontologyModelDataReadRegistrations.find(item =>
+      item.typeId === OBJECT_TYPE && item.method === "record")!;
+    const context: RegisteredDataReadContext = {
+      owner,
+      credentials: viewer,
+      selection: { kind: "platform", typeId: OBJECT_TYPE, method: "record", primaryKey: "Device" },
+      params: {},
+      inputs: {},
+      projection: {} as RegisteredDataReadContext["projection"],
+      cache: new PanelReadBatchCache(owner, viewer),
+      rowOperations: [],
+    };
+    const plan = await registration.plan(context);
+    const detail = await plan.present([{
+      status: "ready", payload: { view: objectTypes[0], fieldLabels: fieldLabels.objectType },
+    }], context);
+
+    expect(detail).toMatchObject({
+      outputs: {
+        className: "Device",
+        primaryKeyStatus: "ok",
+        primaryKeyName: "id",
+        primaryKeyShowName: "Device ID",
+        primaryKeyCount: 1,
+        attributeCount: 3,
+        businessKeyCount: 1,
+        relationshipCount: 2,
+        modelingPath: "/ontology/visual-modeling?selectedNode=Device&back=playground",
+      },
+    });
+  });
+
   it("lists all three model types with owner labels, viewer headers and no cross-call label cache", async () => {
     let labelSuffix = "";
     const requests = stubOwner(request => {
