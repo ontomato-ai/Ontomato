@@ -527,6 +527,7 @@
       "en": {
         "action.cancel": "Cancel",
         "action.chatWithAgent": "Chat with this agent",
+        "action.saveBeforeChat": "Save your changes before starting a chat with this agent.",
         "action.delete": "Delete",
         "action.more": "More actions",
         "action.resetDefaults": "Reset defaults",
@@ -632,6 +633,7 @@
       "zh-CN": {
         "action.cancel": "取消",
         "action.chatWithAgent": "用这个智能体对话",
+        "action.saveBeforeChat": "请先保存修改，再用这个智能体对话。",
         "action.delete": "删除",
         "action.more": "更多操作",
         "action.resetDefaults": "改回默认",
@@ -737,6 +739,7 @@
       "zh-TW": {
         "action.cancel": "取消",
         "action.chatWithAgent": "用這個智能體對話",
+        "action.saveBeforeChat": "請先儲存修改，再用這個智能體對話。",
         "action.delete": "刪除",
         "action.more": "更多操作",
         "action.resetDefaults": "改回預設",
@@ -842,6 +845,7 @@
       "ja": {
         "action.cancel": "キャンセル",
         "action.chatWithAgent": "このエージェントと会話",
+        "action.saveBeforeChat": "このエージェントと会話する前に、変更を保存してください。",
         "action.delete": "削除",
         "action.more": "その他の操作",
         "action.resetDefaults": "既定に戻す",
@@ -947,6 +951,7 @@
       "ar": {
         "action.cancel": "إلغاء",
         "action.chatWithAgent": "تحدث مع هذا الوكيل",
+        "action.saveBeforeChat": "احفظ تغييراتك قبل بدء محادثة مع هذا الوكيل.",
         "action.delete": "حذف",
         "action.more": "إجراءات أخرى",
         "action.resetDefaults": "استعادة الافتراضي",
@@ -1052,6 +1057,7 @@
       "fr": {
         "action.cancel": "Annuler",
         "action.chatWithAgent": "Discuter avec cet agent",
+        "action.saveBeforeChat": "Enregistrez vos modifications avant de discuter avec cet agent.",
         "action.delete": "Supprimer",
         "action.more": "Plus d’actions",
         "action.resetDefaults": "Restaurer les défauts",
@@ -1157,6 +1163,7 @@
       "de": {
         "action.cancel": "Abbrechen",
         "action.chatWithAgent": "Mit diesem Agenten chatten",
+        "action.saveBeforeChat": "Speichern Sie Ihre Änderungen, bevor Sie mit diesem Agenten chatten.",
         "action.delete": "Löschen",
         "action.more": "Weitere Aktionen",
         "action.resetDefaults": "Auf Standard zurücksetzen",
@@ -1262,6 +1269,7 @@
       "it": {
         "action.cancel": "Annulla",
         "action.chatWithAgent": "Parla con questo agente",
+        "action.saveBeforeChat": "Salva le modifiche prima di avviare una conversazione con questo agente.",
         "action.delete": "Elimina",
         "action.more": "Altre azioni",
         "action.resetDefaults": "Ripristina predefiniti",

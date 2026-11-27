@@ -52,6 +52,28 @@ test("unsaved changes are owned by the sticky save bar rather than the page head
   assert.equal(header.includes(":draft"), false);
 });
 
+test("chat asks the user to save a dirty draft before navigating", async () => {
+  const detailDraft = { value: { dirty: true } };
+  const notices = [];
+  const navigations = [];
+  const openChat = vm.runInNewContext(`async ${extractFunctionSource(moduleSource, "openChat")}; openChat`, {
+    selectedKey: { value: "agent/example" },
+    detailDraft,
+    notify: ({ kind, text }) => notices.push([kind, text]),
+    t: (key) => panel.content.messages.en[key],
+    navigate: async (path) => { navigations.push(path); },
+  });
+
+  await openChat();
+  assert.deepEqual(navigations, []);
+  assert.deepEqual(notices, [["warning", "Save your changes before starting a chat with this agent."]]);
+  assert.equal(detailDraft.value.dirty, true);
+
+  detailDraft.value.dirty = false;
+  await openChat();
+  assert.deepEqual(navigations, ["/agents/chat?agentId=agent%2Fexample"]);
+});
+
 test("agent detail does not use Element Plus tags, classes, or theme tokens directly", () => {
   const source = `${html}\n${moduleSource}\n${JSON.stringify(panel)}`;
   assert.equal(/<el-[a-z-]+/iu.test(source), false);
