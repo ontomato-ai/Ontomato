@@ -24,7 +24,7 @@ function opsMenu(granted: readonly string[]): ApplicationEntryMenu {
     names: opsApp.declaration.names,
     groups: opsApp.declaration.groups ?? [],
     panelUses: (opsApp.declaration.panelUses ?? []).filter(
-      use => granted.includes(use.id === "user-feedback" ? "user-feedback" : "observer"),
+      use => use.inMenu !== false && granted.includes(use.id === "user-feedback" ? "user-feedback" : "observer"),
     ),
   };
 }
@@ -197,7 +197,7 @@ describe("builtin-product-ops-frame", () => {
       ]);
       expect(tabs[0]!.classList.contains("active")).toBe(true);
 
-      // Navigate to hidden detail /ops/autotest/case -> keeps "Test results" tab active.
+      // A direct detail entry is not a sidebar tab.
       mounted.currentEntry.value = {
         applicationId: "operations",
         useId: "ops-autotest-case-artifact",
@@ -207,8 +207,7 @@ describe("builtin-product-ops-frame", () => {
         path: "/ops/autotest/case",
       };
       await nextTick();
-      const updatedTabs = [...mounted.host.querySelectorAll<HTMLButtonElement>("[data-ops-tab]")];
-      expect(updatedTabs[1]!.classList.contains("active")).toBe(true);
+      expect(mounted.host.querySelector("[data-ops-group-tabs]")).toBeNull();
     } finally {
       mounted.unmount();
     }

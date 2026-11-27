@@ -275,6 +275,7 @@ export interface PanelInstanceView {
   /** The operations the instance offers, as its frame reported them. */
   readonly operations: Readonly<Ref<readonly PanelOperation[]>>;
   readonly error: Ref<string>;
+  readonly personalStateFailure: Readonly<ShallowRef<{ message: string; retry: () => void } | null>>;
   readonly displayLoad: Readonly<ShallowRef<DisplayLoad>>;
   readonly dirty: Readonly<ShallowRef<boolean>>;
   /** Resolves once the source is read. */
@@ -458,6 +459,12 @@ export interface PanelInstanceOptions {
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
 const failureText = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure));
 
+export class PanelPersonalStateReadError extends Error {
+  constructor(cause: unknown) {
+    super(failureText(cause), { cause });
+  }
+}
+
 function httpStatusOf(failure: unknown) {
   if (failure instanceof Error && "status" in failure && typeof failure.status === "number") return failure.status;
 }
@@ -492,6 +499,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const pageContext = shallowRef<PageContext | null>(null);
   const document = shallowRef("");
   const error = shallowRef("");
+  const personalStateFailure = shallowRef<{ message: string; retry: () => void } | null>(null);
   const displayLoad = shallowRef(loading);
   const dirty = shallowRef(false);
   const state = shallowRef<PanelHostState>({});
@@ -522,10 +530,19 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let settle: () => void = () => {};
   const ready = new Promise<void>((resolve) => (settle = resolve));
 
+  function retryPersonalState() {
+    personalStateFailure.value = null;
+    error.value = "";
+    displayLoad.value = loading;
+    void load();
+  }
+
   function reportPanelUnavailable(failure: unknown) {
     error.value = failureText(failure);
+    const personal = failure instanceof PanelPersonalStateReadError;
+    personalStateFailure.value = personal ? { message: failure.message, retry: retryPersonalState } : null;
     if (displayLoad.value.status === "error") return;
-    displayLoad.value = panelUnavailable(failure);
+    displayLoad.value = panelUnavailable(personal ? failure.cause : failure);
   }
 
   /**
@@ -556,6 +573,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   /** Shows a source: its component, run in this document. */
   async function adopt(next: HostedPanelSource) {
+    personalStateFailure.value = null;
     error.value = "";
     const requested = requestedState(next.panel) as PanelHostState;
     const requestedAddress = panelAddress(options.address(), requested, next.panel.manifest);
@@ -1222,6 +1240,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     address,
     operations,
     error,
+    personalStateFailure,
     displayLoad,
     dirty,
     ready,

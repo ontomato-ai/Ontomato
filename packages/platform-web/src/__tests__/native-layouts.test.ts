@@ -91,7 +91,7 @@ describe("the platform's applications", () => {
     expect(appBuilder.groups).toEqual([]);
   });
 
-  it("admits fully panel-backed built-in applications without native-layouts and lands home on the first visible named entry", () => {
+  it("admits fully panel-backed built-in applications without native-layouts and lands home on the first visible menu entry", () => {
     const permissionsApp = {
       ...catalogFixture()[0]!,
       id: "permissions",
@@ -101,6 +101,8 @@ describe("the platform's applications", () => {
       panelUses: [
         {
           id: "permissions-member-detail",
+          names: { en: "Member detail", "zh-CN": "成员详情" },
+          inMenu: false,
           pageKey: "permissions-member-detail",
           panelId: "builtin-product-governance-member-detail",
           path: "/permissions/members/detail",
@@ -141,8 +143,8 @@ it("opens and highlights a panel application under its application route", () =>
 });
 
 it("propagates framePanelId and leaves panel application menus to their frame panel", () => {
-  const use = (path: string, names?: Record<string, string>) => ({
-    id: path, pageKey: path, panelId: "shared-panel", path, access: { kind: "domain-member" as const }, names,
+  const use = (path: string, names: Record<string, string>, inMenu = true) => ({
+    id: path, pageKey: path, panelId: "shared-panel", path, names, inMenu,
   });
   const application = {
     ...catalogFixture()[0]!, id: "app-panels-trial-b", kind: "product" as const,
@@ -150,7 +152,7 @@ it("propagates framePanelId and leaves panel application menus to their frame pa
     entry: { renderer: "panels", path: "/panels-trial-b" },
     panelUses: [
       use("/applications/app-panels-trial-b/tasks", { en: "Tasks", "zh-CN": "定时任务" }),
-      use("/applications/app-panels-trial-b/detail"),
+      use("/applications/app-panels-trial-b/detail", { en: "Task detail" }, false),
       use("/applications/app-panels-trial-b/summary", { en: "Task summary" }),
     ],
   };

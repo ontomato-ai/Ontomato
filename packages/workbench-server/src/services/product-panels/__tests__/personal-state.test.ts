@@ -92,6 +92,7 @@ describe("panel personal state service", () => {
       panel,
       entry: {
         id: "use-1",
+        names: { en: "use-1" },
         pageKey: "page-1",
         panelId: panel.id,
         path: "/applications/app-1/page-1",
@@ -152,6 +153,7 @@ describe("panel personal state service", () => {
       panel,
       entry: {
         id: "use-2",
+        names: { en: "use-2" },
         pageKey: "page-2",
         panelId: panel.id,
         path: "/applications/app-1/page-2",

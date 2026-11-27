@@ -3,14 +3,14 @@
 // (docker/data-engine/Dockerfile) owns the stages, the layer order and the
 // runtime layout. One image is built per invocation: there is no separate
 // runtime or app artifact, no compatibility lock and nothing to assemble later.
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildStamp,
   docker,
-  imageLabels,
   imageCacheArgs,
+  imageLabelValues,
   inspectImage,
   parseOptions,
   readRevision,
@@ -44,67 +44,36 @@ function copyFrom(root, source, destination) {
   mkdirSync(dirname(destination), { recursive: true });
   cpSync(join(root, source), destination, { recursive: true });
 }
-function baseBuild(arch) {
-  return ["buildx", "build", "--provenance=false", "--platform", `linux/${arch}`];
+function baseBuild(platform) {
+  return ["buildx", "build", "--provenance=false", "--platform", platform];
 }
 function labelArgs(labels) {
   return Object.entries(labels).flatMap(([key, value]) => ["--label", `${key}=${value}`]);
 }
 
-// The reactor inputs both export stages require: which staged tree Maven compiles,
-// which module it packages, the modules whose built jars the image carries, and the
-// app's own artifactIds that must stay out of the third-party closure. The export
-// script fails on any of them being empty.
 function reactorArgs(app) {
-  return [
-    "--build-arg",
-    `REACTOR_DIR=${app.reactorDir}`,
-    "--build-arg",
-    `APP_MODULE=${app.appModule}`,
-    "--build-arg",
-    `APP_LIB_MODULES=${app.appLibModules.join(" ")}`,
-    "--build-arg",
-    `EXCLUDE_ARTIFACT_IDS=${app.excludeArtifactIds}`,
-  ];
+  return {
+    REACTOR_DIR: app.reactorDir,
+    APP_MODULE: app.appModule,
+    APP_LIB_MODULES: app.appLibModules.join(" "),
+    EXCLUDE_ARTIFACT_IDS: app.excludeArtifactIds,
+  };
 }
-// The recipe names its two export stages. A description without the edition's
-// private export inputs consumes build-central (empty Maven settings); the
-// enterprise description consumes build-secret, whose settings file must exist
-// on the host before the build starts: it is handed over as a BuildKit secret
-// and never enters the context.
-function exportArgs(app, version) {
-  if (!app.secretExport)
-    return [
-      "--build-arg",
-      "EXPORT_STAGE=build-central",
-      "--build-arg",
-      "MVNW_REPOURL",
-      "--build-arg",
-      "CI_MAVEN_SETTINGS",
-      ...reactorArgs(app),
-    ];
-  const secret = app.secretExport;
-  if (!existsSync(secret.mavenSettings))
-    throw new Error(
-      `Missing Maven settings at ${secret.mavenSettings}; provide the private repository configuration as a BuildKit secret.`,
-    );
-  return [
-    "--build-arg",
-    "EXPORT_STAGE=build-secret",
-    ...reactorArgs(app),
-    "--secret",
-    `id=maven-settings,src=${secret.mavenSettings}`,
-    "--build-arg",
-    `KEEP_NATIVE=${secret.keepNative}`,
-    "--build-arg",
-    `LICENSE_PROFILE=${secret.licenseProfile}`,
-    "--build-arg",
-    `APP_CHECK_SCRIPT=${secret.check.script}`,
-    "--build-arg",
-    `APP_CHECK_JAR=/out/app/lib/${secret.check.jarArtifactId}-${version}.jar`,
-    "--build-arg",
-    `APP_CHECK_ARG=${secret.check.argument}`,
-  ];
+
+function buildPublicImage({ recipe, context, platform, tags, labels, args, reactor }) {
+  docker([
+    ...baseBuild(platform),
+    ...imageCacheArgs(),
+    "--build-arg", "MVNW_REPOURL",
+    "--build-arg", "CI_MAVEN_SETTINGS",
+    ...Object.entries({ ...reactor, ...args }).flatMap(([key, value]) => ["--build-arg", `${key}=${value}`]),
+    "--target", "image",
+    "--load",
+    ...labelArgs(labels),
+    ...tags.flatMap((tag) => ["-t", tag]),
+    "-f", recipe,
+    context,
+  ]);
 }
 function assertImage(image, arch, component, version, labels) {
   const inspected = inspectImage(image, `linux/${arch}`);
@@ -147,20 +116,18 @@ export function stageResources(app, context, lang) {
 }
 
 // The one CLI parse: help returns before any Git, settings or Docker read; the
-// entry prints its own help. Edition flags (the private --license-mode) are part
-// of `flags` and are interpreted by that entry only.
+// entry prints its own help and interprets its additional flags.
 export function parseJavaArgs(args, flags) {
   if (args.includes("--help") || args.includes("-h")) return { help: true };
   return { help: false, parsed: parseOptions(args, flags) };
 }
 
-export async function buildJavaApp(app, { parsed }) {
+export async function buildJavaApp(app, { parsed }, buildImage = buildPublicImage) {
   const arch = parsed["--arch"];
   const lang = parsed["--prompt-lang"] ?? app.promptLang;
   if (!app.supportedPromptLangs.includes(lang))
     throw new Error(`Expected --prompt-lang ${app.supportedPromptLangs.join("|")}`);
   const version = readRevision(readFileSync(app.versionPom, "utf8"));
-  const editionArgs = exportArgs(app, version);
   const stamp = buildStamp(version, app.repoRoot, sampleSources(app));
   const context = stageContext(app, arch, lang);
   const tag = `${app.component}:${stamp}${app.tagSuffix}-${arch}`;
@@ -168,26 +135,18 @@ export async function buildJavaApp(app, { parsed }) {
   // development build never claims the alias the deployment runs.
   const alias = `${app.component}:deploy${app.tagSuffix}-${arch}`;
   console.log(`[build] ${app.component} ${tag} (prompt=${lang})`);
-  docker([
-    ...baseBuild(arch),
-    ...imageCacheArgs(),
-    ...editionArgs,
-    "--target",
-    "image",
-    "--load",
-    ...imageLabels(app.component, version, stamp),
-    ...labelArgs(app.labels),
-    "--build-arg",
-    `ONTOMATO_PRODUCT_VERSION=${version}`,
-    "--build-arg",
-    `ONTOMATO_PRODUCT_BUILD=${stamp}`,
-    "-t",
-    tag,
-    "-t",
-    alias,
-    "-f",
-    RECIPE,
+  buildImage({
+    recipe: RECIPE,
     context,
-  ]);
+    platform: `linux/${arch}`,
+    tags: [tag, alias],
+    labels: {
+      ...imageLabelValues(app.component, version, stamp),
+      ...app.labels,
+    },
+    args: { ONTOMATO_PRODUCT_VERSION: version, ONTOMATO_PRODUCT_BUILD: stamp },
+    reactor: reactorArgs(app),
+    version,
+  });
   assertImage(tag, arch, app.component, version, app.labels);
 }

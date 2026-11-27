@@ -127,7 +127,7 @@ test("platform products use a reserved identity and are read-only without a doma
   assert.equal(panelAuthoringMemberSchema.safeParse({
     id: projectionId, component: "ObjectList", type: "platform:Trigger", data: { rows: "list" },
   }).success, true);
-  const use = { id: "sales", pageKey: "sales", path: "/sales", panelId };
+  const use = { id: "sales", pageKey: "sales", path: "/sales", names: { en: "Sales" }, panelId };
   assert.deepEqual(builtinApplicationPanelUseSchema.parse(use), use);
   assert.equal(builtinApplicationPanelUseSchema.safeParse({ ...use, panelId: "sales-panel" }).success, false);
 });
@@ -276,7 +276,7 @@ test("declares typed catalogue reads that reuse the current product records and 
   assert.equal(panelReadParameterSchemas.applicationScope.safeParse("maintainable").success, true);
 });
 
-test("panel entry descriptions round-trip without giving an unnamed entry a menu name", async () => {
+test("named entries can stay out of the menu and retain their descriptions", async () => {
   const { applicationCatalogueEntriesSchema } = await import("./application-catalogue");
   const applicationId = "app-reviews";
   const entry = { path: "/applications/app-reviews", renderer: "panels" };
@@ -284,14 +284,17 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
     id: "report", pageKey: "report", panelId: "review-report", path: entry.path + "/report",
   };
   const descriptions = { en: "Review the current report", "zh-CN": "查看当前报告" };
-  const use = { ...base, descriptions };
-  assert.deepEqual(applicationPanelUseSchema.parse(base), base);
+  const use = { ...base, names: { en: "Report" }, inMenu: false, descriptions };
+  const unnamed = registerApplicationPanelUsesRequestSchema.safeParse({ entry, panelUses: [base] });
+  assert.equal(unnamed.success, false);
+  if (!unnamed.success) assert.match(unnamed.error.issues[0]!.message, /Panel entry report names/);
+  assert.deepEqual(applicationPanelUseSchema.parse(use), use);
   assert.deepEqual(
     applicationPanelUseSchema.parse({ ...base, names: { "zh-CN": "报告" }, descriptions: { "zh-CN": "查看当前报告" } }).names,
     { "zh-CN": "报告" },
   );
   for (const invalid of [null, {}, { en: " " }, { en: "Report", "zh-CN": "" }, { en: null }]) {
-    assert.equal(applicationPanelUseSchema.safeParse({ ...base, descriptions: invalid }).success, false);
+    assert.equal(applicationPanelUseSchema.safeParse({ ...use, descriptions: invalid }).success, false);
   }
   const { applicationMetadataSchema, localizedApplicationText } = await import("./application-metadata");
   assert.equal(
@@ -341,7 +344,7 @@ test("all catalogue icons are available to domain applications while unknown key
   assert.equal(invalid.success, false);
   if (!invalid.success) assert.match(invalid.error.issues[0]!.message, /Choose one of app-window/);
   // Entry icons share the same unified icon list on write while keeping stored keys readable.
-  const entryUse = { id: "entry-roles", pageKey: "roles", panelId: "panel-roles", path: "/applications/app-a/roles", icon: "user-cog" };
+  const entryUse = { id: "entry-roles", pageKey: "roles", panelId: "panel-roles", path: "/applications/app-a/roles", names: { en: "Roles" }, icon: "user-cog" };
   assert.equal(applicationPanelUseSchema.parse(entryUse).icon, "user-cog");
   assert.equal(applicationPanelUseSchema.parse({ ...entryUse, icon: "legacy-stored-key" }).icon, "legacy-stored-key");
   assert.equal(applicationPanelUseSchema.safeParse({ ...entryUse, icon: "   " }).success, false);
@@ -635,7 +638,7 @@ test("applicationPanelUseSchema accepts pageComposer bottom/none and rejects inv
     id: "home",
     pageKey: "home",
     panelId: "builtin-product-personal-workspace",
-    path: "/home",
+    path: "/home", names: { en: "Home" },
   };
   assert.equal(applicationPanelUseSchema.parse({ ...base, pageComposer: "none" }).pageComposer, "none");
   assert.equal(applicationPanelUseSchema.parse({ ...base, pageComposer: "bottom" }).pageComposer, "bottom");
@@ -645,6 +648,7 @@ test("applicationPanelUseSchema accepts pageComposer bottom/none and rejects inv
     pageKey: "native-entry",
     kind: "native",
     path: "/settings/native",
+    names: { en: "Native page" },
     pageComposer: "none",
   }).success, false);
 });

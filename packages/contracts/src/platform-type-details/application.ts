@@ -43,7 +43,7 @@ export const applicationTypeDetail = {
     {
       name: "panelUses",
       type: "ApplicationPanelUse[]",
-      description: "Entries in their declared order, including paths, panel references, inputs, menu metadata, and default agents.",
+      description: "Entries in their declared order, including localized entry names, paths, panel references, inputs, menu visibility, and default agents.",
     },
     {
       name: "groups",

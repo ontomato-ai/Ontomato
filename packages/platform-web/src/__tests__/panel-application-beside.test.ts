@@ -30,6 +30,7 @@ const SCHEDULED_TASK = "platform:Trigger";
 const uses: ApplicationPanelUse[] = [
   {
     id: "use-tasks",
+    names: { en: "Scheduled tasks" },
     panelId: "panel-tasks",
     path: "/applications/app-a/tasks",
     pageKey: "panels-trial-a-tasks",
@@ -53,7 +54,7 @@ const silent = ref(false);
 const selected = (primaryKey: string) => ({ selectedTask: primaryKey });
 const contextOf = (address: string, primaryKey: string | null) => ({
   url: address,
-  label: "Scheduled tasks (trial)",
+  label: "Scheduled tasks",
   selection: primaryKey ? [{ kind: SCHEDULED_TASK, id: primaryKey, label: `Task ${primaryKey}` }] : [],
 });
 
@@ -147,7 +148,7 @@ describe("a panel application's page beside the conversation", () => {
       withConversation: true,
       scrollsItself: true,
       address: page,
-      label: "Scheduled tasks (trial)",
+      label: "Scheduled tasks",
     });
     // The panel opened at the state the page's address names, and what it shows rides on the message.
     expect(instances.map((each) => each.initial)).toEqual([selected("task-1")]);
@@ -202,7 +203,7 @@ describe("a panel application's page beside the conversation", () => {
     });
     await flushPromises();
 
-    expect(displayOf(wrapper).pageContext.value).toEqual({ url: page, label: "", selection: [] });
+    expect(displayOf(wrapper).pageContext.value).toEqual({ url: page, label: "Scheduled tasks", selection: [] });
 
     instances[0]!.report();
     await flushPromises();
@@ -241,7 +242,6 @@ describe("a panel application's page beside the conversation", () => {
     instances[0]!.report();
     await flushPromises();
     expect(displayOf(wrapper).pageContext.value).toEqual({ ...contextOf(page, null), label: "Scheduled tasks" });
-    delete uses[0]!.names;
     silent.value = false;
     wrapper.unmount();
   });

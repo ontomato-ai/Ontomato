@@ -34,7 +34,9 @@
       "id": "template-two-entry-detail-use",
       "pageKey": "app-template-two-entry-detail",
       "panelId": "template-two-entry-detail",
-      "path": "/applications/app-template-two-entry/detail"
+      "path": "/applications/app-template-two-entry/detail",
+      "names": { "en": "Agent Definition Detail", "zh-CN": "智能体定义详情" },
+      "inMenu": false
     }
   ]
 }

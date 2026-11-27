@@ -334,7 +334,7 @@ const port = computed<PanelHostPort | null>(() => {
   }
   if (!frameEntryDecisionResolved.value) return null;
   if (frame.hostGroups?.length || isBuiltinProductId(frame.framePanelId)) {
-    const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, router, chat, initialFrame);
+    const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, frame.title, router, chat, initialFrame);
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
@@ -430,11 +430,11 @@ const entryMenu = computed<ApplicationEntryMenu>(() => {
   if (matchingOpenedEntry.value?.menu) return matchingOpenedEntry.value.menu;
   const app = catalogApp.value;
   const frame = effectiveFrame.value;
-  const panelUses = app?.panelUses ?? [];
-  const totalNamed = frame?.hostGroups && frame.hostGroups.length > 0
+  const panelUses = app?.panelUses?.filter(use => use.inMenu !== false) ?? [];
+  const menuCount = frame?.hostGroups && frame.hostGroups.length > 0
     ? frame.hostGroups.reduce((total, group) => total + group.items.length, 0)
-    : panelUses.filter((use) => Boolean(use.names)).length;
-  const singleEntry = app?.singleEntry ?? frame?.singleEntry ?? (totalNamed <= 1);
+    : panelUses.length;
+  const singleEntry = app?.singleEntry ?? frame?.singleEntry ?? (menuCount <= 1);
   return {
     names: app?.names ?? (frame ? { en: frame.title } : undefined),
     singleEntry,

@@ -267,7 +267,7 @@ export const productPanelSchema = z.discriminatedUnion("visibility", [
 export type ProductPanel = z.infer<typeof productPanelSchema>;
 export const currentPanelRecordSchema = productPanelSchema;
 
-/** An entry without a menu name uses the panel's localized name or its stored default. */
+/** Resolve a panel's localized name or its stored default. */
 export function productPanelDisplayName(panel: Pick<ProductPanel, "name" | "content">, locale: string, defaultLocale: string): string {
   const messages = panel.content.messages;
   return messages?.[locale]?.[PANEL_NAME_MESSAGE_KEY]?.trim()
@@ -293,7 +293,9 @@ export const applicationPanelUseSchema = z.object({
   panelId: id,
   path: applicationPanelUsePathSchema,
   defaultAgent: defaultAgentSchema.optional(),
-  names: applicationMetadataSchema.shape.names.optional(),
+  names: applicationMetadataSchema.shape.names,
+  /** Included in the application menu unless explicitly set to false. */
+  inMenu: z.boolean().optional(),
   /** Optional page heading text, independent of whether the entry is in the menu. */
   descriptions: z.record(z.string().refine(text => text.trim().length > 0, "Expected a nonblank description"))
     .refine(text => Object.keys(text).length > 0, "At least one localized description is required").optional(),
@@ -320,6 +322,7 @@ export const builtinNativeEntrySchema = z.object({
   kind: z.literal("native"),
   path: applicationPanelUsePathSchema,
   names: applicationPanelUseSchema.shape.names,
+  inMenu: applicationPanelUseSchema.shape.inMenu,
   descriptions: applicationPanelUseSchema.shape.descriptions,
   icon: applicationPanelUseSchema.shape.icon,
   groupKey: applicationPanelUseSchema.shape.groupKey,
@@ -333,13 +336,17 @@ export type FrameConversationEntry = z.infer<typeof frameConversationEntrySchema
 
 export const panelApplicationEntryUseSchema =
   z.unknown().transform((value, ctx): ApplicationPanelUse | FrameConversationEntry => {
-    const target = value && typeof value === "object" && !Array.isArray(value)
-      && "kind" in value && (value as { kind?: unknown }).kind === "frame-conversation"
+    const entry = value && typeof value === "object" ? value as { id?: unknown; kind?: unknown } : undefined;
+    const target = entry?.kind === "frame-conversation"
       ? frameConversationEntrySchema
       : applicationPanelUseSchema;
     const parsed = target.safeParse(value);
     if (parsed.success) return parsed.data;
-    for (const issue of parsed.error.issues) ctx.addIssue(issue);
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue(issue.path[0] === "names" && typeof entry?.id === "string"
+        ? { ...issue, message: `Panel entry ${entry.id} names: ${issue.message}` }
+        : issue);
+    }
     return z.NEVER;
   });
 

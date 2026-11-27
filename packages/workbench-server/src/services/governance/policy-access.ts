@@ -264,7 +264,7 @@ function entryUsageByObject(context: Awaited<ReturnType<typeof entryContext>>) {
   const usage = new Map<string, Array<{ id: string; label: string }>>();
   for (const [entryId, objects] of context.entryObjects) {
     if (!grantedEntries.has(entryId)) continue;
-    const label = context.entries.find(entry => entry.entryId === entryId)?.label ?? entryId;
+    const label = context.entries.find(entry => entry.entryId === entryId)!.label;
     for (const item of objects.values()) {
       const key = objectUsageKey(item.kind, item.id);
       const entries = usage.get(key) ?? [];
@@ -432,9 +432,10 @@ export async function inspectPolicyAccessPayload(
       requiresScope: true, targetClass: action?.targetClass ?? null, targetKeyField: action?.targetKeyField ?? null,
     } : {}) };
   });
+  const entry = context.entries.find(entry => entry.entryId === entryId);
   return {
     ...result, targetPolicyId: result.targetPolicyId ?? targetPolicyId ?? null,
-    entry: { ...result.entry, label: context.entries.find(entry => entry.entryId === entryId)?.label ?? entryId },
+    entry: { ...result.entry, ...(entry && { label: entry.label }) },
     items, missingGrantableItems,
   };
 }

@@ -31,7 +31,7 @@ export type PageDescriptionEntrance = {
   applicationId: string;
   useId: string;
   path: string;
-  names?: Record<string, string>;
+  names: Record<string, string>;
   applicationNames?: Record<string, string>;
 };
 
@@ -226,7 +226,7 @@ function describePanel(
 }
 
 function localizedName(names: PageDescriptionEntrance["names"], locale: string) {
-  return names && (names[locale] ?? names.en ?? Object.values(names)[0]);
+  return names[locale] ?? names.en ?? Object.values(names)[0];
 }
 
 function describeEntrances(sources: readonly PageDescriptionEntrance[], locale: string): string {
@@ -236,8 +236,8 @@ function describeEntrances(sources: readonly PageDescriptionEntrance[], locale: 
     heading,
     'Even when no page is open beside the conversation, call `present({ target: "<path>" })` with a target below to open that entrance beside the conversation.',
     ...sources.map(({ names, applicationNames, path, applicationId, useId }) => {
-      const name = localizedName(names, locale) ?? useId;
-      const applicationName = localizedName(applicationNames, locale);
+      const name = localizedName(names, locale);
+      const applicationName = applicationNames && localizedName(applicationNames, locale);
       const label = applicationName && applicationName !== name ? `${name} (${applicationName})` : name;
       const source = { kind: "registered", applicationId, useId };
       return `- ${label} · target: \`${path}\` · /read source: \`${JSON.stringify(source)}\``;
@@ -338,7 +338,7 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
     "### Read current data",
     "Before answering what is on this page or what is selected, read the relevant named data below and answer from the result. Use the page context to identify the entry and selected object, then read its current data.",
     "Use `node /skills/ontomato-page-operator/client.mjs read '<json>'`. The JSON shape is `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`; copy the registered source, member path, exact Named data key, and declared inputs from this description or current page context.",
-    "A ready result carries the current owner data in `value`. If the result is forbidden, check the current entry and member path. For an error, use its message to correct the request. If the read still fails or remains forbidden, tell the user that the page data could not be read and give the reason; never substitute data from another endpoint, prior knowledge, or a guess as the page's current data.",
+    "A ready result carries the current owner data in `value`. If the result is forbidden, check the current entry and member path. For an error, use its message to correct the request. If the read still fails or remains forbidden, tell the user that the page data could not be read and give the reason; never substitute data from another endpoint, prior knowledge, or a guess as the page's current data. If a data scope is configured for your agent, a successful read includes only data inside that scope; say the result is within that configured scope and do not present it as the unrestricted page total.",
     ...(hasPlacedMembers ? [
       "A selection's `memberPath` identifies the child panel that supplied it. To inspect the mounted child's declared state and members, POST `{source,memberPath}` to `$ONTOMATO_PANEL_OPERATIONS_URL/nested` with the same callback headers.",
     ] : []),

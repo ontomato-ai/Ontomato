@@ -137,7 +137,11 @@ public class AgentRuntimeClient {
     return value.isBlank() ? new JSONObject() : JSON.parseObject(value);
   }
 
-  public record SkillVersion(Map<String, Object> skill, String digest) {}
+  public record SkillVersion(Map<String, Object> skill, String digest, boolean preload) {
+    public SkillVersion(Map<String, Object> skill, String digest) {
+      this(skill, digest, false);
+    }
+  }
 
   public SkillVersion publishSkill(String correlation, Map<String, Object> skill,
       List<Map<String, String>> files) throws Exception {

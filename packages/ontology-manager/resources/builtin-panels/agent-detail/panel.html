@@ -924,6 +924,7 @@
                           <tr>
                             <th>{{ t("capabilities.nameColumn") }}</th>
                             <th>{{ t("capabilities.descriptionColumn") }}</th>
+                            <th>{{ t("capabilities.preloadColumn") }}</th>
                             <th class="agent-detail-choice-actions">{{ t("capabilities.actionsColumn") }}</th>
                           </tr>
                         </thead>
@@ -941,6 +942,14 @@
                               </div>
                             </td>
                             <td class="agent-detail-choice-description">{{ row.description || t("capabilities.noDescription") }}</td>
+                            <td>
+                              <sdk-checkbox
+                                :model-value="row.preload"
+                                size="small"
+                                :disabled="disabled"
+                                @update:model-value="setSkillPreload(value, row.key, $event, set)"
+                              ></sdk-checkbox>
+                            </td>
                             <td class="agent-detail-choice-actions">
                               <sdk-button size="small" text type="danger" :disabled="disabled" @click="removeSkill(value, row.key, set)">
                                 {{ t("capabilities.remove") }}

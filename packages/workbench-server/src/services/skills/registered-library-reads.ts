@@ -2,7 +2,7 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { skillWriteRestriction } from "../../core/skills/types";
 import { panelReadParameterSchemas, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { skillEditorAccessDecisionSchema, skillEditorAccessRequestSchema } from "@ontomato/contracts/skill-editor-access";
-import { DELETE_SKILL, SKILL } from "@ontomato/contracts/platform-object-types";
+import { DELETE_SKILL, EXPORT_SKILL, SKILL } from "@ontomato/contracts/platform-object-types";
 import { z } from "zod";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -13,7 +13,7 @@ import { presentRowOperationsForRows } from "../product-panels/direct-operations
 import type { ProductOwner } from "../product-governance/service-authentication";
 import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
 import { createSkillReadAdapter, type SkillResolveRequest } from "./panel-reads";
-import { skillDeleteRefusal } from "./panel-operations";
+import { generatedSkillExportRefusal, skillDeleteRefusal } from "./panel-operations";
 import { readSkillView } from "./view";
 
 const skillLibraryAccessCall = { type: SKILL, name: "count", parameters: {} };
@@ -24,9 +24,9 @@ export function prepareSkillLibraryRead(
 ) {
   const { typeId, method, primaryKey } = selection;
   if (typeId !== SKILL || (method !== "count" && method !== "query" && method !== "record" && method !== "files" && method !== "file")) return;
-  const rowDeletes = method === "query" ? Object.fromEntries(Object.entries(projection.operations ?? {}).filter(([, { operation, target }]) =>
-    operation.kind === "PlatformOperation" && operation.id === DELETE_SKILL && target && "row" in target)) : {};
-  const describeDeletes = Object.keys(rowDeletes).length > 0;
+  const rowOperations = method === "query" ? Object.fromEntries(Object.entries(projection.operations ?? {}).filter(([, { operation, target }]) =>
+    operation.kind === "PlatformOperation" && (operation.id === DELETE_SKILL || operation.id === EXPORT_SKILL) && target && "row" in target)) : {};
+  const describeDeletes = Object.keys(rowOperations).length > 0;
   return {
     call: describeDeletes ? { type: SKILL, name: "queryWithDeleteAccess", parameters: {} } : skillLibraryAccessCall,
     async present(payload: unknown) {
@@ -38,11 +38,17 @@ export function prepareSkillLibraryRead(
     },
     rowOperations: describeDeletes ? (payload: unknown, inputs: Readonly<Record<string, unknown>>, rows: readonly PanelRecord[]) => {
       const decision = objectDecisionSchema.parse(payload);
-      return presentRowOperationsForRows({ ...projection, operations: rowDeletes }, inputs, rows, SKILL, (_handler, _binding, targets) =>
-        new Map(targets.flatMap(({ rowKey, row }) => {
+      return presentRowOperationsForRows({ ...projection, operations: rowOperations }, inputs, rows, SKILL, (handler, _binding, targets) => {
+        if (handler.handlerRef === EXPORT_SKILL)
+          return new Map(targets.flatMap(({ rowKey, target }) => {
+            const unavailable = generatedSkillExportRefusal(target.primaryKey, credentials.locale);
+            return unavailable ? [[rowKey, unavailable]] : [];
+          }));
+        return new Map(targets.flatMap(({ rowKey, row }) => {
           const reason = decision.allowed ? row.fields.writeRestriction as string : decision.reason;
           return reason ? [[rowKey, { reason }]] : [];
-        })));
+        }));
+      });
     } : undefined,
   };
 }

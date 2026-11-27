@@ -274,7 +274,7 @@ beforeAll(async () => {
       expect(["host-reader", "host-no-entry", "another-domain-reader"]).toContain(req.header("tk"));
       res.json({ success: true, data: {
         applicationId: "app-builtin-fixture", menu: { singleEntry: true, groups: [], panelUses: [] },
-        use: { id: "catalogue", pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
+        use: { id: "catalogue", names: { en: "catalogue" }, pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
           panelId: builtinPanelId },
       } });
       return;
@@ -285,7 +285,7 @@ beforeAll(async () => {
       if (useId === "hidden" && req.path.endsWith("/resolve-entry")) { res.sendStatus(403); return; }
       res.json({ success: true, data: {
         applicationId: "app-frame-host", menu: { singleEntry: true, groups: [], panelUses: [] },
-        use: { id: useId, pageKey: useId, path: `/applications/app-frame-host/${useId}`,
+        use: { id: useId, names: { en: String(useId) }, pageKey: useId, path: `/applications/app-frame-host/${useId}`,
           panelId: useId === "operable" ? frameOperationContentId : frameHostContentId },
         ...((useId === "framed" || useId === "hidden") && { framePanelId: frameHostPanelId }),
         ...(useId === "operable" && { framePanelId: state.operationFrameId }),
@@ -296,7 +296,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("host-reader");
     res.json({ success: true, data: {
       applicationId: "app-mixed", menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: "mixed", pageKey: "mixed", path: "/applications/app-mixed/mixed",
+      use: { id: "mixed", names: { en: "mixed" }, pageKey: "mixed", path: "/applications/app-mixed/mixed",
         panelId: codePanelId },
     } });
   });

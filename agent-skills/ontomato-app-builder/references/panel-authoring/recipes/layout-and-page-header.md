@@ -59,8 +59,8 @@ await mountPanel({
 });
 ```
 
-- **Full-width catalog → full-width detail.** Put the catalog in the application menu (`names` set on its
-  `panelUse`) and give the detail page its own non-menu entry (`names` omitted). Clicking a row (`@choose`) builds a
+- **Full-width catalog → full-width detail.** Put the catalog in the application menu
+  and give the detail page its own named entry with `inMenu: false`. Clicking a row (`@choose`) builds a
   flat URL with `panelAddress(DETAIL_PATH, { selected: item.primaryKey })` from `@ontomato/sdk/panel` and calls
   `navigate(address)`. Put New in the catalog header's top-right actions, open a centered dialog for required fields,
   and use the saved identity to open the detail entry. Back calls `navigateBack(CATALOG_PATH)`; the host returns to

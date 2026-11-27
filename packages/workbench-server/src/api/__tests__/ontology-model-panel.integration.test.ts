@@ -240,7 +240,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("model-reader");
     res.json({ success: true, data: {
       applicationId: use.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: use.useId, pageKey: use.useId, path: `/applications/${use.applicationId}/${use.useId}`, panelId },
+      use: { id: use.useId, names: { en: String(use.useId) }, pageKey: use.useId, path: `/applications/${use.applicationId}/${use.useId}`, panelId },
     } });
   });
   javaOwner(app);

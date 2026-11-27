@@ -82,7 +82,7 @@ function catalogEntry(applicationId: string, use: z.infer<typeof applicationMenu
     panelId: isApplicationPanelUse(use) ? use.panelId : null,
     kind: isApplicationPanelUse(use) ? "panel" : use.kind,
     path: use.path,
-    ...localizedFields(use.names, locale, "name"),
+    name: localizedText(use.names, locale)!,
     ...localizedFields(use.descriptions, locale, "description"),
     ...(use.groupKey && { groupKey: use.groupKey }),
   };
@@ -165,7 +165,7 @@ export async function searchPages(owner: AssistantOwner, credentials: AssistantC
     if (!hit) return [];
     const locale = credentials.locale;
     const applicationLabel = localizedText(application.names, locale) ?? application.id;
-    const entryLabel = entry.name ?? entry.entryKey;
+    const entryLabel = entry.name;
     const groupLabel = group && (localizedText(group.names, locale) ?? group.key);
     return [{
       application: {
@@ -189,7 +189,7 @@ export async function readPageDescription(owner: AssistantOwner, credentials: As
     applicationId: request.applicationId,
     useId: resolution.use.id,
     path: resolution.use.path,
-    ...(resolution.use.names && { names: resolution.use.names }),
+    names: resolution.use.names,
     ...(resolution.menu.names && { applicationNames: resolution.menu.names }),
   }, Object.keys(resolution.use.inputs ?? {}));
   return pageDescriptionResponseSchema.parse({ markdown });

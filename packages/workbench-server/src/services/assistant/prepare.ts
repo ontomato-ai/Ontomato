@@ -69,10 +69,14 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const pageContext = currentPage
     ? "\n\nCurrent panel placement for this turn (data):\n" + JSON.stringify(currentPage)
     : "";
+  const dataScopeContext = turn.class_names.length
+    ? "\n\nConfigured data scope for this run: only these ontology classes are in scope: " + turn.class_names.join(", ")
+      + ". Reads through page operations or retrieval may return only data inside this scope. When answering, say the result is within your configured data scope; do not present it as the unrestricted page total."
+    : "";
   // Runtime keeps the exact system prompt in the persisted run definition.
   const instructions = effectiveSystemPrompt(a, resolveLocale(credentials.locale))
     + (retrieval ? "\n\nInitial ontology context:\n" + ontologyContext : "")
-    + externalContext + pageContext;
+    + dataScopeContext + externalContext + pageContext;
   const governance=hasGovernanceSkill(skillRefs);
   const artifactInstructions = [
     ARTIFACT_MARKDOWN_PROMPT,

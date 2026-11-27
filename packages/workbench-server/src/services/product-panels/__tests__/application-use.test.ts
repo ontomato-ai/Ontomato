@@ -32,7 +32,7 @@ it("identifies a denied entrance as an access refusal for the initiating user", 
 });
 
 it("resolves a native entry without treating its frame as a registered panel root", async () => {
-  const use = { id: ref.useId, pageKey: "landing", kind: "native", path: "/application" };
+  const use = { id: ref.useId, names: { en: String(ref.useId) }, pageKey: "landing", kind: "native", path: "/application" };
   const data = {
     applicationId: ref.applicationId, use, framePanelId: "builtin-product-platform-frame",
     menu: { singleEntry: true, groups: [], panelUses: [] },

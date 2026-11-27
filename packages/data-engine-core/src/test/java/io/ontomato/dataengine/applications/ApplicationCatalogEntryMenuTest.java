@@ -19,7 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class ApplicationCatalogEntryMenuTest {
-    @Test void singleEntryCountsRegisteredNamesBeforeFilteringForTheReader() {
+    @Test void singleEntryCountsRegisteredMenuEntriesBeforeFilteringForTheReader() {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.entries((actor, key) -> !key.equals("multi/second"));
         var grants = mock(IdentityPrincipalDirectory.class);
@@ -27,7 +27,7 @@ class ApplicationCatalogEntryMenuTest {
         var first = use("first", Map.of("en", "First"));
         var second = use("second", Map.of("en", "Second"));
         var only = use("only", Map.of("en", "Only"));
-        var detail = use("detail", null);
+        var detail = hiddenUse("detail");
         var multi = app("multi", List.of(first, second));
         var single = app("single", List.of(only, detail));
         var leaf = app("leaf", List.of());
@@ -55,15 +55,15 @@ class ApplicationCatalogEntryMenuTest {
         assertFalse(multiDetail.getBooleanValue("singleEntry"));
     }
 
-    @Test void entryMenuIncludesFrameConversationWithoutAffectingGroupsOrSingleEntry() {
+    @Test void entryMenuCountsFrameConversationWithoutChangingGroups() {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.allowEntries();
         var grants = mock(IdentityPrincipalDirectory.class);
         var user = new QueryAccessService.GrantUser("reader", "domain-a");
-        var conversation = new ApplicationPanelUse("ops-diagnosis", "ops-diagnosis", null, "/ops/diagnosis", null, null, null, null, null, null,
+        var conversation = new ApplicationPanelUse("ops-diagnosis", "ops-diagnosis", null, "/ops/diagnosis", null, Map.of("en", "New chat"), null, null, null, null,
             ApplicationPanelUse.FRAME_CONVERSATION_KIND, null);
         var grouped = new ApplicationPanelUse("ops-results", "ops-results", "builtin-product-ops-results", "/ops/results", null, Map.of("en", "Test results"), null, null, "autotest", null, null, null);
-        var detail = use("ops-case-detail", null);
+        var detail = hiddenUse("ops-case-detail");
         var autotestGroup = new ApplicationCatalog.Group("autotest", Map.of("en", "Automatic tests"), 10);
         var unusedGroup = new ApplicationCatalog.Group("unused", Map.of("en", "Unused"), 20);
         var app = JSONObject.of(
@@ -87,8 +87,8 @@ class ApplicationCatalogEntryMenuTest {
         assertEquals(List.of(conversation, grouped), fromFeature.panelUses());
         assertEquals(List.of(autotestGroup), fromConversation.groups());
         assertEquals(List.of(autotestGroup), fromFeature.groups());
-        assertTrue(fromConversation.singleEntry());
-        assertTrue(fromFeature.singleEntry());
+        assertFalse(fromConversation.singleEntry());
+        assertFalse(fromFeature.singleEntry());
     }
 
     @Test void mixedNativeApplicationKeepsItsDeclaredHomeBesideStructuredEntries() {
@@ -117,6 +117,11 @@ class ApplicationCatalogEntryMenuTest {
 
     private static ApplicationPanelUse use(String id, Map<String, String> names) {
         return new ApplicationPanelUse(id, id, "panel-" + id, "/" + id, null, names);
+    }
+
+    private static ApplicationPanelUse hiddenUse(String id) {
+        return new ApplicationPanelUse(id, id, "panel-" + id, "/" + id, null, Map.of("en", "Detail"),
+            null, null, null, null, null, null, false);
     }
 
     private static JSONObject app(String id, List<ApplicationPanelUse> uses) {

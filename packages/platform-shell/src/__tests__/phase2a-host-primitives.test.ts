@@ -126,6 +126,7 @@ describe("usePanelInstance currentUser propagation", () => {
   it("passes trimmed currentUser to DirectPanelRun and iframe PanelHostMessage", async () => {
     const use = {
       id: "use-sample",
+      names: { en: "use-sample" },
       pageKey: "sample",
       panelId: samplePanel.id,
       path: "/sample",

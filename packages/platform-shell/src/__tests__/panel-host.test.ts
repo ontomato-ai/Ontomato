@@ -77,6 +77,7 @@ const definition = ({ content, manifest }: ProductPanel) => ({ content, manifest
 function useRelation(id: string, pageKey: string, panelId: string, path: string): ApplicationPanelUse {
   return {
     id,
+    names: { en: String(id) },
     pageKey,
     panelId,
     path,

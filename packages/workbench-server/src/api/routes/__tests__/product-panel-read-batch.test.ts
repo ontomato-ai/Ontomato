@@ -98,7 +98,7 @@ beforeEach(() => {
     if (useId === "denied-entry") throw new HttpError(403, "Denied");
     return { text: JSON.stringify({ success: true, data: {
       applicationId: source.applicationId, framePanelId: root,
-      use: { id: useId, pageKey: "list", panelId: "panel-content", path: "/ontology/list" },
+      use: { id: useId, names: { en: String(useId) }, pageKey: "list", panelId: "panel-content", path: "/ontology/list" },
     } }) };
   });
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture");
@@ -216,7 +216,7 @@ function stubFormalOwner() {
         ? { kind: "error", status: 403, error: "Denied" }
         : { kind: "ready", entry: {
           applicationId: source.applicationId, framePanelId: root,
-          use: { id: useId, pageKey: "list", panelId: root, path: "/ontology/list" },
+          use: { id: useId, names: { en: String(useId) }, pageKey: "list", panelId: root, path: "/ontology/list" },
         } });
       return { text: JSON.stringify({ viewer, entries }) };
     }
@@ -311,7 +311,7 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
   const runId = "11111111-1111-4111-8111-111111111111";
   const sessionId = "22222222-2222-4222-8222-222222222222";
   const run = { status: "running", sessionId, channel: { authority: { executionKind: "live" } } };
-  const use = { id: source.useId, pageKey: "list", panelId: "panel-content", path: "/ontology/list" };
+  const use = { id: source.useId, names: { en: String(source.useId) }, pageKey: "list", panelId: "panel-content", path: "/ontology/list" };
   mocks.run.mockResolvedValue(run);
   mocks.get.mockImplementation(async (_endpoint, url: string, options) => {
     const pathname = new URL(url, "http://data-engine.test").pathname;

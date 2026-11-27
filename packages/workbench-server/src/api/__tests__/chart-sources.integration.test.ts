@@ -140,7 +140,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("bob");
     res.json({ success: true, data: {
       applicationId: "chart-pilot", menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: "chart", pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot" },
+      use: { id: "chart", names: { en: "chart" }, pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot" },
     } });
   });
   const authenticate: express.RequestHandler = (req, _res, next) => {

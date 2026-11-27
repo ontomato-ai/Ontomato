@@ -42,7 +42,7 @@ export function appendProductGraphAuthorization(
       target = `entry:${entry.id}`;
       addNode({
         id: target, kind: "entry", category: "ontology",
-        name: localizedApplicationText(entry.names, locale ?? "en") || entry.pageKey,
+        name: localizedApplicationText(entry.names, locale ?? "en")!,
       });
       addEdge(application.nodeId, target, "contains", "product-index");
     }

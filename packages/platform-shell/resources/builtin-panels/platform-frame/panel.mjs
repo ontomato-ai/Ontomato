@@ -8,7 +8,7 @@ await mountPanel({
       const hostGroups = context.hostMenu?.value;
       const visibleCount = hostGroups && hostGroups.length > 0
         ? hostGroups.reduce((total, group) => total + group.items.length, 0)
-        : (context.entryMenu.value?.panelUses ?? []).filter((use) => Boolean(use.names)).length;
+        : context.entryMenu.value?.panelUses.length ?? 0;
       if (visibleCount === 0) return false;
       const singleEntry = context.entryMenu.value?.singleEntry;
       if (singleEntry === false) return true;

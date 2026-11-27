@@ -131,7 +131,7 @@ export const platformOntologyEn = {
   "platformOntology.typeDetails.application.properties.allowStandalone": "Whether this application can be opened standalone without the platform sidebar and expose an external link.",
   "platformOntology.typeDetails.application.properties.externalLink": "The standalone entry link exposed when standalone opening is enabled; omitted when disabled.",
   "platformOntology.typeDetails.application.properties.entry": "The application's landing path with an optional renderer and home path.",
-  "platformOntology.typeDetails.application.properties.panelUses": "Entries in their declared order, including paths, panel references, inputs, menu metadata, and default agents.",
+  "platformOntology.typeDetails.application.properties.panelUses": "Entries in their declared order, including localized entry names, paths, panel references, inputs, menu visibility, and default agents.",
   "platformOntology.typeDetails.application.properties.groups": "Menu group keys, translated names, and sort order.",
   "platformOntology.typeDetails.application.properties.framePanelId": "The ID of the application's configured frame panel, visible to maintainers.",
   "platformOntology.typeDetails.application.properties.theme": "The application's light and dark theme overrides, visible to maintainers.",
