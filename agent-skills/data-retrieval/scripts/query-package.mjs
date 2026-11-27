@@ -27,7 +27,7 @@ export async function collectPackage(filename) {
   if ((await lstat(absolute)).isSymbolicLink()) throw new Error("Package links are not allowed");
   const text = await readFile(absolute, "utf8"), value = JSON.parse(text);
   if (value.schema !== "ontomato.query-package.v1") {
-    if (!value.answer?.steps) throw new Error("Expected an ontology DSL or query-package manifest");
+    if (!value.answer?.steps) throw new Error('Expected one DSL object, {"problem": "...", "answer": {"steps": [...]}} (not an array), or a query-package manifest with "schema": "ontomato.query-package.v1"');
     return dslPackage(text);
   }
   const manifest = value;
