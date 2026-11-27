@@ -156,7 +156,6 @@ public class AgentChannelController {
     var narrowed=AgentJson.copy(authority);
     if(context.access()!=null) {
       narrowed.put("classNames",context.access().classNames());
-      if(context.access().target().testing()) narrowed.put("executionContextId",context.access().target().contextId());
     }
     prepared.put("authority",narrowed);prepared.put("executionActor",executionActor);
     return OntologyAgentDefinitions.withVisibility(prepared,reader);
