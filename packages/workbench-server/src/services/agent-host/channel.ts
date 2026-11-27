@@ -13,7 +13,6 @@ import { assistantStore } from "../assistant/store";
 import { diagnosisService, createDiagnosis, requireDiagnosisAgent, prepareDiagnosis } from "../ops-diagnosis/service";
 import { allowedAgents } from "../assistant/authorization";
 import { restoreAgentCaller } from "./caller";
-import { answerText } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { presentationCallback, releasePresentationRun, visibilityReader } from "./presentation";
 
@@ -113,7 +112,7 @@ export const agentChannelService = {
     // A reply holds its credential chain until the checks of the datasets it cited and their candidates have ended.
     const settled = status !== "running" && (body.execution.session.providerId !== "workbench"
       || await assistantService.qualitySettled(body.execution.runId, owner));
-    return { settled, status, summary: answerText(snapshot) || snapshot.run.errorMessage || status,
+    return { settled, status,
       process: { mode: "inline", runtimeSessionId: snapshot.run.sessionId, runtimeRunId: snapshot.run.id },
       results: [],
       files:snapshot.artifacts.filter(file=>file.runId===snapshot.run.id && file.path.startsWith("outputs/")).map(file=>({id:file.id,name:path.posix.basename(file.path),mediaType:file.mediaType,href:`/platform/agent-channel/tasks/${snapshot.run.id}/files/${file.id}`})) };

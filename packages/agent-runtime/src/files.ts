@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
+  chmod,
+  link,
   mkdir,
   open,
   readFile,
@@ -8,6 +10,7 @@ import {
   rm,
   lstat,
   readdir,
+  stat,
 } from "node:fs/promises";
 import path from "node:path";
 import type { RuntimeFileMetadata } from "@ontomato/contracts/agent-runtime-artifacts";
@@ -44,7 +47,7 @@ export class ArtifactFiles {
     const target = this.blob(sha256);
     await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
     const temp = target + "." + randomUUID();
-    const file = await open(temp, "wx", 0o600);
+    const file = await open(temp, "wx", 0o444);
     try {
       await file.writeFile(bytes);
       await file.sync();
@@ -53,6 +56,19 @@ export class ArtifactFiles {
     }
     await rename(temp, target);
     return { sha256, size: bytes.byteLength, mediaType: mediaType(name) };
+  }
+  /** Link the immutable blob into a session workspace without copying its bytes. */
+  async link(metadata: RuntimeFileMetadata, destination: string) {
+    const source = this.blob(metadata.sha256);
+    await chmod(source, 0o444);
+    const expected = await stat(source);
+    try {
+      await link(source, destination);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const existing = await stat(destination);
+      if (existing.dev !== expected.dev || existing.ino !== expected.ino) throw error;
+    }
   }
   async read(metadata: RuntimeFileMetadata): Promise<Buffer> {
     const bytes = await readFile(this.blob(metadata.sha256));
@@ -80,8 +96,9 @@ export class ArtifactFiles {
       try {
         for (const name of (await readdir(pinned)).sort()) {
           const full = path.join(pinned, name),
-            relative = `${prefix}/${name}`,
-            stat = await lstat(full);
+            relative = `${prefix}/${name}`;
+          if (relative === "outputs/agents" || relative.startsWith("outputs/agents/")) continue;
+          const stat = await lstat(full);
           if (stat.isSymbolicLink())
             throw new Error("Output snapshots cannot follow symbolic links");
           if (stat.isDirectory()) {

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { truncationSchema } from "./data-retrieval";
 import { runtimeIdSchema as id,runtimeTimestampSchema } from "./agent-runtime-values";
 
 export const agentTaskStatusSchema = z.enum(["starting", "running", "completed", "failed", "cancelled"]);
@@ -13,10 +12,6 @@ export const qualityResultSchema = z.object({
   conclusion: z.string(), fittedQuestion: z.string(),
 }).strict();
 
-/** Current round facts and the datasets the retriever delivered; this revision is not a per-delivery revision claim. */
-export const retrievalExtensionSchema=z.object({ question: z.string(),decisionRevision: z.number().int().nonnegative(),datasets: z.array(z.object({
-  id, title: z.string(), rowCount: z.number().int().nonnegative(), truncation: truncationSchema.nullable(),
-}).strict()) }).strict();
 /** The formal outputs one check covers: those its reply cited from one retrieval. */
 export const qualityChecksSchema=z.object({ datasets: z.array(z.object({ id, title: z.string().nullable() }).strict()) }).strict();
 /**

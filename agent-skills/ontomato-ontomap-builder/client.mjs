@@ -345,7 +345,7 @@ export async function agentChannelCommand(cfg,argv,headers={}) {
     command={op,session,message,...(replyTo?{replyTo}:{}),...(steer?{steer:true}:{}),...(needsInput?{needsInput:true,defaultAssumption}:{})};
   } else if(op==="read") {
     const view=take(args,"--view"),cursor=take(args,"--cursor"),limit=take(args,"--limit");
-    command={op,taskId:args.shift(),...(view?{view}:{}),...(cursor?{cursor:finiteNumber(cursor,"--cursor")} : {}),...(limit?{limit:finiteNumber(limit,"--limit")} : {}),...(files?{files:true}:{})};
+    command={op,taskId:args.shift(),...(view?{view}:{}),...(cursor?{cursor:finiteNumber(cursor,"--cursor")} : {}),...(limit?{limit:finiteNumber(limit,"--limit")} : {})};
   } else if(op==="cancel") command={op,taskId:args.shift()};
   else throw new Error("agent requires list, start, send, read or cancel");
   if(op!=="list" && args.length) throw new Error(`Unexpected agent arguments: ${args.join(" ")}`);

@@ -14,10 +14,9 @@ import type { Scope, MessageRow } from "./store";
 import { ChannelStore } from "./channel-store";
 import { RuntimeError, safeMessage } from "./errors";
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
-import { datasetPayloadSchema } from "@ontomato/contracts/data-retrieval";
 
 const CHANNEL_TOOL_DESCRIPTION =
-  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its result will wake you with a notification when finished; if you need to wait for the child task, end this turn instead of polling with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, files, view, cursor, limit; inspects an execution or downloads its delivered files after completion, not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
+  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its result will wake you with a notification when finished; if you need to wait for the child task, end this turn instead of polling with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, view, cursor, limit; inspects an execution, its delivered file references, or its messages, not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
 
 const CHANNEL_TOOL_PARAMETERS: RuntimeJsonObject = {
   type: "object",
@@ -49,7 +48,6 @@ const CHANNEL_TOOL_PARAMETERS: RuntimeJsonObject = {
     limit: { type: "number" },
     steer: { type: "boolean" },
     needsInput: { type: "boolean" },
-    files: { type: "boolean" },
     replyTo: { type: "string" },
     defaultAssumption: { type: "string" },
     options: {
@@ -78,18 +76,6 @@ export function channelToolDeclaration(): RuntimeToolDeclaration {
 
 function requestSignal(signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([AbortSignal.timeout(30000), signal]) : AbortSignal.timeout(30000);
-}
-
-/** Include a small, complete dataset in the tool result so its consumer needs no second read. */
-function smallDataset(name: string, bytes: Buffer) {
-  if (!name.endsWith(".dataset.json") || bytes.length > 32_768) return undefined;
-  let decoded: unknown;
-  try { decoded = JSON.parse(bytes.toString("utf8")); } catch { return undefined; }
-  const parsed = datasetPayloadSchema.safeParse(decoded);
-  if (!parsed.success || parsed.data.rows.length > 10) return undefined;
-  const { rows, columns, assumptions, selfCheck, truncation } = parsed.data;
-  const summary = { rows, columns, assumptions, selfCheck, truncation };
-  return Buffer.byteLength(JSON.stringify(summary)) <= 4_096 ? summary : undefined;
 }
 
 export interface ExternalAgentCaller { kind:"external";actor:AgentActorRef;authority:AgentRunContext["authority"];language:string;credential:AgentCredential }
@@ -456,14 +442,26 @@ export class AgentChannel {
     const intent = await this.facts.intent(scope, runId);
     await this.announce(intent);
     const parent = intent.channel.requestedBy;
-    const delivery = preparedFailure || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(scope,runId))
-      ? { status: intent.status, summary: intent.error ?? intent.status, settled:true }
+    const missingRun = preparedFailure || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(scope,runId));
+    const delivery = missingRun
+      ? { status: intent.status, settled: true, files: [] }
       : agentDeliverySchema.parse(await this.callback(intent, "read"));
-    if (delivery.status === "running" || delivery.status === "starting") return;
+    if (delivery.status === "running" || delivery.status === "starting" || !delivery.settled) return;
     if (parent && !(intent.cancelled && intent.cancelMode!=="model")) {
+      let content = intent.error ?? delivery.status;
+      if (delivery.status === "completed") {
+        const reply = await this.runtime.store.finalReply(scope, runId);
+        content = reply && reply.role === "assistant"
+          ? reply.content.filter(part => part.type === "text").map(part => part.text).join("\n")
+          : "";
+      }
+      const parentScope = this.scope(parent.session, scope.domainId);
+      const files = delivery.files.length
+        ? await this.runtime.linkAgentFiles(parentScope, parent.session.sessionId, scope, intent.session.sessionId, runId, delivery.files)
+        : [];
       await this.deliver(parent.session, intent.channel.actor, {
         role: "notification", kind: "agent-result", source: { session: intent.session, runId },
-        outcome: delivery.status, content: delivery.summary, timestamp: Date.now(),
+        outcome: delivery.status, content, files, timestamp: Date.now(),
       }, { resultRecipientRunId: parent.runId });
     }
     if (delivery.settled) this.release(intent);
@@ -497,7 +495,7 @@ export class AgentChannel {
     }
     const fact = midRound && message.kind === "agent-result" ? `\n${MID_ROUND_RESULT_NOTIFICATION_FACT}` : "";
     return { role:"user", timestamp:message.timestamp,
-      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}${fact}` };
+      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome,files:message.files})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}${fact}` };
   }
   tool(scope: Scope, run: RuntimeRun): PlatformTool {
     return {
@@ -573,18 +571,9 @@ export class AgentChannel {
     const questions=await this.facts.questions(entry.scope,{session:intent.session,runId:intent.id});
     if (intent.status === "starting" || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(entry.scope,intent.id))) return { taskId:intent.id,sessionRef:intent.session,status:intent.status,error:intent.error,questions,files:[] };
     const result = agentDeliverySchema.parse(await this.callback(intent,"read",signal));
-    const downloaded=[];
-    if(command.files && source) for(const file of result.files) {
-      const response=await this.file(intent,file.id,signal);
-      const bytes = Buffer.from(await response.arrayBuffer());
-      const path = await this.runtime.importAgentFile(scope, source.runId, intent.id, file, bytes);
-      const dataset = result.retrieval?.datasets.some(dataset => dataset.id === file.id)
-        ? smallDataset(file.name, bytes) : undefined;
-      downloaded.push({ id: file.id, path, taskId: intent.id, ...(dataset ? { dataset } : {}) });
-    }
-    if (command.view !== "messages") return { taskId:intent.id,sessionRef:intent.session,...result,questions,...(command.files && source?{downloaded}:{}) };
+    if (command.view !== "messages") return { taskId:intent.id,sessionRef:intent.session,...result,questions };
     const messages = (await this.runtime.store.messages(entry.scope, intent.session.sessionId)).filter(row => row.runId === intent.id && row.message.role !== "system" && row.messageSeq > (command.cursor ?? 0)).slice(0, command.limit ?? 50);
-    return { taskId:intent.id,sessionRef:intent.session,...result,questions,messages,cursor: messages.at(-1)?.messageSeq ?? command.cursor ?? 0,...(command.files && source?{downloaded}:{}) };
+    return { taskId:intent.id,sessionRef:intent.session,...result,questions,messages,cursor: messages.at(-1)?.messageSeq ?? command.cursor ?? 0 };
   }
   private async accessible(intent: AgentRunIntent, source: AgentSessionRef, domainId: string) {
     const sameSession = (ref: AgentSessionRef) => ref.providerId === source.providerId && ref.sessionId === source.sessionId;
@@ -659,7 +648,7 @@ export class AgentChannel {
       const input = (await this.runtime.store.messages(this.scope(intent.session,scope.domainId),intent.session.sessionId)).find(row => row.id === intent.inputId)!.message;
       tasks.push({ id: intent.id, kind: "agent", root: { sessionId, runId: rootRunId }, requestedBy, parentTaskId: own(requestedBy) ? null : requestedBy.runId,
         title: intent.title ?? (typeof input.content === "string" ? input.content.split("\n")[0] : intent.channel.agent.agentId), status: delivery?.status ?? intent.status, error: intent.error ? { code: "AGENT_EXECUTION_FAILED", message: intent.error } : null,
-        createdAt: intent.createdAt, agentRef: intent.channel.agent, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [],...(delivery?.retrieval?{retrieval:delivery.retrieval}:{}) });
+        createdAt: intent.createdAt, agentRef: intent.channel.agent, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [] });
     }
     // Quality checks belong to the host's replies; the host adds them to this projection.
     return { sessionId, tasks, qualityResults: [], preparationFailures: await this.facts.preparationFailures(scope,sessionId), queuedRuns: await this.facts.queuedRuns(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };

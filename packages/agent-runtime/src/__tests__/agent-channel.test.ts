@@ -25,11 +25,11 @@ const notification: AgentNotification = { role: "notification", kind: "agent-ans
 afterEach(() => { vi.unstubAllGlobals(); });
 function channel() {
   let locked = false;
-  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined) },
-    importAgentFile: vi.fn(async () => "outputs/agents/delivered.dataset.json"),
+  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined), finalReply: vi.fn(async () => ({ role: "assistant", content: [{ type: "text", text: "Saved final reply" }], timestamp: 1 })) },
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
     publishSessionRun: vi.fn(),
+    linkAgentFiles: vi.fn(async () => [{ id: inputId, name: "delivered.dataset.json", path: `outputs/agents/${inputId}/${inputId}-delivered.dataset.json` }]),
   } as unknown as AgentRuntime;
   const port = new AgentChannel(runtime);
   port.remember(context,{token:"initiating-token",apiKey:null});
@@ -329,8 +329,11 @@ it("wakes the idle delegating execution on its original chain after a later run 
   vi.spyOn(port.facts, "latest").mockResolvedValue(later);
   vi.spyOn(port.facts, "binding").mockResolvedValue({ agent: context.agent, actor: context.actor, parent: null });
   vi.spyOn(port.facts, "delivered").mockResolvedValue(undefined);
-  vi.spyOn(port.facts, "receive").mockImplementation(async (_scope, _session, message) =>
-    ({ id: inputId, runId: null, messageSeq: 3, contextSeq: null, message }));
+  let deliveredNotification: AgentNotification | undefined;
+  vi.spyOn(port.facts, "receive").mockImplementation(async (_scope, _session, message) => {
+    deliveredNotification = message as AgentNotification;
+    return { id: inputId, runId: null, messageSeq: 3, contextSeq: null, message };
+  });
   vi.spyOn(port.facts, "reserve").mockImplementation(async (_scope, _session, id, inputId, channel, options) =>
     ({ ...origin, id, inputId, channel, status: "starting", ...options }));
   vi.spyOn(port, "callback").mockResolvedValue({
@@ -348,6 +351,9 @@ it("wakes the idle delegating execution on its original chain after a later run 
     executionUserId: delegatingRun.executionUserId, context: delegatingRun.context,
   });
   expect(port.credential(wake.channel)).toEqual({ token: "initiating-token", apiKey: null });
+  expect(runtime.linkAgentFiles).not.toHaveBeenCalled();
+  expect(deliveredNotification?.content).toBe("Saved final reply");
+  expect(deliveredNotification?.files).toEqual([]);
 });
 
 it("message reads expose conversation progress without transferring the child's system prompt", async () => {
@@ -360,9 +366,9 @@ it("message reads expose conversation progress without transferring the child's 
     { id: runId,runId: inputId,messageSeq: 1, contextSeq: null,message: { role: "system",content: "Private host instructions",timestamp: 1 } },
     { id: inputId,runId: inputId,messageSeq: 2, contextSeq: null,message: notification },
   ]);
-  const result = await port.execute(scope,run,{ op: "read",taskId: inputId,view: "messages",files:true }) as { messages: Array<{ id: string }>;downloaded:unknown[] };
+  const result = await port.execute(scope,run,{ op: "read",taskId: inputId,view: "messages" }) as { messages: Array<{ id: string }>;files: unknown[] };
   expect(result.messages.map(message => message.id)).toEqual([inputId]);
-  expect(result.downloaded).toEqual([{id:inputId,path:"outputs/agents/delivered.dataset.json",taskId:inputId}]);
+  expect(result.files).toEqual([{id:inputId,name:"delivered.dataset.json",mediaType:"application/json",href:"/file"}]);
 });
 
 it("does not prepare a child intent cancelled concurrently with its admission", async () => {
@@ -538,22 +544,6 @@ it.each(["native","external"])("forwards %s caller language to each provider wit
   });vi.stubGlobal("fetch",fetch);
   const caller=kind==="native"?{...run,language:"zh-CN"}:{kind:"external" as const,actor:context.actor,authority:context.authority,language:"zh-CN",credential:{token:"initiating-token",apiKey:null}};
   await expect(port.execute(scope,caller,{op:"list"})).resolves.toMatchObject({agents:[{name:"取数员",description:"提供方说明"}]});
-});
-
-it("imports provider dataset bytes into the caller's ordinary output snapshots",async()=>{
-  const workspace=await mkdtemp(path.join(os.tmpdir(),"agent-delivery-"));
-  try {
-    await mkdir(path.join(workspace,"outputs"));
-    const receiver={active:new Map([[canonical([scope.hostId,scope.domainId,runId]),{workspace}]])} as unknown as AgentRuntime;
-    const bytes=Buffer.from(JSON.stringify({schema:"workbench.dataset.v2",execution:{receiptId:inputId},rows:[[0,false,null]]}));
-    const delivered=await AgentRuntime.prototype.importAgentFile.call(receiver,scope,runId,inputId,{id:inputId,name:inputId+".dataset.json"},bytes);
-    const files=new ArtifactFiles(path.join(workspace,"blobs"));
-    const [snapshot]=await files.scan(workspace);
-    expect(snapshot.path).toBe(delivered);
-    expect(delivered).toMatch(/^outputs\/agents\/.*\.dataset\.json$/);
-    expect(await files.read(snapshot)).toEqual(bytes);
-    expect(await readFile(path.join(workspace,delivered))).toEqual(bytes);
-  } finally { await rm(workspace,{recursive:true,force:true}); }
 });
 
 it.each(["running","preparing"])("web input joins the %s execution and reaches the shared steer preparation",async phase=>{

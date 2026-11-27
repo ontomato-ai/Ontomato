@@ -855,6 +855,9 @@ ${logs}`);
     const childPrepare = prepareCalls.find((call) => call.requestedBy?.runId === runId);
     expect(childPrepare?.root).toEqual({ session: sessionRef, runId });
     await settle(captured.body.taskId);
+    const childRequest = inputs.find((request) => JSON.stringify(request.messages).includes("Child question"));
+    expect(JSON.stringify(childRequest.messages[0].content)).toContain("Delegated task");
+    expect(JSON.stringify(inputs.find((request) => JSON.stringify(request.messages).includes("channel-script"))?.messages[0].content)).not.toContain("Delegated task");
     const late = await fetch(captured.url, {
       method: "POST",
       headers: {

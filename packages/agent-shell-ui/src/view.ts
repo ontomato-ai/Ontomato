@@ -180,7 +180,6 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     for (const inputId of queued.inputIds) queuedInputIds.add(inputId);
   }
   const retrievals = new Map<string, Array<ChannelAgentTask>>();
-  const datasetsByRun = new Map<string, ChannelAgentTask>();
   const delegatedByRun = new Map<string, ChannelAgentTask>();
   const linkedStarts = new Map<string, Set<string>>();
   const resultRuns = new Map<string, string>();
@@ -190,9 +189,6 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       if (task.kind === "agent" && task.parentTaskId !== null) continue;
       delegatedByRun.set(task.runId, task);
       retrievals.set(task.root.runId, [...(retrievals.get(task.root.runId) ?? []), task]);
-      if (task.retrieval?.datasets.length && ["starting", "running", "completed"].includes(task.status)) {
-        datasetsByRun.set(task.runId, task);
-      }
       continue;
     }
     reviews.set(task.root.runId, [...(reviews.get(task.root.runId) ?? []), {
@@ -293,7 +289,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
           linkedStarts.set(entry.runId, roots);
         }
       }
-      if (entry.runId && message.kind === "agent-result" && "session" in message.source && datasetsByRun.has(message.source.runId)) {
+      if (entry.runId && message.kind === "agent-result" && "session" in message.source) {
         resultRuns.set(message.source.runId, entry.runId);
         if (state.runs[entry.runId]?.status === "running") openResponse(entry.runId).retrievalProgress = "answering";
       }
@@ -465,9 +461,8 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     item.running = run?.status === "running";
     place(item, null);
     if (item.retrievalProgress !== "answering") {
-      const pending = item.process.flatMap(block => block.kind === "task" && block.task.retrieval && !resultRuns.has(block.task.runId) ? [block.task] : []);
+      const pending = item.process.flatMap(block => block.kind === "task" && !resultRuns.has(block.task.runId) ? [block.task] : []);
       if (pending.some(task => task.status === "starting" || task.status === "running")) item.retrievalProgress = "retrieving";
-      else if (pending.some(task => datasetsByRun.has(task.runId))) item.retrievalProgress = "datasetReady";
     }
     item.workspaceCommit = run?.workspaceCommit ?? null;
     item.usage = runUsage(state, item.runId);

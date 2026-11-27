@@ -41,9 +41,8 @@ to hand it over.
 3. Otherwise end this turn. The retriever's result arrives as a notification and wakes you; there is
    nothing to poll, read or wait for. One short line telling the user the retriever is on it is enough.
 4. On the notification, take the files with native `agent`, `op: "read"`, `files: true`.
-   `downloaded[].dataset` already holds a small table with its scope, assumptions and truncation:
-   answer from it and cite the returned `downloaded[].path` without opening the file. Open a file only
-   when the answer needs a calculation or rows the summary does not hold.
+   delivered files are already mapped beneath `outputs/agents/<taskId>/`; cite those paths. Open a file
+   when the answer needs detailed rows or calculations.
 
 A follow-up that needs new data is a new `start-retrieval`; one that can be answered from data already
 delivered reuses it.

@@ -1,4 +1,4 @@
-import { retrievalExtensionSchema,agentFileSchema } from "./agent-task-results";
+import { agentFileSchema } from "./agent-task-results";
 import { z } from "zod";
 import { runtimeIdSchema as id, runtimeKeySchema as key, runtimeJsonObjectSchema, runtimeTimestampSchema } from "./agent-runtime-values";
 import { presentationBindingSchema } from "./agent-presentation";
@@ -26,6 +26,7 @@ export const agentQuestionOptionSchema = z.object({ label: key, description: z.s
 export const agentQuestionOptionsSchema = z.array(agentQuestionOptionSchema).min(1).refine(options => options.filter(option => option.isDefault).length === 1, "Exactly one option must be the default");
 export const agentPendingQuestionSchema = z.object({ requestId: id, source: agentExecutionRefSchema, message: z.string(), defaultAssumption: z.string(), options: agentQuestionOptionsSchema.optional() }).strict();
 export const agentInputDeliverySchema = z.object({ messageId: id, sessionRef: agentSessionRefSchema, runId: id, delivery: z.enum(["steer", "run", "receipt"]), status: z.enum(["starting", "running", "completed"]) }).strict();
+export const agentDeliveredFileSchema = z.object({ id, name: z.string().min(1), path: z.string().min(1) }).strict();
 export const agentNotificationSchema = z.object({
   role: z.literal("notification"),
   kind: z.enum(["agent-message", "agent-result", "agent-question", "agent-answer"]),
@@ -40,6 +41,8 @@ export const agentNotificationSchema = z.object({
   answerId: id.optional(),
   defaultAssumption: z.string().optional(), options: agentQuestionOptionsSchema.optional(),
   outcome: z.enum(["completed", "failed", "cancelled"]).optional(),
+  /** Read-only files the runtime mapped into the recipient session workspace for this result. */
+  files: z.array(agentDeliveredFileSchema).optional(),
   content: z.string(), timestamp: z.number().int().nonnegative(),
 }).strict();
 export const agentInputSchema = z.discriminatedUnion("role", [
@@ -81,13 +84,13 @@ export const agentDeliverySchema = z.object({
     z.object({ mode: z.literal("none") }).strict(),
   ]),
   results: z.array(z.object({ kind: key, href: key, title: z.string() }).strict()),
-  retrieval: retrievalExtensionSchema.optional(),files: z.array(agentFileSchema),
+  files: z.array(agentFileSchema),
 }).strict();
 export const agentChannelCommandSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("list"), query: z.string().optional() }).strict(),
   z.object({ op: z.literal("start"), agent: agentRefSchema, message: z.string().min(1), title: z.string().optional(), context: runtimeJsonObjectSchema.optional() }).strict(),
   z.object({ op: z.literal("send"), session: z.union([agentSessionRefSchema,z.literal("parent")]), message: z.string().min(1), steer: z.boolean().optional(), needsInput: z.boolean().optional(), replyTo: id.optional(), defaultAssumption: z.string().min(1).optional(), options: agentQuestionOptionsSchema.optional() }).strict(),
-  z.object({ op: z.literal("read"), taskId: id, files: z.boolean().optional(), view: z.enum(["result", "messages"]).optional(), cursor: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
+  z.object({ op: z.literal("read"), taskId: id, view: z.enum(["result", "messages"]).optional(), cursor: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
   z.object({ op: z.literal("cancel"), taskId: id }).strict(),
 ]).superRefine((command,ctx) => {
   if (command.op !== "send") return;
@@ -112,6 +115,7 @@ export type AgentInput = z.infer<typeof agentInputSchema>;
 export type AgentRunContext = z.infer<typeof agentRunContextSchema>;
 export type AgentRunIntent = z.infer<typeof agentRunIntentSchema>;
 export type AgentPrepareRequest = z.infer<typeof agentPrepareRequestSchema>;
+export type AgentDeliveredFile = z.infer<typeof agentDeliveredFileSchema>;
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>;
 export type AgentChannelCommand = z.infer<typeof agentChannelCommandSchema>;
 
