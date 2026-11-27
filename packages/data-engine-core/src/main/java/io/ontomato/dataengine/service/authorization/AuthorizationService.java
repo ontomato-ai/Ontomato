@@ -159,7 +159,7 @@ public final class AuthorizationService {
         if (target.kind() == Kind.SKILL)
             return Decision.denied("OBJECT_FORBIDDEN", "Skill packages are managed through the skill library.");
         var ownership = access.ownerFacts() == null ? OwnershipAdmission.Result.PASS_TO_POLICY
-                : OwnershipAdmission.decide(ctx.identity().userId(), target.kind(), access.verb(),
+                : OwnershipAdmission.decide(ctx.javaUserId(), target.kind(), access.verb(),
                         access.ownerFacts(), false);
         if (ownership == OwnershipAdmission.Result.PRIVATE_DRAFT)
             return Decision.denied("PRIVATE_DRAFT", "Only the authors may access this draft.");
