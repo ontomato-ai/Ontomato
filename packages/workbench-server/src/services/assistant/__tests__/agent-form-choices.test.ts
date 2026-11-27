@@ -22,8 +22,12 @@ const { agentDefinitionFromRow } = await import("../definitions");
 const { requireAgent, requireAgentCreation } = await import("../authorization");
 
 beforeEach(() => {
-  vi.spyOn(skillRegistryManager, "forDomain").mockImplementation(async domainId =>
-    new SkillRegistryManager(tmpdir(), new SkillScanner(tmpdir()), domainId));
+  vi.spyOn(skillRegistryManager, "forDomain").mockImplementation(async (domainId, additionalEntries = []) => {
+    const empty = `${tmpdir()}/agent-form-empty-skill-root`;
+    const registry = new SkillRegistryManager(empty, new SkillScanner(empty), domainId);
+    await registry.initialize(additionalEntries);
+    return registry;
+  });
 });
 
 /*

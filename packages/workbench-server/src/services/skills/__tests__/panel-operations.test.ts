@@ -211,28 +211,21 @@ describe("skill panel server operations", () => {
     expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" })).toEqual({
       reason: "内置技能随产品提供，不能删除",
     });
-    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" })).toEqual({
+    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "knowledge-governance" })).toEqual({
       reason: "内置技能随产品提供，不能删除",
     });
     expect(await deleteOp.unavailable!(host, { kind: "object", objectType: SKILL, primaryKey: "missing-skill" })).toBeUndefined();
 
-    expect(await deleteOp.execute(
-      zhHost,
-      { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" },
-    )).toEqual({
-      kind: "refusal",
-      code: "PUBLIC_SKILL_READ_ONLY",
-      message: "内置技能随产品提供，不能删除",
-    });
-
-    expect(await deleteOp.execute(
-      zhHost,
-      { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" },
-    )).toEqual({
-      kind: "refusal",
-      code: "PUBLIC_SKILL_READ_ONLY",
-      message: "内置技能随产品提供，不能删除",
-    });
+    for (const primaryKey of ["builtin-skill", "knowledge-governance", "ops-diagnosis"]) {
+      expect(await deleteOp.execute(
+        zhHost,
+        { kind: "object", objectType: SKILL, primaryKey },
+      )).toEqual({
+        kind: "refusal",
+        code: "PUBLIC_SKILL_READ_ONLY",
+        message: "内置技能随产品提供，不能删除",
+      });
+    }
 
     expect(await deleteOp.execute(
       host,
@@ -288,6 +281,17 @@ describe("skill panel server operations", () => {
       const installed = path.join(root, "data", "domain-skills", domain, "imported-skill", "SKILL.md");
       expect(await fs.readFile(installed, "utf8")).toContain("Revised");
       await expect(fs.stat(path.join(path.dirname(installed), "references", "old.md"))).rejects.toMatchObject({ code: "ENOENT" });
+    });
+
+    it("refuses to overwrite generated and file-backed platform skills with a same-named upload", async () => {
+      for (const name of ["knowledge-governance", "ontomato-page-operator"]) {
+        const uploaded = zip(name, "Replacement");
+        expect(await importOp.execute(host, null, call(uploaded, true))).toEqual({
+          kind: "refusal",
+          code: "PUBLIC_SKILL_READ_ONLY",
+          message: "Built-in skills come with the product and cannot be deleted",
+        });
+      }
     });
 
     it("refuses an unreadable package and an import without permission", async () => {
