@@ -8,6 +8,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
+import org.apache.logging.log4j.ThreadContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -38,13 +39,19 @@ final class WorkbenchPanelReadExecutor {
     }
 
     private <T> CompletableFuture<T> enqueue(long deadline, Supplier<T> read) {
+        var contextMap = ThreadContext.getImmutableContext();
+        var contextStack = ThreadContext.getImmutableStack();
         var result = new CompletableFuture<T>();
         Runnable task = () -> {
             if (result.isDone()) return;
             try {
+                ThreadContext.putAll(contextMap);
+                ThreadContext.setStack(contextStack.asList());
                 result.complete(read.get());
             } catch (RuntimeException | Error e) {
                 result.completeExceptionally(e);
+            } finally {
+                ThreadContext.clearAll();
             }
         };
         result.orTimeout(Math.max(0, deadline - System.nanoTime()), NANOSECONDS).whenComplete((value, failure) -> {
