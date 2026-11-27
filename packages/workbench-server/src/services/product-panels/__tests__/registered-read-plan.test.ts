@@ -3005,6 +3005,8 @@ it("describes fixed governance delete targets from the owner batch without reque
     { slot: "orgHeader", operation: DELETE_ORG_UNIT, type: ORG_UNIT, id: "team" },
     { slot: "deletePolicy", operation: DELETE_PERMISSION_POLICY, type: PERMISSION_POLICY, id: "outside" },
     { slot: "orgHeader", operation: DELETE_ORG_UNIT, type: ORG_UNIT, id: "denied" },
+    { slot: "removeMembership", operation: REMOVE_ORG_MEMBERSHIP, type: ORG_MEMBERSHIP, id: "org-member" },
+    { slot: "deletePosition", operation: DELETE_ORG_POSITION, type: ORG_POSITION, id: "org-position" },
   ];
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
@@ -3031,6 +3033,8 @@ it("describes fixed governance delete targets from the owner batch without reque
     { status: "ready", payload: { reason: null } },
     { status: "error", code: "POLICY_NOT_FOUND", error: "Policy not found" },
     { status: "forbidden", error: "Organization read denied" },
+    { status: "ready", payload: { reason: null } },
+    { status: "ready", payload: { reason: "Position has roles" } },
     { status: "ready" },
   ] });
 
@@ -3042,14 +3046,47 @@ it("describes fixed governance delete targets from the owner batch without reque
     { status: "ready", value: { delete: { handlerRef: DELETE_ORG_UNIT, inspectImpact: { handlerRef: `${DELETE_ORG_UNIT}.inspect-impact` } } } },
     { status: "error", code: "POLICY_NOT_FOUND", message: "Policy not found" },
     { status: "forbidden", reason: "Organization read denied" },
+    { status: "ready", value: { delete: { handlerRef: REMOVE_ORG_MEMBERSHIP } } },
+    { status: "ready", value: { delete: { handlerRef: DELETE_ORG_POSITION, unavailable: { reason: "Position has roles" } } } },
     { status: "ready", value: { deletePolicy: { target: { source: "row" } } } },
   ]);
   expect(results[1]).not.toHaveProperty("value.delete.unavailable");
+  expect(results[4]).not.toHaveProperty("value.delete.unavailable");
   const calls = mocks.read.mock.lastCall![1] as JavaPanelRead[];
   expect(calls.map(({ call }) => call)).toEqual([
     ...targets.map(({ type, id }) => ({ type, name: "deleteRefusal", parameters: { primaryKey: id } })), undefined,
   ]);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("describes the role detail delete operation using the selected role's delete refusal", async () => {
+  const selections = [
+    { primaryKey: "empty-role", reason: null },
+    { primaryKey: "assigned-role", reason: "Role still has members" },
+  ];
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  for (const { primaryKey } of selections) {
+    mocks.resolve.mockResolvedValueOnce({
+      panel: { manifest: { state: {}, members: {} } },
+      member: { inputs: { role: { literal: { className: ROLE, primaryKey } } } },
+      projection: {
+        inputs: { role: { kind: "object", objectType: ROLE } },
+        operations: { delete: { operation: { kind: "PlatformOperation", id: DELETE_ROLE }, target: { input: "role" } } },
+      },
+      inputs: {},
+    });
+  }
+  mocks.read.mockResolvedValueOnce({ viewer, results: selections.map(({ reason }) => ({ status: "ready", payload: { reason } })) });
+
+  const prepared = await prepareRegisteredDataReads(credentials, selections.map(() => ({
+    source, memberPath: [{ member: "deleteBtn" }], operations: true, inputs: {},
+  })));
+  const [deletable, assigned] = await runPreparedDataReads(credentials, prepared);
+  expect(deletable).toMatchObject({ status: "ready", value: { delete: { handlerRef: DELETE_ROLE } } });
+  expect(deletable).not.toHaveProperty("value.delete.unavailable");
+  expect(assigned).toHaveProperty("value.delete.unavailable.reason", "Role still has members");
+  expect((mocks.read.mock.lastCall![1] as JavaPanelRead[]).map(({ call }) => call))
+    .toEqual(selections.map(({ primaryKey }) => ({ type: ROLE, name: "deleteRefusal", parameters: { primaryKey } })));
 });
 
 it("describes all role assignment operations with the selected role's owner refusal", async () => {

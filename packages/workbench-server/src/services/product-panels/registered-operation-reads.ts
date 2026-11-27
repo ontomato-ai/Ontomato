@@ -4,9 +4,10 @@ import {
   ACTION, ADD_ROLE_MEMBERS, ADD_ROLE_POLICIES, AGENT_DEFINITION, APPLICATION, APPLICATION_PUBLISH_BUILDER_SOURCE, APPLICATION_RESTART_BUILD_TEST,
   APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
   APPROVE_KNOWLEDGE, ATTRIBUTE, BUSINESS_KNOWLEDGE, CLEAR_OBJECT_DETAIL_PANEL, DELETE_ACTION, DELETE_AGENT, DELETE_ATTRIBUTE,
-  DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_UNIT, DELETE_PERMISSION_POLICY, DELETE_SKILL, FUNCTION, GENERATE_USER_API_KEY,
-  ISSUE_USER_API_KEY_BATCH, METRIC_VIEW, OBJECT_TYPE, REGENERATE_USER_API_KEY,
-  RELATIONSHIP, REMOVE_ROLE_MEMBERS, REMOVE_ROLE_POLICIES, REMOVE_USER, REVOKE_USER_API_KEY, ROLE, SET_ACTION_STATUS, SET_PRIMARY_KEY, USER, WORKFLOW,
+  DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_POSITION, DELETE_ORG_UNIT, DELETE_PERMISSION_POLICY, DELETE_ROLE, DELETE_SKILL,
+  FUNCTION, GENERATE_USER_API_KEY, ISSUE_USER_API_KEY_BATCH, METRIC_VIEW, OBJECT_TYPE, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
+  PERMISSION_POLICY, REGENERATE_USER_API_KEY, RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_ROLE_MEMBERS, REMOVE_ROLE_POLICIES,
+  REMOVE_USER, REVOKE_USER_API_KEY, ROLE, SET_ACTION_STATUS, SET_PRIMARY_KEY, USER, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { z } from "zod";
 import { tForLocale } from "../../i18n";
@@ -36,7 +37,11 @@ import { describeServerOperation } from "./server-operations";
 
 const memberInspections = new Set<string>([REMOVE_USER, GENERATE_USER_API_KEY, REGENERATE_USER_API_KEY, REVOKE_USER_API_KEY, ISSUE_USER_API_KEY_BATCH]);
 const roleAssignments = new Set<string>([ADD_ROLE_MEMBERS, ADD_ROLE_POLICIES, REMOVE_ROLE_MEMBERS, REMOVE_ROLE_POLICIES]);
-const deleteOwners = new Map<string, string>([[DELETE_ACTION, ACTION], [DELETE_FUNCTION, FUNCTION], [DELETE_METRIC_VIEW, METRIC_VIEW]]);
+const deleteOwners = new Map<string, string>([
+  [DELETE_ACTION, ACTION], [DELETE_FUNCTION, FUNCTION], [DELETE_METRIC_VIEW, METRIC_VIEW],
+  [DELETE_ROLE, ROLE], [DELETE_PERMISSION_POLICY, PERMISSION_POLICY], [DELETE_ORG_UNIT, ORG_UNIT],
+  [REMOVE_ORG_MEMBERSHIP, ORG_MEMBERSHIP], [DELETE_ORG_POSITION, ORG_POSITION],
+]);
 const refusalsSchema = z.record(z.array(z.string().min(1).nullable()).nonempty());
 const approvalStatusesSchema = z.array(z.number().int().nullable());
 const applicationDeleteAvailabilitySchema = z.object({ canMaintain: z.boolean() });
@@ -184,10 +189,6 @@ export async function prepareRegisteredOperationRead(
         const { id: primaryKey, owner_id: ownerId } = definition.agent;
         const read = addCall({ type: AGENT_DEFINITION, name: "deleteAvailability", parameters: { primaryKey, ownerId } });
         return { ...description, agentDeletion: { read, primaryKey } };
-      }
-      if (operation === DELETE_PERMISSION_POLICY || operation === DELETE_ORG_UNIT) {
-        const { objectType: type, primaryKey } = availability.target;
-        return { ...description, ownerRefusals: [addCall({ type, name: "deleteRefusal", parameters: { primaryKey } })] };
       }
       if (roleAssignments.has(operation)) {
         const { primaryKey } = availability.target;
