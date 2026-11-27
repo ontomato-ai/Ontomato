@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service.agent;
 
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
@@ -117,15 +118,15 @@ public class OntologyAgentAccess {
 
   private Context scopedExecution(HttpServletRequest request, Context context) {
     if(context.callerId()==null)return context;
-    var row=executionCaller(context.access(),context.callerId());
+    var row=executionCaller(context.access().user(),context.callerId());
     if(!row.getString("user_id").equals(context.access().user().getId()))service(request);
     var scoped=scopedQuery(context.access(),row,false).withExecution(row.getJSONObject("input").getString("executionUserId"),row.getString("user_id"));
     return new Context(OntologyAgentStore.owner(row),scoped,context.token(),context.apiKey(),context.language(),
         scoped.expiresAt(),context.callerId(),row.getJSONObject("input").getString("executionUserId"));
   }
 
-  private JSONObject executionCaller(QueryAccessService.Access access, String callerId) {
-    var row = store.serviceCaller(AgentJson.id(callerId), access.user().getDomainId());
+  private JSONObject executionCaller(User user, String callerId) {
+    var row = store.serviceCaller(AgentJson.id(callerId), user.getDomainId());
     if (!(row.get("input") instanceof JSONObject input)
         || !(row.get("user_id") instanceof String initiator) || initiator.isBlank())
       throw invalidCallerScope();
@@ -133,17 +134,33 @@ public class OntologyAgentAccess {
     if (storedExecutor != null && (!(storedExecutor instanceof String executorId) || executorId.isBlank()))
       throw invalidCallerScope();
     String executor = (String) storedExecutor;
-    if (!access.user().getId().equals(executor == null ? initiator : executor))
+    if (!user.getId().equals(executor == null ? initiator : executor))
       throw new AgentHttpException(403, "FORBIDDEN", "Caller belongs to another execution user");
     return row;
   }
 
   /** Reuses the existing caller scope for assistant metadata and direct query commands. */
   public QueryAccessService.Access scopedQuery(QueryAccessService.Access access, String callerId) {
-    var caller = executionCaller(access,callerId);
-    return scopedQuery(access,caller,true);
+    return captureCallerScope(access.user(), callerId).queryAccess(access);
   }
-  private QueryAccessService.Access scopedQuery(QueryAccessService.Access access, JSONObject caller, boolean useStoredClasses) {
+
+  CallerScope captureCallerScope(User user, String callerId) {
+    return new CallerScope(executionCaller(user, callerId));
+  }
+
+  public static final class CallerScope {
+    private final JSONObject caller;
+
+    private CallerScope(JSONObject caller) {
+      this.caller = caller;
+    }
+
+    public QueryAccessService.Access queryAccess(QueryAccessService.Access access) {
+      return scopedQuery(access, caller, true);
+    }
+  }
+
+  private static QueryAccessService.Access scopedQuery(QueryAccessService.Access access, JSONObject caller, boolean useStoredClasses) {
     if (!(caller.get("closed") instanceof Boolean closed) || !(caller.get("deadline") instanceof String expires))
       throw invalidCallerScope();
     if (closed) throw new AgentHttpException(409, "RETRIEVAL_RUN_CLOSED", "Caller is closed");

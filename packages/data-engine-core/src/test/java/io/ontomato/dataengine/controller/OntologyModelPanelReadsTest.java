@@ -22,6 +22,7 @@ import io.ontomato.dataengine.service.DslService;
 import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OntologyModelService;
+import io.ontomato.dataengine.service.OntologyModelService.AttributeRecord;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeRows;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeView;
 import io.ontomato.dataengine.service.OntologyModelService.FieldLabels;
@@ -103,6 +104,42 @@ class OntologyModelPanelReadsTest {
         assertScopeDenied(panel.relationshipRecord(), Map.of("primaryKey", "customer"));
         assertScopeDenied(panel.relationshipRecord(), Map.of("primaryKey", "owns"));
         assertEquals(List.of(order, customer), panel.objectTypeOptions().handler().read(subject, Map.of()));
+    }
+
+    @Test
+    void modelCountsUseTheCallerClassScopeAndKeepLiveTotals() {
+        when(authorization.decide(subject, new Management("ontology-model.read"))).thenReturn(new Decision(true, null, null));
+        when(model.countMetadata("d1", List.of("Order", "Item")))
+                .thenReturn(Map.of("objectTypes", 2, "attributes", 4, "relationships", 1));
+        when(model.countMetadata("d1", null)).thenReturn(Map.of("objectTypes", 3, "attributes", 6, "relationships", 4));
+
+        assertEquals(Map.of("rows", List.of(), "total", 2), scoped(panel.objectTypeCount(), Map.of()));
+        assertEquals(Map.of("rows", List.of(), "total", 4), scoped(panel.attributeCount(), Map.of()));
+        assertEquals(Map.of("rows", List.of(), "total", 1), scoped(panel.relationshipCount(), Map.of()));
+        assertEquals(Map.of("rows", List.of(), "total", 3), panel.objectTypeCount().handler().read(subject, Map.of()));
+        assertEquals(Map.of("rows", List.of(), "total", 6), panel.attributeCount().handler().read(subject, Map.of()));
+        assertEquals(Map.of("rows", List.of(), "total", 4), panel.relationshipCount().handler().read(subject, Map.of()));
+    }
+
+    @Test
+    void attributeRecordChecksItsOwnerClassOnlyWhenScoped() {
+        when(authorization.decide(subject, new Management("ontology-model.read"))).thenReturn(new Decision(true, null, null));
+        String language = LocaleContextHolder.getLocale().toLanguageTag();
+        var order = attribute("Order", "id", true, false);
+        var customer = attribute("Customer", "id", true, false);
+        var orderParams = Map.<String, Object>of("primaryKey", "[\"Order\",\"id\"]");
+        var customerParams = Map.<String, Object>of("primaryKey", "[\"Customer\",\"id\"]");
+        var orderLabels = Map.of("Order", "Order");
+        var customerLabels = Map.of("Customer", "Customer");
+        when(model.attributeRecord((String) orderParams.get("primaryKey"), "d1", language)).thenReturn(new AttributeRecord(order, orderLabels));
+        when(model.attributeRecord((String) customerParams.get("primaryKey"), "d1", language))
+                .thenReturn(new AttributeRecord(customer, customerLabels));
+        when(model.fieldLabels(language)).thenReturn(new FieldLabels(Map.of(), Map.of(), Map.of()));
+
+        assertEquals(Map.of("view", order, "classLabels", orderLabels, "fieldLabels", Map.of()), scoped(panel.attributeRecord(), orderParams));
+        assertScopeDenied(panel.attributeRecord(), customerParams);
+        assertEquals(Map.of("view", customer, "classLabels", customerLabels, "fieldLabels", Map.of()),
+                panel.attributeRecord().handler().read(subject, customerParams));
     }
 
     @Test

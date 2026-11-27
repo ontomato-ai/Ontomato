@@ -179,8 +179,8 @@ public class OntologyModelController {
 
 	private Map<String, Integer> countMetadata(String field, HttpServletRequest request) {
 		User user = SystemUtils.getCurUser();
-		ExecutionTarget target = executionTarget(request, user);
-		return Map.of("total", service.countMetadata(user.getDomainId(), new OntologyModelReadScope(target).applies() ? target.classNames() : null).get(field));
+		var scope = new OntologyModelReadScope(executionTarget(request, user));
+		return Map.of("total", scope.countMetadata(service, user.getDomainId()).get(field));
 	}
 
 	@ManagementEndpoint(Operations.READ)

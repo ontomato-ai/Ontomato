@@ -124,8 +124,9 @@ class OntologyModelPanelReads {
 
     @Bean
     WorkbenchPanelRead attributeRecord() {
-        return read(ATTRIBUTE, "record", (domain, lang, p) -> {
+        return scopedRead(ATTRIBUTE, "record", (domain, lang, p, scope) -> {
             var result = model.attributeRecord((String) p.get("primaryKey"), domain, lang);
+            scope.requireClasses(result.view().className());
             return Map.of("view", result.view(), "classLabels", result.classLabels(),
                     "fieldLabels", model.fieldLabels(lang).attribute());
         });
@@ -211,8 +212,8 @@ class OntologyModelPanelReads {
     }
 
     private WorkbenchPanelRead count(String type, String field) {
-        return read(type, "count", (domain, lang, p) ->
-                Map.of("rows", List.of(), "total", model.countMetadata(domain, null).get(field)));
+        return scopedRead(type, "count", (domain, lang, p, scope) ->
+                Map.of("rows", List.of(), "total", scope.countMetadata(model, domain).get(field)));
     }
 
     private WorkbenchPanelRead form(String type, String name, FormReader reader) {
@@ -222,13 +223,6 @@ class OntologyModelPanelReads {
             @SuppressWarnings("unchecked")
             var values = (Map<String, Object>) parameters.get("values");
             return reader.read(new FormRequest(target, values, (String) parameters.get("changedField")), domain, lang, scope);
-        });
-    }
-
-    private WorkbenchPanelRead read(String type, String name, ModelReader reader) {
-        return new WorkbenchPanelRead(type, name, (subject, parameters) -> {
-            requireRead(subject);
-            return reader.read(subject.identity().domainId(), LocaleContextHolder.getLocale().toLanguageTag(), parameters);
         });
     }
 
@@ -261,10 +255,6 @@ class OntologyModelPanelReads {
     private void requireRead(SubjectContext subject) {
         var decision = authorization.decide(subject, new Management(OntologyModelController.Operations.READ));
         if (!decision.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
-    }
-
-    private interface ModelReader {
-        Object read(String domainId, String lang, Map<String, Object> parameters);
     }
 
     private interface ScopedModelReader {

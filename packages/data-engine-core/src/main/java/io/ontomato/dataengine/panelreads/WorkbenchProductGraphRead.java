@@ -54,6 +54,8 @@ final class WorkbenchProductGraphRead implements WorkbenchReadRegistration {
     @Override public String type() { return "platform:ObjectType"; }
     @Override public String name() { return "productGraph"; }
 
+    boolean acceptsCallerScope() { return true; }
+
     record References(Set<String> panelIds, Set<String> projectionIds, Set<String> objectTypes,
                       Set<String> actions, Set<String> metrics) {
         static References parse(Map<String, Object> parameters) {

@@ -10,7 +10,6 @@ import io.ontomato.dataengine.applications.ApplicationCatalog;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.service.DataPermissionLookup;
-import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PythonRows;
@@ -18,6 +17,7 @@ import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.QueryAccessService.Access;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
+import io.ontomato.dataengine.service.agent.OntologyAgentAccess.CallerScope;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
@@ -114,12 +114,6 @@ final class WorkbenchPanelReads {
         return new LocateResult(viewer, locations);
     }
 
-    boolean acceptsCallerScope(Call call) {
-        var handler = registeredHandler(call);
-        return handler instanceof WorkbenchProductGraphRead || (handler instanceof WorkbenchPanelRead.Query query ? query.acceptsCallerScope()
-            : handler instanceof WorkbenchPanelRead read && read.handler() instanceof WorkbenchPanelRead.CallerScopedHandler);
-    }
-
     private WorkbenchReadRegistration registeredHandler(Call call) {
         return call == null ? null : handlers.get(new ReadKey(call.type(), call.name()));
     }
@@ -127,44 +121,48 @@ final class WorkbenchPanelReads {
     ReadResult read(Read batch, SubjectContext subject, Viewer viewer, User user, long start, Locale locale, String language,
             String caller) {
         var livePermission = new FutureTask<>(() -> dataPermissions.getDataPermission(user.getId(), user.getDomainId()));
+        FutureTask<CallerScope> callerScope = caller == null ? null
+            : new FutureTask<>(() -> executionScope.captureCallerScope(caller, user));
         var queryAccess = new FutureTask<>(() -> {
             var access = queries.captureLivePanelAccess(user, () -> capture(livePermission));
-            return caller == null ? access : executionScope.queryAccess(caller, access);
+            return callerScope == null ? access : capture(callerScope).queryAccess(access);
         });
-        Function<UserDataPermission, ExecutionTarget> callerScope =
-            caller == null ? null : permission -> executionScope.callerTarget(caller, user, permission);
-        var registrations = applications.panelReadRegistrations(subject.identity().domainId());
+        var registrations = batch.reads().stream().anyMatch(item -> item != null && !direct(item))
+            ? applications.panelReadRegistrations(subject.identity().domainId()) : null;
         var tasks = batch.reads().stream()
-            .map(item -> plan(subject, item, registrations, start, locale, livePermission, queryAccess, language, callerScope)).toList();
+            .map(item -> plan(subject, item, registrations, start, locale, livePermission, queryAccess, language, callerScope, user)).toList();
         return new ReadResult(viewer, tasks.stream().map(Supplier::get).toList());
     }
 
     private Supplier<ItemResult> plan(SubjectContext subject, ReadItem item,
             BiFunction<String, String, ApplicationCatalog.PanelReadRegistration> registrations, long start, Locale locale,
             FutureTask<UserDataPermission> livePermission, FutureTask<Access> queryAccess, String language,
-            Function<UserDataPermission, ExecutionTarget> callerScope) {
+            FutureTask<CallerScope> callerScope, User user) {
         if (item == null || item.timeoutMs() != null && (item.timeoutMs() <= 0 || item.timeoutMs() > DEFAULT_TIMEOUT_MS))
             return () -> failed(Status.ERROR, "PANEL_READ_INVALID", "Invalid read item or timeout");
         var handler = registeredHandler(item.call());
+        boolean scoped = callerScope != null;
         if (handler instanceof WorkbenchPanelRead.Query query
                 && query.execution() == WorkbenchPanelRead.QueryExecution.REQUEST_THREAD)
-            return () -> readQuery(subject, item, registrations, query, queryAccess, language);
+            return () -> readQuery(subject, item, registrations, query, queryAccess, language, scoped);
         long timeout = item.timeoutMs() == null ? DEFAULT_TIMEOUT_MS : item.timeoutMs();
         long deadline = start + MILLISECONDS.toNanos(timeout);
         if (handler instanceof WorkbenchPanelRead.Query || handler instanceof WorkbenchProductGraphRead
-                || handler instanceof WorkbenchPanelRead metadata && metadata.requiresLiveData())
-            return planCapturedMetadata(subject, item, registrations, handler, livePermission, queryAccess, locale, language, deadline, callerScope);
+                || handler instanceof WorkbenchPanelRead metadata && (metadata.requiresLiveData()
+                    || scoped && metadata.handler() instanceof WorkbenchPanelRead.CallerScopedHandler))
+            return planCapturedMetadata(subject, item, registrations, handler, livePermission, queryAccess, locale, language, deadline,
+                callerScope, user);
         var result = executor.submit(deadline,
-            () -> readMetadata(subject, item, registrations, locale, (WorkbenchPanelRead) handler, callerScope))
+            () -> readMetadata(subject, item, registrations, locale, (WorkbenchPanelRead) handler, scoped))
             .exceptionally(failure -> itemFailure(failure, false));
         return result::join;
     }
 
     private ItemResult readQuery(SubjectContext subject, ReadItem item,
             BiFunction<String, String, ApplicationCatalog.PanelReadRegistration> registrations,
-            WorkbenchPanelRead.Query handler, FutureTask<Access> queryAccess, String language) {
+            WorkbenchPanelRead.Query handler, FutureTask<Access> queryAccess, String language, boolean scoped) {
         try {
-            var admission = admit(subject, item, registrations, handler);
+            var admission = admit(subject, item, registrations, handler, scoped);
             if (admission.status() != Status.READY) return admission;
             return invokeQuery(capture(queryAccess), item, handler, language, admission);
         } catch (Exception failure) {
@@ -176,10 +174,10 @@ final class WorkbenchPanelReads {
             BiFunction<String, String, ApplicationCatalog.PanelReadRegistration> registrations,
             WorkbenchReadRegistration handler, FutureTask<UserDataPermission> livePermission, FutureTask<Access> queryAccess,
             Locale locale, String language, long deadline,
-            Function<UserDataPermission, ExecutionTarget> callerScope) {
+            FutureTask<CallerScope> callerScope, User user) {
         boolean queryRead = handler instanceof WorkbenchPanelRead.Query;
         try {
-            var admission = admit(subject, item, registrations, handler);
+            var admission = admit(subject, item, registrations, handler, callerScope != null);
             if (admission.status() != Status.READY) return () -> admission;
             if (handler instanceof WorkbenchPanelRead.Query query) {
                 var access = capture(queryAccess);
@@ -203,10 +201,11 @@ final class WorkbenchPanelReads {
                     .exceptionally(failure -> itemFailure(failure, false));
                 return result::join;
             }
-            var captured = subject.withLiveDataPermission(capture(livePermission));
-            var owner = ((WorkbenchPanelRead) handler).handler();
+            var read = (WorkbenchPanelRead) handler;
+            var captured = read.requiresLiveData() ? subject.withLiveDataPermission(capture(livePermission)) : subject;
+            var scope = callerScope == null ? null : capture(callerScope);
             var result = executor.submit(deadline, () -> invokeMetadata(locale, admission,
-                    () -> invokeOwner(owner, captured, item.call(), callerScope)))
+                    () -> invokeOwner(read.handler(), captured, item.call(), scope, user)))
                 .exceptionally(failure -> itemFailure(failure, false));
             return result::join;
         } catch (Exception failure) {
@@ -216,7 +215,7 @@ final class WorkbenchPanelReads {
     }
 
     private static <T> T capture(FutureTask<T> facts) throws InterruptedException, ExecutionException {
-        // Capture only on the originating request thread, after placement USE.
+        // Capture on the originating request thread after admission.
         facts.run();
         return facts.get();
     }
@@ -233,17 +232,16 @@ final class WorkbenchPanelReads {
 
     private ItemResult readMetadata(SubjectContext subject, ReadItem item,
             BiFunction<String, String, ApplicationCatalog.PanelReadRegistration> registrations, Locale locale,
-            WorkbenchPanelRead handler, Function<UserDataPermission, ExecutionTarget> callerScope) {
-        var admission = admit(subject, item, registrations, handler);
+            WorkbenchPanelRead handler, boolean scoped) {
+        var admission = admit(subject, item, registrations, handler, scoped);
         if (admission.status() != Status.READY || handler == null) return admission;
-        return invokeMetadata(locale, admission, () -> invokeOwner(handler.handler(), subject, item.call(), callerScope));
+        return invokeMetadata(locale, admission, () -> handler.handler().read(subject, item.call().parameters()));
     }
 
-    private static Object invokeOwner(WorkbenchPanelRead.Handler owner, SubjectContext subject, Call call,
-            Function<UserDataPermission, ExecutionTarget> callerScope) {
-        if (callerScope == null) return owner.read(subject, call.parameters());
-        return ((WorkbenchPanelRead.CallerScopedHandler) owner).read(
-                subject, call.parameters(), callerScope.apply(subject.liveDataPermission()));
+    private Object invokeOwner(WorkbenchPanelRead.Handler owner, SubjectContext subject, Call call, CallerScope scope, User user) {
+        if (scope != null && owner instanceof WorkbenchPanelRead.CallerScopedHandler scopedOwner)
+            return scopedOwner.read(subject, call.parameters(), executionScope.callerTarget(scope, user, subject.liveDataPermission()));
+        return owner.read(subject, call.parameters());
     }
 
     private static ItemResult invokeMetadata(Locale locale, ItemResult admission, Supplier<Object> read) {
@@ -261,9 +259,42 @@ final class WorkbenchPanelReads {
 
     private ItemResult admit(SubjectContext subject, ReadItem item,
             BiFunction<String, String, ApplicationCatalog.PanelReadRegistration> registrations,
-            WorkbenchReadRegistration handler) {
+            WorkbenchReadRegistration handler, boolean scoped) {
+        if (direct(item)) {
+            var source = item.source();
+            if (source.applicationId() != null || source.useId() != null || item.registration() != null || item.uses() != null)
+                throw badRequest("A direct read carries no application or registration facts");
+        } else {
+            var refusal = admitPlacement(subject, item, registrations);
+            if (refusal != null) return refusal;
+        }
+        var visibility = item.visibleKinds() == null ? null : ranges(subject, item.visibleKinds());
+        var call = item.call();
+        if (call != null) {
+            if (blank(call.type()) || blank(call.name()) || call.parameters() == null)
+                throw badRequest("An owner read type, name and parameters are required");
+            if (handler == null) return failed(Status.ERROR, "PANEL_READ_UNKNOWN", "The owner read is not registered");
+            if (scoped && rejectsCallerScope(handler))
+                return failed(Status.FORBIDDEN, "PANEL_READ_SCOPE_UNSUPPORTED", "The owner read does not accept the caller scope");
+        }
+        return new ItemResult(Status.READY, null, null, null, visibility);
+    }
+
+    private static boolean direct(ReadItem item) {
+        return item.source() != null && item.source().kind() == SourceKind.DIRECT;
+    }
+
+    private static boolean rejectsCallerScope(WorkbenchReadRegistration handler) {
+        return switch (handler) {
+            case WorkbenchPanelRead.Query query -> !query.acceptsCallerScope();
+            case WorkbenchProductGraphRead graph -> !graph.acceptsCallerScope();
+            case WorkbenchPanelRead read -> read.requiresLiveData() && !(read.handler() instanceof WorkbenchPanelRead.CallerScopedHandler);
+        };
+    }
+
+    private ItemResult admitPlacement(SubjectContext subject, ReadItem item,
+            BiFunction<String, String, ApplicationCatalog.PanelReadRegistration> registrations) {
         var source = item.source();
-        if (source != null && source.kind() == SourceKind.DIRECT) return admitDirect(subject, item, handler);
         var prepared = item.registration();
         if (source == null || source.kind() == null || blank(source.applicationId()) || blank(source.useId())
                 || prepared == null || blank(prepared.framePanelId())
@@ -279,7 +310,6 @@ final class WorkbenchPanelReads {
         if (!Objects.equals(prepared.panelId(), current.use().panelId()) || !prepared.framePanelId().equals(current.framePanelId())
                 || !sameInputs(prepared.inputs(), current.use().inputs())) return changed();
 
-        var call = item.call();
         if (item.uses() == null) throw badRequest("A uses array is required");
         for (var use : item.uses()) {
             if (use == null || use.target() == null || use.target().kind() == null || blank(use.target().id()) || use.ownerFacts() == null)
@@ -288,35 +318,7 @@ final class WorkbenchPanelReads {
             var decision = authorization.decide(subject, new ObjectAccess(use.target(), Verb.USE, use.ownerFacts()));
             if (!decision.allowed()) return failed(Status.FORBIDDEN, decision.code(), decision.reason());
         }
-        var visibility = item.visibleKinds() == null ? null : ranges(subject, item.visibleKinds());
-        if (call != null) {
-            if (blank(call.type()) || blank(call.name()) || call.parameters() == null)
-                throw badRequest("An owner read type, name and parameters are required");
-            if (handler == null) return failed(Status.ERROR, "PANEL_READ_UNKNOWN", "The owner read is not registered");
-        }
-        return new ItemResult(Status.READY, null, null, null, visibility);
-    }
-
-    /**
-     * A direct read carries no application placement: nothing to compare against a registration and no USE admission,
-     * so the owner judges the person's verified identity by itself. Data-query reads capture their access from the
-     * placement request and are not available here.
-     */
-    private ItemResult admitDirect(SubjectContext subject, ReadItem item, WorkbenchReadRegistration handler) {
-        var source = item.source();
-        if (!blank(source.applicationId()) || !blank(source.useId()) || item.registration() != null || item.uses() != null)
-            throw badRequest("A direct read carries no application or registration facts");
-        if (handler instanceof WorkbenchPanelRead.Query || handler instanceof WorkbenchProductGraphRead
-                || handler instanceof WorkbenchPanelRead metadata && metadata.requiresLiveData())
-            return failed(Status.FORBIDDEN, "PANEL_READ_NOT_DIRECT", "The owner read is not available without an application placement");
-        var visibility = item.visibleKinds() == null ? null : ranges(subject, item.visibleKinds());
-        var call = item.call();
-        if (call != null) {
-            if (blank(call.type()) || blank(call.name()) || call.parameters() == null)
-                throw badRequest("An owner read type, name and parameters are required");
-            if (handler == null) return failed(Status.ERROR, "PANEL_READ_UNKNOWN", "The owner read is not registered");
-        }
-        return new ItemResult(Status.READY, null, null, null, visibility);
+        return null;
     }
 
     private boolean sameInputs(Map<String, Map<String, Object>> prepared, Map<String, Map<String, Object>> current) {

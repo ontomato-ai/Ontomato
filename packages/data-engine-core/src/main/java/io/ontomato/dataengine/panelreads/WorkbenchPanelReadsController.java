@@ -10,7 +10,6 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.ontomato.dataengine.applications.ApplicationCatalog.PanelReadRegistration;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.logging.ServiceLogContext;
-import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
@@ -49,7 +48,7 @@ public final class WorkbenchPanelReadsController {
     public record EntryKey(String applicationId, String useId, SourceKind kind) {}
     public record VisibleKind(Kind kind, Set<Verb> verbs) {}
     public enum SourceKind { @JsonProperty("registered") REGISTERED, @JsonProperty("frame") FRAME,
-        /** No application placement: the owner judges the person's own identity directly. */
+        /** No application placement: the owner judges the read using the verified viewer's authority. */
         @JsonProperty("direct") DIRECT }
     public record Source(SourceKind kind, String applicationId, String useId) {}
     public record Registration(String panelId, String framePanelId, Map<String, Map<String, Object>> inputs) {}
@@ -96,7 +95,8 @@ public final class WorkbenchPanelReadsController {
         ServiceLogContext.user(user);
         var viewer = new Viewer(identity.workbenchSubjectId(user), user.getDomainId(), user.getUserName());
         String caller = servlet.getHeader(AgentExecutionScope.CALLER_HEADER);
-        if (caller != null) requireCallerScopedRead(request);
+        if (caller != null && !(request instanceof Read))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Caller scope requires a panel read batch");
         return switch (request) {
             case Locate locate -> reads.locate(locate, viewer);
             case Open open -> reads.open(open, subject(viewer), viewer);
@@ -114,19 +114,6 @@ public final class WorkbenchPanelReadsController {
                     caller);
             }
         };
-    }
-
-    private void requireCallerScopedRead(Request request) {
-        if (request instanceof Read read && read.reads() != null && read.reads().size() == 1) {
-            var item = read.reads().getFirst();
-            if (item != null && item.visibleKinds() == null && !direct(item) && reads.acceptsCallerScope(item.call()))
-                return;
-        }
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Caller scope requires one registered read that accepts it");
-    }
-
-    private static boolean direct(ReadItem item) {
-        return item.source() != null && item.source().kind() == SourceKind.DIRECT;
     }
 
     private AuthorizationService.SubjectContext subject(Viewer viewer) {

@@ -17,6 +17,10 @@ public record OntologyModelReadScope(ExecutionTarget target) {
         return target.testing() || !target.classNames().isEmpty();
     }
 
+    public Map<String, Integer> countMetadata(OntologyModelService model, String domainId) {
+        return model.countMetadata(domainId, applies() ? target.classNames() : null);
+    }
+
     public List<ObjectTypeView> visibleObjectTypes(List<ObjectTypeView> views) {
         return applies() ? views.stream().filter(view -> target.classNames().contains(view.className())).toList() : views;
     }

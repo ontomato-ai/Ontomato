@@ -148,7 +148,8 @@ class WorkbenchPanelReadsTest {
                 WorkbenchPanelRead.callerScopedMetadata("customer:ObjectType", "createForm", customerCreate),
                 new WorkbenchMetricMetadata().workbenchMetricDescription(ontology),
                 WorkbenchPanelRead.Query.callerScoped("platform:MetricView", "parameterForm", WorkbenchPanelRead.QueryExecution.METADATA, metricForm),
-                WorkbenchPanelRead.Query.callerScoped("platform:MetricView", "result", WorkbenchPanelRead.QueryExecution.REQUEST_THREAD, metricResult)));
+                WorkbenchPanelRead.Query.callerScoped("platform:MetricView", "result", WorkbenchPanelRead.QueryExecution.REQUEST_THREAD, metricResult),
+                new WorkbenchPanelRead.Query("platform:Application", "builderTestStatus", WorkbenchPanelRead.QueryExecution.REQUEST_THREAD, metricResult)));
         http = MockMvcBuilders.standaloneSetup(new WorkbenchPanelReadsController(new WorkbenchServiceAuthentication("service"),
             identity, authorization, reads))
             .addInterceptors(registry.registered()).addFilters(logging).build();
@@ -276,13 +277,8 @@ class WorkbenchPanelReadsTest {
     }
 
     @Test
-    void callerScopeDoesNotAdmitOtherBatchItemsGrantsOrSandboxRequests() throws Exception {
+    void callerScopeDoesNotAdmitQueryGrants() throws Exception {
         authenticated();
-        String normal = read("registered", "panel", "frame", "registered");
-        var otherItems = List.of(batch(normal), batch(relationshipRead(), normal),
-                batch(relationshipRead().replace("\"uses\"", "\"visibleKinds\":[],\"uses\"")));
-        for (var batch : otherItems)
-            http.perform(request(batch).header(AgentExecutionScope.CALLER_HEADER, CALLER)).andExpect(status().isForbidden());
         http.perform(request(batch(relationshipRead())).header(AgentExecutionScope.CALLER_HEADER, CALLER)
                 .requestAttr(QueryGrantService.ATTRIBUTE, new JSONObject())).andExpect(status().isUnauthorized());
         verifyNoInteractions(callers, relationship, handler, dataPermissions);
@@ -306,25 +302,102 @@ class WorkbenchPanelReadsTest {
     }
 
     @Test
-    void directReadDoesNotAdmitDataQueryReads() throws Exception {
+    void directLiveDataCapturesViewerPermissionAndPreservesTheOwnerDecision() throws Exception {
         authenticated();
+        var requestThread = Thread.currentThread();
+        var permission = new UserDataPermission();
+        when(dataPermissions.getDataPermission("u", "d")).thenAnswer(call -> {
+            assertSame(requestThread, Thread.currentThread());
+            return permission;
+        });
+        when(customer.read(eq(subject.withLiveDataPermission(permission)), any()))
+            .thenReturn("visible customer")
+            .thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Customer read denied"));
 
-        http.perform(request(batch(directRead("customer:ObjectType", "query"))))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.results[0].status").value("forbidden"))
-            .andExpect(jsonPath("$.results[0].code").value("PANEL_READ_NOT_DIRECT"));
-        verify(customer, never()).read(any(), any());
+        var item = directRead("customer:ObjectType", "query");
+        http.perform(request(batch(item, item))).andExpect(status().isOk())
+            .andExpect(jsonPath("$.results[0].payload").value("visible customer"))
+            .andExpect(jsonPath("$.results[1].status").value("forbidden"));
+        verify(dataPermissions).getDataPermission("u", "d");
+        verifyNoInteractions(applications);
     }
 
     @Test
-    void directReadIsRejectedWithCallerScope() throws Exception {
+    void directMetricQueriesKeepTheirExecutionThreadsAndViewerPermissions() throws Exception {
         authenticated();
-        var deadline = Instant.now().plusSeconds(60);
-        when(callers.serviceCaller(CALLER, "d")).thenReturn(caller("u", List.of("org"), deadline));
+        var permission = new UserDataPermission();
+        permission.setFullData(true);
+        when(dataPermissions.getDataPermission("u", "d")).thenReturn(permission);
+        var requestThread = Thread.currentThread();
+        when(metricResult.read(any(), any(), any())).thenAnswer(call -> {
+            assertSame(requestThread, Thread.currentThread());
+            assertTrue(call.<QueryAccessService.Access>getArgument(0).permission().isFullData());
+            return "metric result";
+        });
+        when(metricForm.read(any(), any(), any())).thenAnswer(call -> {
+            assertNotSame(requestThread, Thread.currentThread());
+            assertTrue(call.<QueryAccessService.Access>getArgument(0).permission().isFullData());
+            return "metric form";
+        });
+        http.perform(request(batch(directRead("platform:MetricView", "result"), directRead("platform:MetricView", "parameterForm"))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.results[0].payload").value("metric result"))
+            .andExpect(jsonPath("$.results[1].payload").value("metric form"));
+        verify(identity).requireQueryAccess("u", "d");
+        verify(dataPermissions).getDataPermission("u", "d");
+        verifyNoInteractions(applications, callers);
+    }
 
-        http.perform(request(batch(directRead("customer:ObjectType", "createForm")))
-                .header(AgentExecutionScope.CALLER_HEADER, CALLER))
-            .andExpect(status().isForbidden());
-        verify(customerCreate, never()).read(any(), any(), any());
+    @Test
+    void directRejectsApplicationRegistrationAndUseFactsBeforeInvokingOwners() throws Exception {
+        authenticated();
+        var direct = directRead("example:type", "query");
+        var application = direct.replace("\"direct\"", "\"direct\",\"applicationId\":\"\"");
+        var use = direct.replace("\"direct\"", "\"direct\",\"useId\":\"use\"");
+        var registration = direct.replace("\"call\"", "\"registration\":{},\"call\"");
+        var uses = direct.replace("\"call\"", "\"uses\":[],\"call\"");
+        http.perform(request(batch(application, use, registration, uses))).andExpect(status().isOk())
+            .andExpect(jsonPath("$.results[*].status", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("error"))));
+        verifyNoInteractions(applications, handler);
+    }
+
+    @Test
+    void callerBatchCombinesOrdinaryMetadataAndVisibilityWithScopedReadsAndIndividualRefusals() throws Exception {
+        authenticated();
+        when(identity.getCurrentCredentialExpiresAt()).thenReturn(null);
+        when(callers.serviceCaller(CALLER, "d")).thenReturn(caller("u", List.of("org"), Instant.now().plusSeconds(60)));
+        var permission = new UserDataPermission();
+        when(dataPermissions.getDataPermission("u", "d")).thenReturn(permission);
+        when(handler.read(same(subject), any())).thenReturn("own facts");
+        when(authorization.readObjectRanges(subject, Kind.PANEL, Set.of(Verb.USE)))
+            .thenReturn(Map.of(Verb.USE, new ObjectVisibilityRange(true, "u", Set.of("panel"), false)));
+        when(relationship.read(eq(subject.withLiveDataPermission(permission)), any(), any())).thenAnswer(call ->
+            call.<io.ontomato.dataengine.service.ExecutionTarget>getArgument(2).classNames());
+        when(customerCreate.read(same(subject), any(), any())).thenAnswer(call ->
+            call.<io.ontomato.dataengine.service.ExecutionTarget>getArgument(2).classNames());
+        when(metricForm.read(any(), any(), any())).thenAnswer(call ->
+            call.<QueryAccessService.Access>getArgument(0).classNames());
+
+        var visibility = """
+            {"source":{"kind":"direct"},"visibleKinds":[{"kind":"PANEL","verbs":["USE"]}]}
+            """;
+        http.perform(request(batch(directRead("example:type", "query"), visibility,
+                directRead("customer:Relationship", "neighbors"), directRead("customer:ObjectType", "createForm"),
+                directRead("platform:MetricView", "parameterForm"), directRead("customer:ObjectType", "query"),
+                directRead("platform:Application", "builderTestStatus"))).header(AgentExecutionScope.CALLER_HEADER, CALLER))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.results[0].payload").value("own facts"))
+            .andExpect(jsonPath("$.results[1].visibility.PANEL.USE.objectIds[0]").value("panel"))
+            .andExpect(jsonPath("$.results[2].payload[0]").value("org"))
+            .andExpect(jsonPath("$.results[3].payload[0]").value("org"))
+            .andExpect(jsonPath("$.results[4].payload[0]").value("org"))
+            .andExpect(jsonPath("$.results[5].status").value("forbidden"))
+            .andExpect(jsonPath("$.results[5].code").value("PANEL_READ_SCOPE_UNSUPPORTED"))
+            .andExpect(jsonPath("$.results[6].status").value("forbidden"))
+            .andExpect(jsonPath("$.results[6].code").value("PANEL_READ_SCOPE_UNSUPPORTED"));
+        verify(callers).serviceCaller(CALLER, "d");
+        verify(dataPermissions).getDataPermission("u", "d");
+        verifyNoInteractions(customer, metricResult);
     }
 
     private static JSONObject caller(String executor, List<String> classes, Instant deadline) {
@@ -336,6 +409,11 @@ class WorkbenchPanelReadsTest {
         return read("registered", "panel", "frame", "registered")
             .replace("example:type", "platform:MetricView").replace("\"query\"", "\"" + name + "\"")
             .replace("\"selected\":\"registered\"", "\"primaryKey\":\"" + id + "\",\"parameters\":{\"threshold\":35}");
+    }
+
+    private static String directMetricRead(String name, String id) {
+        return directRead("platform:MetricView", name).replace("\"parameters\":{}",
+            "\"parameters\":{\"primaryKey\":\"" + id + "\",\"parameters\":{\"threshold\":35}}");
     }
 
     private void metricAccess() {
@@ -375,10 +453,6 @@ class WorkbenchPanelReadsTest {
     @Test
     void restrictedMetricResultAndDescribeUseTheStoredSourceScope() throws Exception {
         metricAccess();
-        var unscopedQuery = metricRead("builderTestStatus", "org").replace("platform:MetricView", "platform:Application");
-        for (var body : List.of(batch(unscopedQuery), batch(metricRead("result", "org"), metricRead("describe", "org"))))
-            http.perform(request(body).header(AgentExecutionScope.CALLER_HEADER, CALLER)).andExpect(status().isForbidden());
-        verifyNoInteractions(callers, dataPermissions);
         stubMetric("org");
         stubMetric("person");
         when(metricModel.getJSONRule("d")).thenReturn(Map.of("classDef", List.of(
@@ -400,12 +474,14 @@ class WorkbenchPanelReadsTest {
         when(metricResult.read(any(), any(), any())).thenAnswer(call -> resultOwner.read(
             call.getArgument(0), call.getArgument(1), call.getArgument(2)));
 
-        for (var name : List.of("result", "describe")) {
-            http.perform(request(batch(metricRead(name, "org"))).header(AgentExecutionScope.CALLER_HEADER, CALLER))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.results[0].status").value("ready"));
-            http.perform(request(batch(metricRead(name, "person"))).header(AgentExecutionScope.CALLER_HEADER, CALLER))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.results[0].status").value("forbidden"));
-        }
+        http.perform(request(batch(directMetricRead("result", "org"), metricRead("describe", "org"),
+                directMetricRead("result", "person"), metricRead("describe", "person"))).header(AgentExecutionScope.CALLER_HEADER, CALLER))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.results[0].status").value("ready"))
+            .andExpect(jsonPath("$.results[1].status").value("ready"))
+            .andExpect(jsonPath("$.results[2].status").value("forbidden"))
+            .andExpect(jsonPath("$.results[3].status").value("forbidden"));
+        verify(callers).serviceCaller(CALLER, "d");
         verify(outputs).executeMetric(argThat(body -> "org".equals(body.getString("id"))), any(), any());
         verifyNoMoreInteractions(outputs);
     }
@@ -437,15 +513,11 @@ class WorkbenchPanelReadsTest {
             assertSame(requestThread, Thread.currentThread());
             return null;
         });
-        String item = read("registered", "panel", "frame", "registered")
-            .replace("example:type", "platform:ObjectType").replace("\"query\"", "\"productGraph\"")
-            .replace("\"selected\":\"registered\"", """
-                "panelIds":["panel"],"projectionIds":[],"objectTypes":["org"],"actions":["approve","hidden"],"metrics":["org","person"]
+        String item = directRead("platform:ObjectType", "productGraph")
+            .replace("\"parameters\":{}", """
+                "parameters":{"panelIds":["panel"],"projectionIds":[],"objectTypes":["org"],"actions":["approve","hidden"],"metrics":["org","person"]}
                 """);
 
-        http.perform(request(batch(item, metricRead("describe", "org"))).header(AgentExecutionScope.CALLER_HEADER, CALLER))
-            .andExpect(status().isForbidden());
-        verifyNoInteractions(callers, graphGrants, graphModel, graphAction);
         for (boolean scoped : List.of(false, true)) {
             clearInvocations(applications, graphGrants, identity);
             var req = request(batch(item));
