@@ -52,7 +52,7 @@ await mountPanel({
       const groupByKey = new Map(declaredGroups.value.map((group) => [group.key, group]));
       const namedByGroup = new Map();
       for (const use of panelUses.value) {
-        if (use.kind === "frame-conversation" || !use.names) continue;
+        if (use.kind === "frame-conversation") continue;
         if (use.groupKey && groupByKey.has(use.groupKey)) {
           const list = namedByGroup.get(use.groupKey) ?? [];
           list.push(use);
@@ -63,7 +63,7 @@ await mountPanel({
       const items = [];
       const seenGroups = new Set();
       for (const use of panelUses.value) {
-        if (use.kind === "frame-conversation" || !use.names) continue;
+        if (use.kind === "frame-conversation") continue;
         if (use.groupKey && groupByKey.has(use.groupKey)) {
           if (seenGroups.has(use.groupKey)) continue;
           seenGroups.add(use.groupKey);
@@ -72,7 +72,7 @@ await mountPanel({
           const tabs = groupUses.map((entry) => ({
             id: entry.id,
             path: entry.path,
-            label: pickLocalizedText(entry.names, currentLocale.value, entry.pageKey),
+            label: pickLocalizedText(entry.names, currentLocale.value),
           }));
           items.push({
             key: `group:${group.key}`,
@@ -89,7 +89,7 @@ await mountPanel({
           groupKey: null,
           path: use.path,
           icon: use.icon ?? "pages",
-          label: pickLocalizedText(use.names, currentLocale.value, use.pageKey),
+          label: pickLocalizedText(use.names, currentLocale.value),
           tabs: [],
         });
       }
@@ -122,26 +122,12 @@ await mountPanel({
       return item && item.tabs.length > 1 ? item.tabs : [];
     });
 
-    const activeTabPath = computed(() => {
-      const tabs = activeGroupTabs.value;
-      if (!tabs.length) return null;
-      const use = activeUse.value;
-      if (!use) return tabs[0].path;
-      if (tabs.some((tab) => tab.path === use.path)) return use.path;
-      // Unnamed detail entry inside a group (e.g. case artifact detail) highlights its preceding named tab.
-      for (let i = activeUseIndex.value - 1; i >= 0; i -= 1) {
-        const candidate = panelUses.value[i];
-        if (candidate.groupKey === use.groupKey && tabs.some((tab) => tab.path === candidate.path)) {
-          return candidate.path;
-        }
-      }
-      return tabs[0].path;
-    });
+    const activeTabPath = computed(() => activeUse.value?.path ?? null);
 
     const paneTitle = computed(() => {
       if (activeNavItem.value) return activeNavItem.value.label;
-      if (activeUse.value?.names) {
-        return pickLocalizedText(activeUse.value.names, currentLocale.value, activeUse.value.pageKey);
+      if (activeUse.value) {
+        return pickLocalizedText(activeUse.value.names, currentLocale.value);
       }
       return appTitle.value;
     });

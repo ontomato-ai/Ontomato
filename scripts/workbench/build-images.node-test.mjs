@@ -530,7 +530,7 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
   const projections = [{ id: "builtin-product-catalogue-count", input: { component: "ObjectCount", type: entryType, data: { rows: "count" } } }];
   writeFileSync(join(panelFolder, "projections.json"), JSON.stringify(projections));
   const java = { id: "ontology", declaration: { panelUses: [
-    { id: "catalogue", path: "/ontology/catalogue", panelId },
+    { id: "catalogue", pageKey: "catalogue", path: "/ontology/catalogue", panelId, names: { en: "Catalogue" }, inMenu: false },
   ] } };
   writeFileSync(join(javaDirectory, "ontology.json"), JSON.stringify(java));
   const applications = javaBuiltinApplications([{ root }]);
@@ -571,7 +571,10 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
 
   await assert.rejects(stageBuiltinPanels({
     ...options, applications: [...applications, { id: "agents", declaration: {
-      panelUses: [{ id: "teams", path: "/agents/teams", panelId: "builtin-product-teams" }],
+      panelUses: [{
+        id: "teams", pageKey: "teams", path: "/agents/teams", panelId: "builtin-product-teams",
+        names: { en: "Teams" }, inMenu: false,
+      }],
     } }],
   }), /Built-in application agents, entry teams \(\/agents\/teams\), panel builtin-product-teams: panel is missing from the release/u);
 });

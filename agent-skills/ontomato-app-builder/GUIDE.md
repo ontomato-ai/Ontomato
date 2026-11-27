@@ -157,8 +157,7 @@ projections/
   Keep shared source files in the owner application's tree so its commits govern changes.
 
 Each panel use has `id`, `pageKey`, `panelId` and `path`. Keep `id` stable when renaming or moving an entry
-and keep the page key unique in the domain. Include localized `names` to display a use in the application menu.
-Detail uses opened through navigation or a deep link can omit `names`. On first publication, set
+and keep the page key unique in the domain. Give every use localized `names`: it is the entry's name wherever the platform shows it — the menu, the page title, and permission policies. Set `inMenu: false` on a use that should not appear in the application menu, such as a detail page. On first publication, set
 `initialOpenEntryIds` to the IDs that domain members should be able to enter. An empty array starts the application
 with restricted entries. Choose the icon with `sdk icons`.
 

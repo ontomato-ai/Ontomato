@@ -383,7 +383,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: "app-schedules",
       menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: "pilot", pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId },
+      use: { id: "pilot", names: { en: "pilot" }, pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId },
     } });
   });
   mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
@@ -391,8 +391,8 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     // Java answers the one admitted entry the request names.
     const uses = [
-      { id: "graph", pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId },
-      { id: "data", pageKey: "data", path: "/applications/ontology-pilot/data", panelId: dataPanelId },
+      { id: "graph", names: { en: "graph" }, pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId },
+      { id: "data", names: { en: "data" }, pageKey: "data", path: "/applications/ontology-pilot/data", panelId: dataPanelId },
     ];
     res.json({ success: true, data: {
       applicationId: "ontology-pilot", menu: { singleEntry: true, groups: [], panelUses: [] }, use: uses.find(use => use.id === req.query.useId),
@@ -438,7 +438,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: "agent-settings", menu: { singleEntry: true, groups: [], panelUses: [] },
       use: {
-        id: "settings", pageKey: "settings", path: "/applications/agent-settings/settings", panelId: agentPanelId,
+        id: "settings", names: { en: "settings" }, pageKey: "settings", path: "/applications/agent-settings/settings", panelId: agentPanelId,
       },
     } });
   });
@@ -484,7 +484,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: family, menu: { singleEntry: true, groups: [], panelUses: [] },
       ...(family === "owner-customer" && { framePanelId: "panel-owner-customer" }),
-      use: { id: "data", pageKey: "data", path: `/applications/${family}/data`,
+      use: { id: "data", names: { en: "data" }, pageKey: "data", path: `/applications/${family}/data`,
         panelId: `panel-${family}` },
     } });
   });

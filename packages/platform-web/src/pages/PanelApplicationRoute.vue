@@ -580,13 +580,14 @@ const frameContext = computed(() => {
   const activeUse = use.value ?? baseUse.value;
   if (!activeUse) return null;
   const app = catalogApp.value;
+  const menuUses = app?.panelUses?.filter(entry => entry.inMenu !== false) ?? [];
   return applicationFrameContextOf({
     applicationId: props.applicationId,
     menu: answer?.menu ?? {
-      singleEntry: app?.singleEntry ?? ((app?.panelUses ?? []).filter((entry) => Boolean(entry.names)).length <= 1),
+      singleEntry: app?.singleEntry ?? (menuUses.length <= 1),
       names: app?.names,
       groups: app?.groups ?? [],
-      panelUses: app?.panelUses ?? [],
+      panelUses: menuUses,
     },
     use: activeUse,
   });
@@ -980,6 +981,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         :ref="(instance) => setPageHost(page, instance as ShownInstance | null)"
         :class="{ 'panel-host-page': !props.navigate, 'panel-host-beside': Boolean(props.navigate) }"
         :port="page.port"
+        :entry-name="localizedApplicationText(page.use.names, locale)!"
         :labels="labels"
         :language="language"
         :shown="page === shownPage"

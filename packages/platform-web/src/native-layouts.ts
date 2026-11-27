@@ -18,7 +18,7 @@ export function firstVisiblePanelPath(app: CatalogApplication): string | null {
         ...uses.filter((use) => !use.groupKey || !app.groups!.some((group) => group.key === use.groupKey)),
       ]
     : uses;
-  const first = ordered.find((use) => Boolean(use.names)) ?? ordered[0];
+  const first = ordered.find((use) => use.inMenu !== false) ?? ordered[0];
   return first ? panelUsePath(first.path) : null;
 }
 export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "home" | "homePage" | "entryHome" | "open" | "descriptionKey">;
@@ -80,9 +80,9 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
     const hasLegacyLayout = Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!]);
     const detailLoaded = app.panelUses !== undefined;
     // Entry names, icons and menu placement are entry-table facts: use them only after the application's detail arrived.
-    const entries = !panels && !embedded && detailLoaded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
+    const entries = !panels && !embedded && detailLoaded ? new Map(app.panelUses?.flatMap(use => use.inMenu !== false ? [[panelUsePath(use.path), {
       id: panelUsePath(use.path),
-      label: localizedApplicationText(use.names, locale) ?? use.pageKey,
+      label: localizedApplicationText(use.names, locale)!,
       ...(use.icon ? { icon: use.icon } : {}),
     }] as const] : []) ?? []) : undefined;
     // Panel applications and catalog-driven built-ins draw navigation through their frame panel, never the shell.

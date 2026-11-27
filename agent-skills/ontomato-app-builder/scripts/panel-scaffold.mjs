@@ -268,14 +268,14 @@ export function managementPanel(type, checks, typeTable, {
       "detail.missing": "The record is missing.",
     }),
   });
-  const use = (entry, path) => ({
-    id: `${id}-${entry}-use`, pageKey: `${id}-${entry}`, panelId: `${id}-${entry}`, path,
+  const use = (entry, path, name) => ({
+    id: `${id}-${entry}-use`, pageKey: `${id}-${entry}`, panelId: `${id}-${entry}`, path, names: { en: name },
   });
   const application = {
     entry: { path: catalogPath, renderer: "panels" },
     initialOpenEntryIds: [`${id}-catalog-use`, `${id}-detail-use`],
     declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "app-window", groups: [] },
-    panelUses: [{ ...use("catalog", catalogPath), names: { en: title } }, use("detail", detailPath)],
+    panelUses: [use("catalog", catalogPath, title), { ...use("detail", detailPath, `${title} detail`), inMenu: false }],
   };
   return { application, panels: [catalog, detail], entry: catalogPath };
 }

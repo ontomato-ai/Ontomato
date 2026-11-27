@@ -50,6 +50,17 @@
       "names": {"en": "Relation types", "zh-CN": "关系类型"}, "groupKey": "facts"
     }, {
       "id": "ontology-relation-detail", "pageKey": "ontology-relation-detail", "panelId": "builtin-product-ontology-relation-detail",
+      "names": {
+        "en": "Relation type detail",
+        "zh-CN": "关系类型详情",
+        "zh-TW": "關係類型詳情",
+        "ja": "リレーション型詳細",
+        "de": "Beziehungstyp-Details",
+        "fr": "Détail du type de relation",
+        "it": "Dettaglio tipo di relazione",
+        "ar": "تفاصيل نوع العلاقة"
+      },
+      "inMenu": false,
       "path": "/ontology/relations/detail"
     }, {
       "id": "business-knowledge", "pageKey": "business-knowledge", "panelId": "builtin-product-business-knowledge",
@@ -69,6 +80,17 @@
       "names": {"en": "Metric Views", "zh-CN": "指标视图"}, "groupKey": "capabilities"
     }, {
       "id": "ontology-metric-view-detail", "pageKey": "metric-view-detail", "panelId": "builtin-product-ontology-metric-view-detail",
+      "names": {
+        "en": "Metric view detail",
+        "zh-CN": "指标视图详情",
+        "zh-TW": "指標檢視詳情",
+        "ja": "指標ビュー詳細",
+        "de": "Kennzahlansicht-Details",
+        "fr": "Détail de la vue de métrique",
+        "it": "Dettaglio vista metrica",
+        "ar": "تفاصيل عرض المؤشر"
+      },
+      "inMenu": false,
       "path": "/ontology/assets/metrics/detail"
     }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
@@ -77,6 +99,17 @@
       "names": {"en": "Functions", "zh-CN": "函数"}, "groupKey": "capabilities"
     }, {
       "id": "ontology-function-detail", "pageKey": "function-detail", "panelId": "builtin-product-ontology-function-detail",
+      "names": {
+        "en": "Function detail",
+        "zh-CN": "函数详情",
+        "zh-TW": "函式詳情",
+        "ja": "関数詳細",
+        "de": "Funktionsdetails",
+        "fr": "Détail de la fonction",
+        "it": "Dettaglio funzione",
+        "ar": "تفاصيل الدالة"
+      },
+      "inMenu": false,
       "path": "/ontology/assets/functions/detail"
     }, {
       "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
@@ -85,6 +118,17 @@
       "names": {"en": "Actions", "zh-CN": "动作"}, "groupKey": "capabilities"
     }, {
       "id": "ontology-action-detail", "pageKey": "action-detail", "panelId": "builtin-product-ontology-action-detail",
+      "names": {
+        "en": "Action detail",
+        "zh-CN": "动作详情",
+        "zh-TW": "動作詳情",
+        "ja": "アクション詳細",
+        "de": "Aktionsdetails",
+        "fr": "Détail de l'action",
+        "it": "Dettaglio azione",
+        "ar": "تفاصيل الإجراء"
+      },
+      "inMenu": false,
       "path": "/ontology/assets/actions/detail"
     }, {
       "id": "ontology-workflows", "pageKey": "ontology-workflows", "panelId": "builtin-product-ontology-workflows",
@@ -131,6 +175,17 @@
       }, "groupKey": "capabilities"
     }, {
       "id": "ontology-skill-detail", "pageKey": "skills-library-detail", "panelId": "builtin-product-skills-library-detail",
+      "names": {
+        "en": "Skill detail",
+        "zh-CN": "技能详情",
+        "zh-TW": "技能詳情",
+        "ja": "スキル詳細",
+        "de": "Skill-Details",
+        "fr": "Détail de la compétence",
+        "it": "Dettaglio competenza",
+        "ar": "تفاصيل المهارة"
+      },
+      "inMenu": false,
       "path": "/ontology/skills/detail"
     }, {
       "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
@@ -149,6 +204,17 @@
       "names": {"en": "Projections","zh-CN": "投影"}, "groupKey": "products"
     }, {
       "id": "use-ontology-projection-detail", "pageKey": "ontology-projection-detail", "panelId": "builtin-product-ontology-projection-detail",
+      "names": {
+        "en": "Projection detail",
+        "zh-CN": "投影详情",
+        "zh-TW": "投影詳情",
+        "ja": "プロジェクション詳細",
+        "de": "Projektionsdetails",
+        "fr": "Détail de la projection",
+        "it": "Dettaglio proiezione",
+        "ar": "تفاصيل العرض الإسقاطي"
+      },
+      "inMenu": false,
       "path": "/ontology/projections/detail"
     }, {
       "id": "use-ontology-panels", "pageKey": "ontology-panels", "panelId": "builtin-product-ontology-panels",
@@ -157,6 +223,17 @@
       "names": {"en": "Panels","zh-CN": "面板"}, "groupKey": "products"
     }, {
       "id": "use-ontology-panel-detail", "pageKey": "ontology-panel-detail", "panelId": "builtin-product-ontology-panel-detail",
+      "names": {
+        "en": "Panel detail",
+        "zh-CN": "面板详情",
+        "zh-TW": "面板詳情",
+        "ja": "パネル詳細",
+        "de": "Panel-Details",
+        "fr": "Détail du panneau",
+        "it": "Dettaglio pannello",
+        "ar": "تفاصيل اللوحة"
+      },
+      "inMenu": false,
       "path": "/ontology/panels/detail"
     }, {
       "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
@@ -165,6 +242,17 @@
       "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products"
     }, {
       "id": "use-ontology-application-detail", "pageKey": "ontology-application-detail", "panelId": "builtin-product-ontology-application-detail",
+      "names": {
+        "en": "Application detail",
+        "zh-CN": "应用详情",
+        "zh-TW": "應用詳情",
+        "ja": "アプリケーション詳細",
+        "de": "Anwendungsdetails",
+        "fr": "Détail de l'application",
+        "it": "Dettaglio applicazione",
+        "ar": "تفاصيل التطبيق"
+      },
+      "inMenu": false,
       "path": "/ontology/applications/detail"
     }, {
       "id": "ontology-agent-settings", "pageKey": "agent-settings", "panelId": "builtin-product-agent-settings",
@@ -174,6 +262,17 @@
       "names": {"en": "Agents", "zh-CN": "智能体"}, "groupKey": "products"
     }, {
       "id": "ontology-agent-detail", "pageKey": "agent-detail", "panelId": "builtin-product-agent-detail",
+      "names": {
+        "en": "Agent detail",
+        "zh-CN": "智能体详情",
+        "zh-TW": "智慧體詳情",
+        "ja": "エージェント詳細",
+        "de": "Agent-Details",
+        "fr": "Détail de l'agent",
+        "it": "Dettaglio agente",
+        "ar": "تفاصيل الوكيل"
+      },
+      "inMenu": false,
       "path": "/ontology/agents/detail",
       "inputs": {"catalogPath": {"literal": "/ontology/agents"}}
     }]

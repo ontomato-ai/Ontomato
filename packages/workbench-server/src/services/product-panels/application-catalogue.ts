@@ -252,9 +252,7 @@ async function presentApplicationEntryRows(
       : agents.get(`preset:${agent.agentKind}`) ?? agent.agentKind;
   };
   return detail.panelUses.map((use): PanelRecord => {
-    const displayName = use.names
-      ? panelRecordFieldText({ kind: "localized", values: use.names }, language, "en") || use.id
-      : use.id;
+    const displayName = panelRecordFieldText({ kind: "localized", values: use.names }, language, "en");
     const panelEntry = isApplicationPanelUse(use);
     return {
       primaryKey: use.id,

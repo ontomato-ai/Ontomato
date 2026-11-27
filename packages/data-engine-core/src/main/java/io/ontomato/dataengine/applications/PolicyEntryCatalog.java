@@ -34,7 +34,6 @@ public final class PolicyEntryCatalog {
     }
 
     private static String label(ApplicationPanelUse use) {
-        if (use.names() == null || use.names().isEmpty()) return use.pageKey();
         return use.names().getOrDefault("en", use.names().values().iterator().next());
     }
 }

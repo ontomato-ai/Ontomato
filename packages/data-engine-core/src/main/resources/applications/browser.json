@@ -49,6 +49,17 @@
       },
       {
         "id": "browser-object-detail",
+        "names": {
+          "en": "Object detail",
+          "zh-CN": "对象详情",
+          "zh-TW": "物件詳情",
+          "ja": "オブジェクト詳細",
+          "de": "Objektdetails",
+          "fr": "Détail de l'objet",
+          "it": "Dettaglio oggetto",
+          "ar": "تفاصيل الكائن"
+        },
+        "inMenu": false,
         "pageKey": "browser-object-detail",
         "panelId": "builtin-product-object-detail",
         "defaultAgent": { "kind": "preset", "agentKind": "regular" },

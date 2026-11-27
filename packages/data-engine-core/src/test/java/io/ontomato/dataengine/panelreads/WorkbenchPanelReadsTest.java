@@ -85,8 +85,9 @@ class WorkbenchPanelReadsTest {
         {"target":{"domainId":"d","kind":"PANEL","id":"panel"},"ownerFacts":{"state":"PUBLISHED"}}
         """;
     private static final PanelReadRegistration REGISTRATION = new PanelReadRegistration("app-a",
-        new ApplicationPanelUse("use", "page", "panel", "/applications/app-a", null, null,
-            Map.of("selected", Map.of("literal", Map.of("key", "registered", "number", new BigDecimal("1.00")))), null),
+        new ApplicationPanelUse("use", "page", "panel", "/applications/app-a", null, Map.of("en", "Page"), null,
+            Map.of("selected", Map.of("literal", Map.of("key", "registered", "number", new BigDecimal("1.00")))),
+            null, null, null, null, false),
         "frame");
     private final ApplicationCatalog applications = mock(ApplicationCatalog.class);
     private final AuthorizationService authorization = mock(AuthorizationService.class);

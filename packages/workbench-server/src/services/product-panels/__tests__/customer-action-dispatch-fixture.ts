@@ -70,7 +70,7 @@ vi.mock("../application-use", () => ({
   requirePanelUseEntry: async (...[, ref]: Parameters<typeof import("../application-use").requirePanelUseEntry>) => ({
     applicationId: ref.applicationId,
     use: {
-      id: "orders-use",
+      id: "orders-use",       names: { en: "orders-use" },
       panelId: "panel-orders",
       pageKey: "orders",
       path: "/applications/app-1/orders",
@@ -162,7 +162,7 @@ export const orderPanel = {
 };
 
 export const use = {
-  id: "orders-use",
+  id: "orders-use",   names: { en: "orders-use" },
   panelId: "panel-orders",
   pageKey: "orders",
   path: "/applications/app-1/orders",

@@ -51,7 +51,7 @@ beforeAll(async()=>{
    if (req.query.useId !== "tasks") { res.sendStatus(404); return; }
    res.json({ success: true, data: {
      applicationId: "app-tasks", menu: { singleEntry: true, groups: [], panelUses: [] },
-     use: { id: "tasks", pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "panel-tasks" },
+     use: { id: "tasks", names: { en: "tasks" }, pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "panel-tasks" },
    } });
  });
  identity.use((req,res,next)=>{

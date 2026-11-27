@@ -93,6 +93,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       application.panelUses?.find((entry) => entry.path === "/settings/feedback")
       ?? {
         id: "feedback-main",
+        names: { en: "feedback-main" },
         path: "/settings/feedback",
         pageKey: "feedback",
         panelId: "builtin-product-feedback-d2",

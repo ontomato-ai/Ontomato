@@ -533,7 +533,7 @@ it.each(["registered", "frame"] as const)("bundles fixed projections for a %s ne
     } } },
   });
   mocks.backendGet.mockResolvedValue({ text: JSON.stringify({ success: true, data: {
-    applicationId: "app", framePanelId: "root", use: { id: "use", pageKey: "use", panelId: "root", path: "/app/use" },
+    applicationId: "app", framePanelId: "root", use: { id: "use", names: { en: "use" }, pageKey: "use", panelId: "root", path: "/app/use" },
   } }) });
   const deniedIds = new Set(["denied"]);
   mocks.decide.mockImplementation((request: ObjectDecisionRequest) =>

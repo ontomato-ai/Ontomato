@@ -28,6 +28,7 @@ const props = withDefaults(defineProps<{
    * name. A candidate has no registered name, so this is its whole name.
    */
   label?: string;
+  entryName?: string;
   /** The page's address as the reader sees it; the instance's deep-linkable state is added to it. */
   address: string;
   /** The deep-linkable state the page address currently requests. */
@@ -152,6 +153,7 @@ const readCurrentUser = () => {
 const view = usePanelInstance(props.port, {
   labels: props.labels,
   label: (source) => {
+    if (props.entryName !== undefined) return props.entryName;
     if (source.kind !== "registered") return props.label!;
     const name = productPanelDisplayName(source.panel, props.language.locale, props.language.fallback);
     return props.label ? `${props.label} · ${name}` : name;
