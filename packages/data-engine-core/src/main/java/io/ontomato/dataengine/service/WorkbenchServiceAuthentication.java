@@ -18,10 +18,18 @@ public class WorkbenchServiceAuthentication {
     this.token = token;
   }
 
-  public String authenticate(HttpServletRequest request) {
+  /**
+   * An edition's login check lets a request through when this is true, so a service endpoint is declared
+   * only by authenticating here; what the service may do stays with the endpoint.
+   */
+  public boolean authenticated(HttpServletRequest request) {
     String supplied = request.getHeader(HEADER);
-    if (token.isBlank() || supplied == null || !MessageDigest.isEqual(
-        token.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8))) {
+    return !token.isBlank() && supplied != null && MessageDigest.isEqual(
+        token.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8));
+  }
+
+  public String authenticate(HttpServletRequest request) {
+    if (!authenticated(request)) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Workbench service authorization is required");
     }
     return "workbench";
