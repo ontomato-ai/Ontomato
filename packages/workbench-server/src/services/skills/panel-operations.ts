@@ -4,6 +4,7 @@ import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
 import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { panelFileInputSchema, type PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
+import { builtinSkillEntries } from "./builtin-catalog";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import type {
@@ -32,6 +33,10 @@ const skillObjectTarget = z.object({
   objectType: z.literal(SKILL),
   primaryKey: z.string().min(1),
 }).strict();
+
+const generatedBuiltinSkillNames = new Set(
+  builtinSkillEntries().filter(entry => entry.source.kind === "generated").map(entry => entry.skill.name),
+);
 
 const deleteInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
@@ -241,11 +246,9 @@ export const skillExportOperation = {
   targetSchema: skillObjectTarget,
   inputSchema: deleteInputSchema,
   resultSchema: panelDownloadReceiptSchema,
-  async unavailable({ executor: { owner, credentials }, locale }, target) {
+  async unavailable({ executor: { credentials }, locale }, target) {
     if (!target) return;
-    const { readSkillView } = await import("./view");
-    const skill = (await readSkillView(owner.domainId, credentials)).registry.getSkillById(target.primaryKey);
-    if (skill?.source.kind === "generated")
+    if (generatedBuiltinSkillNames.has(target.primaryKey))
       return { reason: tForLocale(locale ?? credentials.locale, "panels.skill.generatedExportUnavailable") };
   },
   async execute({ executor: { owner, credentials } }, call) {
