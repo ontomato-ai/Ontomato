@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { agentChannelCommandSchema, agentDeliverySchema, agentProviderAcknowledgementSchema, agentSteerPreparationSchema, agentDirectorySchema, type AgentRunIntent, type AgentRunContext, type AgentExecutionRef, type AgentSessionRef, type AgentInput, type AgentNotification, type AgentPrepareRequest, type AgentActorRef, type AgentCredential, type AgentInputDelivery } from "@ontomato/contracts/agent-channel";
+import { agentChannelCommandSchema, agentDeliverySchema, agentProviderAcknowledgementSchema, agentSteerPreparationSchema, agentDirectorySchema, type AgentRunIntent, type AgentRunContext, type AgentExecutionRef, type AgentSessionRef, type AgentInput, type AgentNotification, type AgentPrepareRequest, type AgentActorRef, type AgentCredential , type AgentInputDelivery } from "@ontomato/contracts/agent-channel";
 import type { AgentUserQuestionRequest } from "@ontomato/contracts/agent-user-questions";
 import { isDirectUserRun, MID_ROUND_RESULT_NOTIFICATION_FACT } from "@ontomato/contracts/agent-visibility";
 import type { PresentationBinding } from "@ontomato/contracts/agent-presentation";
@@ -17,7 +17,7 @@ import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_CONVERSATION_WRITE_MESSAGE } from "@on
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
 
 const CHANNEL_TOOL_DESCRIPTION =
-  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its result will wake you with a notification when finished; if you need to wait for the child task, end this turn instead of polling with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, view, cursor, limit; inspects an execution, its delivered file references, or its messages, not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
+  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its completion, failure or cancellation wakes you with a status notification; read gives the final reply and delivered file references. wait: taskId; waits for that direct child and returns what input reached your run: its completion, failure or cancellation signal, its question, or user input. The signal only carries state; read the result explicitly. Do not poll with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, view, cursor, limit; inspects an execution, reads its final reply and delivered file references, or its messages; not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
 
 const CHANNEL_TOOL_PARAMETERS: RuntimeJsonObject = {
   type: "object",
@@ -86,6 +86,7 @@ export class AgentChannel {
   readonly facts: ChannelStore;
   /** PI returns the same queued object; preserve its receipt identity in the event sink. */
   private listeners = new Map<string, Set<Listener>>();
+  private handoffListeners = new Map<string, Set<Listener>>();
   private chains = new Map<string, { credential: AgentCredential; executions: Set<string>; presentationBinding?: PresentationBinding }>();
   private chainKey(channel: AgentRunContext) { return JSON.stringify([channel.actor.domainId,channel.root.session.providerId,channel.root.session.sessionId,channel.root.runId]); }
   remember(channel: AgentRunContext, credential: AgentCredential, presentationBinding?: PresentationBinding) {
@@ -159,6 +160,7 @@ export class AgentChannel {
     return action === "read" ? value : agentProviderAcknowledgementSchema.parse(value);
   }
   private emitChange(scope: Scope, sessionId: string) { for (const listener of this.listeners.get(JSON.stringify([scope,sessionId])) ?? []) listener(); }
+  inputHandedOff(scope: Scope, sessionId: string) { for (const listener of this.handoffListeners.get(JSON.stringify([scope,sessionId])) ?? []) listener(); }
   private async announce(intent: AgentRunIntent) {
     const domain=intent.channel.actor.domainId;
     const sessions=new Map<string,AgentSessionRef>();
@@ -177,6 +179,11 @@ export class AgentChannel {
     const id = JSON.stringify([scope,sessionId]), set = this.listeners.get(id) ?? new Set<Listener>();
     set.add(listener); this.listeners.set(id, set);
     return () => { set.delete(listener); if (!set.size) this.listeners.delete(id); };
+  }
+  subscribeInputHandoff(scope: Scope, sessionId: string, listener: Listener) {
+    const id = JSON.stringify([scope,sessionId]), set = this.handoffListeners.get(id) ?? new Set<Listener>();
+    set.add(listener); this.handoffListeners.set(id, set);
+    return () => { set.delete(listener); if (!set.size) this.handoffListeners.delete(id); };
   }
   async request(scope: Scope, sessionId: string, runId: string, channel: AgentRunContext, input: AgentInput, language: string, context: AgentRunIntent["context"] | undefined, credential: AgentCredential, inheritedExecutionUserId?:string|null, presentationBinding?: PresentationBinding) {
     if (scope.domainId !== channel.actor.domainId || this.provider(channel.agent.providerId).hostId !== scope.hostId)
@@ -425,7 +432,7 @@ export class AgentChannel {
         language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,
         context:resultRecipientRunId ? previous!.context : web?.context ?? binding.context,
         executionUserId:web ? web.executionUserId : external ? null : requesterRun ? requesterRun.executionUserId : previous?.executionUserId,
-        queued,
+        queued,agentName:previous?.agentName,
       });
       if((web || external) && channel.root.runId===runId)
         this.remember(channel,web?.credential ?? external!.credential,web?.presentationBinding);
@@ -458,7 +465,7 @@ export class AgentChannel {
     if (intent.cancelled) return;
     const rows = await this.facts.pending(scope, run.sessionId);
     if (!rows.length) return;
-    const followUp=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, run.channel, { language: intent.language,context: intent.context,executionUserId:run.executionUserId });
+    const followUp=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, run.channel, { language: intent.language,context: intent.context,executionUserId:run.executionUserId,agentName:intent.agentName });
     this.retain(followUp);return followUp;
   }
   async stopped(scope: Scope, run: RuntimeRun, next?: AgentRunIntent) {
@@ -475,6 +482,35 @@ export class AgentChannel {
       throw error;
     } finally { if (next) this.launch(next); }
   }
+  private async mapDeliveredFiles(scope: Scope, intent: AgentRunIntent, files: Array<{ id: string; name: string }>) {
+    const parent = intent.channel.requestedBy;
+    if (!parent) return files;
+    return files.length
+      ? await this.runtime.linkAgentFiles(this.scope(parent.session, scope.domainId), parent.session.sessionId, scope, intent.session.sessionId, intent.id, files)
+      : [];
+  }
+  private async deliveredFiles(scope: Scope, intent: AgentRunIntent, files: Array<{ id: string; name: string }>) {
+    const parent = intent.channel.requestedBy;
+    if (!parent) return files;
+    if (!files.length) return [];
+    const references = await this.runtime.store.artifactReferences(this.scope(parent.session, scope.domainId), parent.session.sessionId, intent.id);
+    const bySource = new Map(references.map((reference) => [reference.sourceArtifactId, reference]));
+    return files.map((file) => {
+      const reference = bySource.get(file.id)!;
+      return { id: reference.id, name: file.name, path: reference.path };
+    });
+  }
+
+  private async deliveryResult(scope: Scope, intent: AgentRunIntent, delivery: { status: "starting" | "running" | "completed" | "failed" | "cancelled"; files: Array<{ id: string; name: string }> }) {
+    let content = intent.error ?? delivery.status;
+    if (delivery.status === "completed") {
+      const reply = await this.runtime.store.finalReply(scope, intent.id);
+      content = reply && reply.role === "assistant"
+        ? reply.content.filter(part => part.type === "text").map(part => part.text).join("\n")
+        : "";
+    }
+    return { content, files: await this.deliveredFiles(scope, intent, delivery.files) };
+  }
   private async notify(scope: Scope, runId: string,preparedFailure=false) {
     const intent = await this.facts.intent(scope, runId);
     await this.announce(intent);
@@ -485,20 +521,11 @@ export class AgentChannel {
       : agentDeliverySchema.parse(await this.callback(intent, "read"));
     if (delivery.status === "running" || delivery.status === "starting" || !delivery.settled) return;
     if (parent && !(intent.cancelled && intent.cancelMode!=="model")) {
-      let content = intent.error ?? delivery.status;
-      if (delivery.status === "completed") {
-        const reply = await this.runtime.store.finalReply(scope, runId);
-        content = reply && reply.role === "assistant"
-          ? reply.content.filter(part => part.type === "text").map(part => part.text).join("\n")
-          : "";
-      }
-      const parentScope = this.scope(parent.session, scope.domainId);
-      const files = delivery.files.length
-        ? await this.runtime.linkAgentFiles(parentScope, parent.session.sessionId, scope, intent.session.sessionId, runId, delivery.files)
-        : [];
+      await this.mapDeliveredFiles(scope, intent, delivery.files);
+      const reason = delivery.status !== "completed" && intent.error ? ` (${intent.error})` : "";
       await this.deliver(parent.session, intent.channel.actor, {
         role: "notification", kind: "agent-result", source: { session: intent.session, runId },
-        outcome: delivery.status, content, files, timestamp: Date.now(),
+        outcome: delivery.status, content: `Task ${runId} ${delivery.status}${reason}. Read its result with the agent tool's read.`, timestamp: Date.now(),
       }, { resultRecipientRunId: parent.runId });
     }
     if (delivery.settled) this.release(intent);
@@ -532,7 +559,51 @@ export class AgentChannel {
     }
     const fact = midRound && message.kind === "agent-result" ? `\n${MID_ROUND_RESULT_NOTIFICATION_FACT}` : "";
     return { role:"user", timestamp:message.timestamp,
-      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome,files:message.files})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}${fact}` };
+      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}${fact}` };
+  }
+  private async waitInterruption(scope: Scope, run: RuntimeRun) {
+    const inputs = new Map<string, AgentInput>();
+    const inFlight = this.runtime.inputInFlight(scope, run.id);
+    const handedOff = new Set(inFlight.map(input => input.id));
+    for (const row of await this.facts.pending(scope, run.sessionId, undefined, run.id))
+      if (handedOff.has(row.id)) inputs.set(row.id, row.message as AgentInput);
+    for (const input of inFlight) inputs.set(input.id, input.message as AgentInput);
+    for (const [id, message] of inputs) {
+      if (message.role === "notification" && "session" in message.source) {
+        const taskId = message.source.runId;
+        if (message.kind === "agent-result") return { kind: "agent-result" as const, taskId, outcome: message.outcome! };
+        if (message.kind === "agent-question") return { kind: "agent-question" as const, taskId, requestId: id, message: message.content, defaultAssumption: message.defaultAssumption, ...(message.options ? { options: message.options } : {}) };
+      }
+      if (message.role === "user") return { kind: "user" as const };
+    }
+    return inputs.size ? { kind: "input" as const } : null;
+  }
+  private sameExecution(left: AgentExecutionRef, right: AgentExecutionRef) {
+    return left.runId === right.runId && left.session.providerId === right.session.providerId && left.session.sessionId === right.session.sessionId;
+  }
+  private async waitForResult(scope: Scope, run: RuntimeRun, entry: { scope: Scope; intent: AgentRunIntent }, source: AgentExecutionRef, signal?: AbortSignal) {
+    const parent = entry.intent.channel.requestedBy;
+    if (!parent || !this.sameExecution(parent, source)) throw new RuntimeError(403, "FORBIDDEN", "Only the execution that delegated a task can wait for its result");
+    let wake: () => void = () => {};
+    let changed = new Promise<void>(resolve => { wake = resolve; });
+    const unsubscribe = this.subscribe(scope, run.sessionId, () => wake());
+    const unsubscribeHandoff = this.subscribeInputHandoff(scope, run.sessionId, () => wake());
+    const aborted = new Promise<never>((_resolve, reject) => {
+      if (signal?.aborted) reject(signal.reason);
+      else signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+    try {
+      for (;;) {
+        signal?.throwIfAborted();
+        const input = await this.waitInterruption(scope, run);
+        if (input) return { taskId: entry.intent.id, state: "input-available", input };
+        await Promise.race([changed, aborted]);
+        changed = new Promise<void>(resolve => { wake = resolve; });
+      }
+    } finally {
+      unsubscribe();
+      unsubscribeHandoff();
+    }
   }
   tool(scope: Scope, run: RuntimeRun): PlatformTool {
     return {
@@ -566,9 +637,18 @@ export class AgentChannel {
     if (command.op === "start") {
       const target = { providerId: command.agent.providerId, sessionId: randomUUID() }, targetScope = this.scope(target, scope.domainId);
       const runId=randomUUID();
+      const port = this.provider(command.agent.providerId);
+      const directory = agentDirectorySchema.parse(await this.post(port, "/list", {
+        providerId: port.id,
+        actor: channel.actor,
+        executionActor: current?.executionUserId ? { userId: current.executionUserId, domainId: scope.domainId } : null,
+        language: run.language,
+      }, scope.domainId, external?.credential ?? this.credential(current!.channel!), signal));
+      const agent = directory.agents.find(entry => entry.ref.providerId === command.agent.providerId && entry.ref.agentId === command.agent.agentId);
+      if (!agent) throw new RuntimeError(404, "AGENT_NOT_FOUND", "Agent is not in its provider directory");
       const intent = await this.runtime.locked(targetScope, target.sessionId, () => this.facts.reserve(targetScope, target.sessionId,runId,randomUUID(),
         { agent: command.agent, actor: channel.actor, authority: channel.authority, requestedBy: source ?? null, root: channel.root ?? {session:target,runId}, userRecipient: current?.channel?.userRecipient ?? null },
-        { language: run.language,context: command.context, title: command.title, create: { binding: { agent: command.agent, actor: channel.actor, parent: source ?? null, context: command.context },
+        { language: run.language,context: command.context, title: command.title, agentName: agent.name, create: { binding: { agent: command.agent, actor: channel.actor, parent: source ?? null, context: command.context },
           input: { role: "notification", kind: "agent-message", source: source ?? {kind:"external"}, content: command.message, timestamp: Date.now() } } }));
       if (external) this.remember(intent.channel,external.credential);
       this.retain(intent);
@@ -605,10 +685,17 @@ export class AgentChannel {
     if (command.op === "cancel") {
       await this.cancel(entry.scope, entry.intent); return { taskId: command.taskId, accepted: true };
     }
+    if (command.op === "wait") {
+      if (!current || !source) throw new RuntimeError(403, "ACTOR_REQUIRED", "Only a run in this runtime can wait for a delegated result");
+      return this.waitForResult(scope, current, entry, source, signal);
+    }
     const intent = entry.intent;
     const questions=await this.facts.questions(entry.scope,{session:intent.session,runId:intent.id});
     if (intent.status === "starting" || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(entry.scope,intent.id))) return { taskId:intent.id,sessionRef:intent.session,status:intent.status,error:intent.error,questions,files:[] };
-    const result = agentDeliverySchema.parse(await this.callback(intent,"read",signal));
+    const delivery = agentDeliverySchema.parse(await this.callback(intent,"read",signal));
+    const result = delivery.settled && delivery.status !== "running" && delivery.status !== "starting"
+      ? { ...delivery, ...await this.deliveryResult(entry.scope, intent, delivery) }
+      : delivery;
     if (command.view !== "messages") return { taskId:intent.id,sessionRef:intent.session,...result,questions };
     const messages = (await this.runtime.store.messages(entry.scope, intent.session.sessionId)).filter(row => row.runId === intent.id && row.message.role !== "system" && row.messageSeq > (command.cursor ?? 0)).slice(0, command.limit ?? 50);
     return { taskId:intent.id,sessionRef:intent.session,...result,questions,messages,cursor: messages.at(-1)?.messageSeq ?? command.cursor ?? 0 };
@@ -686,7 +773,7 @@ export class AgentChannel {
       const input = (await this.runtime.store.messages(this.scope(intent.session,scope.domainId),intent.session.sessionId)).find(row => row.id === intent.inputId)!.message;
       tasks.push({ id: intent.id, kind: "agent", root: { sessionId, runId: rootRunId }, requestedBy, parentTaskId: own(requestedBy) ? null : requestedBy.runId,
         title: intent.title ?? (typeof input.content === "string" ? input.content.split("\n")[0] : intent.channel.agent.agentId), status: delivery?.status ?? intent.status, error: intent.error ? { code: "AGENT_EXECUTION_FAILED", message: intent.error } : null,
-        createdAt: intent.createdAt, agentRef: intent.channel.agent, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [] });
+        createdAt: intent.createdAt, agentRef: intent.channel.agent, agentName: intent.agentName!, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [] });
     }
     // Quality checks belong to the host's replies; the host adds them to this projection.
     return { sessionId, tasks, qualityResults: [], preparationFailures: await this.facts.preparationFailures(scope,sessionId), queuedRuns: await this.facts.queuedRuns(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };

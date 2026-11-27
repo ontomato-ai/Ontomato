@@ -64,7 +64,7 @@ const usageSummary = computed(() => {
 
 /** The runtime names the answer when the run stops, so feedback has a target only then. */
 const target = computed(() =>
-    props.sessionId && !props.item.handoff && !props.item.running && props.item.answerMessageId && props.item.answerText.trim()
+    props.sessionId && !props.item.running && props.item.answerMessageId && props.item.answerText.trim()
     ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId }
     : null,
 );
@@ -76,21 +76,15 @@ const taskCount = computed(() =>
 const delegating = computed(() => props.item.process.some((block) =>
   block.kind === "task" && (block.task.status === "running" || block.task.status === "starting")));
 const { open, toggle, reveal } = useAutoFold(() =>
-  props.item.running || (!props.item.answerMessageId && (delegating.value ||
-    props.item.delegationProgress === "delegating")));
+  props.item.running || (!props.item.answerMessageId && delegating.value));
 const processVisited = ref(open.value);
 watch(open, value => { if (value) processVisited.value = true; });
-const delegationStatus = computed(() => {
-  const progress = props.item.delegationProgress;
-  return progress ? labels.value.delegationProgress?.[progress] : undefined;
-});
-
 /** A task the reader picked from the task list: its card is in the process, which opens; the conversation scrolls to it. */
 watch(() => shell.taskFocus?.value, (focus) => {
   if (focus && props.item.process.some((block) => block.kind === "task" && block.task.id === focus.taskId)) reveal();
 });
 
-const timingActive = computed(() => props.item.running || props.item.delegationProgress === "delegating");
+const timingActive = computed(() => props.item.running);
 const now = ref(Date.now());
 let ticker: ReturnType<typeof setInterval> | null = null;
 watch(
@@ -110,12 +104,11 @@ function clock(ms: number) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 const status = computed(() => {
-  const { startedAt, finishedAt, handoff } = props.item;
+  const { startedAt, finishedAt } = props.item;
   if (timingActive.value) {
-    const stage = delegationStatus.value ?? labels.value.working;
+    const stage = labels.value.working;
     return startedAt === null ? stage : `${stage} · ${labels.value.elapsed(clock(now.value - startedAt))}`;
   }
-  if (handoff) return labels.value.tasks?.delegated ?? labels.value.thinking;
   if (startedAt === null || finishedAt === null) return null;
   return labels.value.elapsed(clock(finishedAt - startedAt));
 });
@@ -172,7 +165,7 @@ async function submit(value: ShellFeedbackValue) {
 </script>
 
 <template>
-  <div class="response" :class="{ 'collapsed-handoff': item.handoff && !open && !timingActive }">
+  <div class="response">
     <section v-if="status || hasProcess || usageSummary" class="process-region" :class="{ open }">
       <div class="process-line">
         <button
@@ -192,7 +185,7 @@ async function submit(value: ShellFeedbackValue) {
           <span>{{ status }}</span>
         </div>
         <button
-          v-if="!item.running && hasUnknownTools"
+          v-if="!item.running && hasUnknownTools && item.end?.stopReason !== 'aborted'"
           type="button"
           class="process-unknown"
           @click="reveal()"
@@ -229,7 +222,7 @@ async function submit(value: ShellFeedbackValue) {
         </template>
       </div>
     </section>
-    <div v-if="item.running && !hasProcess && !delegationStatus" class="waiting" aria-live="polite">
+    <div v-if="item.running && !hasProcess" class="waiting" aria-live="polite">
       <span class="dot" /><span class="dot" /><span class="dot" />
       <span class="sr-only">{{ labels.working }}</span>
     </div>
@@ -248,7 +241,7 @@ async function submit(value: ShellFeedbackValue) {
       <span>{{ item.end.errorMessage || labels.failed }}</span>
     </div>
 
-    <div v-if="!item.handoff && !item.running && item.answerMessageId && item.answerText.trim()" class="actions">
+    <div v-if="!item.running && item.answerMessageId && item.answerText.trim()" class="actions">
       <button type="button" class="shell-message-action" :title="labels.copy" :aria-label="labels.copy" @click="copy">
         <Check v-if="copied" :size="15" />
         <Copy v-else :size="15" />

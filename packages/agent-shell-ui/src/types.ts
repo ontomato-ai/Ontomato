@@ -325,7 +325,6 @@ export interface ShellLabels {
   elapsed: (time: string) => string;
   /** A finished response's folded process line; `time` is the run's duration, formatted as m:ss. */
   worked: (time: string) => string;
-  delegationProgress?: { delegating: string; answering: string };
   /** The head of the panel over the composer, its toggle: how many of the agents' questions wait for the reader. */
   questionsWaiting: (count: number) => string;
   /** Marks the option that is the agent's default. */
@@ -345,12 +344,6 @@ export interface ShellLabels {
 
 /** Text of the delegated work a reply shows: its task cards, its quality reviews and the reply's task list. */
 export interface ShellTaskLabels {
-  /** The retrieval task's executor, the retriever agent. */
-  retriever: string;
-  /** Generic role label for non-retrieval delegated/sub-agent tasks. */
-  delegatedAgent?: string;
-  /** Folded header label for a reply that handed off work to delegated tasks before the final answer turn. */
-  delegated?: string;
   status: Record<"starting" | "running" | "completed" | "failed" | "cancelled", string>;
   rows: (count: number) => string;
   /** The quality review's own name, beside the reply. */

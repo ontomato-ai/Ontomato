@@ -67,7 +67,8 @@ describe("default assistant prompts", () => {
       "recall-metrics","run-metric <id> --revision"])
       expect(skill).toContain(command);
     expect(skill).not.toMatch(/start-retrieval|retriever-ref|assistant\.mjs/);
-    expect(skill).toMatch(/end\s+this turn\.[\s\S]*there is\s+nothing to poll, read or wait for/);
+    expect(skill).toContain('op: "wait"');
+    expect(skill).toContain('op: "read"');
     expect(skill).toContain("The host supplies the ontology URL");
     expect(skill).toContain('op: "cancel"');
     expect(skill).not.toMatch(/--follow|--reply-to|retriever-cancel/);
