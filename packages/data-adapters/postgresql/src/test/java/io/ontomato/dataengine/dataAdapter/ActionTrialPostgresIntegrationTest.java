@@ -326,7 +326,7 @@ class ActionTrialPostgresIntegrationTest {
    expectCode("SANDBOX_EXPIRED",()->grants.verifyRequest(token, grantRun, "POST", "/ontology/query/execute-dsl"));
    // This protocol-only credential never started a runtime execution; remove its fixture row.
    jdbc.update("DELETE FROM query_runtime_grants WHERE run_id=? AND context_id=?",grantRun,id);
-   jdbc.update("UPDATE data_sandboxes SET expires_at=?",System.currentTimeMillis()+3_600_000,id);
+   jdbc.update("UPDATE data_sandboxes SET expires_at=? WHERE id=?",System.currentTimeMillis()+3_600_000,id);
    System.out.println("ACTION_TRIAL_LIFECYCLE_PASS missing/forbidden-owner/forbidden-domain/not-ready/empty-scope/outside-scope/expired; rejected executions issued no grants; protocol-only grant fixture removed");
  }
 
