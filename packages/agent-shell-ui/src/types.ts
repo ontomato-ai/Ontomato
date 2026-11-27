@@ -173,7 +173,7 @@ export interface ShellLabels {
   conversationTab?: string;
   fileTab?: string;
   reportTab?: string;
-  backToFile?: string;
+  backToFile: string;
   newConversation: string;
   agent: string;
   sessions: string;

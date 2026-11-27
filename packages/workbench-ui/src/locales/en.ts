@@ -906,6 +906,7 @@ export default {
     "open": "Open in panel",
     "download": "Download",
     "close": "Close",
+    "backToFile": "Back to previous file",
     "preparing": "Preparing a step",
     "artifactMissing": "File not available",
     "menu": "Menu",

@@ -52,7 +52,7 @@ describe("default assistant prompts", () => {
     const analysis = getPromptTemplate("assistant.analysis.system");
     expect(analysis).toContain("create a report with `assistant-report` by default");
     expect(analysis).toContain("simple figures, definitions and short follow-ups directly");
-    expect(analysis).toContain("current active population");
+    expect(analysis).toContain("analyze the current population");
     expect(analysis).toContain("Do not append all retrieved datasets to the chat");
     expect(analysis).toContain("not a confidence interval");
     expect(getPromptTemplate("assistant.regular.system")).toMatch(/only when the user requests them/i);

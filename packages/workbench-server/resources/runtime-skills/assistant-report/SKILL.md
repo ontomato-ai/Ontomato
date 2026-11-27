@@ -53,6 +53,9 @@ unusable. Never create data, invent comparisons or rerun a query just to make a 
 Check that source links resolve to real files and that chat and report use the same figures and
 limits. The final reply must not call this process a verified audit or proof of correctness.
 
+When a new or revised report is ready and the `present` tool is available, present the report's
+outputs/ path so the user sees it beside the conversation, then write the final reply.
+
 ## Revise the same objective
 
 Read the existing report and its cited sources before editing. Keep the same report path for the
