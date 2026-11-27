@@ -1335,6 +1335,7 @@ export default {
     "moveEarlier": "Move {name} earlier",
     "moveLater": "Move {name} later",
     "loadFailed": "Personal workspace could not be loaded: {reason}",
+    "personalLayoutReadFailed": "Personal layout could not be read",
     "retry": "Retry",
     "customHomeUnavailable": "Your custom home panel is no longer available or you do not have access to it.",
     "restoreDefaultWorkspace": "Restore default workspace",
