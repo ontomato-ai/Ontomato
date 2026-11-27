@@ -159,19 +159,19 @@ it("names the page's configuration error in place with the service's reason, dis
   expect(drawn.ask).not.toHaveBeenCalled();
 });
 
-it("keeps the composer in place with the permission refusal reason on 403 and chooses no other agent", async () => {
-  const drawn = draw({
-    pageAgents: async () => Promise.reject(Object.assign(new Error("Access denied to page entrance"), { status: 403 })),
-  });
-  await settle();
+it("hides the composer without error when candidate access is forbidden (403 or FORBIDDEN)", async () => {
+  for (const reason of [
+    Object.assign(new Error("Access denied to page entrance"), { status: 403 }),
+    Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }),
+  ]) {
+    const drawn = draw({ pageAgents: async () => Promise.reject(reason) });
+    await settle();
 
-  const expected = `${labels.pageAgentUnavailable} Access denied to page entrance`;
-  expect(drawn.errors).toEqual([expected]);
-  expect(drawn.root.querySelector(".page-ask")).not.toBeNull();
-  expect(drawn.root.querySelector('.page-ask [role="alert"]')?.textContent).toBe(expected);
-  expect(seen).toHaveLength(0);
-  expect(box(drawn.root)?.disabled).toBe(true);
-  expect(drawn.ask).not.toHaveBeenCalled();
+    expect(drawn.errors).toEqual([]);
+    expect(drawn.root.querySelector(".page-ask")).toBeNull();
+    expect(seen).toHaveLength(0);
+    expect(drawn.served).toHaveLength(0);
+  }
 });
 
 it("keeps the composer in place with the service error disabled when candidates fail to load", async () => {

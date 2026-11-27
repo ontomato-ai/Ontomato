@@ -80,14 +80,18 @@ watch(
         // Applied once the composer is drawn, so it opens with the entry's sentence or reports an unavailable target.
         if (asked) void nextTick(() => expand(asked));
       })
-      // The page's own configuration or permission refusal keeps its own words and the service's reason; anything else is the service's error.
+      // Permission refusal hides the composer like empty candidates; configuration and service errors stay visible in place.
       .catch((reason: unknown) => {
         if (seq !== load) return;
+        waiting = null;
+        if (isForbiddenError(reason)) {
+          candidatesState.value = "ready";
+          return;
+        }
         // No candidates to open on: an entry that waited ends here, the page showing why.
         const message = candidatesFailureReason(reason, props.labels.pageAgentUnavailable);
         candidatesError.value = message;
         candidatesState.value = "error";
-        waiting = null;
         emit("error", message);
       });
   },
@@ -96,15 +100,21 @@ watch(
 /** The agent the message goes to: the one chosen here, else the one selected when the page opened. */
 const agentId = computed(() => chosen.value ?? agents.value[0]?.id ?? null);
 
+/** Whether a candidate read refusal is a permission denial (403 / FORBIDDEN) rather than a load or config failure. */
+function isForbiddenError(reason: unknown): boolean {
+  const error = reason as { code?: unknown; status?: unknown } | null;
+  return error?.status === 403 || error?.code === "FORBIDDEN";
+}
+
 /**
- * Why the page offered no agent. A page whose mapping or registered default is gone, or that refuses access, keeps the
- * page's own sentence with the service's reason for it; a network failure or a service error is shown word for word,
+ * Why the page offered no agent. A page whose mapping or registered default is gone is the page's configuration — the
+ * page's own sentence, with the service's reason for it; a network failure or a service error is shown word for word,
  * so the reader can tell a broken page from a broken connection.
  */
 function candidatesFailureReason(reason: unknown, own: string): string {
-  const error = reason as { code?: unknown; status?: unknown } | null;
+  const code = (reason as { code?: unknown } | null)?.code;
   const detail = reason instanceof Error ? reason.message : String(reason);
-  return error?.code === "PAGE_DEFAULT_AGENT_UNAVAILABLE" || error?.status === 403 ? `${own} ${detail}` : detail;
+  return code === "PAGE_DEFAULT_AGENT_UNAVAILABLE" ? `${own} ${detail}` : detail;
 }
 
 async function ask(text: string) {
