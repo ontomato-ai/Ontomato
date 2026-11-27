@@ -1,4 +1,4 @@
-import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader, type AppExecutionContext } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader, type AppExecutionContext } from "@ontomato/contracts/execution-context";
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import { createActionsClient } from "./clients/actions";
@@ -243,8 +243,7 @@ export function createManagerRequest(
         "Accept-Language": context.locale,
         "X-Requested-With": "XMLHttpRequest",
         ...credentialHeaders(credential),
-        ...(execution?.kind === "preview" && carriesPreviewIdentity(service, init.method ?? "GET", path)
-          ? { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } : {}),
+        ...(execution?.kind === "preview" ? { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } : {}),
       },
     };
     const response = context.transport?await context.transport(path,requestInit,service):await fetch(`${context.apiBase}${service}${path}`,requestInit);

@@ -51,7 +51,7 @@ it("injects the exact preview execution header from the run authority", async ()
  mocks.restore.mockResolvedValue({run:{sessionId:other,channel:{authority:{executionKind:"preview"}}},credentials:{locale:"en"}});
  expect((await call("ontology/action/execute")).status).toBe(200);
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
-   .toBe('{"kind":"preview"}');
+   .toBe('preview');
 });
 it("forwards no execution context for a live run", async () => {
  const upstream=vi.fn(async(_url: string,_init?:Parameters<typeof fetch>[1])=>Response.json({result:"test"}));
@@ -59,27 +59,24 @@ it("forwards no execution context for a live run", async () => {
  expect((await call("ontology/action/execute")).status).toBe(200);
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context")).toBeNull();
 });
-it("rejects a caller-supplied execution context that differs from the run authority", async () => {
+it("ignores a caller-supplied execution context and forwards only the run authority", async () => {
  const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
  vi.stubGlobal("fetch", upstream);
  mocks.restore.mockResolvedValue({
    run: { channel: { authority: { executionKind: "preview" } } },
    credentials: { token: "initiator-token", locale: "en" },
  });
- expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"live"}' })).status).toBe(403);
- expect(upstream).not.toHaveBeenCalled();
- expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(200);
- expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
-   .toBe('{"kind":"preview"}');
- // A read or a definition write carries no identity: whatever the caller said about it is dropped, not refused.
- for (const stated of ['{"kind":"preview"}', '{"kind":"live"}']) {
+ for (const stated of ['preview', '{"kind":"live"}']) {
+   upstream.mockClear();
+   expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": stated })).status).toBe(200);
+   expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context")).toBe('preview');
    upstream.mockClear();
    expect((await call("ontology/dsl/executeV1", { "X-Ontomato-Execution-Context": stated })).status).toBe(200);
-   expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context")).toBeNull();
+   expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context")).toBe('preview');
  }
 });
 
-it("marks a preview only where its request writes business data", async () => {
+it("marks every callback request of a preview run", async () => {
  const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ success: true }));
  vi.stubGlobal("fetch", upstream);
  mocks.restore.mockResolvedValue({
@@ -91,46 +88,46 @@ it("marks a preview only where its request writes business data", async () => {
    expect((await call(path, {}, method)).status).toBe(200);
    return new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context");
  };
- expect(await marked("ontology/action/execute")).toBe('{"kind":"preview"}');
- expect(await marked("ontology/writeFunctionOperation/insert")).toBe('{"kind":"preview"}');
- expect(await marked("ontology/writeFunctionOperation/deleteVector")).toBe('{"kind":"preview"}');
- expect(await marked("ontology/vectorResource/upload")).toBe('{"kind":"preview"}');
- expect(await marked("ontology/vectorResource/delete")).toBe('{"kind":"preview"}');
- expect(await marked("ontology/platform/triggers/trigger-1/runs")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/action/execute")).toBe('preview');
+ expect(await marked("ontology/writeFunctionOperation/insert")).toBe('preview');
+ expect(await marked("ontology/writeFunctionOperation/deleteVector")).toBe('preview');
+ expect(await marked("ontology/vectorResource/upload")).toBe('preview');
+ expect(await marked("ontology/vectorResource/delete")).toBe('preview');
+ expect(await marked("ontology/platform/triggers/trigger-1/runs")).toBe('preview');
  // The workbench dispatch carries a prepared operation out as this run, so the Action it executes is refused too.
- expect(await marked("workbench/api/panel-operations/intents/8f5df4a4-e30b-48cb-831a-33b759144f76/dispatch")).toBe('{"kind":"preview"}');
+ expect(await marked("workbench/api/panel-operations/intents/8f5df4a4-e30b-48cb-831a-33b759144f76/dispatch")).toBe('preview');
  // Starting a workflow run, and a conversation with its runs, which then run as the preview.
- expect(await marked("workbench/api/praxis/runs")).toBe('{"kind":"preview"}');
- expect(await marked("workbench/api/assistant/sessions")).toBe('{"kind":"preview"}');
- expect(await marked("workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs")).toBe('{"kind":"preview"}');
+ expect(await marked("workbench/api/praxis/runs")).toBe('preview');
+ expect(await marked("workbench/api/assistant/sessions")).toBe('preview');
+ expect(await marked("workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs")).toBe('preview');
  // The legacy diagnosis conversations and their runs, which then run as the preview.
  for (const entry of [
    "workbench/api/observe/agent/sessions", "workbench/api/observe/agent/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs",
    "workbench/api/observe/diagnoses",
- ]) expect(await marked(entry), entry).toBe('{"kind":"preview"}');
- // Stopping runs, deleting conversations and workspaces, and ops test runs are platform work, never marked.
+ ]) expect(await marked(entry), entry).toBe('preview');
+ // Platform work carries the same identity; its owners do not treat it as a business-write refusal.
  for (const entry of [
    "workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
    "workbench/api/observe/agent/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
    "ontology/ontology/ai/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
    "workbench/api/observe/autotest/runs", "workbench/api/observe/autotest/runs/run-1/stop", "workbench/api/observe/autotest/case-sets",
- ]) expect(await marked(entry), entry).toBeNull();
+ ]) expect(await marked(entry), entry).toBe('preview');
  for (const entry of ["workbench/api/observe/autotest/runs/run-1", "workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76",
    "workbench/api/workspaces/8f5df4a4-e30b-48cb-831a-33b759144f76", "ontology/ontology/ai/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76"])
-   expect(await marked(entry, "DELETE"), entry).toBeNull();
- // A read, a definition write and a platform write travel as they do live: their owner judges the caller's permission.
- expect(await marked("ontology/writeFunctionOperation/query")).toBeNull();
- expect(await marked("ontology/ontology/query/execute-dsl")).toBeNull();
- expect(await marked("ontology/function/save")).toBeNull();
- expect(await marked("ontology/action/setStatus")).toBeNull();
- expect(await marked("ontology/metricView/save")).toBeNull();
- expect(await marked("ontology/function/delete")).toBeNull();
- expect(await marked("ontology/platform/triggers")).toBeNull();
- expect(await marked("ontology/action/trial")).toBeNull();
- expect(await marked("workbench/api/assistant/agent-definitions")).toBeNull();
- expect(await marked("workbench/api/product-panels/read")).toBeNull();
+   expect(await marked(entry, "DELETE"), entry).toBe('preview');
+ // Reads, definition writes and platform writes carry it too; their owners judge permission as they do live.
+ expect(await marked("ontology/writeFunctionOperation/query")).toBe('preview');
+ expect(await marked("ontology/ontology/query/execute-dsl")).toBe('preview');
+ expect(await marked("ontology/function/save")).toBe('preview');
+ expect(await marked("ontology/action/setStatus")).toBe('preview');
+ expect(await marked("ontology/metricView/save")).toBe('preview');
+ expect(await marked("ontology/function/delete")).toBe('preview');
+ expect(await marked("ontology/platform/triggers")).toBe('preview');
+ expect(await marked("ontology/action/trial")).toBe('preview');
+ expect(await marked("workbench/api/assistant/agent-definitions")).toBe('preview');
+ expect(await marked("workbench/api/product-panels/read")).toBe('preview');
  // Preparing a page operation carries the identity so the operation is recorded as the preview's.
- expect(await marked("workbench/api/panel-operations/intents")).toBe('{"kind":"preview"}');
+ expect(await marked("workbench/api/panel-operations/intents")).toBe('preview');
 });
 
 it('restores the initiator before resolving the executor and forwards only ordinary business authentication',async()=>{
@@ -408,7 +405,7 @@ it("carries a preview into the panel operation dispatch, which executes the Acti
   });
   expect((await call("workbench/api/panel-operations/intents/8f5df4a4-e30b-48cb-831a-33b759144f76/dispatch")).status).toBe(200);
   expect(upstream.mock.calls[0]?.[1]?.headers).toMatchObject({
-    "X-Ontomato-Execution-Context": '{"kind":"preview"}',
+    "X-Ontomato-Execution-Context": 'preview',
   });
 });
 

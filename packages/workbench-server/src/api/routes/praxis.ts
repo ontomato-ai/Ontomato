@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import type { AuthenticatedRequest } from "../../utils/request-identity.js";
 import { proxyResponse, buildUpstreamHeaders } from "../utils/proxy.js";
 
@@ -54,9 +54,8 @@ export function createPraxisRouter(
     upstreamUrl.searchParams.delete("domainId");
     const target = `${praxisUpstream}${upstreamUrl.pathname}${upstreamUrl.search}`;
     try {
-      // A preview's start of a workflow run is the one request here that carries its identity: Praxis refuses it.
-      const preview = request.header(EXECUTION_CONTEXT_HEADER) === previewExecutionContextHeader
-        && carriesPreviewIdentity("", request.method, `/praxis/${path}`);
+      // A preview's request carries its identity unchanged; Praxis write entries refuse it themselves.
+      const preview = request.header(EXECUTION_CONTEXT_HEADER) === previewExecutionContextHeader;
       const upstream = await fetch(target, {
         method: request.method,
         headers: {
