@@ -8,12 +8,14 @@ import type {
   PlatformPreferences,
   PlatformRailSection,
   PlatformShellLabels,
+  PlatformShortcutReadFailure,
 } from "./types";
 import { appIcon, ExternalLink } from "./icons";
 import PlatformAccountMenu from "./PlatformAccountMenu.vue";
 import PlatformBrandMark from "./PlatformBrandMark.vue";
 import { ElTooltip } from "element-plus";
 import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
+import { ReadFailureMark } from "@ontomato/foundation-ui/data-state";
 
 /**
  * The platform's own rail: the ground layer of the shell, with the pin control, every application in sections and the
@@ -24,6 +26,7 @@ import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
  */
 const props = defineProps<{
   apps: readonly PlatformApp[];
+  shortcutReadFailure?: PlatformShortcutReadFailure;
   loading?: boolean;
   activeAppId: string | null;
   account: PlatformAccount | null;
@@ -101,7 +104,7 @@ const scrolling = computed<RailSectionView[]>(() => {
   const sections: RailSectionView[] = [];
   for (const key of ["top", "builders", "apps"] as const) {
     const sectionApps = of(key);
-    if (sectionApps.length === 0) continue;
+    if (sectionApps.length === 0 && !(key === "top" && props.shortcutReadFailure)) continue;
     if (key !== "builders") {
       sections.push({ key, apps: sectionApps, showToggle: false, hiddenCount: 0 });
       continue;
@@ -328,6 +331,19 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
                 </a>
               </ElTooltip>
             </div>
+          </li>
+          <li v-if="section.key === 'top' && shortcutReadFailure">
+            <ElTooltip v-bind="actionTooltipProps" placement="right" :content="shortcutReadFailure.reason">
+              <button
+                type="button"
+                class="rail-row"
+                :aria-label="shortcutReadFailure.label"
+                @click="shortcutReadFailure.retry()"
+              >
+                <ReadFailureMark />
+                <span class="rail-label" aria-hidden="true">{{ shortcutReadFailure.label }}</span>
+              </button>
+            </ElTooltip>
           </li>
           <li v-if="section.showToggle" class="rail-more-item">
             <button
