@@ -69,7 +69,7 @@ AgentProfile 专属界面文案已接入 Manager 语言包：中文统一为“�
 - 新源码发布在 Java Function 仓登记 `OPERATION_PRODUCT` 制品，按域、应用和发布生成确定性身份，记录构建派生文件哈希、SDK 版本与冻结能力契约。制品不可原位替换，不能进入 Python 能力执行器，发布后由历史记录保留。目录身份与制品身份分别承担应用访问和交付追溯。
 - Agent 上下文允许引用声明字段的 `3d` ObjectView，与 `text` 变体使用相同的服务端字段装配边界。
 - Profile 会话保存页面参数的标量或对象身份引用，工具回调以 sessionId 读取当前发起人拥有且绑定同一 Profile 发布的状态；非 literal 工具绑定据此解析，Action 的只读绑定仍不可覆盖。Page 组合校验涵盖嵌入 Profile 的工具参数，能力签名类型检查复用页面绑定校验。
-- AgentProfile 以 `agentId` 引用同域 Node 智能体定义；执行身份从该定义当前的 `executionUserId` 解析。旧独立主体、角色赋权和额外 agent use 已退役；产品资产的 use/edit、冻结指令/工具/上下文继续保留。此处只陈述集成分支代码，128 上的新身份组合验收尚未完成。
+- AgentProfile 以 `agentId` 引用同域 Node 智能体定义；执行身份从该定义当前的 `executionUserId` 解析。旧独立主体、角色赋权和额外 agent use 已退役；产品资产的 use/edit、冻结指令/工具/上下文继续保留。此处只陈述集成分支代码，集成环境的新身份组合验收尚未完成。
 
 - `widget-group` 和 `operation-panel` 转为 `page`，内联单元提取为独立资产，原根 ID 保留。子 ID 按父 ID 与原组件 ID 确定性生成，重试不产生新树。
 - 纯展示组设置 `embeddable`，模板转为 `page.isTemplate`。操作组合保持普通 Page，多操作不构成事务。
@@ -90,7 +90,7 @@ Profile 提供冻结工具执行入口 `POST /api/product-assets/:id/tools/:tool
 
 运行器接收 Profile 工具 schema 并按绑定发布装配冻结工具树；回调凭据仍限定 run、期限和工具路径。发起人负责产品访问与会话归属，业务工具使用本轮固定执行用户及 Java 当前权限。指定用户 Key 不进入模型环境；旧主体短期令牌路径已删除。
 
-主体退役前的历史本地演示曾验证只读 Profile 工具返回 count=20；它不证明本次执行用户模式的真实结果。新格式 Profile、Action、CollectionView、对象上下文及双身份组合仍须在 128 按第 12.8 节重新验收。
+主体退役前的历史本地演示曾验证只读 Profile 工具返回 count=20；它不证明本次执行用户模式的真实结果。新格式 Profile、Action、CollectionView、对象上下文及双身份组合仍须在集成环境按第 12.8 节重新验收。
 
 Page 内 Profile 已通过宿主注入平台对话面板，创建会话保存 Profile/release 绑定，后续轮次继续读取所选发布；同一 Agent 的多个 Profile 可分别建会话。页面引用修订与活动 Profile 不符时明确提示升级。页面参数上下文装配仍需真实模型端到端验收。
 

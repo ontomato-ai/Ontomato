@@ -32,41 +32,38 @@ class RuntimeDeployment(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Duplicate"):
                 prepare.prepare(env)
 
-    def test_both_compose_templates_share_credential_and_isolate_runtime_storage(self):
-        for root, workbench, database, overlay in [(ROOT, "ontomato", "ontomato", "ghcr"),
-                                                  (ROOT.parent / "ontomato-enterprise", "data-agent", "data_agent", "registry")]:
-            if not root.exists():
-                continue
-            with self.subTest(root=root), tempfile.TemporaryDirectory() as temp:
-                # Compose reads the service-level `env_file: .env` relative to the project
-                # directory, not the --env-file override, so the project has to own the
-                # prepared file. Copying the templates keeps this test off any local
-                # deploy/.env that a checkout does not contain.
-                project = Path(temp) / "deploy"
-                project.mkdir()
-                for name in ("docker-compose.yml", f"docker-compose.{overlay}.yml", "initdb.sql"):
-                    (project / name).write_bytes((root / "deploy" / name).read_bytes())
-                env = project / ".env"
-                env.write_text((root / "deploy/.env.example").read_text() +
-                               "\nARCH=amd64\nPOSTGRES_PASSWORD=test-pg\nPUBLIC_HOST=127.0.0.1\n"
-                               "ONTOMATO_MODEL_RUNTIME_TOKEN=test-model-key\nONTOMATO_VERSION=fixture-version\n")
-                prepare.prepare(env)
-                result = subprocess.run(["docker", "compose", "--project-directory", str(project),
-                    "--env-file", str(env), "-f", str(project / "docker-compose.yml"),
-                    "-f", str(project / f"docker-compose.{overlay}.yml"), "config", "--no-env-resolution", "--format", "json"],
-                    text=True, capture_output=True, env={k: v for k, v in os.environ.items() if k != "AGENT_RUNTIME_SERVICE_TOKEN"})
-                self.assertEqual(result.returncode, 0, result.stderr)
-                services = json.loads(result.stdout)["services"]
-                runtime = services["agent-runtime"]
-                settings = runtime["environment"]
-                hosts = json.loads(settings["AGENT_RUNTIME_HOSTS"])
-                self.assertEqual(hosts[0]["token"], services[workbench]["environment"]["AGENT_RUNTIME_SERVICE_TOKEN"])
-                self.assertEqual(settings["AGENT_RUNTIME_DATABASE"], database)
-                self.assertEqual(settings["AGENT_RUNTIME_SCHEMA"], "agent_runtime")
-                self.assertNotIn("ports", runtime)
-                self.assertEqual(runtime["volumes"][0]["target"], "/data")
-                self.assertIn("/ontomato-agent-runtime:", runtime["image"])
-                self.assertIn("agent-runtime", services[workbench]["depends_on"])
+    def test_compose_templates_share_credential_and_isolate_runtime_storage(self):
+        root, workbench, database, overlay = ROOT, "ontomato", "ontomato", "ghcr"
+        with tempfile.TemporaryDirectory() as temp:
+            # Compose reads the service-level `env_file: .env` relative to the project
+            # directory, not the --env-file override, so the project has to own the
+            # prepared file. Copying the templates keeps this test off any local
+            # deploy/.env that a checkout does not contain.
+            project = Path(temp) / "deploy"
+            project.mkdir()
+            for name in ("docker-compose.yml", f"docker-compose.{overlay}.yml", "initdb.sql"):
+                (project / name).write_bytes((root / "deploy" / name).read_bytes())
+            env = project / ".env"
+            env.write_text((root / "deploy/.env.example").read_text() +
+                           "\nARCH=amd64\nPOSTGRES_PASSWORD=test-pg\nPUBLIC_HOST=127.0.0.1\n"
+                           "ONTOMATO_MODEL_RUNTIME_TOKEN=test-model-key\nONTOMATO_VERSION=fixture-version\n")
+            prepare.prepare(env)
+            result = subprocess.run(["docker", "compose", "--project-directory", str(project),
+                "--env-file", str(env), "-f", str(project / "docker-compose.yml"),
+                "-f", str(project / f"docker-compose.{overlay}.yml"), "config", "--no-env-resolution", "--format", "json"],
+                text=True, capture_output=True, env={k: v for k, v in os.environ.items() if k != "AGENT_RUNTIME_SERVICE_TOKEN"})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            services = json.loads(result.stdout)["services"]
+            runtime = services["agent-runtime"]
+            settings = runtime["environment"]
+            hosts = json.loads(settings["AGENT_RUNTIME_HOSTS"])
+            self.assertEqual(hosts[0]["token"], services[workbench]["environment"]["AGENT_RUNTIME_SERVICE_TOKEN"])
+            self.assertEqual(settings["AGENT_RUNTIME_DATABASE"], database)
+            self.assertEqual(settings["AGENT_RUNTIME_SCHEMA"], "agent_runtime")
+            self.assertNotIn("ports", runtime)
+            self.assertEqual(runtime["volumes"][0]["target"], "/data")
+            self.assertIn("/ontomato-agent-runtime:", runtime["image"])
+            self.assertIn("agent-runtime", services[workbench]["depends_on"])
 
 
 if __name__ == "__main__":

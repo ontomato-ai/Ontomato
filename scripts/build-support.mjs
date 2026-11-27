@@ -129,12 +129,15 @@ export function sourceIdentity(root) {
     ]) !== "";
   return { revision, dirty };
 }
-export function imageLabels(component, version, build) {
-  return Object.entries({
+export function imageLabelValues(component, version, build) {
+  return {
     "org.opencontainers.image.version": version,
     "io.ontomato.component": component,
     "io.ontomato.build": build,
-  }).flatMap(([key, value]) => ["--label", `${key}=${value}`]);
+  };
+}
+export function imageLabels(component, version, build) {
+  return Object.entries(imageLabelValues(component, version, build)).flatMap(([key, value]) => ["--label", `${key}=${value}`]);
 }
 export function parseOptions(args, allowedFlags) {
   const options = {};
