@@ -91,7 +91,7 @@ public class GenerationOperations {
         () -> {}, null);
   }
 
-  Window external(String run, Owner owner, String kind, QueryAccessService.Access requestAccess, Check recheck) {
+  Window external(String run, Owner owner, String kind, QueryAccessService.Access requestAccess) {
     var deadline = executionAccess(run, owner).expiresAt();
     if (requestAccess.expiresAt() != null) deadline = Math.min(deadline, requestAccess.expiresAt());
     if (requestAccess.target().testing()) deadline = Math.min(deadline, requestAccess.target().expiresAt());
@@ -101,7 +101,6 @@ public class GenerationOperations {
     return new Window(run, owner, kind, () -> gate(run, owner), access,
         () -> {
           if (access.expiresAt() <= System.currentTimeMillis()) throw closed();
-          recheck.run();
         }, externalEvidenceScope(owner));
   }
 
