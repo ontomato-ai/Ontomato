@@ -45,7 +45,7 @@ export function presentMemberQueryRowOperations(
   return presentRowOperationsForRows(projection, inputs, rows, rowType, (handler, _binding, targets) => {
     const { handlerRef } = handler;
     const reasons = new Map<string, { reason: string }>();
-    if (!handler.unavailable && !handler.unavailableBatch && !handler.unavailableForInput) return reasons;
+    if (!handler.unavailable && !(handler.effect === "write" && (handler.unavailableBatch || handler.unavailableForInput))) return reasons;
     const field = refusalFields[handlerRef];
     if (!field) throw new HttpError(422, `Operation '${handlerRef}' needs owner row facts`, "PANEL_OPERATION_READ_UNAVAILABLE");
     for (const { target, rowKey } of targets) {

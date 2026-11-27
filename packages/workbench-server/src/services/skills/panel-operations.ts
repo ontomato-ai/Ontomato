@@ -241,9 +241,19 @@ export const skillExportOperation = {
   targetSchema: skillObjectTarget,
   inputSchema: deleteInputSchema,
   resultSchema: panelDownloadReceiptSchema,
+  async unavailable({ executor: { owner, credentials }, locale }, target) {
+    if (!target) return;
+    const { readSkillView } = await import("./view");
+    const skill = (await readSkillView(owner.domainId, credentials)).registry.getSkillById(target.primaryKey);
+    if (skill?.source.kind === "generated")
+      return { reason: tForLocale(locale ?? credentials.locale, "panels.skill.generatedExportUnavailable") };
+  },
   async execute({ executor: { owner, credentials } }, call) {
     const { primaryKey } = skillObjectTarget.parse(call.target);
     const skillManager = await loadSkillManager();
+    const skill = await skillManager.requireReadableSkill(owner.domainId, primaryKey, credentials);
+    if (skill.source.kind === "generated")
+      throw new HttpError(422, tForLocale(credentials.locale, "panels.skill.generatedExportUnavailable"), "SKILL_EXPORT_UNAVAILABLE");
     const bytes = await skillManager.exportSkill(owner.domainId, primaryKey, credentials);
     return { kind: "file", bytes: new Uint8Array(bytes), suggestedName: `${primaryKey}.zip`, mime: "application/zip" };
   },
