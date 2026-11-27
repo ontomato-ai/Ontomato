@@ -87,6 +87,14 @@ export interface GovernanceReadOptions {
   loadPolicyCatalog?: () => Promise<PolicyWorkbenchCatalog>;
 }
 
+export async function withPolicyFormEntryUsage(
+  form: PanelFormDescription, viewer: AssistantCredentials, domainId: string | undefined, id: string,
+): Promise<PanelFormDescription> {
+  if (!domainId || form.values.postType !== 3) return form;
+  const { items } = await policyObjectEntryUsagePayload(viewer, domainId, id);
+  return { ...form, values: { ...form.values, entryUsage: items } };
+}
+
 export function createGovernanceReadAdapters(viewer: AssistantCredentials, options: GovernanceReadOptions = {}) {
   const owner = governanceOwner(viewer);
 
@@ -237,9 +245,7 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials, optio
           formBody(id, params, workbenchCatalog ? { workbenchCatalog } : undefined),
           panelFormDescriptionSchema,
         );
-        if (!options.domainId || form.values.postType !== 3) return form;
-        const usage = await policyObjectEntryUsagePayload(viewer, options.domainId, id);
-        return { ...form, values: { ...form.values, entryUsage: usage.items } };
+        return withPolicyFormEntryUsage(form, viewer, options.domainId, id);
       },
       createForm(params: GovernanceFormParams): Promise<PanelFormDescription> {
         return owner("governance-policy-create-form", "/panel/governance/policies/form", formBody(undefined, params), panelFormDescriptionSchema);

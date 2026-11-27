@@ -37,12 +37,17 @@ const mocks = vi.hoisted(() => ({
   dashboards: vi.fn(), dashboard: vi.fn(), favoriteKeys: vi.fn(), favoriteState: vi.fn(), isFavorite: vi.fn(), pinnedObjects: vi.fn(),
   sessions: vi.fn(), session: vi.fn(), agents: vi.fn(), knowledgeTree: vi.fn(), knowledgeFile: vi.fn(), getActiveRun: vi.fn(),
   detailMapping: vi.fn(), detailPanel: vi.fn(), currentProduct: vi.fn(), currentProducts: vi.fn(), policyCatalog: vi.fn(),
+  policyObjectEntryUsage: vi.fn(),
 }));
 vi.mock("../java-panel-reads", async original => ({
   ...await original<typeof import("../java-panel-reads")>(), locateViaJava: mocks.locate, readViaJava: mocks.read,
 }));
 vi.mock("../../governance/policy-catalog", async original => ({
   ...await original<typeof import("../../governance/policy-catalog")>(), loadPolicyWorkbenchCatalog: mocks.policyCatalog,
+}));
+vi.mock("../../governance/policy-access", async original => ({
+  ...await original<typeof import("../../governance/policy-access")>(),
+  policyObjectEntryUsagePayload: mocks.policyObjectEntryUsage,
 }));
 vi.mock("../data-reads", async original => ({
   ...await original<typeof import("../data-reads")>(),
@@ -479,6 +484,41 @@ it("sends the Workbench policy catalog only to edit forms and shares it within t
     { type: PERMISSION_POLICY, name: "resolve", parameters: { values: choices } },
     undefined,
   ]);
+});
+
+it("includes object entry usage only in registered entry and object policy forms", async () => {
+  const policyTypes = [1, 2, 3];
+  const items = [{ kind: "PANEL", id: "orders-panel", entries: [{ id: "orders/main", label: "Orders" }] }];
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  mocks.policyCatalog.mockResolvedValueOnce({ panels: [], projections: [], components: [], agents: [] });
+  mocks.policyObjectEntryUsage.mockResolvedValueOnce({ policyId: "p3", items });
+  for (const postType of policyTypes) {
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
+    mocks.prepare.mockResolvedValueOnce({
+      declaration: { result: "panelFormDescription" },
+      selection: { typeId: PERMISSION_POLICY, method: "form", primaryKey: `p${postType}` },
+      params: {},
+    });
+  }
+  mocks.read.mockResolvedValueOnce({
+    viewer,
+    results: policyTypes.map(postType => ({
+      status: "ready",
+      payload: {
+        submitOn: "manual", fields: [], values: { postType }, errors: [],
+        save: { method: "POST", path: "/panel/governance/policies/save", bodySchema: {} },
+      },
+    })),
+  });
+
+  const prepared = await prepareRegisteredDataReads(credentials, policyTypes.map(() => request));
+  const [system, data, entryAndObject] = await runPreparedDataReads(credentials, prepared);
+  expect(entryAndObject).toMatchObject({ status: "ready", value: { values: { postType: 3, entryUsage: items } } });
+  expect(system).toMatchObject({ status: "ready", value: { values: { postType: 1 } } });
+  expect(system).not.toHaveProperty("value.values.entryUsage");
+  expect(data).toMatchObject({ status: "ready", value: { values: { postType: 2 } } });
+  expect(data).not.toHaveProperty("value.values.entryUsage");
+  expect(mocks.policyObjectEntryUsage).toHaveBeenCalledWith(credentials, viewer.domainId, "p3");
 });
 
 it("preserves browser error replies for missing owner records and metric execution refusals", async () => {
