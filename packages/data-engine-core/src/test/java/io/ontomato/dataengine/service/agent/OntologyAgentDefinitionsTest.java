@@ -67,8 +67,7 @@ class OntologyAgentDefinitionsTest {
     var retrieval = definitions.definition("d", "en", 1000, List.of(new SkillVersion(OntologyAgentDefinitions.DATASET_SKILL, "a".repeat(64))));
     var retrievalSkills = retrieval.getList("skills", SkillVersion.class);
     assertTrue(retrievalSkills.getFirst().preload());
-    assertEquals(OntologyAgentDefinitions.RETRIEVAL_OPENING_KNOWLEDGE_LIMIT,
-        retrieval.getIntValue(OntologyAgentDefinitions.OPENING_KNOWLEDGE_LIMIT));
+    assertFalse(retrieval.containsKey("openingKnowledgeLimit"));
 
     var generationSkills = List.of(
         new SkillVersion(OntologyAgentDefinitions.DATASET_SKILL, "a".repeat(64)),

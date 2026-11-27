@@ -168,8 +168,9 @@ facts are read using their matching `resolvedSkills` records.
 Use PI's skill loader against only the installed selected directories, with
 default/global discovery disabled. Use its catalog formatter for name,
 description and SKILL.md location in the system prompt. When the host marks a
-selected version `preload`, the runtime appends that immutable SKILL.md body
-after the agent instructions and before the engine catalog. Unmarked skills
+selected version `preload`, the runtime places that immutable SKILL.md body,
+without its frontmatter and with the skill's catalog location, before the
+agent instructions and the engine catalog. Unmarked skills
 keep progressive disclosure: the model reads SKILL.md and references using
 read, then runs the documented commands using bash. This is the
 same [progressive disclosure](https://agentskills.io/client-implementation/adding-skills-support)

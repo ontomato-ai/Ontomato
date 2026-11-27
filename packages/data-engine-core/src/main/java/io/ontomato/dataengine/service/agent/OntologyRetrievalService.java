@@ -348,9 +348,7 @@ public class OntologyRetrievalService {
     String grant=access.exploration(context,id,id,runId,deadline,classes);
     var skills = definitions.publish();
     var definition=definitions.definition(context.owner().domainId(),context.language(),deadline-System.currentTimeMillis(),skills);
-    int knowledgeLimit=definition.getIntValue(OntologyAgentDefinitions.OPENING_KNOWLEDGE_LIMIT);
-    definition.remove(OntologyAgentDefinitions.OPENING_KNOWLEDGE_LIMIT);
-    definition.put("context",modelContext(id,runId,context,knowledgeLimit));
+    definition.put("context",modelContext(id,runId,context,OntologyAgentDefinitions.RETRIEVAL_OPENING_KNOWLEDGE_LIMIT));
     store.transaction(() -> store.gate(id,runId,context.owner()));
     String base = runtime.ontologyUrl().replaceFirst("/$", "");
     String contextUrl = base + "/ontology/retrievals/runtime-context";

@@ -111,7 +111,6 @@ public class OntologyAgentDefinitions {
    * such a run. The values are the ones the former host-side loop guard used.
    */
   static final Map<String, Object> TOOL_LOOP_POLICY = Map.of("maxCalls", 100, "maxSameShape", 12);
-  public static final String OPENING_KNOWLEDGE_LIMIT = "openingKnowledgeLimit";
   public static final int RETRIEVAL_OPENING_KNOWLEDGE_LIMIT = 10;
 
   private static List<SkillVersion> preload(List<SkillVersion> skills, Map<String, Object> target) {
@@ -189,7 +188,6 @@ public class OntologyAgentDefinitions {
     definition.put("agentId", OntologyAgentStore.RETRIEVER);
     definition.put("systemPrompt", prompt(language, "data-retrieval", "system") + "\n\n" + markdown);
     definition.put("modelId", models.modelId(domain, OntologyAgentStore.RETRIEVER));
-    definition.put(OPENING_KNOWLEDGE_LIMIT, RETRIEVAL_OPENING_KNOWLEDGE_LIMIT);
     return definition;
   }
   /**

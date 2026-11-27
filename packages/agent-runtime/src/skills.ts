@@ -32,6 +32,18 @@ export interface RuntimeHost {
   channelGateway?: boolean;
 }
 export type InstalledSkill = RuntimeRegisteredSkill & { directory: string; skillDocument: string };
+
+/** SKILL.md content after its YAML frontmatter. */
+export function skillDocumentBody(document: string): string {
+  const frontmatter = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(document);
+  if (!frontmatter) throw new Error("Published skill document is missing its frontmatter");
+  return document.slice(frontmatter[0].length);
+}
+
+export function preloadedSkillDocument(name: string, directory: string, document: string): string {
+  return `Skill "${name}" is already loaded below. Its files are in ${directory}, and paths in it are relative to that directory. Do not read its SKILL.md again.\n\n`
+    + skillDocumentBody(document);
+}
 export class SkillRegistry {
   constructor(
     private store: RuntimeStore,

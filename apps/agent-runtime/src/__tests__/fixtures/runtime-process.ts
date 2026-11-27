@@ -12,8 +12,8 @@ const program = fileURLToPath(new URL("../../../../../packages/agent-runtime/src
 await startAgentRuntime((_store, root) => async ({ scope, sessionDirectory, workspaceId, skills, gatewayUrl, callback }) => {
   const workspace = path.join(sessionDirectory, "workspace");
   const state = path.join(sessionDirectory, "native");
-  const installed = path.join(workspace, "skills");
-  await Promise.all([mkdir(state, { recursive: true }), ...["outputs", "tmp", "home", "skills"].map(
+  const installed = path.join(root, "fixture-skills");
+  await Promise.all([mkdir(state, { recursive: true }), ...["outputs", "tmp", "home"].map(
     name => mkdir(path.join(workspace, name), { recursive: true }),
   )]);
   if (workspaceId)
