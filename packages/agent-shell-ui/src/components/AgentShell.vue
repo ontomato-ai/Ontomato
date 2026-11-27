@@ -35,7 +35,6 @@ import ShellConversation from "./ShellConversation.vue";
 import ShellNavBody from "./ShellNavBody.vue";
 import ShellPagePane from "./ShellPagePane.vue";
 import ShellSidePanel from "./ShellSidePanel.vue";
-import TaskDrawer from "./tasks/TaskDrawer.vue";
 
 /**
  * A conversation application inside the area the platform gives it: its own column, then the conversation with the right
@@ -122,7 +121,6 @@ const emit = defineEmits<{
 const agentId = defineModel<string | null>("agentId", { default: null });
 const sessionId = defineModel<string | null>("sessionId", { default: null });
 const display = props.display;
-const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 const navOpen = ref(false);
 const navId = useId();
 const navToggle = ref<HTMLButtonElement>();
@@ -233,11 +231,6 @@ provide(shellContextKey, {
   readArtifact: (artifact) => props.client.readArtifact(artifact),
   get readVectorResource() { return props.client.readVectorResource; },
   tasks: props.client.tasks,
-  taskFocus,
-  openTasks: (runId) => {
-    taskRound.value = runId;
-    tasksOpen.value = true;
-  },
   openArtifact: (open, parentKey) => {
     void display.openArtifact(open, parentKey).then((opened) => {
       if (opened) previewSelected.value = true;
@@ -278,19 +271,6 @@ async function setPanelConfirmation(id: string, confirm: boolean) {
     report(error);
   }
 }
-
-/** The replies that delegated work, in order; a reply's own entry opens the task list at it. */
-const taskRounds = computed(() => [...new Set(conversation.tasks.value?.tasks.map((task) => task.root.runId) ?? [])]);
-const taskRound = ref<string | null>(null);
-const tasksOpen = ref(false);
-const shownRound = computed({
-  get: () => (taskRound.value && taskRounds.value.includes(taskRound.value) ? taskRound.value : taskRounds.value.at(-1)!),
-  set: (runId: string) => (taskRound.value = runId),
-});
-watch(sessionId, () => {
-  tasksOpen.value = false;
-  taskRound.value = null;
-});
 
 function report(error: unknown) {
   emit("error", error instanceof Error ? error.message : String(error));
@@ -628,14 +608,6 @@ onMounted(() => {
       >
         <PanelRightOpen :size="16" />
       </button>
-      <TaskDrawer
-        v-if="tasksOpen && (!display.page.value || pairedPage) && conversation.tasks.value && taskRounds.length"
-        v-model:run-id="shownRound"
-        :snapshot="conversation.tasks.value"
-        :rounds="taskRounds"
-        @locate="taskFocus = { taskId: $event, at: Date.now() }"
-        @close="tasksOpen = false"
-      />
       <div v-if="display.page.value && !pairedPage && !editorTitle" class="feature-page">
         <slot name="feature" :feature-id="display.page.value.featureId" view="full" />
       </div>
@@ -824,18 +796,12 @@ onMounted(() => {
 /* The conversation's ground is the application's own area, the page tone; what fades into it fades into that. */
 .shell-main {
   --shell-conversation-ground: var(--el-bg-color-page);
-  /* The task list's own width, the room the conversation leaves it while it is open. */
-  --shell-task-drawer-width: min(320px, 100%);
   position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   overflow: hidden;
-}
-/* The task list is a column of its own, not a layer over the composer: the conversation keeps the rest of the width. */
-.shell-main:has(> .task-drawer) {
-  padding-right: var(--shell-task-drawer-width);
 }
 /* In the corner the page's close button left, over the conversation. */
 .reopen-page {

@@ -1,5 +1,4 @@
 import type { RuntimeMessageRecord } from "@ontomato/contracts/agent-runtime";
-import type { AgentRunContext } from "@ontomato/contracts/agent-channel";
 import { messageText } from "../../platform/agent-runtime/runtime";
 
 function isUserQuoteRecord(record: RuntimeMessageRecord): boolean {
@@ -10,15 +9,6 @@ function isUserQuoteRecord(record: RuntimeMessageRecord): boolean {
       "kind" in record.message.source &&
       record.message.source.kind === "user")
   );
-}
-
-/**
- * What runs of one identity said and were told: a message a run of the other identity consumed is no part of this run's
- * context. Messages no run consumed yet are kept for `recentUserMessages` to judge.
- */
-export function ofIdentity(messages: readonly RuntimeMessageRecord[], identities: ReadonlyMap<string, string>,
-  lane: AgentRunContext["authority"]["executionKind"]): RuntimeMessageRecord[] {
-  return messages.filter(record => record.runId === null || identities.get(record.runId) === lane);
 }
 
 /**

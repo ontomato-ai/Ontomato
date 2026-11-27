@@ -63,15 +63,13 @@ const usageSummary = computed(() => {
 });
 
 /** The runtime names the answer when the run stops, so feedback has a target only then. */
+const hasActions = computed(() => Boolean(props.item.answerMessageId && props.item.answerText.trim()));
 const target = computed(() =>
-    props.sessionId && !props.item.running && props.item.answerMessageId && props.item.answerText.trim()
-    ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId }
+  props.sessionId && !props.item.running && hasActions.value
+    ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId! }
     : null,
 );
 const hasProcess = computed(() => props.item.process.length > 0);
-/** The work this reply delegated and the checks of the data it cited; its entry opens the task list here. */
-const taskCount = computed(() =>
-  props.item.process.filter((block) => block.kind === "task").length + props.item.reviews.length);
 /** Show the outer process while work continues; preserve the reader's explicit fold choice. */
 const delegating = computed(() => props.item.process.some((block) =>
   block.kind === "task" && (block.task.status === "running" || block.task.status === "starting")));
@@ -79,10 +77,6 @@ const { open, toggle, reveal } = useAutoFold(() =>
   props.item.running || (!props.item.answerMessageId && delegating.value));
 const processVisited = ref(open.value);
 watch(open, value => { if (value) processVisited.value = true; });
-/** A task the reader picked from the task list: its card is in the process, which opens; the conversation scrolls to it. */
-watch(() => shell.taskFocus?.value, (focus) => {
-  if (focus && props.item.process.some((block) => block.kind === "task" && block.task.id === focus.taskId)) reveal();
-});
 
 const timingActive = computed(() => props.item.running);
 const now = ref(Date.now());
@@ -97,11 +91,14 @@ watch(
   { immediate: true },
 );
 onBeforeUnmount(() => ticker && clearInterval(ticker));
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
 function clock(ms: number) {
   const total = Math.max(0, Math.round(ms / 1000));
   const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
-  const ss = String(s).padStart(2, "0");
-  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+  const ss = pad2(s);
+  return h ? `${h}:${pad2(m)}:${ss}` : `${m}:${ss}`;
 }
 const status = computed(() => {
   const { startedAt, finishedAt } = props.item;
@@ -111,6 +108,24 @@ const status = computed(() => {
   }
   if (startedAt === null || finishedAt === null) return null;
   return labels.value.elapsed(clock(finishedAt - startedAt));
+});
+const finishedTimestamp = computed(() => {
+  const ms = props.item.finishedAt;
+  if (ms === null || Number.isNaN(ms)) return null;
+  const date = new Date(ms);
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const full = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${time}:${pad2(date.getSeconds())}`;
+  const today = new Date();
+  const sameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
+  const label = sameDay
+    ? time
+    : date.getFullYear() === today.getFullYear()
+      ? `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${time}`
+      : `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${time}`;
+  return { label, title: full, iso: date.toISOString() };
 });
 
 // The answer id appears after the run settles, and the component stays mounted, so read the stored
@@ -166,7 +181,7 @@ async function submit(value: ShellFeedbackValue) {
 
 <template>
   <div class="response">
-    <section v-if="status || hasProcess || usageSummary" class="process-region" :class="{ open }">
+    <section v-if="status || hasProcess" class="process-region" :class="{ open }">
       <div class="process-line">
         <button
           v-if="hasProcess"
@@ -193,22 +208,6 @@ async function submit(value: ShellFeedbackValue) {
           <CircleHelp :size="12" />
           <span>{{ labels.toolOutcomeUnknown ?? "Outcome unknown" }}</span>
         </button>
-        <button v-if="taskCount && shell.openTasks" type="button" class="process-toggle tasks-entry" @click="shell.openTasks(item.runId)">
-          {{ labels.tasks!.count(taskCount) }}
-        </button>
-        <button
-          v-if="usageSummary"
-          type="button"
-          class="process-toggle usage-entry"
-          :aria-expanded="usageOpen"
-          :title="usageSummary.title"
-          @click="usageOpen = !usageOpen"
-        >
-          <span>{{ usageSummary.label }}</span>
-        </button>
-      </div>
-      <div v-if="usageSummary && usageOpen" class="usage-breakdown">
-        <span v-for="part in usageSummary.parts" :key="part" class="usage-part">{{ part }}</span>
       </div>
       <div v-if="processVisited && hasProcess" v-show="open" class="process-body">
         <template v-for="block in item.process" :key="block.key">
@@ -241,39 +240,63 @@ async function submit(value: ShellFeedbackValue) {
       <span>{{ item.end.errorMessage || labels.failed }}</span>
     </div>
 
-    <div v-if="!item.running && item.answerMessageId && item.answerText.trim()" class="actions">
-      <button type="button" class="shell-message-action" :title="labels.copy" :aria-label="labels.copy" @click="copy">
-        <Check v-if="copied" :size="15" />
-        <Copy v-else :size="15" />
-      </button>
-      <template v-if="feedback">
-        <button
-          type="button"
-          class="shell-message-action"
-          :class="{ on: rating?.rating === 'like' }"
-          :title="labels.like"
-          :aria-label="labels.like"
-          :aria-pressed="rating?.rating === 'like'"
-          @click="rate('like')"
-        >
-          <ThumbsUp :size="15" />
+    <div v-if="!item.running && (hasActions || finishedTimestamp || usageSummary)" class="response-footer">
+      <div v-if="hasActions" class="actions">
+        <button type="button" class="shell-message-action" :title="labels.copy" :aria-label="labels.copy" @click="copy">
+          <Check v-if="copied" :size="15" />
+          <Copy v-else :size="15" />
         </button>
+        <template v-if="feedback">
+          <button
+            type="button"
+            class="shell-message-action"
+            :class="{ on: rating?.rating === 'like' }"
+            :title="labels.like"
+            :aria-label="labels.like"
+            :aria-pressed="rating?.rating === 'like'"
+            @click="rate('like')"
+          >
+            <ThumbsUp :size="15" />
+          </button>
+          <button
+            type="button"
+            class="shell-message-action"
+            :class="{ on: rating?.rating === 'dislike' }"
+            :title="labels.dislike"
+            :aria-label="labels.dislike"
+            :aria-pressed="rating?.rating === 'dislike'"
+            @click="rate('dislike')"
+          >
+            <ThumbsDown :size="15" />
+          </button>
+        </template>
+        <SlotOutlet
+          :content="shell.slots.messageActions"
+          :scope="{ sessionId, runId: item.runId, messageId: item.answerMessageId, text: item.answerText, workspaceCommit: item.workspaceCommit, workspaceId: shell.workspaceId }"
+        />
+      </div>
+      <div v-if="finishedTimestamp || usageSummary" class="response-meta">
+        <time
+          v-if="finishedTimestamp"
+          class="response-timestamp"
+          :datetime="finishedTimestamp.iso"
+          :title="finishedTimestamp.title"
+        >{{ finishedTimestamp.label }}</time>
+        <span v-if="finishedTimestamp && usageSummary" class="meta-sep" aria-hidden="true">·</span>
         <button
+          v-if="usageSummary"
           type="button"
-          class="shell-message-action"
-          :class="{ on: rating?.rating === 'dislike' }"
-          :title="labels.dislike"
-          :aria-label="labels.dislike"
-          :aria-pressed="rating?.rating === 'dislike'"
-          @click="rate('dislike')"
+          class="usage-entry"
+          :aria-expanded="usageOpen"
+          :title="usageSummary.title"
+          @click="usageOpen = !usageOpen"
         >
-          <ThumbsDown :size="15" />
+          <span>{{ usageSummary.label }}</span>
         </button>
-      </template>
-      <SlotOutlet
-        :content="shell.slots.messageActions"
-        :scope="{ sessionId, runId: item.runId, messageId: item.answerMessageId, text: item.answerText, workspaceCommit: item.workspaceCommit, workspaceId: shell.workspaceId }"
-      />
+      </div>
+    </div>
+    <div v-if="!item.running && usageSummary && usageOpen" class="usage-breakdown">
+      <span v-for="part in usageSummary.parts" :key="part" class="usage-part">{{ part }}</span>
     </div>
     <form v-if="reasonOpen" class="reason" @submit.prevent="submit({ rating: 'dislike', reason })">
       <textarea v-model="reason" rows="2" :placeholder="labels.feedbackReason" :aria-label="labels.feedbackReason" />
@@ -329,8 +352,6 @@ button.process-toggle {
   cursor: pointer;
   transition: background-color var(--transition-fast, 150ms);
 }
-/* The reply's delegated work sits after its process line's chevron. Its own padding
-   is the space from the chevron, so every language's label stands as written, with no separator glyph inside it. */
 button.process-toggle:hover {
   background: var(--el-fill-color);
   color: var(--el-text-color-regular);
@@ -365,18 +386,6 @@ button.process-toggle:focus-visible {
 .process-unknown:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 1px;
-}
-.usage-entry {
-  color: var(--el-text-color-tertiary);
-}
-.usage-breakdown {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  font-size: var(--text-xs, 12px);
-  line-height: var(--leading-sm, 20px);
-  color: var(--el-text-color-tertiary);
-  font-variant-numeric: tabular-nums;
 }
 .process-region {
   display: flex;
@@ -449,13 +458,63 @@ button.process-toggle:focus-visible {
   color: var(--el-color-danger);
   overflow-wrap: anywhere;
 }
+.response-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-sm);
+}
+.response > .response-text:has(.artifact-card, .inline-artifact) + .response-footer {
+  margin-top: calc(var(--conversation-block-gap) - var(--conversation-process-gap));
+}
 .actions {
   display: flex;
+  align-items: center;
   gap: var(--spacing-xs);
   margin-left: -6px;
 }
-.response > .response-text:has(.artifact-card, .inline-artifact) + .actions {
-  margin-top: calc(var(--conversation-block-gap) - var(--conversation-process-gap));
+.response-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--el-text-color-tertiary);
+  font-size: var(--text-xs, 12px);
+  line-height: var(--leading-sm, 20px);
+  font-variant-numeric: tabular-nums;
+}
+.meta-sep {
+  user-select: none;
+}
+.usage-entry {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  margin: -1px -5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--transition-fast, 150ms), color var(--transition-fast, 150ms);
+}
+.usage-entry:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-regular);
+}
+.usage-entry:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+}
+.usage-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--text-xs, 12px);
+  line-height: var(--leading-sm, 20px);
+  color: var(--el-text-color-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 .reason {
   max-width: 480px;

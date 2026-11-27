@@ -61,10 +61,11 @@ export function plainText(nodes: readonly InlineMarkdownNode[]): string {
     .join("");
 }
 
-/** Display extension for file cards, e.g. "CHART" for x.chart.json or "CSV". */
+/** Display extension for file cards, e.g. "CHART" for x.chart.json, "DATASET" for x.dataset.json, or "CSV". */
 export function fileKind(path: string): string {
   const name = fileName(path).toLowerCase();
   if (name.endsWith(".chart.json")) return "chart";
+  if (name.endsWith(".dataset.json")) return "dataset";
   const dot = name.lastIndexOf(".");
   return dot > 0 ? name.slice(dot + 1) : "file";
 }

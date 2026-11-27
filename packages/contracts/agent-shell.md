@@ -155,7 +155,9 @@ Lookup is always host override → shell default → generic file card or step.
   holds only the text of the message the runtime named as `answerMessageId`; its
   thinking stays in the process. A run stopped without an answer (length, error,
   aborted) keeps all its text in the process, with the stop shown beside it.
-  Copy, feedback and the `message-actions` slot target that answer message. After the
+  Copy, feedback and the `message-actions` slot target that answer message and sit in the
+  reply footer alongside the run's completion timestamp and expandable token usage (stopped
+  runs without an answer still show the footer metadata). After the
   answer and its actions come the quality reviews of the data the answer cited, one per
   retrieval, signed as another party's and folded to one line (score and first sentence);
   they appear once the reply has its answer and update as checks settle. The process stays
@@ -164,8 +166,7 @@ Lookup is always host override → shell default → generic file card or step.
   and supplies `labels.tasks`. Each delegated task renders in a light bounded card with the
   delegated agent's display name, title, status pill, delivered datasets when applicable,
   and—while an inline task runs—its live thinking, notes and steps followed in their own
-  state with the same reducer; its files show as names only. The
-  conversation's corner opens the reply's task list, which leads to a card or a review.
+  state with the same reducer; its files show as names only.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
   card that opens the right panel; an unclosed reference shows a placeholder.
   Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` in the foundation's

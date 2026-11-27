@@ -4,6 +4,7 @@ import { z } from "zod";
 export const EXECUTION_CONTEXT_HEADER = "X-Ontomato-Execution-Context";
 export const PREVIEW_WRITE_FORBIDDEN = "PREVIEW_WRITE_FORBIDDEN";
 export const PREVIEW_WRITE_MESSAGE = "预览里不执行写操作，动作的对错用动作试跑验";
+export const PREVIEW_CONVERSATION_WRITE_MESSAGE = "这是正式对话，预览里不能接着聊，请新开一个对话";
 export const PREVIEW_SDK_CAPABILITY = 1;
 
 /** What a frame runs on. Preview is an identity for write admission only; reads stay live. */

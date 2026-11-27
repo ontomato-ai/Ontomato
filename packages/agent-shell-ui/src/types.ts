@@ -342,7 +342,7 @@ export interface ShellLabels {
   tasks?: ShellTaskLabels;
 }
 
-/** Text of the delegated work a reply shows: its task cards, its quality reviews and the reply's task list. */
+/** Text of the delegated work a reply shows: its task cards and quality reviews. */
 export interface ShellTaskLabels {
   status: Record<"starting" | "running" | "completed" | "failed" | "cancelled", string>;
   rows: (count: number) => string;
@@ -357,13 +357,6 @@ export interface ShellTaskLabels {
   fittedQuestion: string;
   /** What the check examined: the datasets the reply cited. */
   checked: string;
-  /** A reply's entry to its delegated work, beside its process line; and the task list's own title. */
-  count: (count: number) => string;
-  listTitle: string;
-  round: (index: number, count: number) => string;
-  previousRound: string;
-  nextRound: string;
-  quality: string;
   /** Reasons a task did not complete, by the code its owner gave; other codes show their own message. */
   errors: Record<string, string>;
 }

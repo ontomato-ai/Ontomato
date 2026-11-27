@@ -1,6 +1,9 @@
 import { expect, it, vi } from "vitest";
 import { createApp, h, ref } from "vue";
+import { Table2 } from "lucide-vue-next";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
+import { fileKind } from "../artifacts";
+import { artifactIcon } from "../icons";
 import ArtifactLinkNode from "../components/ArtifactLinkNode.vue";
 import { messageContextKey, shellContextKey, type ShellContext } from "../context";
 import type { OpenArtifact } from "../types";
@@ -35,6 +38,40 @@ it("shows a Markdown title as plain text in the file card and the panel it opens
     expect(root.querySelector(".artifact-card__title")!.textContent).toBe(title);
     root.querySelector<HTMLButtonElement>(".artifact-card")!.click();
     expect(opened.at(-1)!.title).toBe(title);
+  } finally {
+    app.unmount();
+    root.remove();
+  }
+});
+
+it("labels .dataset.json files as DATASET with a table icon instead of JSON", async () => {
+  expect(fileKind("outputs/sales.dataset.json")).toBe("dataset");
+  expect(artifactIcon("outputs/sales.dataset.json")).toBe(Table2);
+
+  const root = document.createElement("div");
+  document.body.append(root);
+  const artifact = { id: "ds", runId: "r1", path: "outputs/sales.dataset.json", size: 2048 };
+  const app = createApp(() =>
+    h(MarkdownView, {
+      content: "See [Sales dataset](outputs/sales.dataset.json)",
+      final: true,
+      nodes: { link: ArtifactLinkNode },
+    }),
+  );
+  app.provide(shellContextKey, {
+    labels: ref({}),
+    resolveArtifact: async () => artifact,
+    artifactRevision: ref(0),
+    openArtifact: vi.fn(),
+    openArtifactKey: ref(null),
+    pageLink: () => null,
+  } as unknown as ShellContext);
+  app.provide(messageContextKey, ref({ runId: "r1" }));
+  app.mount(root);
+  try {
+    await vi.waitFor(() => expect(root.querySelector<HTMLButtonElement>(".artifact-card")!.disabled).toBe(false));
+    expect(root.querySelector(".artifact-card__icon")?.getAttribute("data-kind")).toBe("dataset");
+    expect(root.querySelector(".artifact-card__meta")?.textContent).toContain("DATASET");
   } finally {
     app.unmount();
     root.remove();

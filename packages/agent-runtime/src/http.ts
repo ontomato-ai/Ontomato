@@ -1,7 +1,7 @@
 import { agentUserQuestionRequestSchema } from "@ontomato/contracts/agent-user-questions";
 import { presentationBindingSchema } from "@ontomato/contracts/agent-presentation";
 import { Readable } from "node:stream";
-import { agentInputSchema, agentRunContextSchema, agentRefSchema, agentActorRefSchema,agentChannelCommandSchema,agentAuthoritySchema,agentCredentialSchema,agentSessionRunIdentitiesSchema } from "@ontomato/contracts/agent-channel";
+import { agentInputSchema, agentRunContextSchema, agentRefSchema, agentActorRefSchema,agentChannelCommandSchema,agentAuthoritySchema,agentCredentialSchema } from "@ontomato/contracts/agent-channel";
 import { workspaceRouter, workspaceOwner } from "./workspace-http";
 import { runtimeCreateSessionRequestSchema } from "@ontomato/contracts/agent-runtime";
 import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
@@ -397,11 +397,6 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   }));
   app.get("/v1/channel/intents/:runId",route(async(req,res)=>{
     res.json(await runtime.channel.facts.intent(scope(req).scope,runtimeIdSchema.parse(req.params.runId)));
-  }));
-  /** The identity of each run a conversation holds or has queued, for a host that reads or closes the conversation. */
-  app.get("/v1/channel/sessions/:sessionId/run-identities",route(async(req,res)=>{
-    const runs=await runtime.store.sessionRunLanes(scope(req).scope,runtimeIdSchema.parse(req.params.sessionId));
-    res.json(agentSessionRunIdentitiesSchema.parse({runs:runs.map(({runId,lane})=>({runId,executionKind:lane}))}));
   }));
   app.get("/v1/channel/sessions/:sessionId/intents/:runId",route(async(req,res)=>{
     const ctx=scope(req),sessionId=runtimeIdSchema.parse(req.params.sessionId),intent=await runtime.channel.facts.intent(ctx.scope,runtimeIdSchema.parse(req.params.runId));
