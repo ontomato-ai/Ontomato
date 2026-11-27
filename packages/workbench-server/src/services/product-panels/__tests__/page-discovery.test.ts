@@ -46,8 +46,8 @@ describe("readPageCatalog", () => {
     const result = await readPageCatalog(owner, credentials, {});
 
     expect(result).toEqual({ applications: [
-      { applicationId: "ontology", names: { en: "Ontology" }, descriptions: { en: "Model" } },
-      { applicationId: "settings", names: { en: "Settings" } },
+      { applicationId: "ontology", name: "Ontology", description: "Model" },
+      { applicationId: "settings", name: "Settings" },
     ] });
     expect(mocks.backendGet).toHaveBeenCalledTimes(1);
     expect(String(mocks.backendGet.mock.calls[0][1])).toContain("/platform/applications?purpose=navigation");
