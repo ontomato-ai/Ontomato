@@ -13,6 +13,7 @@ import {
   instanceNeighborsParams, instanceNeighborsRequest,
 } from "../ontology-model/instance-graph-reads";
 import { presentObjectTypeLabel } from "../ontology-model/model-reads";
+import type { RegisteredDataReadRegistration } from "./registered-data-read";
 import { formParams, type PanelReadSelection } from "./panel-owner-reads";
 
 const instanceRecordFacts = z.object({ record: z.unknown(), type: z.unknown() });
@@ -87,3 +88,30 @@ export function prepareCustomerDataRead(selection: PanelReadSelection, params: R
       return read(instanceGraphSearchRequest(params), graph.search);
   }
 }
+
+const customerReadError = {
+  messageOnlyCodes: ["OBJECT_TYPE_NOT_FOUND"],
+  memberReadRefusal: true,
+} as const;
+
+function customerRegisteredPrepare(context: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) {
+  return prepareCustomerDataRead(context.selection, context.params, context.credentials.locale);
+}
+
+const objectTypeInstanceReadMethods = [
+  "instances",
+  "instanceRecord",
+  "instanceNeighbors",
+  "instanceGraphOverview",
+  "instanceGraphConnections",
+  "instanceGraphStatistics",
+  "instanceGraphClasses",
+  "instanceGraphSearch",
+] as const;
+
+export const customerDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  { kind: "customer", prepare: customerRegisteredPrepare, ...customerReadError },
+  ...objectTypeInstanceReadMethods.map(method => ({
+    typeId: OBJECT_TYPE, method, prepare: customerRegisteredPrepare, ...customerReadError,
+  })),
+];

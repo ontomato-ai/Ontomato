@@ -30,7 +30,7 @@ import { readSelectedPanelOwner, type PanelReadSelection } from "./panel-owner-r
 import { currentDefinition } from "./access";
 import { prepareCustomerDataRead } from "./customer-data-read-plan";
 import { isFavoriteObjectRead, prepareScopedFavoriteObjectRead } from "./favorite-panel";
-import { readViaJava, type JavaPanelRead } from "./java-panel-reads";
+import { readViaJava, stableJson, type JavaPanelRead } from "./java-panel-reads";
 
 const logger = createLogger("panel-data-reads");
 
@@ -173,13 +173,6 @@ export type ProjectionDataReadOutcome =
   | (Extract<ProductPanelReadResponse, { status: "ready" }> & { declaration: PlatformReadDeclaration })
   | { status: "empty"; declaration: PlatformReadDeclaration };
 
-export function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(",")}}`;
-}
-
 type ReadPlacement = { member: ReadMember; projection: ProductProjection; slot: string };
 
 export async function prepareProjectionDataRead(
@@ -243,7 +236,7 @@ async function executeProjectionDataRead(
         invoke,
       )
     : invoke());
-  return { outcome: projectionDataReadOutcome(declaration, result), inputs };
+  return { outcome: await projectionDataReadOutcome(declaration, result), inputs };
 }
 
 export async function readResolvedPanelOwner(
@@ -283,11 +276,11 @@ export async function readResolvedPanelOwner(
   return present(result.payload);
 }
 
-export function projectionDataReadOutcome(
-  declaration: PlatformReadDeclaration, result: unknown, render: (value: unknown) => unknown = value => value,
-): ProjectionDataReadOutcome {
+export async function projectionDataReadOutcome(
+  declaration: PlatformReadDeclaration, result: unknown, render: (value: unknown) => unknown | Promise<unknown> = value => value,
+): Promise<ProjectionDataReadOutcome> {
   const { value, directive } = unwrapReadDirective(result);
-  const payload = render(value);
+  const payload = await render(value);
   const rereadAfterMs = directive?.rereadAfterMs;
   if (declaration.result === "panelRecordList") {
     const value = panelReadResultSchemas.panelRecordList.parse(payload);

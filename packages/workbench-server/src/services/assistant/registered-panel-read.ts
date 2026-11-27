@@ -25,7 +25,7 @@ export async function readAssistantPanelMember(
       { owner: reader.owner, viewer: resolved.viewer, callerUserName }, selection, params, resolved.projection,
       resolved.javaPath, retrievalScopeId,
     );
-    return await presentPanelMemberRead(actor, placement, request.dataName, inputs, projectionDataReadOutcome(declaration, value));
+    return await presentPanelMemberRead(actor, placement, request.dataName, inputs, await projectionDataReadOutcome(declaration, value));
   } catch (error) {
     const refusal = panelMemberReadRefusal(error);
     if (refusal) return refusal;

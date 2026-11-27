@@ -6,6 +6,7 @@ import { HttpError } from "../../utils/errors";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 import type { JavaPanelReadResult, JavaPanelViewer, PreparedOwnerReadFacts } from "../product-panels/java-panel-reads";
 import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
+import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { createPlatformOntologyCatalogueReads, requireOntologyCatalogueType } from "./catalogue-reads";
 import { PlatformOntologyOwnerReaders, type OntologyReadFact } from "./owners";
 import {
@@ -187,3 +188,17 @@ async function prepareCounts(
     },
   };
 }
+
+function prepareRegisteredOntologyEntry(context: Parameters<NonNullable<RegisteredDataReadRegistration["facts"]>>[0]) {
+  return prepareRegisteredOntologyRead(context.selection, context.owner, context.credentials, context.params);
+}
+
+export const ontologyDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  ...([
+    "list", "count", "properties", "typeRelations", "reads", "operations", "record", "counts", "countRows", "graphNodes",
+    "instanceGraphClasses", "instances", "instanceRecord", "neighbors", "instanceSearch", "start",
+  ] as const).map(method => ({ typeId: ONTOLOGY_TYPE, method, facts: prepareRegisteredOntologyEntry })),
+  ...(["list", "count", "graphEdges", "record"] as const).map(method => ({
+    typeId: ONTOLOGY_RELATION_KIND, method, facts: prepareRegisteredOntologyEntry,
+  })),
+];

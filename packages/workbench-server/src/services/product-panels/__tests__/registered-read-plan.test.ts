@@ -4553,7 +4553,7 @@ it("shares model type facts across option and resolve placements without sharing
     });
   }
   mocks.read.mockResolvedValueOnce({ viewer, results: [
-    { status: "ready", payload: [value] }, { status: "forbidden", error: "Owner denied definition" },
+    { status: "ready", payload: [value] }, { status: "ready", payload: [value] }, { status: "forbidden", error: "Owner denied definition" },
   ] });
 
   const plan = await prepareRegisteredDataReads(credentials, ["choices", "chosen", "restricted"].map(member =>
@@ -4566,9 +4566,9 @@ it("shares model type facts across option and resolve placements without sharing
     { status: "forbidden", reason: "Owner denied definition" },
   ]);
   const batch = mocks.read.mock.lastCall![1];
-  expect(batch).toHaveLength(2);
+  expect(batch).toHaveLength(3);
   expect(batch[0].call).toEqual({ type: OBJECT_TYPE, name: "options", parameters: {} });
-  expect(batch[1].uses).toMatchObject([{ target: { id: "private-type-options" } }]);
+  expect(batch[2].uses).toMatchObject([{ target: { id: "private-type-options" } }]);
 });
 
 it("describes clearing a detail panel using the current domain's mapping and management gate", async () => {
@@ -4596,6 +4596,7 @@ it("describes clearing a detail panel using the current domain's mapping and man
   mocks.detailMapping.mockResolvedValueOnce("no-longer-visible-panel").mockResolvedValueOnce(null);
   mocks.read.mockResolvedValueOnce({ viewer, results: [
     { status: "ready", payload: true },
+    { status: "ready", payload: true },
     { status: "ready", payload: false },
     { status: "forbidden", error: "Placement denied" },
     { status: "ready", payload: "yes" },
@@ -4613,7 +4614,7 @@ it("describes clearing a detail panel using the current domain's mapping and man
   expect(results[0]).not.toHaveProperty("value.clear.unavailable");
   expect(mocks.detailMapping.mock.calls).toEqual(ids.slice(0, 2).map(id => [viewer.domainId, id]));
   const calls = mocks.read.mock.lastCall![1] as JavaPanelRead[];
-  expect(calls.map(({ call }) => call)).toEqual([...new Set(projections)].map(() => ({
+  expect(calls.map(({ call }) => call)).toEqual(projections.map(() => ({
     type: OBJECT_TYPE, name: "detailPanel", parameters: {},
   })));
   expect(fetch).not.toHaveBeenCalled();
@@ -4640,7 +4641,8 @@ it("reads detail bindings and forms using one batch item's management and panel 
   mocks.detailMapping.mockImplementation(async (_domain, className) => mappings.get(className) ?? null);
   mocks.detailPanel.mockImplementation(async (_domain, id) => id === panel.id ? { status: "available", panel } : { status: "missing" });
   mocks.currentProduct.mockResolvedValueOnce(panel);
-  mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "ready", payload: false, visibility: { PANEL: { USE: range } } }] });
+  const detailReply = { status: "ready" as const, payload: false, visibility: { PANEL: { USE: range } } };
+  mocks.read.mockResolvedValueOnce({ viewer, results: members.map(() => detailReply) });
 
   const prepared = await prepareRegisteredDataReads(credentials, members.map(member => ({ ...request, memberPath: [{ member }] })));
   const replies = await runPreparedDataReads(credentials, prepared);
@@ -4651,9 +4653,11 @@ it("reads detail bindings and forms using one batch item's management and panel 
     { status: "ready", value: { outputs: { panelStatus: "unconfigured", configured: false } } },
     { status: "ready", value: { outputs: { panelStatus: "unavailable", panelId: "", configured: true } } },
   ]);
-  expect(mocks.read.mock.lastCall![1]).toMatchObject([{
+  const detailCalls = mocks.read.mock.lastCall![1] as JavaPanelRead[];
+  expect(detailCalls).toHaveLength(members.length);
+  expect(detailCalls[0]).toMatchObject({
     call: { type: OBJECT_TYPE, name: "detailPanel", parameters: {} }, visibleKinds: [{ kind: "PANEL", verbs: ["USE"] }],
-  }]);
+  });
   expect(mocks.detailPanel.mock.calls).toHaveLength(2);
 });
 

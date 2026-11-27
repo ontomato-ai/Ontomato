@@ -1,3 +1,4 @@
+import { managedRegisteredOpsRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { assertManagement } from "../../identity/management";
@@ -8,6 +9,7 @@ import type { RunCaseResult, RunMeta } from "@ontomato/contracts/autotest";
 import {
   AUTOTEST_CASE_ARTIFACT,
   AUTOTEST_RUN,
+  DSL_QUERY,
   OPS_KNOWLEDGE,
   TURN_EVIDENCE,
 } from "@ontomato/contracts/platform-object-types";
@@ -46,6 +48,7 @@ import {
 import { getCollectingTurnWorkspace, listCollectingTurnWorkspaces } from "../../platform/diagnosis/observe/workspaces/builder";
 import { listWorkspaces, loadManifest } from "../../platform/diagnosis/observe/workspaces/store";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { withReadDirective } from "../product-panels/read-directive";
 
@@ -892,3 +895,91 @@ export function createRegisteredDslQueryReadAdapter(_owner: ProductOwner, locale
 }
 
 export { computeSummary };
+
+export const opsDiagnosisDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  {
+    typeId: OPS_KNOWLEDGE, method: "files",
+    local: {
+      readJavaFacts: true,
+      read: (_owner, _ranges, facts, credentials) => createRegisteredOpsKnowledgeReadAdapter(facts, credentials.locale).files(),
+    },
+  },
+  {
+    typeId: OPS_KNOWLEDGE, method: "record",
+    local: {
+      readJavaFacts: true,
+      read: (_owner, _ranges, facts, credentials, _key, params) =>
+        createRegisteredOpsKnowledgeReadAdapter(facts, credentials.locale).record(params.path as string),
+    },
+  },
+  {
+    typeId: DSL_QUERY, method: "form",
+    javaCall: ({ selection }) => ({
+      type: DSL_QUERY, name: selection.method,
+      parameters: { ...(selection.primaryKey !== undefined && { primaryKey: selection.primaryKey }) },
+    }),
+    local: managedRegisteredOpsRead(createRegisteredDslQueryReadAdapter, (reads, _key, params) => {
+      requireFormFieldNames(params.values, "values");
+      return reads.form(params as NonNullable<Parameters<typeof reads.form>[0]>);
+    }),
+  },
+  {
+    typeId: TURN_EVIDENCE, method: "list",
+    local: managedRegisteredOpsRead(createRegisteredTurnEvidenceReadAdapter, (reads, _key, params) =>
+      reads.list({ search: params.search as string | undefined })),
+  },
+  {
+    typeId: TURN_EVIDENCE, method: "record",
+    local: managedRegisteredOpsRead(createRegisteredTurnEvidenceReadAdapter, (reads, key) => reads.record(key)),
+  },
+  {
+    typeId: TURN_EVIDENCE, method: "evidenceRuns",
+    local: managedRegisteredOpsRead(createRegisteredTurnEvidenceReadAdapter, (reads, key) => reads.evidenceRuns(key)),
+  },
+  {
+    typeId: TURN_EVIDENCE, method: "evidenceGaps",
+    local: managedRegisteredOpsRead(createRegisteredTurnEvidenceReadAdapter, (reads, key) => reads.evidenceGaps(key)),
+  },
+  {
+    typeId: TURN_EVIDENCE, method: "files",
+    local: managedRegisteredOpsRead(createRegisteredTurnEvidenceReadAdapter, (reads, key) => reads.files(key)),
+  },
+  {
+    typeId: TURN_EVIDENCE, method: "file",
+    local: managedRegisteredOpsRead(createRegisteredTurnEvidenceReadAdapter, (reads, key, params) => reads.file(key, params.path as string)),
+  },
+  {
+    typeId: AUTOTEST_RUN, method: "list",
+    local: managedRegisteredOpsRead(createRegisteredAutotestRunReadAdapter, reads => reads.list()),
+  },
+  {
+    typeId: AUTOTEST_RUN, method: "record",
+    local: managedRegisteredOpsRead(createRegisteredAutotestRunReadAdapter, (reads, key) => reads.record(key)),
+  },
+  {
+    typeId: AUTOTEST_RUN, method: "results",
+    local: managedRegisteredOpsRead(createRegisteredAutotestRunReadAdapter, (reads, key, params) =>
+      reads.results(key, params as Parameters<typeof reads.results>[1])),
+  },
+  {
+    typeId: AUTOTEST_CASE_ARTIFACT, method: "record",
+    local: managedRegisteredOpsRead(createRegisteredAutotestCaseArtifactReadAdapter, (reads, key) => reads.record(key)),
+  },
+  {
+    typeId: AUTOTEST_CASE_ARTIFACT, method: "evidenceRuns",
+    local: managedRegisteredOpsRead(createRegisteredAutotestCaseArtifactReadAdapter, (reads, key) => reads.evidenceRuns(key)),
+  },
+  {
+    typeId: AUTOTEST_CASE_ARTIFACT, method: "evidenceGaps",
+    local: managedRegisteredOpsRead(createRegisteredAutotestCaseArtifactReadAdapter, (reads, key) => reads.evidenceGaps(key)),
+  },
+  {
+    typeId: AUTOTEST_CASE_ARTIFACT, method: "files",
+    local: managedRegisteredOpsRead(createRegisteredAutotestCaseArtifactReadAdapter, (reads, key) => reads.files(key)),
+  },
+  {
+    typeId: AUTOTEST_CASE_ARTIFACT, method: "file",
+    local: managedRegisteredOpsRead(createRegisteredAutotestCaseArtifactReadAdapter, (reads, key, params) =>
+      reads.file(key, params.path as string)),
+  },
+];

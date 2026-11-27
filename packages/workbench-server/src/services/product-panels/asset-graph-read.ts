@@ -17,6 +17,7 @@ import { definitionVisibleInRange } from "./access";
 import { objectVisibilityRangeSchema } from "../product-governance/authorization";
 import { javaPanelReadResultSchema, type JavaPanelRead, type JavaPanelReadResult } from "./java-panel-reads";
 import type { PanelReadSelection } from "./panel-owner-reads";
+import type { RegisteredDataReadRegistration } from "./registered-data-read";
 import { readCurrentDefinitionRows } from "./current";
 import { currentProductRecord, type CurrentProductRow } from "../../infrastructure/product-current";
 import { listObjectDetailPanelMappings } from "./object-detail";
@@ -174,3 +175,10 @@ export async function prepareProductAssetGraphRead(owner: ProductOwner, locale?:
     },
   };
 }
+
+export const assetGraphDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  {
+    typeId: OBJECT_TYPE, method: "productGraph",
+    prepare: ({ owner, credentials }) => prepareProductAssetGraphRead(owner, credentials.locale),
+  },
+];

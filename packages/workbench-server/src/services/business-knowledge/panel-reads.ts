@@ -1,3 +1,4 @@
+import { presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
@@ -282,3 +283,8 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
     },
   };
 }
+
+export const businessKnowledgeDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  ...(["query", "counts", "record", "form", "createForm"] as const).map(method =>
+    presentedRegisteredDataRead(BUSINESS_KNOWLEDGE, method, createBusinessKnowledgePanelReadPresenter)),
+];

@@ -1,3 +1,4 @@
+import { presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import { sandboxCapabilitySchema } from "@ontomato/contracts/data-adapters";
 import {
@@ -954,3 +955,18 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
     },
   };
 }
+
+const actionPresenterMethods = [
+  "form", "createForm", "sandboxCapability", "list", "record", "definition", "explanation", "trialSummary",
+  "derivedSummary", "derivedEffects", "derivedParameters", "derivedConditions", "annotatedExplanation",
+] as const;
+
+export const actionDataReadRegistrations: RegisteredDataReadRegistration[] = actionPresenterMethods.map(method => ({
+  ...presentedRegisteredDataRead(ACTION, method, createActionPanelReadPresenter),
+  ...((method === "definition" || method === "explanation") && {
+    javaCall: ({ selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["javaCall"]>>[0]) => ({
+      type: ACTION, name: "record",
+      parameters: { ...params, ...(selection.primaryKey !== undefined && { primaryKey: selection.primaryKey }) },
+    }),
+  }),
+}));

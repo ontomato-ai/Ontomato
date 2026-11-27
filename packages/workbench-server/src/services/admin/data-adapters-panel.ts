@@ -1,3 +1,4 @@
+import { presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import {
   dataAdapterTestResultSchema,
@@ -37,6 +38,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import {
   affected,
@@ -1723,4 +1725,14 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
       };
     },
   } satisfies PanelReadServerOperation,
+];
+
+const validateDataAdapterForm: NonNullable<RegisteredDataReadRegistration["validate"]> = ({ params }) => {
+  requireFormFieldNames(params.values, "values");
+};
+
+export const dataAdapterDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  presentedRegisteredDataRead(DATA_ADAPTER_CONFIG, "record", createDataAdapterConfigPanelReadPresenter),
+  { ...presentedRegisteredDataRead(DATA_ADAPTER_CONFIG, "form", createDataAdapterConfigPanelReadPresenter), validate: validateDataAdapterForm },
+  { ...presentedRegisteredDataRead(DATA_ADAPTER_CONFIG, "routingForm", createDataAdapterConfigPanelReadPresenter), validate: validateDataAdapterForm },
 ];

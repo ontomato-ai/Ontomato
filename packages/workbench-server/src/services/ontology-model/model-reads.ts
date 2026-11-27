@@ -1,3 +1,4 @@
+import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
@@ -28,6 +29,7 @@ import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import type { PanelWriteServerOperation } from "../product-panels/server-operations";
 import {
@@ -494,3 +496,36 @@ export function createOntologyModelReadAdapter(
     createForm: async (typeId, params) => readerFor(typeId).createForm(params),
   };
 }
+
+function presentOntologyModelRegisteredRead(typeId: string, method: string): NonNullable<RegisteredDataReadRegistration["present"]> {
+  return (payload, { params, selection, credentials }) => {
+    const value = renderModelRead(typeId, method, payload, params, credentials.locale);
+    return method === "record" && typeId !== ATTRIBUTE
+      ? withModelingPath(value as Parameters<typeof withModelingPath>[0], typeId === OBJECT_TYPE ? "object" : "relation", selection.primaryKey!)
+      : value;
+  };
+}
+
+const validateOntologyModelForm: NonNullable<RegisteredDataReadRegistration["validate"]> = ({ params }) => {
+  requireFormFieldNames(params.values, "values");
+};
+
+function ontologyModelRegistration(typeId: string, method: string): RegisteredDataReadRegistration {
+  return {
+    typeId, method,
+    ...((method === "form" || method === "createForm" || method === "inlineForm") && { validate: validateOntologyModelForm }),
+    ...(typeId === OBJECT_TYPE && (method === "options" || method === "resolve") && {
+      javaCall: () => ({ type: OBJECT_TYPE, name: "options", parameters: {} }),
+    }),
+    present: presentOntologyModelRegisteredRead(typeId, method),
+  };
+}
+
+export const ontologyModelDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  ...(["list", "record", "form", "createForm", "inlineForm", "options", "resolve"] as const).map(method =>
+    ontologyModelRegistration(OBJECT_TYPE, method)),
+  ...(["list", "record", "form", "createForm", "inlineForm"] as const).map(method =>
+    ontologyModelRegistration(ATTRIBUTE, method)),
+  ...(["list", "record", "form", "createForm"] as const).map(method =>
+    ontologyModelRegistration(RELATIONSHIP, method)),
+];

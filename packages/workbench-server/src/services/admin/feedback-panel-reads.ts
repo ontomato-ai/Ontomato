@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
 import { panelReadOperationJsonResultSchema } from "@ontomato/contracts/panel-operations";
-import { EXPORT_FEEDBACK } from "@ontomato/contracts/platform-object-types";
+import { EXPORT_FEEDBACK, FEEDBACK_RECORD } from "@ontomato/contracts/platform-object-types";
 import type { FeedbackRecord } from "@ontomato/contracts/feedback";
 import { panelReadParameterSchemas, type PanelGroupCounts, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
@@ -10,6 +10,7 @@ import { assertManagement } from "../../identity/management";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { PanelReadServerOperation } from "../product-panels/server-operations";
+import { managedRegisteredOpsRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { countFeedback, listFeedback } from "./feedback-store";
 import { exportFeedback, feedbackExportTimeZone } from "./feedback-export";
@@ -195,3 +196,18 @@ export const feedbackExportOperation = {
     return { kind: "file", bytes: file.bytes, suggestedName: file.suggestedName, mime: file.mime };
   },
 } satisfies PanelReadServerOperation & { labelKey: string };
+
+export const feedbackDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  {
+    typeId: FEEDBACK_RECORD, method: "query",
+    local: managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, _key, params) => reads.query(params)),
+  },
+  {
+    typeId: FEEDBACK_RECORD, method: "counts",
+    local: managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, _key, params) => reads.counts(params)),
+  },
+  {
+    typeId: FEEDBACK_RECORD, method: "record",
+    local: managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, key) => reads.record(key)),
+  },
+];

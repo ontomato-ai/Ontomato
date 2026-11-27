@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { saveObjectDetailValuesSchema } from "@ontomato/contracts/object-detail";
 import type { PanelFormDescription, PanelFormValues, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { OBJECT_TYPE, PRODUCT_PANEL, SAVE_OBJECT_DETAIL_PANEL } from "@ontomato/contracts/platform-object-types";
@@ -7,10 +8,12 @@ import { tForLocale } from "../../i18n";
 import { findCurrentProduct } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { currentDefinitionAccess, definitionVisibleInRange, type DefinitionVisibilityRange } from "./access";
 import { findDetailPanel, findObjectDetailPanelId } from "./object-detail";
+import type { RegisteredDataReadRegistration, RegisteredLocalDataRead } from "./registered-data-read";
 
 export const objectDetailText = (locale: string | undefined, key: string) =>
   tForLocale(locale, `panels.objectDetail.${key}`);
@@ -108,3 +111,35 @@ export function createObjectDetailReadAdapter(
     },
   };
 }
+
+function objectDetailRegisteredRead(
+  read: (adapter: ReturnType<typeof createRegisteredObjectDetailReadAdapter>, className: string, params: Record<string, unknown>) => Promise<unknown>,
+): RegisteredLocalDataRead {
+  return {
+    visibility: [{ kind: "PANEL", verbs: ["USE"] }],
+    readJavaFacts: true,
+    cache: true,
+    read(owner, ranges, facts, credentials, primaryKey, params) {
+      const adapter = createRegisteredObjectDetailReadAdapter(owner, credentials, z.boolean().parse(facts), ranges!.PANEL.USE);
+      return read(adapter, primaryKey!, params);
+    },
+  };
+}
+
+const objectDetailFactsCall = (method: string) => ({ type: OBJECT_TYPE, name: method === "detailPanelForm" ? "detailPanel" : method, parameters: {} });
+
+export const objectDetailDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  {
+    typeId: OBJECT_TYPE, method: "detailPanel",
+    javaCall: () => objectDetailFactsCall("detailPanel"),
+    local: objectDetailRegisteredRead((adapter, key) => adapter.record(key)),
+  },
+  {
+    typeId: OBJECT_TYPE, method: "detailPanelForm",
+    javaCall: () => objectDetailFactsCall("detailPanelForm"),
+    local: objectDetailRegisteredRead((adapter, key, params) => {
+      requireFormFieldNames(params.values, "values");
+      return adapter.form(key, params.values as PanelFormValues | undefined);
+    }),
+  },
+];

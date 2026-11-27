@@ -1,3 +1,5 @@
+import { AUDIT_LOG } from "@ontomato/contracts/platform-object-types";
+import { presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import { panelReadParameterSchemas, type PanelFieldTone, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
@@ -116,3 +118,8 @@ export function createAuditLogPanelReads(viewer: AssistantCredentials) {
     },
   };
 }
+
+export const auditLogDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  presentedRegisteredDataRead(AUDIT_LOG, "query", createAuditLogPanelReadPresenter),
+  presentedRegisteredDataRead(AUDIT_LOG, "record", createAuditLogPanelReadPresenter),
+];

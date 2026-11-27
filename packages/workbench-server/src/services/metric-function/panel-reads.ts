@@ -1,3 +1,4 @@
+import { presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { dashboardMetricDescriptionSchema, dashboardMetricOutputSchema, type DashboardMetricOutput } from "@ontomato/contracts/dashboard";
@@ -279,3 +280,18 @@ export function createFunctionReadAdapter(_owner: ProductOwner, viewer: Assistan
     },
   };
 }
+
+export const metricFunctionDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  ...(["list", "record", "form", "createForm"] as const).map(method => ({
+    ...presentedRegisteredDataRead(FUNCTION, method, createFunctionPanelReadPresenter),
+    ...(method === "record" && { messageOnlyCodes: ["FUNCTION_NOT_FOUND"] }),
+  })),
+  {
+    ...presentedRegisteredDataRead(FUNCTION, "query", createFunctionPanelReadPresenter),
+    javaCall: ({ params }) => ({ type: FUNCTION, name: "list", parameters: { ...(params.operation !== undefined && { operation: params.operation }) } }),
+  },
+  ...(["list", "query", "record", "form", "createForm"] as const).map(method => ({
+    ...presentedRegisteredDataRead(METRIC_VIEW, method, createMetricPanelReadPresenter),
+    ...(method === "record" && { messageOnlyCodes: ["METRIC_VIEW_NOT_FOUND"] }),
+  })),
+];

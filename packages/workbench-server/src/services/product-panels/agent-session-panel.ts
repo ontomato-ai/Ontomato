@@ -1,3 +1,4 @@
+import type { RegisteredDataReadRegistration } from "./registered-data-read";
 import { z } from "zod";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { AGENT_SESSION, DELETE_AGENT_SESSION, FAVORITE, RENAME_AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
@@ -245,6 +246,22 @@ export const agentSessionServerOperations: readonly PanelWriteServerOperation[] 
         if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
         return { kind: "refusal", code: error.code ?? "SESSION_DELETE_REFUSED", message: error.message };
       }
+    },
+  },
+];
+
+export const agentSessionDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  {
+    typeId: AGENT_SESSION, method: "list",
+    local: {
+      read: (owner, _ranges, _facts, credentials, _key, params) => createAgentSessionReadAdapter(owner, credentials)
+        .list(params as Parameters<ReturnType<typeof createAgentSessionReadAdapter>["list"]>[0]),
+    },
+  },
+  {
+    typeId: AGENT_SESSION, method: "record",
+    local: {
+      read: (owner, _ranges, _facts, credentials, primaryKey) => createAgentSessionReadAdapter(owner, credentials).record(primaryKey!),
     },
   },
 ];

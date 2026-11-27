@@ -1,3 +1,4 @@
+import { presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import { generalConfigSaveEndpoints, type GeneralConfigKey } from "@ontomato/contracts/general-settings";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
@@ -5,6 +6,7 @@ import { GENERAL_SETTINGS } from "@ontomato/contracts/platform-object-types";
 import { panelFormSaveInputSchema, type PanelFormDescription, type PanelFormField, type PanelFormRequest, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, type DataQueryOperationHost } from "../product-panels/data-query-operations";
 import { operationHost } from "../product-panels/operation-host";
@@ -184,3 +186,13 @@ export const generalSettingsOperations = [{
 
   execute: (host, _target, input) => saveGeneralSettings(host, host.executor, submittedValues(input)),
 }] satisfies readonly PanelServerOperation[];
+
+const validateGeneralSettingsForm: NonNullable<RegisteredDataReadRegistration["validate"]> = ({ params }) => {
+  requireFormFieldNames(params.values, "values");
+};
+
+export const generalSettingsDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  presentedRegisteredDataRead(GENERAL_SETTINGS, "list", createGeneralSettingsPanelReadPresenter),
+  presentedRegisteredDataRead(GENERAL_SETTINGS, "record", createGeneralSettingsPanelReadPresenter),
+  { ...presentedRegisteredDataRead(GENERAL_SETTINGS, "form", createGeneralSettingsPanelReadPresenter), validate: validateGeneralSettingsForm },
+];

@@ -32,9 +32,11 @@ import { tForLocale } from "../../i18n";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { AssistantOwner } from "../assistant/store";
 import type { VisibleAgentMcpUsage } from "../product-panels/agent-definition-directory";
+import { managedRegisteredOpsRead, type RegisteredDataReadRegistration, type RegisteredLocalDataRead } from "../product-panels/registered-data-read";
 import type { ObjectVisibilityRange } from "../product-governance/authorization";
 import type {
   PanelImpactInspector,
@@ -797,5 +799,67 @@ export const externalMcpServerOperations: readonly PanelServerOperation[] = [
         },
       };
     },
+  },
+];
+
+function externalMcpDirectoryRegisteredRead(
+  read: (adapter: ReturnType<typeof createRegisteredExternalMcpDirectoryReads>, key: string) => Promise<unknown>,
+): RegisteredLocalDataRead {
+  return {
+    visibility: [{ kind: "AGENT", verbs: ["VIEW"] }],
+    readJavaFacts: true,
+    read(owner, ranges, facts, credentials, key) {
+      const view = ranges?.AGENT?.VIEW;
+      if (!view) throw new HttpError(502, "The panel read owner did not provide AGENT/VIEW visibility", "PANEL_READ_OWNER_RESPONSE_INVALID");
+      return read(createRegisteredExternalMcpDirectoryReads(owner, credentials.locale, facts, view), key!);
+    },
+  };
+}
+
+function externalMcpJavaFactsCall(selection: { typeId: string; method: string; primaryKey?: string }) {
+  return {
+    type: EXTERNAL_MCP_SERVICE, name: selection.method,
+    parameters: { ...(selection.primaryKey !== undefined && { primaryKey: selection.primaryKey }) },
+  };
+}
+
+const validateExternalMcpForm: NonNullable<RegisteredDataReadRegistration["validate"]> = ({ params }) => {
+  requireFormFieldNames(params.values, "values");
+};
+
+export const externalMcpDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  { typeId: EXTERNAL_MCP_SERVICE, method: "list", local: externalMcpDirectoryRegisteredRead(reads => reads.list()) },
+  { typeId: EXTERNAL_MCP_SERVICE, method: "record", local: externalMcpDirectoryRegisteredRead((reads, key) => reads.record(key)) },
+  {
+    typeId: EXTERNAL_MCP_SERVICE, method: "tools",
+    local: {
+      readJavaFacts: true,
+      read: (owner, _ranges, facts, credentials, key) => readRegisteredExternalMcpTools(owner, credentials.locale, facts, key!),
+    },
+  },
+  {
+    typeId: EXTERNAL_MCP_SERVICE, method: "options",
+    local: { read: (owner, _ranges, _facts, credentials) => createExternalMcpReads(owner, credentials).options() },
+  },
+  {
+    typeId: EXTERNAL_MCP_SERVICE, method: "resolve",
+    local: {
+      read: (owner, _ranges, _facts, credentials, _key, params) =>
+        createExternalMcpReads(owner, credentials).resolve(params.values as readonly unknown[]),
+    },
+  },
+  {
+    typeId: EXTERNAL_MCP_SERVICE, method: "form",
+    validate: validateExternalMcpForm,
+    javaCall: ({ selection }) => externalMcpJavaFactsCall(selection),
+    local: managedRegisteredOpsRead(createRegisteredExternalMcpFormReads, (reads, key, params) =>
+      reads.form(key, params as Parameters<typeof reads.form>[1])),
+  },
+  {
+    typeId: EXTERNAL_MCP_SERVICE, method: "createForm",
+    validate: validateExternalMcpForm,
+    javaCall: ({ selection }) => externalMcpJavaFactsCall(selection),
+    local: managedRegisteredOpsRead(createRegisteredExternalMcpFormReads, (reads, _key, params) =>
+      reads.createForm(params as Parameters<typeof reads.createForm>[0])),
   },
 ];

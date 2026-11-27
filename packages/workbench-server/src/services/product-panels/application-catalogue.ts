@@ -27,6 +27,7 @@ import { listCurrentProductNames, readScopedPanelNames, readScopedPanels, readSc
 import { readCurrentPanel } from "./current";
 import { assetGraphNode, createAssetGraph, panelGraphMembers } from "./asset-graph";
 import type { PanelReadRanges, PanelReadVisibility } from "./java-panel-reads";
+import type { RegisteredDataReadRegistration, RegisteredLocalDataRead } from "./registered-data-read";
 import type { PanelReadSelection } from "./panel-owner-reads";
 
 const applicationPath = "/platform/applications";
@@ -753,3 +754,65 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
     },
   };
 }
+
+const applicationRegisteredPanelVisibility = [{ kind: "PANEL", verbs: ["USE", "EDIT"] }] as const;
+
+function applicationRegisteredLocalRead(
+  visibility: readonly PanelReadVisibility[],
+  read: (
+    domainId: string, locale: string | undefined, facts: unknown,
+    panelRanges: Parameters<typeof readScopedPanelNames>[2], projectionUse?: Parameters<typeof readScopedProjectionNames>[2],
+  ) => unknown | Promise<unknown>,
+): RegisteredLocalDataRead {
+  return {
+    visibility,
+    readJavaFacts: true,
+    read(owner, ranges, facts, credentials) {
+      const { USE, EDIT } = ranges!.PANEL;
+      return read(owner.domainId, credentials.locale, facts, { USE, EDIT }, ranges!.PROJECTION?.USE);
+    },
+  };
+}
+
+export const applicationCatalogueDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  {
+    typeId: APPLICATION, method: "form",
+    prepare: ({ selection, params, owner, credentials }) => prepareApplicationPanelFormRead(selection, params, owner.domainId, credentials.locale),
+  },
+  {
+    typeId: APPLICATION, method: "createForm",
+    prepare: ({ selection, params, owner, credentials }) => prepareApplicationPanelFormRead(selection, params, owner.domainId, credentials.locale),
+  },
+  {
+    typeId: APPLICATION, method: "available",
+    prepare: ({ owner, credentials, selection, params }) => prepareApplicationGalleryRead(owner, credentials, selection, params),
+  },
+  {
+    typeId: APPLICATION, method: "query",
+    javaCall: ({ params }) => ({ type: APPLICATION, name: "query", parameters: applicationCatalogueQueryParameters(params) }),
+    present: (payload, { credentials }) => createApplicationPanelReadPresenter(credentials.locale).query(payload),
+  },
+  {
+    typeId: APPLICATION, method: "record",
+    local: applicationRegisteredLocalRead(applicationRegisteredPanelVisibility,
+      (domainId, locale, facts, panelRanges) => presentRegisteredApplicationRecord(domainId, locale, facts, panelRanges)),
+  },
+  {
+    typeId: APPLICATION, method: "entryRows",
+    local: applicationRegisteredLocalRead(applicationRegisteredPanelVisibility,
+      (domainId, locale, facts, panelRanges) => presentRegisteredApplicationEntryRows(domainId, locale, facts, panelRanges)),
+  },
+  {
+    typeId: APPLICATION, method: "usedPanels",
+    local: applicationRegisteredLocalRead(applicationRegisteredPanelVisibility,
+      (domainId, locale, facts, panelRanges) => presentRegisteredApplicationUsedPanels(domainId, locale, facts, panelRanges)),
+  },
+  {
+    typeId: APPLICATION, method: "referenceGraph",
+    local: applicationRegisteredLocalRead(
+      [...applicationRegisteredPanelVisibility, { kind: "PROJECTION", verbs: ["USE"] }] as const,
+      (domainId, locale, facts, panelRanges, projectionUse) =>
+        presentRegisteredApplicationReferenceGraph(domainId, locale, facts, panelRanges, projectionUse!),
+    ),
+  },
+];

@@ -2,9 +2,10 @@ import { z } from "zod";
 import { agentExecutionOptionsSchema, type AgentExecutionOptions } from "@ontomato/contracts/assistant-chat";
 import { modelNameSchema } from "@ontomato/contracts/model-settings";
 import { panelReadParameterSchemas, type PanelOption } from "@ontomato/contracts/panel-projection";
-import { USER } from "@ontomato/contracts/platform-object-types";
+import { MODEL_OPTION, USER } from "@ontomato/contracts/platform-object-types";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
 import { queryExecutionOptions } from "./execution-setting";
 import { presentDomainModelOptions, readDomainModelOptions } from "./model-panel-form";
@@ -109,3 +110,16 @@ export function createAgentOptionReadAdapters(viewer: AssistantCredentials) {
     },
   };
 }
+
+export const assistantDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  { typeId: USER, method: "options", prepare: ({ selection, params, credentials }) => prepareExecutionUserRead(selection, params, credentials.locale) },
+  { typeId: USER, method: "resolve", prepare: ({ selection, params, credentials }) => prepareExecutionUserRead(selection, params, credentials.locale) },
+  {
+    typeId: MODEL_OPTION, method: "options",
+    present: (payload, { credentials }) => createModelOptionPanelReadPresenter(credentials.locale).options(payload),
+  },
+  {
+    typeId: MODEL_OPTION, method: "resolve",
+    present: (payload, { credentials, params }) => createModelOptionPanelReadPresenter(credentials.locale).resolve(payload, params),
+  },
+];

@@ -26,6 +26,14 @@ export interface JavaPanelRead {
   timeoutMs?: number;
 }
 
+
+export function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(",")}}`;
+}
+
 const viewerSchema = z.object({ userId: z.string().min(1), domainId: z.string().min(1), userName: z.string().nullish() });
 export type JavaPanelViewer = z.infer<typeof viewerSchema>;
 const registeredEntrySchema = applicationEntryResolutionSchema.pick({ applicationId: true, framePanelId: true })
@@ -86,11 +94,22 @@ export function locateViaJava(entries: readonly JavaPanelLocateRef[], credential
   }));
 }
 
-export function readViaJava(viewer: JavaPanelViewer, reads: readonly JavaPanelRead[], credentials: AssistantCredentials, retrievalScopeId?: string) {
+export async function readViaJava(viewer: JavaPanelViewer, reads: readonly JavaPanelRead[], credentials: AssistantCredentials, retrievalScopeId?: string) {
   const { userId, domainId } = viewer;
-  return requestJavaPanelReads({ kind: "read", viewer: { userId, domainId }, reads }, credentials, z.object({
+  const uniqueReads: JavaPanelRead[] = [];
+  const sharedReads = new Map<string, number>();
+  const indexes = reads.map(read => {
+    const key = stableJson(read);
+    const previous = sharedReads.get(key);
+    if (previous !== undefined) return previous;
+    const index = uniqueReads.push(read) - 1;
+    sharedReads.set(key, index);
+    return index;
+  });
+  const response = await requestJavaPanelReads({ kind: "read", viewer: { userId, domainId }, reads: uniqueReads }, credentials, z.object({
     viewer: viewerSchema, results: z.array(javaPanelReadResultSchema.catch({
       status: "error", code: "PANEL_READ_OWNER_RESPONSE_INVALID", error: "Invalid item from the panel read owner",
-    })).length(reads.length),
+    })).length(uniqueReads.length),
   }), retrievalScopeId);
+  return { viewer: response.viewer, results: indexes.map(index => response.results[index]) };
 }

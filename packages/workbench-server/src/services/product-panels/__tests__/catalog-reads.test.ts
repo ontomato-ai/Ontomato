@@ -215,8 +215,9 @@ it("requests only USE for panel picker options and projection facets", async () 
 });
 
 it("preserves picker options and uses the admitted range without another authorization round", async () => {
-  const { registeredLocalReads } = await import("../registered-local-reads");
-  const options = registeredLocalReads[PRODUCT_PANEL]!.options!;
+  const { productCatalogueDataReadRegistrations } = await import("../catalog-reads");
+  const options = productCatalogueDataReadRegistrations.find(registration =>
+    registration.typeId === PRODUCT_PANEL && registration.method === "options")!.local!;
   const panel = {
     ...storedPanel("reader-panel", "another-user"), ...healthyDefinition, definition: healthyDefinition,
     sortKey: "orders", editable: false,

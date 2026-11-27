@@ -1,3 +1,4 @@
+import { panelReadParameterSchemas } from "@ontomato/contracts/panel-projection";
 import { productPanelCatalogQuerySchema } from "@ontomato/contracts/product-catalog-query";
 import { productObjectAccessSchema } from "@ontomato/contracts/object-policy-access";
 import { principalDirectoryResponseSchema, type PrincipalDirectoryRequest } from "@ontomato/contracts/principal-directory";
@@ -62,6 +63,7 @@ import { readAuthorComponentCatalogue, readAuthorComponentCatalogueInRange } fro
 import { loadCurrentProduct, readCurrentContentInRange, readCurrentPanel, readCurrentProjection } from "./current";
 import { panelUsersInRange, panelsUsingPanelInRange, panelsUsingProjectionInRange } from "./used-by";
 import type { JavaPanelRead, JavaPanelReadResult, PanelReadRanges, PanelReadVisibility, PreparedOwnerReadFacts } from "./java-panel-reads";
+import type { RegisteredDataReadRegistration, RegisteredLocalDataRead } from "./registered-data-read";
 import type { PanelReadSelection } from "./panel-owner-reads";
 import {
   addProjectionGraphReferences, assetGraphNode, createAssetGraph, objectTypeGraphNode, panelGraphMembers, resolveObjectTypeLabel,
@@ -1607,3 +1609,103 @@ export async function prepareProductCatalogueQuery(
     },
   };
 }
+
+const registeredPanelUse = [{ kind: "PANEL", verbs: ["USE"] }] as const;
+const registeredPanelEdit = [{ kind: "PANEL", verbs: ["USE", "EDIT"] }] as const;
+const registeredProjectionUse = [{ kind: "PROJECTION", verbs: ["USE"] }] as const;
+const registeredProjectionEdit = [{ kind: "PROJECTION", verbs: ["USE", "EDIT"] }] as const;
+const registeredComponentUse = [{ kind: "COMPONENT", verbs: ["USE"] }] as const;
+
+function panelCatalogueRegisteredRead(
+  visibility: readonly PanelReadVisibility[],
+  read: (reads: ReturnType<typeof createScopedProductPanelReads>, primaryKey: string, params: Record<string, unknown>) => Promise<unknown>,
+  readJavaFacts?: true,
+): RegisteredLocalDataRead {
+  return {
+    visibility,
+    readJavaFacts,
+    read(owner, ranges, facts, credentials, primaryKey, params) {
+      const { USE, EDIT } = ranges!.PANEL;
+      return read(createScopedProductPanelReads(owner, credentials, { USE, EDIT }, ranges!.PROJECTION?.USE, facts), primaryKey!, params);
+    },
+  };
+}
+
+function projectionCatalogueRegisteredRead(
+  visibility: readonly PanelReadVisibility[],
+  read: (reads: ReturnType<typeof createScopedProductProjectionReads>, primaryKey: string, params: Record<string, unknown>) => Promise<unknown>,
+): RegisteredLocalDataRead {
+  return {
+    visibility,
+    read(owner, ranges, _facts, credentials, primaryKey, params) {
+      const { USE, EDIT } = ranges!.PROJECTION;
+      const reads = createScopedProductProjectionReads(owner, credentials, { USE, EDIT }, ranges!.COMPONENT?.USE, ranges!.PANEL?.USE);
+      return read(reads, primaryKey!, params);
+    },
+  };
+}
+
+function registeredCatalogueFormValues(params: Record<string, unknown>) {
+  requireFormFieldNames(params.values, "values");
+  return { values: params.values as PanelFormValues | undefined };
+}
+
+export const productCatalogueDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  ...(["createForm", "record", "grants", "grantRows"] as const).flatMap(method => [
+    { typeId: PRODUCT_PANEL, method, prepare: ({ owner, credentials, selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) => prepareProductCatalogueRead(owner, credentials, selection, params) },
+    { typeId: PRODUCT_PROJECTION, method, prepare: ({ owner, credentials, selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) => prepareProductCatalogueRead(owner, credentials, selection, params) },
+  ]),
+  ...([PRODUCT_PANEL, PRODUCT_PROJECTION] as const).map(typeId => ({
+    typeId, method: "query",
+    facts: ({ owner, credentials, selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["facts"]>>[0]) =>
+      prepareProductCatalogueQuery(owner, credentials, selection, params),
+  })),
+  {
+    typeId: PRODUCT_PANEL, method: "options",
+    local: {
+      visibility: registeredPanelUse,
+      read: (owner, ranges, _facts, _credentials, _key, params) => readScopedPanelPickerOptions(
+        owner, ranges!.PANEL.USE, params.keyword as string | undefined, params.page as Parameters<typeof readScopedPanelPickerOptions>[3],
+      ),
+    },
+  },
+  { typeId: PRODUCT_PANEL, method: "unavailable", local: panelCatalogueRegisteredRead(registeredPanelEdit, reads => reads.unavailable()) },
+  { typeId: PRODUCT_PANEL, method: "memberRows", local: panelCatalogueRegisteredRead([...registeredPanelEdit, ...registeredProjectionUse], (reads, key) => reads.memberRows(key)) },
+  { typeId: PRODUCT_PANEL, method: "usedByRows", local: panelCatalogueRegisteredRead(registeredPanelEdit, (reads, key) => reads.usedByRows(key), true) },
+  { typeId: PRODUCT_PANEL, method: "referenceGraph", local: panelCatalogueRegisteredRead([...registeredPanelEdit, ...registeredProjectionUse], (reads, key) => reads.referenceGraph(key), true) },
+  { typeId: PRODUCT_PANEL, method: "sourceFiles", local: panelCatalogueRegisteredRead(registeredPanelUse, (reads, key) => reads.sourceFiles(key)) },
+  {
+    typeId: PRODUCT_PANEL, method: "sourceFile",
+    local: panelCatalogueRegisteredRead(registeredPanelUse, (reads, key, params) =>
+      reads.sourceFile(key, panelReadParameterSchemas.skillFilePath.parse(params.path))),
+  },
+  {
+    typeId: PRODUCT_PANEL, method: "form",
+    local: panelCatalogueRegisteredRead(registeredPanelEdit, (reads, key, params) => reads.form(key, registeredCatalogueFormValues(params))),
+  },
+  {
+    typeId: PRODUCT_PANEL, method: "homePanel",
+    local: {
+      visibility: registeredPanelUse,
+      read(owner, ranges, _facts, credentials) {
+        const range = ranges?.PANEL?.USE;
+        if (!range) throw new HttpError(502, "The panel read owner did not provide PANEL/USE visibility", "PANEL_READ_OWNER_RESPONSE_INVALID");
+        return readRegisteredHomePanel(owner, credentials.locale, range);
+      },
+    },
+  },
+  { typeId: PRODUCT_PROJECTION, method: "componentOptions", local: projectionCatalogueRegisteredRead([...registeredProjectionUse, ...registeredComponentUse], reads => reads.componentOptions()) },
+  { typeId: PRODUCT_PROJECTION, method: "objectTypeOptions", local: projectionCatalogueRegisteredRead(registeredProjectionUse, reads => reads.objectTypeOptions()) },
+  { typeId: PRODUCT_PROJECTION, method: "dataRows", local: projectionCatalogueRegisteredRead(registeredProjectionUse, (reads, key) => reads.dataRows(key)) },
+  { typeId: PRODUCT_PROJECTION, method: "configRows", local: projectionCatalogueRegisteredRead(registeredProjectionUse, (reads, key) => reads.configRows(key)) },
+  { typeId: PRODUCT_PROJECTION, method: "inputRows", local: projectionCatalogueRegisteredRead(registeredProjectionUse, (reads, key) => reads.inputRows(key)) },
+  { typeId: PRODUCT_PROJECTION, method: "outputRows", local: projectionCatalogueRegisteredRead(registeredProjectionUse, (reads, key) => reads.outputRows(key)) },
+  { typeId: PRODUCT_PROJECTION, method: "operationRows", local: projectionCatalogueRegisteredRead(registeredProjectionUse, (reads, key) => reads.operationRows(key)) },
+  { typeId: PRODUCT_PROJECTION, method: "usedByRows", local: projectionCatalogueRegisteredRead([...registeredProjectionUse, ...registeredPanelUse], (reads, key) => reads.usedByRows(key)) },
+  { typeId: PRODUCT_PROJECTION, method: "referenceGraph", local: projectionCatalogueRegisteredRead([...registeredProjectionUse, ...registeredPanelUse], (reads, key) => reads.referenceGraph(key)) },
+  {
+    typeId: PRODUCT_PROJECTION, method: "form",
+    local: projectionCatalogueRegisteredRead([...registeredProjectionEdit, ...registeredComponentUse], (reads, key, params) =>
+      reads.form(key, registeredCatalogueFormValues(params))),
+  },
+];

@@ -1,3 +1,4 @@
+import { managedRegisteredOpsRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { workbenchManagement, type WorkbenchManagementOperation } from "@ontomato/contracts/workbench-management";
 import { assertManagement } from "../../identity/management";
 import { z } from "zod";
@@ -32,6 +33,7 @@ import {
 } from "../../platform/diagnosis/autotest/cases/repository";
 import { loadEvaluationProtocol } from "../../platform/diagnosis/autotest/evaluation/conclusion-parser";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import type {
@@ -762,3 +764,22 @@ export const autotestCaseSetServerOperations = [
     },
   },
 ] as const satisfies readonly PanelServerOperation[];
+
+export const autotestCaseSetDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  {
+    typeId: AUTOTEST_CASE_SET, method: "list",
+    local: managedRegisteredOpsRead(createRegisteredAutotestCaseSetReadAdapter, (reads, _key, params) =>
+      reads.list({ search: params.search as string | undefined })),
+  },
+  {
+    typeId: AUTOTEST_CASE_SET, method: "record",
+    local: managedRegisteredOpsRead(createRegisteredAutotestCaseSetReadAdapter, (reads, key) => reads.record(key)),
+  },
+  {
+    typeId: AUTOTEST_CASE_SET, method: "form",
+    local: managedRegisteredOpsRead(createRegisteredAutotestCaseSetReadAdapter, (reads, key, params) => {
+      requireFormFieldNames(params.values, "values");
+      return reads.form(key, params as NonNullable<Parameters<typeof reads.form>[1]>);
+    }),
+  },
+];

@@ -10,6 +10,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { workbenchProduct } from "../../product/installed";
 import { HttpError } from "../../utils/errors";
 import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
+import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { publishedMcpCatalogue, type McpRequestLocation } from "./catalog";
 
 /** Converts one MCP tool descriptor into a panel record row for `tools` reads. */
@@ -124,3 +125,10 @@ export function preparePublishedMcpRead(selection: PanelReadSelection, locale?: 
     },
   };
 }
+
+export const publishedMcpDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  ...(["list", "record", "tools"] as const).map(method => ({
+    typeId: PUBLISHED_MCP_SERVICE, method,
+    prepare: ({ selection, credentials, location }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) => preparePublishedMcpRead(selection, credentials.locale, location),
+  })),
+];

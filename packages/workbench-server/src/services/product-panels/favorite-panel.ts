@@ -45,6 +45,7 @@ import { cleanSessionDisplayTitle, formatShortDateTime, sessionOpenPath } from "
 import { APPLICATION_NAVIGATION_READ, applicationCatalogueClient, applicationNavigationFactsSchema } from "./application-catalogue";
 import type { JavaPanelReadResult, PanelReadRanges, PanelReadVisibility, PreparedOwnerReadFacts } from "./java-panel-reads";
 import type { PanelReadSelection } from "./panel-owner-reads";
+import type { RegisteredDataReadRegistration } from "./registered-data-read";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
 export const FAVORITE_TARGET_TYPES: PanelOperationTargetTypes = {
@@ -763,6 +764,27 @@ export const favoriteServerOperations: readonly PanelWriteServerOperation[] = [
         data: { moved: true },
         affected: favoriteAffected(objectType, primaryKey),
       };
+    },
+  },
+];
+
+export const favoriteDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  {
+    typeId: FAVORITE, method: "list",
+    prepare: ({ owner, credentials, selection, params }) => preparePersonalFavoriteRead(owner, credentials, selection, params),
+    facts: ({ owner, selection, params, credentials }) => prepareFavoriteObjectRead(owner, selection, params, credentials.locale),
+  },
+  {
+    typeId: FAVORITE, method: "status",
+    local: {
+      read: (owner, _ranges, _facts, credentials, _key, params) => createFavoriteReadAdapter(owner, credentials)
+        .status(params as Parameters<ReturnType<typeof createFavoriteReadAdapter>["status"]>[0]),
+    },
+  },
+  {
+    typeId: FAVORITE, method: "dashboardCardsStatus",
+    local: {
+      read: (owner, _ranges, _facts, credentials) => createFavoriteReadAdapter(owner, credentials).dashboardCardsStatus(),
     },
   },
 ];
