@@ -1,30 +1,26 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
-import { Bot, ChevronRight, CircleAlert, Database, LoaderCircle } from "lucide-vue-next";
+import { Bot, ChevronRight, CircleAlert, LoaderCircle } from "lucide-vue-next";
 import type { AgentTaskError, ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import { shellContextKey } from "../../context";
 import { useAutoFold } from "../../useAutoFold";
 import TaskProcess from "./TaskProcess.vue";
 
 /**
- * A delegated agent task in the reply's process (a retriever or another delegated/sub-agent): rendered as a light
+ * A delegated agent task in the reply's process: rendered as a light
  * bounded card so its own work stays visually distinct from the main assistant's flat process stream.
  */
 const props = defineProps<{ task: ChannelAgentTask; sessionId: string }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value.tasks!);
 const running = computed(() => props.task.status === "running" || props.task.status === "starting");
-const roleLabel = computed(() =>
-  props.task.retrieval ? labels.value.retriever : (labels.value.delegatedAgent ?? "Delegated agent"),
-);
+const roleLabel = computed(() => labels.value.delegatedAgent ?? "Delegated agent");
 const hasBody = computed(
   () =>
     props.task.process.mode === "inline" ||
-    Boolean(props.task.error) ||
-    Boolean(props.task.retrieval?.datasets.length),
+    Boolean(props.task.error),
 );
-// The outer process already shows live progress. Keep retrieval details steady as the task changes state.
-const { open, toggle } = useAutoFold(() => !props.task.retrieval && running.value);
+const { open, toggle } = useAutoFold(() => running.value);
 const visited = ref(open.value);
 watch(open, (value) => {
   if (value) visited.value = true;
@@ -39,7 +35,7 @@ function reason(error: AgentTaskError) {
   <div
     :id="`agent-task-${task.id}`"
     class="task"
-    :class="[`status-${task.status}`, { open, retrieval: !!task.retrieval }]"
+    :class="[`status-${task.status}`, { open }]"
   >
     <component
       :is="task.process.mode === 'page' ? 'a' : 'button'"
@@ -51,7 +47,6 @@ function reason(error: AgentTaskError) {
     >
       <LoaderCircle v-if="running" :size="14" class="task-icon spin active" />
       <CircleAlert v-else-if="task.status === 'failed'" :size="14" class="task-icon danger" />
-      <Database v-else-if="task.retrieval" :size="14" class="task-icon" />
       <Bot v-else :size="14" class="task-icon" />
       <span class="executor">{{ roleLabel }}</span>
       <span class="detail" :title="task.title">{{ task.title }}</span>
@@ -63,14 +58,6 @@ function reason(error: AgentTaskError) {
     </component>
     <div v-if="visited && task.process.mode !== 'page' && hasBody" v-show="open" class="task-body">
       <p v-if="task.error" class="task-error">{{ reason(task.error) }}</p>
-      <ul v-if="task.retrieval?.datasets.length" class="datasets">
-        <li v-for="dataset in task.retrieval.datasets" :key="dataset.id">
-          <Database :size="12" class="dataset-icon" />
-          <span class="dataset-title" :title="dataset.title">{{ dataset.title }}</span>
-          <span class="dataset-meta">{{ labels.rows(dataset.rowCount) }}</span>
-          <span v-if="dataset.truncation" class="dataset-meta warning">{{ shell.labels.value.truncatedRows(dataset.truncation.rowLimit) }}</span>
-        </li>
-      </ul>
       <TaskProcess
         v-if="shell.tasks && task.process.mode === 'inline'"
         :port="shell.tasks"

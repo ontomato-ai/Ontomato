@@ -142,10 +142,10 @@ it("keeps the outer process open through retrieval waiting and folds when the fi
   const item = ref(response("r", true));
   app = createApp({ render: () => h(ShellResponse, { item: item.value, sessionId: "s" }) });
   provide(app); app.mount(root);
-  item.value = { ...item.value, running: false, handoff: true, retrievalProgress: "retrieving" };
+  item.value = { ...item.value, running: false, handoff: true, delegationProgress: "delegating" };
   await nextTick();
   expect(root.querySelector("button.process-toggle")?.getAttribute("aria-expanded")).toBe("true");
-  item.value = { ...item.value, handoff: false, retrievalProgress: undefined, answerMessageId: "answer", answerText: "Done" };
+  item.value = { ...item.value, handoff: false, delegationProgress: undefined, answerMessageId: "answer", answerText: "Done" };
   await nextTick();
   expect(root.querySelector("button.process-toggle")?.getAttribute("aria-expanded")).toBe("false");
 });
@@ -157,11 +157,11 @@ it("preserves a manual outer fold or expansion across progress and completion", 
   provide(app); app.mount(root);
   const button = root.querySelector<HTMLButtonElement>("button.process-toggle")!;
   button.click(); await nextTick();
-  item.value = { ...item.value, running: false, retrievalProgress: "retrieving" };
+  item.value = { ...item.value, running: false, delegationProgress: "delegating" };
   await nextTick();
   expect(button.getAttribute("aria-expanded")).toBe("false");
   button.click(); await nextTick();
-  item.value = { ...item.value, retrievalProgress: undefined, finishedAt: 1000 };
+  item.value = { ...item.value, delegationProgress: undefined, finishedAt: 1000 };
   await nextTick();
   expect(button.getAttribute("aria-expanded")).toBe("true");
 });

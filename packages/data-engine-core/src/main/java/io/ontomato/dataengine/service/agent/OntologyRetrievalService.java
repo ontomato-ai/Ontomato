@@ -251,7 +251,7 @@ public class OntologyRetrievalService {
   public JSONObject prepareSteer(String session,String run,JSONObject message,OntologyAgentAccess.Context context) throws Exception {
     store.run(session,run,context.owner());
     if("agent-answer".equals(message.getString("kind")) && message.containsKey("replyTo")) store.confirmAnswer(session,run,context.owner(),message);
-    return JSONObject.of("accepted",true,"context",modelContext(session,run,context));
+    return JSONObject.of("accepted",true,"context",modelContext(session,run,context,OntologyAgentDefinitions.RETRIEVAL_OPENING_KNOWLEDGE_LIMIT));
   }
 
   public JSONObject begin(String key, JSONObject body, OntologyAgentAccess.Context context) {
@@ -286,7 +286,7 @@ public class OntologyRetrievalService {
     results.publish(id,run,owner,JSONObject.of("answer","","run",null,"error",message,"datasets",new JSONArray()));
   }
 
-  private String modelContext(String id,String runId,OntologyAgentAccess.Context context) throws Exception {
+  private String modelContext(String id,String runId,OntologyAgentAccess.Context context,int knowledgeLimit) throws Exception {
     var record=store.retrieval(id,context.owner());
     var input=record.getJSONObject("input");
     var row=store.run(id,runId,context.owner());
@@ -318,7 +318,7 @@ public class OntologyRetrievalService {
       var knowledge =
           JSONObject.from(
               ontology.knowledge(
-                  JSONObject.of("query", input.getString("question"), "limit", 10),
+                  JSONObject.of("query", input.getString("question"), "limit", knowledgeLimit),
                   context.access()));
       var user =
           JSONObject.of(
@@ -349,7 +349,7 @@ public class OntologyRetrievalService {
     String grant=access.exploration(context,id,id,runId,deadline,classes);
     var skills = definitions.publish();
     var definition=definitions.definition(context.owner().domainId(),context.language(),deadline-System.currentTimeMillis(),skills);
-    definition.put("context",modelContext(id,runId,context));
+    definition.put("context",modelContext(id,runId,context,OntologyAgentDefinitions.RETRIEVAL_OPENING_KNOWLEDGE_LIMIT));
     store.transaction(() -> store.gate(id,runId,context.owner()));
     String base = runtime.ontologyUrl().replaceFirst("/$", "");
     String contextUrl = base + "/ontology/retrievals/runtime-context";

@@ -35,6 +35,7 @@ import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Decision;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -209,9 +210,11 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.workflowStepActions[0].version").value(4))
                 .andExpect(jsonPath("$.workflowStepActions[0].stepNo").value(2))
                 .andExpect(jsonPath("$.workflowStepActions[0].actionId").value("approve"));
-        http.perform(rpc("entry-roots", "{\"entryIds\":[]}"))
+        http.perform(rpc("entry-roots", "{\"entryIds\":[]}").locale(Locale.SIMPLIFIED_CHINESE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.entries[*].entryId", containsInAnyOrder("app/main", "shared/main", "agents/settings", "agents/agents")))
+                .andExpect(jsonPath("$.entries[?(@.entryId == 'app/main')].label", containsInAnyOrder("工作台")))
+                .andExpect(jsonPath("$.entries[?(@.entryId == 'agents/settings')].label", containsInAnyOrder("")))
                 .andExpect(jsonPath("$.entries[1].panelIds", containsInAnyOrder("same")))
                 .andExpect(jsonPath("$.existingGrants").isEmpty())
                 .andExpect(jsonPath("$.targetPolicyRoleIds").isEmpty());
@@ -527,7 +530,7 @@ class AuthorizationPolicyGovernanceControllerTest {
 
     private static JSONObject application(String id, String domain, String panel, String frame, String agentId) {
         var agent = agentId == null ? null : new DefaultAgentTarget("id", agentId, null);
-        var use = new ApplicationPanelUse("main", panel, panel, "/applications/" + id, agent, Map.of("en", "Dashboard"));
+        var use = new ApplicationPanelUse("main", panel, panel, "/applications/" + id, agent, Map.of("en", "Dashboard", "zh-CN", "工作台"));
         return JSONObject.of("id", id, "domainId", domain, "kind", "panel-app", "entry", JSONObject.of("renderer", "panels", "path", "/applications/" + id),
                 "panelSettings", JSONObject.of("framePanelId", frame), "panelUses", List.of(use));
     }

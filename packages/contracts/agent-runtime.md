@@ -86,7 +86,7 @@ Wire shape (all IDs are UUIDs; paths are portable relative paths):
 ```ts
 type SkillRef = { namespace: {kind:"provider"; provider:string}
                             | {kind:"domain"; domainId:string}; name:string };
-type RuntimeSkillVersion = { skill: SkillRef; digest: string };
+type RuntimeSkillVersion = { skill: SkillRef; digest: string; preload?: boolean };
 type StartRun = {
   language: string;
   input: RuntimeUserMessage;
@@ -167,9 +167,12 @@ facts are read using their matching `resolvedSkills` records.
 
 Use PI's skill loader against only the installed selected directories, with
 default/global discovery disabled. Use its catalog formatter for name,
-description and SKILL.md location in the system prompt. Do not eagerly append
-bodies or execute scripts to construct context. The model reads SKILL.md and
-references using read, then runs the documented commands using bash. This is the
+description and SKILL.md location in the system prompt. When the host marks a
+selected version `preload`, the runtime places that immutable SKILL.md body,
+without its frontmatter and with the skill's catalog location, before the
+agent instructions and the engine catalog. Unmarked skills
+keep progressive disclosure: the model reads SKILL.md and references using
+read, then runs the documented commands using bash. This is the
 same [progressive disclosure](https://agentskills.io/client-implementation/adding-skills-support)
 flow used outside the product. Prompt compaction counts the catalog and four
 tool definitions; raw loaded messages remain in history.
@@ -384,9 +387,10 @@ calls every registered provider directly and merges their lists; Java answers on
 provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
 Prepare receives requestedBy (nullable) and the fixed root. Run mode returns a runtime start request; steer mode acknowledges the host's input recording and can return updated host context. The runtime retains typed input and its original receipt ID in both cases. Settle closes
 business eligibility; read returns the host's delivery projection. Retrieval summaries are one sentence
-with the outcome, row count and delivered file names; full answers are read through `view: "messages"`.
-Native `read(files: true)` writes the original provider bytes beneath the caller's `outputs/agents/`
-and returns the exact paths to cite, so the ordinary artifact snapshot and renderer can resolve them. Cancel closes eligibility
+with its status, process, results and formal file list. After the provider reports the execution settled,
+the runtime reads the child run's final assistant reply itself, maps the listed immutable artifacts as read-only
+links beneath the parent session's `outputs/agents/<taskId>/`, and notifies the parent with the reply and exact paths
+to cite. The parent session resolves those paths as artifact references without copying their bytes. Cancel closes eligibility
 before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
 automatic wakeup from that cancellation. No platform task table or delegation budget is added.
 
@@ -420,9 +424,8 @@ Only this endpoint uses the explicit external caller (empty `requestedBy`, indep
 Reads and cancellation resolve an existing task's actor only after checking its canonical user
 and domain. GET `/platform/agent-channel/tasks/:taskId/events` registers the subscription before
 reading a task_snapshot and pushes changes. The files endpoint rechecks exact-run delivery
-ownership. Both native `read(files:true)` and platform-worker script `read --files` copy delivered
-bytes into the caller's `outputs/agents/`; standalone CLI `read --files` downloads the same bytes
-to `outputs`. Standalone CLI `--follow` consumes SSE; platform-worker `read --follow` refuses before
+ownership. Standalone CLI `read --files` downloads delivered bytes to `outputs` through the provider file entry.
+Inside the platform, delivered files already appear read-only beneath the parent session's `outputs/agents/<taskId>/`. Standalone CLI `--follow` consumes SSE; platform-worker `read --follow` refuses before
 sending any request because deliveries and questions notify the caller session.
 No external provider registration endpoint is introduced.
 

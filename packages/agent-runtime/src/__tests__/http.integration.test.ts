@@ -284,7 +284,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       }
       if (req.url === "/read") {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ settled: true, status: "completed", summary: "Done", process: { mode: "none" }, results: [], files: [] }));
+        res.end(JSON.stringify({ settled: true, status: "completed", process: { mode: "none" }, results: [], files: [] }));
         return;
       }
       if (req.url === "/settle" || req.url === "/cancel") {
@@ -396,6 +396,32 @@ describe("standard runtime real HTTP/PG/processes", () => {
     await pool.end();
     await removeWorkerFiles(root);
   });
+  it("preloads only marked skill bodies into the same fixed system prompt", async () => {
+    async function systemPrompt(preload: boolean) {
+      const before = inputs.length;
+      const sessionId = await session();
+      const request = input("MCP");
+      request.definition.skills = [{ ...skillVersion, ...(preload ? { preload: true } : {}) }];
+      const runId = randomUUID();
+      expect((await api(`/v1/sessions/${sessionId}/runs`, request, { "idempotency-key": runId })).status).toBe(202);
+      await settle(runId);
+      return inputs[before].messages[0].content;
+    }
+
+    const first = await systemPrompt(true);
+    const second = await systemPrompt(true);
+    const unmarked = await systemPrompt(false);
+    const opening = /^Skill "fixture-skill" is already loaded below\. Its files are in .+\/fixture-skill\/[a-f0-9]{64}, and paths in it are relative to that directory\. Do not read its SKILL\.md again\.\n/;
+    expect(first).toMatch(opening);
+    expect(second).toMatch(opening);
+    expect(first).toContain(skillBody);
+    expect(second).toContain(skillBody);
+    const openingBody = (prompt: string) => prompt.slice(0, prompt.indexOf(skillBody) + skillBody.length);
+    expect(openingBody(first)).toBe(openingBody(second));
+    expect(first).not.toContain("---\nname: fixture-skill");
+    expect(unmarked).not.toContain(skillBody);
+  });
+
   it("keeps scoped stable MCP selections across rename, masks edit responses and calls only selected services", async () => {
     const path = "/v1/mcp/services";
     const created = await api(path, { name: "Orders", url: base + "/mcp", headers: { Authorization: "fixture-secret", "X-Remove": "unused" } });
@@ -444,6 +470,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       files: [{ path: "SKILL.md", content: "---\nname: fixture-skill\ndescription: A different package\n---\n" }],
     });
     expect(replacement.status).toBe(201);
+    const before = inputs.length;
     const s = await session(),
       first = await run(s, "create"),
       done = await settle(first.id);
@@ -492,7 +519,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       (await api(`/v1/runs/${first.id}/artifacts?path=outputs/result.txt`)).body
         .artifacts[0].id,
     ).toBe(a.id);
-    const prompt = JSON.stringify(inputs[0]);
+    const prompt = JSON.stringify(inputs[before]);
     expect(prompt).toContain("fixture-skill");
     expect(prompt).not.toContain(skillBody);
   });
@@ -855,6 +882,11 @@ ${logs}`);
     const childPrepare = prepareCalls.find((call) => call.requestedBy?.runId === runId);
     expect(childPrepare?.root).toEqual({ session: sessionRef, runId });
     await settle(captured.body.taskId);
+    const userText = (message: any) => typeof message.content === "string" ? message.content : message.content.map((part: any) => part.text ?? "").join("");
+    const childRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message).includes("Child question")));
+    const parentRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message) === "channel-script"));
+    expect(childRequest.messages[0].content).toContain("Delegated task");
+    expect(parentRequest.messages[0].content).not.toContain("Delegated task");
     const late = await fetch(captured.url, {
       method: "POST",
       headers: {

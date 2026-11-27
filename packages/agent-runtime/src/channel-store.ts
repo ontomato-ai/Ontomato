@@ -126,10 +126,14 @@ export class ChannelStore {
       RETURNING preparing_run_id`, [...this.key(scope), sessionId]);
     if (rows[0]?.preparing_run_id) return this.intent(scope, rows[0].preparing_run_id);
   }
-  async intent(scope: Scope, id: string): Promise<AgentRunIntent> {
+  async findIntent(scope: Scope, id: string): Promise<AgentRunIntent | null> {
     const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3 AND NOT deleted AND intent IS NOT NULL`, [...this.key(scope), id])).rows[0];
-    if (!row) throw new RuntimeError(404, "NOT_FOUND", "Agent execution not found");
-    return agentRunIntentSchema.parse(row.intent);
+    return row ? agentRunIntentSchema.parse(row.intent) : null;
+  }
+  async intent(scope: Scope, id: string): Promise<AgentRunIntent> {
+    const intent = await this.findIntent(scope, id);
+    if (!intent) throw new RuntimeError(404, "NOT_FOUND", "Agent execution not found");
+    return intent;
   }
   async update(scope: Scope, intent: AgentRunIntent) {
     await this.store.transaction(async c => {

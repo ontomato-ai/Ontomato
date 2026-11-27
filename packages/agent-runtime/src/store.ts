@@ -223,6 +223,18 @@ export class RuntimeStore {
         CREATE INDEX IF NOT EXISTS artifacts_session_idx ON ${this.table("artifacts")}(host_id,domain_id,session_id);
         CREATE INDEX IF NOT EXISTS artifacts_sha256_idx ON ${this.table("artifacts")}(sha256);
       `);
+      await c.query(`
+        CREATE TABLE IF NOT EXISTS ${this.table("artifact_references")} (
+          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL,
+          task_id uuid NOT NULL, source_run_id uuid NOT NULL, source_artifact_id uuid NOT NULL,
+          path text NOT NULL, sha256 text NOT NULL, size bigint NOT NULL, media_type text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          PRIMARY KEY(host_id,domain_id,id),
+          UNIQUE(host_id,domain_id,session_id,path),
+          FOREIGN KEY(host_id,domain_id,session_id) REFERENCES ${this.table("sessions")}(host_id,domain_id,id) ON DELETE CASCADE);
+        CREATE INDEX IF NOT EXISTS artifact_references_session_idx ON ${this.table("artifact_references")}(host_id,domain_id,session_id);
+        CREATE INDEX IF NOT EXISTS artifact_references_sha256_idx ON ${this.table("artifact_references")}(sha256);
+      `);
       if (!versions.some(row => row.version === 4)) await this.backfillAnswers(c);
     });
     this.lease = await this.pool.connect();
@@ -751,6 +763,42 @@ export class RuntimeStore {
       seq: Number(row.seq),
     };
   }
+  private artifactReferenceRow(row: Record<string, any>): RuntimeArtifact {
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      runId: row.source_run_id,
+      toolCallId: null,
+      path: row.path,
+      sha256: row.sha256,
+      size: Number(row.size),
+      mediaType: row.media_type,
+      createdAt: row.created_at.toISOString(),
+      seq: 0,
+    };
+  }
+  async registerArtifactReference(scope: Scope, input: {
+    sessionId: string;
+    taskId: string;
+    source: RuntimeArtifact;
+    path: string;
+  }): Promise<RuntimeArtifact> {
+    const id = randomUUID();
+    await this.pool.query(
+      `INSERT INTO ${this.table("artifact_references")}
+       (host_id,domain_id,id,session_id,task_id,source_run_id,source_artifact_id,path,sha256,size,media_type)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT(host_id,domain_id,session_id,path) DO NOTHING`,
+      [...values(scope), id, input.sessionId, input.taskId, input.source.runId, input.source.id, input.path, input.source.sha256, input.source.size, input.source.mediaType],
+    );
+    const row = (
+      await this.pool.query(
+        `SELECT * FROM ${this.table("artifact_references")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND path=$4`,
+        [...values(scope), input.sessionId, input.path],
+      )
+    ).rows[0];
+    return this.artifactReferenceRow(row);
+  }
   async artifact(scope: Scope, id: string): Promise<RuntimeArtifact> {
     const row = (
       await this.pool.query(
@@ -758,8 +806,15 @@ export class RuntimeStore {
         [...values(scope), id],
       )
     ).rows[0];
-    if (!row) missing();
-    return this.artifactRow(row);
+    if (row) return this.artifactRow(row);
+    const reference = (
+      await this.pool.query(
+        `SELECT * FROM ${this.table("artifact_references")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+        [...values(scope), id],
+      )
+    ).rows[0];
+    if (!reference) missing();
+    return this.artifactReferenceRow(reference);
   }
   async artifacts(scope: Scope, runId: string): Promise<RuntimeArtifact[]> {
     return (
@@ -842,6 +897,18 @@ export class RuntimeStore {
     for (const row of rows)
       if (path === undefined || path === row.path)
         latest.set(row.path, this.artifactRow(row));
+    const references = (
+      await this.pool.query(
+        `SELECT * FROM ${this.table("artifact_references")}
+         WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND ($4::text IS NULL OR path=$4)
+         ORDER BY created_at,id`,
+        [...values(scope), run.sessionId, path ?? null],
+      )
+    ).rows;
+    for (const row of references) {
+      const reference = this.artifactReferenceRow(row);
+      latest.set(reference.path, reference);
+    }
     return [...latest.values()];
   }
   async hasArtifactInAnotherRun(scope: Scope, runId: string, path: string): Promise<boolean> {

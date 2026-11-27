@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
-import { Bot, ChevronLeft, ChevronRight, Database, ShieldCheck, X } from "lucide-vue-next";
+import { Bot, ChevronLeft, ChevronRight, ShieldCheck, X } from "lucide-vue-next";
 import type { AgentTask,AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
 import { shellContextKey } from "../../context";
 import TaskProcess from "./TaskProcess.vue";
@@ -57,10 +57,8 @@ const result = (task: AgentTask) => props.snapshot.qualityResults.find((value) =
           :href="row.task.kind==='agent' && row.task.process.mode==='page'?row.task.process.href:undefined" class="task-row"
           @click="!(row.task.kind==='agent' && row.task.process.mode==='page') && select(row.task,row.depth)">
           <ShieldCheck v-if="row.task.kind==='quality'" :size="14" />
-          <Database v-else-if="row.task.retrieval" :size="14" />
           <Bot v-else :size="14" />
           <span v-if="row.task.kind==='quality'" class="name">{{ labels.quality }}</span>
-          <span v-else-if="row.task.retrieval" class="name">{{ labels.retriever }}</span>
           <span v-else-if="labels.delegatedAgent" class="name">{{ labels.delegatedAgent }}</span>
           <span v-if="row.task.kind==='quality'" class="source">{{ row.task.checks.datasets.map((dataset) => dataset.title ?? dataset.id).join("、") }}</span>
           <span v-else class="question">{{ row.task.title }}</span>

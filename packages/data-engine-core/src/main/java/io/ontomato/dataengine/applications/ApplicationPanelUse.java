@@ -31,6 +31,11 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     @JSONCreator
     public ApplicationPanelUse {}
 
+    /** An untranslated entry has an empty display name in that locale. */
+    public String displayName(Locale locale) {
+        return names.getOrDefault(locale.toLanguageTag(), "");
+    }
+
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                DefaultAgentTarget defaultAgent, Map<String, String> names) {
         this(id, pageKey, panelId, path, defaultAgent, names, null, null, null, null, null, null);

@@ -80,6 +80,15 @@ it('opens a retrieval caller even when the run carries only the page operator',a
  expect(mocks.record).toHaveBeenCalledWith('run',input.owner,'run');
 });
 
+it('states the configured class scope only when the agent has one',async()=>{
+ const scoped=await prepareAnalystRun(request());
+ expect(scoped.definition.systemPrompt).toContain('Configured data scope for this run');
+ expect(scoped.definition.systemPrompt).toContain('Person');
+ const input=request();input.turn={...input.turn,class_names:[]};
+ const unscoped=await prepareAnalystRun(input);
+ expect(unscoped.definition.systemPrompt).not.toContain('Configured data scope for this run');
+});
+
 it('withholds page tools and panel callbacks when the assistant does not carry the page operator',async()=>{
  const input=request();input.a.kind='analysis';input.a.skills=[analyst];
  mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:false});

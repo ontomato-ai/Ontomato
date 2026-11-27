@@ -77,12 +77,12 @@ const delegating = computed(() => props.item.process.some((block) =>
   block.kind === "task" && (block.task.status === "running" || block.task.status === "starting")));
 const { open, toggle, reveal } = useAutoFold(() =>
   props.item.running || (!props.item.answerMessageId && (delegating.value ||
-    props.item.retrievalProgress === "retrieving" || props.item.retrievalProgress === "datasetReady")));
+    props.item.delegationProgress === "delegating")));
 const processVisited = ref(open.value);
 watch(open, value => { if (value) processVisited.value = true; });
-const retrievalStatus = computed(() => {
-  const progress = props.item.retrievalProgress;
-  return progress ? labels.value.retrievalProgress?.[progress] : undefined;
+const delegationStatus = computed(() => {
+  const progress = props.item.delegationProgress;
+  return progress ? labels.value.delegationProgress?.[progress] : undefined;
 });
 
 /** A task the reader picked from the task list: its card is in the process, which opens; the conversation scrolls to it. */
@@ -90,7 +90,7 @@ watch(() => shell.taskFocus?.value, (focus) => {
   if (focus && props.item.process.some((block) => block.kind === "task" && block.task.id === focus.taskId)) reveal();
 });
 
-const timingActive = computed(() => props.item.running || props.item.retrievalProgress === "retrieving" || props.item.retrievalProgress === "datasetReady");
+const timingActive = computed(() => props.item.running || props.item.delegationProgress === "delegating");
 const now = ref(Date.now());
 let ticker: ReturnType<typeof setInterval> | null = null;
 watch(
@@ -112,7 +112,7 @@ function clock(ms: number) {
 const status = computed(() => {
   const { startedAt, finishedAt, handoff } = props.item;
   if (timingActive.value) {
-    const stage = retrievalStatus.value ?? labels.value.working;
+    const stage = delegationStatus.value ?? labels.value.working;
     return startedAt === null ? stage : `${stage} · ${labels.value.elapsed(clock(now.value - startedAt))}`;
   }
   if (handoff) return labels.value.tasks?.delegated ?? labels.value.thinking;
@@ -229,7 +229,7 @@ async function submit(value: ShellFeedbackValue) {
         </template>
       </div>
     </section>
-    <div v-if="item.running && !hasProcess && !retrievalStatus" class="waiting" aria-live="polite">
+    <div v-if="item.running && !hasProcess && !delegationStatus" class="waiting" aria-live="polite">
       <span class="dot" /><span class="dot" /><span class="dot" />
       <span class="sr-only">{{ labels.working }}</span>
     </div>

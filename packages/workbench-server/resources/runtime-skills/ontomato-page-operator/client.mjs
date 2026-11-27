@@ -68,7 +68,9 @@ if (command === 'catalog') {
   if (!applicationId || !entryKey || !pageKey) die('用法：node client.mjs description <applicationId> <entryKey> <pageKey>');
   result = await post('/description', { applicationId, entryKey, pageKey });
 } else if (command === 'read') {
-  result = await post('/read', readJsonArg(args[0], '用法：node client.mjs read <read请求JSON文件|@内联JSON|{...}>'));
+  const request = readJsonArg(args[0], '用法：node client.mjs read <read请求JSON文件|@内联JSON|{...}>');
+  if (request.inputs === undefined) request.inputs = {};
+  result = await post('/read', request);
 } else {
   die('用法：node client.mjs catalog [applicationId] | search <检索词> | description <applicationId> <entryKey> <pageKey> | read <read请求JSON>');
 }

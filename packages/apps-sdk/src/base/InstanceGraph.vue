@@ -8,7 +8,6 @@ import { ElPopover } from "element-plus/es/components/popover/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
-import { ElTooltip } from "element-plus/es/components/tooltip/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { matchesObjectType, type PanelObjectRef } from "@ontomato/contracts/panel-manifest";
 import { directReadDeclaration } from "@ontomato/contracts/panel-projection";
@@ -2262,23 +2261,21 @@ onBeforeUnmount(() => {
           :style="{
             left: `${heading.x}px`,
             top: `${heading.y}px`,
-            maxWidth: `${heading.width}px`,
+            width: `${heading.width}px`,
             '--group-color': categoryColor(heading.id),
           }"
         >
-          <el-tooltip placement="top" :content="`${heading.label} (${heading.countText})`">
-            <button
-              type="button"
-              class="sdk-ontology-graph-heading"
-              :class="{ 'is-selected': activeSelectedGroup === heading.id }"
-              :aria-pressed="activeSelectedGroup === heading.id"
-              :data-graph-group-heading="heading.id"
-              @click.stop="selectOverviewGroup(heading.id)"
-            >
-              <span class="sdk-ontology-graph-heading-label">{{ heading.label }}</span>
-              <span class="sdk-ontology-graph-heading-count">{{ heading.countText }}</span>
-            </button>
-          </el-tooltip>
+          <button
+            type="button"
+            class="sdk-ontology-graph-heading"
+            :class="{ 'is-selected': activeSelectedGroup === heading.id }"
+            :aria-pressed="activeSelectedGroup === heading.id"
+            :data-graph-group-heading="heading.id"
+            @click.stop="selectOverviewGroup(heading.id)"
+          >
+            <span class="sdk-ontology-graph-heading-label">{{ heading.label }}</span>
+            <span class="sdk-ontology-graph-heading-count">{{ heading.countText }}</span>
+          </button>
         </div>
       </div>
 
@@ -2862,7 +2859,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   box-sizing: border-box;
   align-items: center;
-  max-width: 100%;
+  width: 100%;
   height: 26px;
   padding: 4px 9px;
   border: 1px solid var(--el-border-color-light);
