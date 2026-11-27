@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from "vue";
+import { computed, inject, ref } from "vue";
 import { ChevronRight, LoaderCircle, ShieldCheck } from "lucide-vue-next";
 import { shellContextKey } from "../../context";
 import type { ResponseReview } from "../../view";
@@ -20,10 +20,6 @@ const reason = computed(() => {
   const error = task.value.error;
   if (task.value.status === "cancelled") return labels.value.status.cancelled;
   return error ? labels.value.errors[error.code] ?? error.message ?? labels.value.reviewFailed : labels.value.reviewFailed;
-});
-
-watch(() => shell.taskFocus?.value, (focus) => {
-  if (focus?.taskId === task.value.id) open.value = true;
 });
 </script>
 

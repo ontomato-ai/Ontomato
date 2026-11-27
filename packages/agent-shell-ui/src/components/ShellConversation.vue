@@ -63,12 +63,6 @@ const stick = ref(true);
 const pinned = ref(false);
 /** The message on its way starts a new turn: it was sent while nothing ran, so it is not an input to a running reply. */
 const pendingTurn = ref(false);
-/**
- * A task the reader picked from the task list, held in view: its reply's process and the content above it keep laying
- * out after it opens (some of it only as it enters the view), so every layout change places it again, instantly, until
- * the reader scrolls. While it is held the tail is not followed.
- */
-const anchor = ref<string | null>(null);
 let observer: ResizeObserver | null = null;
 let lastScrollTop = 0;
 /** The gap left above the pinned question, the thread's own top padding. */
@@ -92,7 +86,7 @@ const pinTarget = computed(() => {
 
 function onScroll() {
   const el = scroller.value;
-  if (!el || anchor.value) return;
+  if (!el) return;
   const upward = el.scrollTop < lastScrollTop;
   lastScrollTop = el.scrollTop;
   atBottom();
@@ -151,12 +145,11 @@ function pin() {
 }
 
 onMounted(() => {
-  // A held task is placed again on every layout change. The tail is followed only while an opened conversation lays
-  // out, never while a run adds to it or after the reader started a turn here.
+  // The tail is followed only while an opened conversation lays out, never while a run adds to it or after the reader
+  // started a turn here.
   observer = new ResizeObserver(() => {
     measureRoom();
-    if (anchor.value) holdAnchor();
-    else if (stick.value && !pinned.value && !props.busy) toBottom();
+    if (stick.value && !pinned.value && !props.busy) toBottom();
     atBottom();
   });
   if (content.value) observer.observe(content.value);
@@ -177,7 +170,6 @@ watch([content, scroller], ([el, outer], [previous, previousOuter]) => {
  * not: the reader is still in it.
  */
 function startOver() {
-  anchor.value = null;
   pinned.value = false;
   stick.value = true;
   lastScrollTop = 0;
@@ -201,29 +193,6 @@ watch(lastUserKey, (key, previous) => {
   if (pinned.value && key !== null && key !== previous) pin();
 }, { flush: "post" });
 
-function holdAnchor() {
-  const el = scroller.value, target = anchor.value && document.getElementById(anchor.value);
-  if (!el || !target) return;
-  el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 4;
-  lastScrollTop = el.scrollTop;
-}
-
-/** The reader's own scrolling releases a held task. */
-function release() {
-  if (!anchor.value) return;
-  anchor.value = null;
-  onScroll();
-}
-
-// Its reply opens the process or the review in the same flush; the task is placed once that has rendered.
-watch(() => shell.taskFocus?.value, async (focus) => {
-  if (!focus) return;
-  stick.value = false;
-  anchor.value = `agent-task-${focus.taskId}`;
-  await nextTick();
-  holdAnchor();
-});
-
 /** A message sent while nothing runs starts a turn and takes the top; one sent into a running reply joins its process. */
 function expandFromComposer(event: MouseEvent) {
   if (props.collapsed && event.target instanceof HTMLElement && !event.target.closest("button")) emit("expand");
@@ -231,7 +200,6 @@ function expandFromComposer(event: MouseEvent) {
 
 async function send(text: string) {
   if (props.collapsed) emit("expand");
-  anchor.value = null;
   const starts = !props.busy;
   if (starts) {
     pinned.value = true;
@@ -269,10 +237,6 @@ async function send(text: string) {
          class="scroller"
         :class="{ 'initial-load-error': loadError && !loading && !items.length && pendingInput === null }"
         @scroll.passive="onScroll"
-        @wheel.passive="release"
-        @touchstart.passive="release"
-        @keydown="release"
-        @pointerdown="release"
       >
         <div ref="content" class="thread">
           <div v-if="hasOlder && !loading" class="history-more">

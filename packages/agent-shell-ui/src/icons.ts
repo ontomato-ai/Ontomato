@@ -55,6 +55,7 @@ export function artifactIcon(path: string): Component {
   switch (fileKind(path)) {
     case "chart":
       return ChartColumn;
+    case "dataset":
     case "csv":
     case "json":
     case "xlsx":
