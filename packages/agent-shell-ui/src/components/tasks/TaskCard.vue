@@ -14,7 +14,7 @@ const props = defineProps<{ task: ChannelAgentTask; sessionId: string }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value.tasks!);
 const running = computed(() => props.task.status === "running" || props.task.status === "starting");
-const roleLabel = computed(() => labels.value.delegatedAgent ?? "Delegated agent");
+const roleLabel = computed(() => props.task.agentName);
 const hasBody = computed(
   () =>
     props.task.process.mode === "inline" ||

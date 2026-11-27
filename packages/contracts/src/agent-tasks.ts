@@ -38,7 +38,7 @@ export const qualityTaskSchema = z.object({
 export const channelAgentTaskSchema = z.object({
   ...taskFields, kind: z.literal("agent"), title: z.string(),
   requestedBy: agentExecutionRefSchema, parentTaskId: id.nullable(),
-  agentRef: agentRefSchema, sessionRef: agentSessionRefSchema, runId: id,
+  agentRef: agentRefSchema, agentName: z.string().min(1), sessionRef: agentSessionRefSchema, runId: id,
   process: agentTaskProcessSchema,
   results: z.array(z.object({ kind: z.string(), href: z.string(), title: z.string() }).strict()),
 }).strict();

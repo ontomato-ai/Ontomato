@@ -160,7 +160,7 @@ describe("assistant ontology provenance", () => {
     route.set(`/ontology/retrieval-callers/${answer}/quality`,{quality:[{kind:"quality",id:check,parentTaskId:run,status:"completed",error:null,
       createdAt:"2026-11-12T02:01:00Z",process:{mode:"none"},checks:{datasets:[{id:"99999999-9999-4999-8999-999999999999",title:"Sales"}]}}],
       qualityResults:[{taskId:check,score:90,summary:null,conclusion:"Matches",fittedQuestion:"Sales?"}],settled:true});
-    vi.spyOn(assistantService,"channelTasks").mockResolvedValue({sessionId:session,tasks:[{kind:"agent",id:run,title:"Sales?",root:{sessionId:session,runId:reply},requestedBy:{session:{providerId:"workbench",sessionId:session},runId:reply},agentRef:{providerId:"ontology",agentId:retrieval},sessionRef:{providerId:"ontology",sessionId:retrieval},runId:run,parentTaskId:null,status:"completed",error:null,createdAt:"2026-11-12T02:00:00Z",process:{mode:"none"},results:[]}],qualityResults:[]});
+    vi.spyOn(assistantService,"channelTasks").mockResolvedValue({sessionId:session,tasks:[{kind:"agent",id:run,title:"Sales?",root:{sessionId:session,runId:reply},requestedBy:{session:{providerId:"workbench",sessionId:session},runId:reply},agentRef:{providerId:"ontology",agentId:retrieval},agentName:"Retriever",sessionRef:{providerId:"ontology",sessionId:retrieval},runId:run,parentTaskId:null,status:"completed",error:null,createdAt:"2026-11-12T02:00:00Z",process:{mode:"none"},results:[]}],qualityResults:[]});
     const read=await assistantService.tasks(session,owner);
     expect(read.snapshot.tasks[0]).toMatchObject({id:run,root:{sessionId:session,runId:reply}});
     // The retriever's card stays with the reply that delegated it; its check lands under the reply that answered.

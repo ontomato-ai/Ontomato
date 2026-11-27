@@ -86,8 +86,8 @@ export class ChannelStore {
       AND q.message->>'kind'='agent-question' AND q.message->'source'=$2::jsonb ORDER BY q.seq`,[scope.domainId,JSON.stringify(execution),scope.hostId,execution.session.sessionId]);
     return rows.map(row=>({id:row.id,message:row.message.content as string,defaultAssumption:row.message.defaultAssumption as string,answered:row.answered as boolean,...(row.message.options ? {options:row.message.options} : {})}));
   }
-  async reserve(scope: Scope, sessionId: string, runId: string, inputId: string, channel: AgentRunContext, options: { language: string; context?: AgentRunIntent["context"]; title?: string; executionUserId?:string|null; queued?: boolean; create?: { binding: ChannelBinding; input: AgentNotification } }) {
-    const intent: AgentRunIntent = { id: runId, session: { providerId: channel.agent.providerId, sessionId }, channel, language: options.language, inputId, context: options.context, title: options.title, status: "starting", createdAt: new Date().toISOString(), error: null, cancelled: false,executionUserId:options.executionUserId };
+  async reserve(scope: Scope, sessionId: string, runId: string, inputId: string, channel: AgentRunContext, options: { language: string; context?: AgentRunIntent["context"]; title?: string; executionUserId?:string|null; queued?: boolean; agentName?: string; create?: { binding: ChannelBinding; input: AgentNotification } }) {
+    const intent: AgentRunIntent = { id: runId, session: { providerId: channel.agent.providerId, sessionId }, channel, language: options.language, inputId, context: options.context, title: options.title, status: "starting", createdAt: new Date().toISOString(), error: null, cancelled: false,executionUserId:options.executionUserId,agentName:options.agentName };
     await this.store.transaction(async c => {
       if (channel.requestedBy) {
         const parent = (await c.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND intent IS NOT NULL AND intent->'session'=$3::jsonb FOR UPDATE`, [scope.domainId,channel.requestedBy.runId,JSON.stringify(channel.requestedBy.session)])).rows[0];

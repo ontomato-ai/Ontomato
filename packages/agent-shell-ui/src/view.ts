@@ -10,7 +10,7 @@ export type ProcessStep = ProcessStepView;
 
 /**
  * One piece of a response's process: the agent's text that is not its answer, consecutive thinking and tool steps, a
- * generic engine process entry, or a retrieval the reply delegated, placed after the work that started it.
+ * generic engine process entry, or a task the reply delegated, placed after the work that started it.
  */
 export type ProcessBlock =
   | { kind: "note"; key: string; text: string; final: boolean; runId: string }
@@ -54,9 +54,6 @@ export interface ResponseItem {
   /** Everything the run did except its answer's text, in order; it streams here while the run is active. */
   process: ProcessBlock[];
   running: boolean;
-  /** An intermediate reply whose work continues in a delegated run. */
-  handoff?: boolean;
-  delegationProgress?: "delegating" | "answering";
   /** Present once the run stopped; rendering decides how each PI reason is shown. */
   end: { stopReason: RuntimeStopReason | null; errorMessage: string | null } | null;
   /** The message the runtime named as the run's answer: the body, and the copy, feedback and action target. */
@@ -66,7 +63,7 @@ export interface ResponseItem {
   reviews: ResponseReview[];
   /** Token usage reported for this run, when any non-zero count is available. */
   usage?: ResponseUsage | null;
-  /** Start of the linked work and stop of this reply, in ms. */
+  /** Start and stop of this run, in ms. */
   startedAt: number | null;
   finishedAt: number | null;
 }
@@ -169,7 +166,7 @@ function runUsage(state: ConversationState, runId: string): ResponseUsage | null
 
 /**
  * Projects runtime messages into user turns and assistant responses in chronological order, with the tasks each reply
- * delegated: a retrieval joins its reply's process before the first message that began after it. A quality check is a
+ * delegated: a task joins its reply's process before the first message that began after it. A quality check is a
  * review of the reply that cited the checked data, which may be a later reply than the one that delegated it.
  */
 export function conversationItems(state: ConversationState, tasks: AgentTasksSnapshot | null = null): ConversationItem[] {
@@ -179,16 +176,12 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     if (state.runs[queued.runId]) continue;
     for (const inputId of queued.inputIds) queuedInputIds.add(inputId);
   }
-  const retrievals = new Map<string, Array<ChannelAgentTask>>();
-  const delegatedByRun = new Map<string, ChannelAgentTask>();
-  const linkedStarts = new Map<string, Set<string>>();
-  const resultRuns = new Map<string, string>();
+  const delegated = new Map<string, Array<ChannelAgentTask>>();
   const reviews = new Map<string, ResponseReview[]>();
   for (const task of tasks?.tasks ?? []) {
     if (task.kind === "agent") {
-      if (task.kind === "agent" && task.parentTaskId !== null) continue;
-      delegatedByRun.set(task.runId, task);
-      retrievals.set(task.root.runId, [...(retrievals.get(task.root.runId) ?? []), task]);
+      if (task.parentTaskId !== null) continue;
+      delegated.set(task.root.runId, [...(delegated.get(task.root.runId) ?? []), task]);
       continue;
     }
     reviews.set(task.root.runId, [...(reviews.get(task.root.runId) ?? []), {
@@ -213,9 +206,9 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     }
     if (chronological.length) pendingDetails.set(run.id, chronological);
   }
-  /** Places the reply's retrievals and generic process details that started before `until` (all remaining without it). */
+  /** Places the reply's delegated tasks and generic process details that started before `until` (all remaining without it). */
   const place = (response: ResponseItem, until: number | null) => {
-    const pending = retrievals.get(response.runId);
+    const pending = delegated.get(response.runId);
     while (pending?.length && (until === null || pending[0]!.createdAt === null || Date.parse(pending[0]!.createdAt) <= until)) {
       const task = pending.shift()!;
       response.process.push({ kind: "task", key: `task:${task.id}`, task });
@@ -281,18 +274,6 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       continue;
     }
     if (message.role === "notification") {
-      if (entry.runId && message.kind === "agent-result" && "session" in message.source) {
-        const task = delegatedByRun.get(message.source.runId);
-        if (task && task.root.runId !== entry.runId) {
-          const roots = linkedStarts.get(entry.runId) ?? new Set<string>();
-          roots.add(task.root.runId);
-          linkedStarts.set(entry.runId, roots);
-        }
-      }
-      if (entry.runId && message.kind === "agent-result" && "session" in message.source) {
-        resultRuns.set(message.source.runId, entry.runId);
-        if (state.runs[entry.runId]?.status === "running") openResponse(entry.runId).delegationProgress = "answering";
-      }
       // A delegated agent's result or question is input to the requesting model, not a message in the main conversation;
       // a question to the reader waits in the questions panel instead.
       if (message.kind !== "agent-result" && message.kind !== "agent-question") {
@@ -308,21 +289,10 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     const settled = entry.messageSeq !== null;
     // Only the answer's text leaves the process; its thinking stays there with the rest of the work.
     const answer = entry.id === run?.answerMessageId;
-    // A delegation-only reply is a handoff, until its child result is consumed by this run.
-    const delegated = (tasks?.tasks ?? []).some((task) => task.kind === "agent" && task.root.runId === current.runId);
-    const receivedResult = Object.values(state.messages).some((record) =>
-      record.runId === current.runId && record.message.role === "notification" && record.message.kind === "agent-result");
-    const handoff = answer && delegated && !receivedResult && (tasks?.tasks ?? []).some((task) =>
-      task.kind === "agent" && task.root.runId === current.runId &&
-      (task.status === "starting" || task.status === "running" || Object.values(state.messages).some((record) =>
-        record.message.role === "notification" && record.message.kind === "agent-result" &&
-        "session" in record.message.source && record.message.source.runId === task.runId)));
     if (answer) {
-      current.handoff = handoff;
       const blocks = message.content.filter((block) => block.type === "text");
-      current.answerMessageId = handoff ? null : entry.id;
+      current.answerMessageId = entry.id;
       current.answerText = blocks
-        .filter(() => !handoff)
         .map((block) => block.text)
         .join("\n\n")
         .trim();
@@ -330,7 +300,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     message.content.forEach((block, index) => {
       const key = `${entry.id}:${index}`;
       if (block.type === "text") {
-        if (!block.text || (answer && !handoff)) return;
+        if (!block.text || answer) return;
         current.process.push({ kind: "note", key, text: block.text, final: settled, runId: current.runId });
         return;
       }
@@ -413,65 +383,19 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
   }
   for (const reply of responses.values()) place(reply, null);
 
-  // A failed child's notification can wake the assistant while its replacement is still running.
-  // Keep those acknowledgements in the process, with only the final reply owning answer actions.
-  let turn: ResponseItem[] = [];
-  function settlePresentation() {
-    const hasDelegatedWork = turn.some(reply => reply.process.some(block => block.kind === "task"));
-    if (!hasDelegatedWork) return;
-    const active = turn.some(reply => reply.process.some(block => block.kind === "task" &&
-      (block.task.status === "starting" || block.task.status === "running")));
-    for (let index = 0; index < turn.length; index++) {
-      const reply = turn[index]!;
-      if (!reply.answerMessageId || !reply.answerText.trim()) continue;
-      const hasDelivery = /outputs\/agents\//.test(reply.answerText);
-      const laterReply = index < turn.length - 1 && !hasDelivery;
-      const waiting = active && !hasDelivery;
-      if (!laterReply && !waiting) continue;
-      reply.process.push({ kind: "note", key: `handoff:${reply.answerMessageId}`, text: reply.answerText,
-        final: true, runId: reply.runId });
-      reply.answerMessageId = null;
-      reply.answerText = "";
-      reply.handoff = true;
-    }
-  }
-  for (const item of items) {
-    if (item.kind === "user") { settlePresentation(); turn = []; }
-    else if (item.kind === "response") turn.push(item);
-  }
-  settlePresentation();
-
-  // Result notifications link separate assistant runs. Use their wall-clock span, not a sum of potentially overlapping work.
-  function startOf(runId: string, seen: Set<string>): number | null {
-    if (seen.has(runId)) return null;
-    seen.add(runId);
-    const created = state.runs[runId]?.createdAt;
-    let start = created ? Date.parse(created) : NaN;
-    for (const root of linkedStarts.get(runId) ?? []) {
-      if (!responses.get(root)?.handoff) continue;
-      const linked = startOf(root, seen);
-      if (linked !== null && (!Number.isFinite(start) || linked < start)) start = linked;
-    }
-    return Number.isFinite(start) ? start : null;
-  }
-
   for (const item of items) {
     if (item.kind !== "response") continue;
     const run = state.runs[item.runId];
     item.running = run?.status === "running";
     place(item, null);
-    if (item.delegationProgress !== "answering") {
-      const pending = item.process.flatMap(block => block.kind === "task" && !resultRuns.has(block.task.runId) ? [block.task] : []);
-      if (pending.some(task => ["starting", "running", "completed"].includes(task.status))) item.delegationProgress = "delegating";
-    }
     item.workspaceCommit = run?.workspaceCommit ?? null;
     item.usage = runUsage(state, item.runId);
-    item.startedAt = startOf(item.runId, new Set());
+    item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
     item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;
     item.end = run && run.status === "stopped"
       ? { stopReason: run.stopReason, errorMessage: run.errorMessage }
       : null;
-    // A step that started a retrieval or received a generic detail stays the active one while it runs.
+    // A step that started delegated work or received a generic detail stays the active one while it runs.
     const last = [...item.process].reverse().find((block) => block.kind !== "task" && block.kind !== "detail");
     for (const block of item.process) {
       if (block.kind !== "steps") continue;

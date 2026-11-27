@@ -44,12 +44,18 @@ to hand it over.
    the run succeeds and answers the question as asked, read the values from that file, cancel the
    retriever (native `agent`, `op: "cancel"`, its `taskId`) and answer. Otherwise leave the retriever
    running.
-3. Otherwise end this turn. The retriever's result arrives as a notification and wakes you; there is
-   nothing to poll, read or wait for. One short line telling the user the retriever is on it is enough.
-4. The notification carries the retriever's final reply and lists its delivered files, already mapped
-   read-only beneath `outputs/agents/<taskId>/`. The reply states the result, the scope it used and
-   what to keep in mind: answer from it, keep its scope as stated, and show the listed files. Open a
-   file only when the answer needs rows or calculations the reply does not give.
+3. Otherwise wait for the retriever with native `agent`, `op: "wait"`, its `taskId`. Tell the user in
+   one short line that the retriever is on it before you wait. The wait returns when something arrives
+   for you: the retriever finished, it asks you something, or the user said something.
+   - Finished: read its result with native `agent`, `op: "read"`, its `taskId`. The read returns the
+     retriever's final reply and its delivered files, already mapped read-only beneath
+     `outputs/agents/<taskId>/`. The reply states the result, the scope it used and what to keep in
+     mind: answer from it, keep its scope as stated, and show the listed files. Open a file only when
+     the answer needs rows or calculations the reply does not give.
+   - A question: handle it as described under "Questions from the retriever", then wait again.
+   - The user said something: take it into account, then wait again unless it changes the question.
+   A status notice for the same event can also arrive as a message; it says the same thing, so read
+   the result once.
 
 A follow-up that needs new data is a new retrieval start; one that can be answered from data already
 delivered reuses it.

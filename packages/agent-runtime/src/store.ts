@@ -799,6 +799,16 @@ export class RuntimeStore {
     ).rows[0];
     return this.artifactReferenceRow(row);
   }
+  async artifactReferences(scope: Scope, sessionId: string, taskId: string): Promise<Array<{ id: string; sourceArtifactId: string; path: string }>> {
+    return (
+      await this.pool.query(
+        `SELECT id,source_artifact_id,path FROM ${this.table("artifact_references")}
+         WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND task_id=$4
+         ORDER BY created_at,id`,
+        [...values(scope), sessionId, taskId],
+      )
+    ).rows.map((row) => ({ id: row.id, sourceArtifactId: row.source_artifact_id, path: row.path }));
+  }
   async artifact(scope: Scope, id: string): Promise<RuntimeArtifact> {
     const row = (
       await this.pool.query(

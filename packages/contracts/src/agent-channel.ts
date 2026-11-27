@@ -41,8 +41,6 @@ export const agentNotificationSchema = z.object({
   answerId: id.optional(),
   defaultAssumption: z.string().optional(), options: agentQuestionOptionsSchema.optional(),
   outcome: z.enum(["completed", "failed", "cancelled"]).optional(),
-  /** Read-only files the runtime mapped into the recipient session workspace for this result. */
-  files: z.array(agentDeliveredFileSchema).optional(),
   content: z.string(), timestamp: z.number().int().nonnegative(),
 }).strict();
 export const agentInputSchema = z.discriminatedUnion("role", [
@@ -95,6 +93,7 @@ export const agentChannelCommandSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("start"), agent: agentRefSchema, message: z.string().min(1), title: z.string().optional(), context: runtimeJsonObjectSchema.optional() }).strict(),
   z.object({ op: z.literal("send"), session: z.union([agentSessionRefSchema,z.literal("parent")]), message: z.string().min(1), steer: z.boolean().optional(), needsInput: z.boolean().optional(), replyTo: id.optional(), defaultAssumption: z.string().min(1).optional(), options: agentQuestionOptionsSchema.optional() }).strict(),
   z.object({ op: z.literal("read"), taskId: id, view: z.enum(["result", "messages"]).optional(), cursor: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
+  z.object({ op: z.literal("wait"), taskId: id }).strict(),
   z.object({ op: z.literal("cancel"), taskId: id }).strict(),
 ]).superRefine((command,ctx) => {
   if (command.op !== "send") return;
@@ -109,6 +108,8 @@ export const agentRunIntentSchema = z.object({
   status: z.enum(["starting", "running", "completed", "failed", "cancelled"]),
   executionUserId: key.nullable().optional(),
   createdAt: runtimeTimestampSchema, error: z.string().nullable(), cancelled: z.boolean(), cancelMode: z.literal("model").optional(),
+  /** Provider-directory display name captured when a delegated execution was admitted. */
+  agentName: key.optional(),
 }).strict();
 export type AgentRef = z.infer<typeof agentRefSchema>;
 export type AgentSessionRef = z.infer<typeof agentSessionRefSchema>;

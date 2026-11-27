@@ -138,10 +138,6 @@ return computed<ShellLabels>(() => ({
   filterEmpty: t("assistant.datasetFilterEmpty"),
   elapsed: (time) => t("assistant.elapsed", { time }),
   worked: (time) => t("assistant.worked", { time }),
-  delegationProgress: {
-    delegating: t("assistant.progressDelegating"),
-    answering: t("assistant.progressAnswering"),
-  },
   questionsWaiting: (count) => t("assistant.questionsWaiting", { n: count }, count),
   questionOptionDefault: t("assistant.questionOptionDefault"),
   questionOptionOther: t("assistant.questionOptionOther"),
@@ -151,9 +147,6 @@ return computed<ShellLabels>(() => ({
   questionNext: t("assistant.questionNext"),
   answered: (text) => t("assistant.answered", { text }),
   tasks: {
-    retriever: t("assistant.taskRetriever"),
-    delegatedAgent: t("assistant.taskDelegatedAgent"),
-    delegated: t("assistant.taskDelegated"),
     status: {
       starting: t("assistant.taskStarting"),
       running: t("assistant.taskRunning"),
