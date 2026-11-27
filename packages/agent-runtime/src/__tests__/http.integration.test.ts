@@ -470,6 +470,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       files: [{ path: "SKILL.md", content: "---\nname: fixture-skill\ndescription: A different package\n---\n" }],
     });
     expect(replacement.status).toBe(201);
+    const before = inputs.length;
     const s = await session(),
       first = await run(s, "create"),
       done = await settle(first.id);
@@ -518,7 +519,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       (await api(`/v1/runs/${first.id}/artifacts?path=outputs/result.txt`)).body
         .artifacts[0].id,
     ).toBe(a.id);
-    const prompt = JSON.stringify(inputs[0]);
+    const prompt = JSON.stringify(inputs[before]);
     expect(prompt).toContain("fixture-skill");
     expect(prompt).not.toContain(skillBody);
   });
