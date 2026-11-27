@@ -56,7 +56,7 @@ export interface ResponseItem {
   running: boolean;
   /** An intermediate reply whose work continues in a delegated run. */
   handoff?: boolean;
-  retrievalProgress?: "retrieving" | "datasetReady" | "answering";
+  delegationProgress?: "delegating" | "answering";
   /** Present once the run stopped; rendering decides how each PI reason is shown. */
   end: { stopReason: RuntimeStopReason | null; errorMessage: string | null } | null;
   /** The message the runtime named as the run's answer: the body, and the copy, feedback and action target. */
@@ -283,7 +283,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     if (message.role === "notification") {
       if (entry.runId && message.kind === "agent-result" && "session" in message.source) {
         const task = delegatedByRun.get(message.source.runId);
-        if (task?.retrieval && task.root.runId !== entry.runId) {
+        if (task && task.root.runId !== entry.runId) {
           const roots = linkedStarts.get(entry.runId) ?? new Set<string>();
           roots.add(task.root.runId);
           linkedStarts.set(entry.runId, roots);
@@ -291,7 +291,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       }
       if (entry.runId && message.kind === "agent-result" && "session" in message.source) {
         resultRuns.set(message.source.runId, entry.runId);
-        if (state.runs[entry.runId]?.status === "running") openResponse(entry.runId).retrievalProgress = "answering";
+        if (state.runs[entry.runId]?.status === "running") openResponse(entry.runId).delegationProgress = "answering";
       }
       // A delegated agent's result or question is input to the requesting model, not a message in the main conversation;
       // a question to the reader waits in the questions panel instead.
@@ -417,16 +417,16 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
   // Keep those acknowledgements in the process, with only the final reply owning answer actions.
   let turn: ResponseItem[] = [];
   function settlePresentation() {
-    const hasRetrieval = turn.some(reply => reply.process.some(block => block.kind === "task" && block.task.retrieval));
-    if (!hasRetrieval) return;
-    const active = turn.some(reply => reply.process.some(block => block.kind === "task" && block.task.retrieval &&
+    const hasDelegatedWork = turn.some(reply => reply.process.some(block => block.kind === "task"));
+    if (!hasDelegatedWork) return;
+    const active = turn.some(reply => reply.process.some(block => block.kind === "task" &&
       (block.task.status === "starting" || block.task.status === "running")));
     for (let index = 0; index < turn.length; index++) {
       const reply = turn[index]!;
       if (!reply.answerMessageId || !reply.answerText.trim()) continue;
-      const hasDataset = /\.dataset\.json(?:[)#?]|$)/i.test(reply.answerText);
-      const laterReply = index < turn.length - 1 && !hasDataset;
-      const waiting = active && !hasDataset;
+      const hasDelivery = /outputs\/agents\//.test(reply.answerText);
+      const laterReply = index < turn.length - 1 && !hasDelivery;
+      const waiting = active && !hasDelivery;
       if (!laterReply && !waiting) continue;
       reply.process.push({ kind: "note", key: `handoff:${reply.answerMessageId}`, text: reply.answerText,
         final: true, runId: reply.runId });
@@ -460,9 +460,9 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     const run = state.runs[item.runId];
     item.running = run?.status === "running";
     place(item, null);
-    if (item.retrievalProgress !== "answering") {
+    if (item.delegationProgress !== "answering") {
       const pending = item.process.flatMap(block => block.kind === "task" && !resultRuns.has(block.task.runId) ? [block.task] : []);
-      if (pending.some(task => task.status === "starting" || task.status === "running")) item.retrievalProgress = "retrieving";
+      if (pending.some(task => ["starting", "running", "completed"].includes(task.status))) item.delegationProgress = "delegating";
     }
     item.workspaceCommit = run?.workspaceCommit ?? null;
     item.usage = runUsage(state, item.runId);

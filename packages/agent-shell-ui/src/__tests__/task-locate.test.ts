@@ -10,7 +10,7 @@ import { shellContextKey, type ShellContext } from "../context";
 import type { ResponseItem } from "../view";
 
 const task: ChannelAgentTask = {
-  kind: "agent",title:"Sales?",agentRef:{providerId:"ontology",agentId:"retrieval"},sessionRef:{providerId:"ontology",sessionId:"66666666-6666-4666-8666-666666666666"},runId:"88888888-8888-4888-8888-888888888888",requestedBy:{session:{providerId:"workbench",sessionId:"11111111-1111-4111-8111-111111111111"},runId:"22222222-2222-4222-8222-222222222222"},results:[], id: "77777777-7777-4777-8777-777777777777", retrieval:{question:"Sales?",decisionRevision:0,datasets:[]}, parentTaskId: null,
+  kind: "agent",title:"Sales?",agentRef:{providerId:"ontology",agentId:"retrieval"},sessionRef:{providerId:"ontology",sessionId:"66666666-6666-4666-8666-666666666666"},runId:"88888888-8888-4888-8888-888888888888",requestedBy:{session:{providerId:"workbench",sessionId:"11111111-1111-4111-8111-111111111111"},runId:"22222222-2222-4222-8222-222222222222"},results:[], id: "77777777-7777-4777-8777-777777777777", parentTaskId: null,
   root: { sessionId: "22222222-2222-4222-8222-222222222222", runId: "run" }, status: "completed", error: null,
   createdAt: null, process: { mode: "none" },
 };
@@ -20,7 +20,7 @@ const item: ResponseItem = {
   process: [{ kind: "task", key: `task:${task.id}`, task }], startedAt: 0, finishedAt: 25_000,
 };
 
-it("retains a retriever's loaded content and subscription across collapse and reopen", async () => {
+it("retains a delegated task's loaded content and subscription across collapse and reopen", async () => {
   const running: ChannelAgentTask = { ...task, status: "running", process: {
     mode: "inline", runtimeSessionId: task.sessionRef.sessionId, runtimeRunId: task.runId,
   } };
@@ -42,13 +42,13 @@ it("retains a retriever's loaded content and subscription across collapse and re
     const summary = root.querySelector<HTMLButtonElement>(".task-summary")!;
     current.value = running;
     await nextTick();
-    expect(summary.getAttribute("aria-expanded")).toBe("false");
-    expect(port.readProcess).not.toHaveBeenCalled();
-    summary.click(); await nextTick();
+    expect(summary.getAttribute("aria-expanded")).toBe("true");
     await vi.waitFor(() => expect(root.textContent).toContain("Inspecting records"));
     current.value = { ...running, status: "completed" };
     await nextTick();
-    expect(summary.getAttribute("aria-expanded")).toBe("true");
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    summary.click(); await nextTick();
+    expect(root.textContent).toContain("Inspecting records");
     summary.click(); await nextTick();
     expect((root.querySelector(".task-body") as HTMLElement).style.display).toBe("none");
     expect(detach).not.toHaveBeenCalled();
@@ -115,12 +115,11 @@ it("opens a deeper task's read-only process through the existing proxy and links
   } finally {app.unmount();root.remove();}
 });
 
-it("labels non-retrieval delegated tasks with the delegated role and avoids mislabeling handoffs as retriever", async () => {
+it("labels delegated tasks with the delegated role", async () => {
   const genericTask: ChannelAgentTask = {
     ...task,
     id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     title: "Inspect deployment health",
-    retrieval: undefined,
   };
   const handoffItem: ResponseItem = {
     ...item,
