@@ -1,6 +1,5 @@
 package io.ontomato.dataengine.service;
 
-import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.function.Supplier;
@@ -20,14 +19,7 @@ public final class PreviewExecution {
   private PreviewExecution() {}
 
   public static boolean isPreview(HttpServletRequest request) {
-    String header = request.getHeader(HEADER);
-    if (header == null) return false;
-    try {
-      var declaration = JSON.parseObject(header);
-      return declaration != null && "preview".equals(declaration.getString("kind"));
-    } catch (RuntimeException invalid) {
-      return false;
-    }
+    return "preview".equals(request.getHeader(HEADER));
   }
 
   /**

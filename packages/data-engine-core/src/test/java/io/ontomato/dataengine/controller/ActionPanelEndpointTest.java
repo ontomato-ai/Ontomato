@@ -165,7 +165,7 @@ class ActionPanelEndpointTest {
     var mvc = MockMvcBuilders.standaloneSetup(controller)
         .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     var response = mvc.perform(post("/action/execute")
-            .header("X-Ontomato-Execution-Context", "{\"kind\":\"preview\"}")
+            .header("X-Ontomato-Execution-Context", "preview")
             .header(ControllerConst.LANG_HEADER_KEY, "en")
             .param("id", "a1").param("param", "{}"))
         .andExpect(status().isUnprocessableEntity()).andReturn().getResponse();

@@ -41,7 +41,7 @@ class PreviewBusinessWriteBoundaryTest {
 
   private MockHttpServletRequest preview(JSONObject grant) {
     var request = new MockHttpServletRequest("POST", "/");
-    request.addHeader(PreviewExecution.HEADER, "{\"kind\":\"preview\"}");
+    request.addHeader(PreviewExecution.HEADER, "preview");
     request.setAttribute(QueryGrantService.ATTRIBUTE, grant);
     response = new MockHttpServletResponse();
     RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request, response));
