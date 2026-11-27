@@ -12,8 +12,9 @@ choice as an assumption, and delivers datasets. Keeping scope with the retriever
 in one place, made by the one who sees the data; scope you add would be a guess it must either follow
 or contradict. This skill does not modify ontology definitions, permissions or business records.
 
-Run the bundled script as `node <this-skill>/ontomato.mjs <command>`, where `<this-skill>` is the
-directory this SKILL.md is in. The host supplies the ontology URL, credentials, language and run
+Run the bundled script from the workspace root as `node <this-skill>/ontomato.mjs <command>`, where
+`<this-skill>` is the directory this SKILL.md is in; the files it writes, such as `outputs/metrics/...`,
+are relative to the workspace root. The host supplies the ontology URL, credentials, language and run
 context; do not ask the user to configure them or print credentials.
 
 ## A data question
@@ -40,8 +41,9 @@ to hand it over.
 3. Otherwise end this turn. The retriever's result arrives as a notification and wakes you; there is
    nothing to poll, read or wait for. One short line telling the user the retriever is on it is enough.
 4. On the notification, take the files with native `agent`, `op: "read"`, `files: true`.
-   `downloaded[].dataset` already holds a small table with its scope, assumptions and truncation;
-   open the file only when you need more than that. Cite the returned `downloaded[].path`.
+   `downloaded[].dataset` already holds a small table with its scope, assumptions and truncation:
+   answer from it and cite the returned `downloaded[].path` without opening the file. Open a file only
+   when the answer needs a calculation or rows the summary does not hold.
 
 A follow-up that needs new data is a new `start-retrieval`; one that can be answered from data already
 delivered reuses it.

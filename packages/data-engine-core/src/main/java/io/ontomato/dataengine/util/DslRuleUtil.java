@@ -222,9 +222,6 @@ public class DslRuleUtil {
             output0.put("to_user", true);
         }
 
-        JSONArray dsls = new JSONArray();
-        dsls.add(dsl);
-
-        return "```json\n" + JSON.toJSONString(dsls, JSONWriter.Feature.PrettyFormat) + "\n```";
+        return "```json\n" + JSON.toJSONString(dsl, JSONWriter.Feature.PrettyFormat) + "\n```";
     }
 }
