@@ -235,7 +235,12 @@ public class PlatformTasks {
   public List<Trigger> policyTargets(String domain) {
     var user = current();
     if (!domain.equals(user.getDomainId())) throw missing();
-    return readable(definitions.subject(user), null, null, null).stream().filter(task -> !Trigger.PENDING_REVIEW.equals(task.status())).toList();
+    return policyTargets(definitions.subject(user));
+  }
+
+  public List<Trigger> policyTargets(SubjectContext subject) {
+    return readable(subject, null, null, null).stream()
+        .filter(task -> !Trigger.PENDING_REVIEW.equals(task.status())).toList();
   }
 
   public JsonNode targets() { return targets(definitions.subject(current())); }
