@@ -66,7 +66,8 @@ vi.mock("../../../services/data-query/sse-transport", async (importOriginal) => 
   },
 }));
 
-vi.mock("../../../services/data-query/query-run-store", () => ({
+vi.mock("../../../services/data-query/query-run-store", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../services/data-query/query-run-store")>()),
   startQueryRun: async () => undefined,
   updateQueryRunBackendSessions: async () => undefined,
   upsertQueryRun: async (input: UpsertQueryRunInput) => {
@@ -74,7 +75,10 @@ vi.mock("../../../services/data-query/query-run-store", () => ({
   },
 }));
 
-vi.mock("../../../services/data-query/late-fact", () => ({ startQualityCheckSettlement: async () => undefined }));
+vi.mock("../../../services/data-query/late-fact", () => ({
+  startQualityCheckSettlement: async () => undefined,
+  startTrackedQualityCheck: async () => undefined,
+}));
 
 vi.mock("../../../services/data-query/base-query-executor", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../services/data-query/base-query-executor")>()),

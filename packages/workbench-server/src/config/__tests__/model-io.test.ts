@@ -31,6 +31,17 @@ vi.mock("../../config/model-resolver", () => ({
     customRequestParameters: {},
   }),
 }));
+vi.mock("../../config/system-model", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../config/system-model")>();
+  return {
+    ...actual,
+    getSystemModelConfig: () => ({
+      abcQuestionMode: actual.DEFAULT_ABC_QUESTION_MODE,
+      queryTimeoutSeconds: actual.DEFAULT_QUERY_TIMEOUT_SECONDS,
+      nodeModelStreamingEnabled: true,
+    }),
+  };
+});
 const COMPLETION_BODY = {
   id: "t5l-1",
   object: "chat.completion",
