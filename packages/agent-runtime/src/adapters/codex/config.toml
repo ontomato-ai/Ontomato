@@ -40,7 +40,7 @@ enabled = false
 
 [shell_environment_policy]
 inherit = "all"
-include_only = ["PATH", "HOME", "LANG", "LC_*", "TZ", "TMPDIR", "PYTHONPATH", "ONTOMATO_*"]
+include_only = ["PATH", "HOME", "LANG", "LC_*", "TZ", "TMPDIR", "PYTHONPATH", "ONTOMATO_*", "BASH_ENV"]
 
 [analytics]
 enabled = false

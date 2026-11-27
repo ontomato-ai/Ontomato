@@ -35,7 +35,7 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
   const modelRequests: string[] = [];
   const businessRequests: { path?: string; runId: unknown; credential: unknown; tk: unknown }[] = [];
   const leases = new Set<string>();
-  const command = `node -e 'const fs=require("node:fs");fetch(process.env.ONTOMATO_WORKBENCH_URL+"/probe",{method:"POST",headers:{"content-type":"application/json","X-Ontomato-Callback-Credential":process.env.ONTOMATO_EXECUTION_CALLBACK,"X-Ontomato-Run-Id":"forged","tk":"untrusted"},body:"{}"}).then(async r=>{if(!r.ok)throw Error(r.status);fs.writeFileSync("outputs/probe.txt",await r.text())})'`;
+  const command = `node -e 'const fs=require("node:fs");fs.writeFileSync("run-id.txt",process.env.ONTOMATO_RUN_ID||"missing");fetch(process.env.ONTOMATO_WORKBENCH_URL+"/probe",{method:"POST",headers:{"content-type":"application/json","X-Ontomato-Callback-Credential":process.env.ONTOMATO_EXECUTION_CALLBACK,"X-Ontomato-Run-Id":process.env.ONTOMATO_RUN_ID||"missing","tk":"untrusted"},body:"{}"}).then(async r=>{if(!r.ok)throw Error(r.status);fs.writeFileSync("outputs/probe.txt",await r.text())})'`;
   const gateway = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -50,7 +50,7 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     } else if (req.url === "/v1/chat/completions" && leases.has(req.headers.authorization?.slice(7) ?? "")) {
       modelRequests.push(raw);
       const { messages } = JSON.parse(raw) as { messages: { role: string; content: unknown }[] };
-      const callTool = messages.length > 0 && messages.at(-1)?.role === "user" && !raw.includes("fixture-call");
+      const callTool = messages.length > 0 && messages.at(-1)?.role === "user";
       res.writeHead(200, { "Content-Type": "text/event-stream" });
       const frame = (delta: unknown, finish_reason: string | null = null) => {
         res.write("data: " + JSON.stringify({ id: "reply", created: 1, object: "chat.completion.chunk",
@@ -148,8 +148,10 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     const idle = await fetch(launched.callback + "/probe", { headers: { "X-Ontomato-Callback-Credential": launched.credential } });
     expect(idle.status).toBe(409);
     expect(await readFile(path.join(launched.workspace, "outputs", "probe.txt"), "utf8")).toBe("Saved by the skill");
+    expect(await readFile(path.join(launched.workspace, "run-id.txt"), "utf8")).toBe(first.run.id);
 
-    await run("Second user message", "uninstalled");
+    const second = await run("Second user message", "uninstalled");
+    expect(await readFile(path.join(launched.workspace, "run-id.txt"), "utf8")).toBe(second.run.id);
     expect(launches).toHaveLength(1);
     expect(modelRequests.at(-1)).toContain("First user message");
     await runtime.close();

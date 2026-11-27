@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { renameSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import type { RuntimeAgentDefinition } from "@ontomato/contracts/agent-runtime";
@@ -51,6 +52,18 @@ interface LiveSession {
 
 const idleMs = 60 * 60 * 1000;
 const key = (scope: Scope, id: string) => canonical([scope.hostId, scope.domainId, id]);
+const bashEnvironmentFile = "ontomato-bash-env";
+const activeRunFile = "ontomato-run-id";
+const bashEnvironment = [
+  `_ontomato_run_id_file=\${BASH_ENV%/*}/${activeRunFile}`,
+  'if [ -r "$_ontomato_run_id_file" ]; then',
+  '  IFS= read -r ONTOMATO_RUN_ID < "$_ontomato_run_id_file" || ONTOMATO_RUN_ID=',
+  '  export ONTOMATO_RUN_ID',
+  'else',
+  '  unset ONTOMATO_RUN_ID',
+  'fi',
+  'unset _ontomato_run_id_file',
+].join("\n") + "\n";
 
 /** Owns the native handle, process space and gateway lease for each admitted session. */
 export class SessionEngines {
@@ -115,6 +128,8 @@ export class SessionEngines {
       const token = randomBytes(32).toString("base64url");
       const credential = Buffer.from(token);
       const { directories } = processSpace;
+      writeFileSync(path.join(processSpace.hostState, bashEnvironmentFile), bashEnvironment, { mode: 0o644 });
+      rmSync(path.join(processSpace.hostState, activeRunFile), { force: true });
       const callbackUrl = new URL(
         `/v1/channel/hosts/${encodeURIComponent(scope.hostId)}/domains/${encodeURIComponent(scope.domainId)}/sessions/${encodeURIComponent(id)}`,
         processSpace.callbackBaseUrl,
@@ -128,6 +143,7 @@ export class SessionEngines {
           spawn(command, args, env) {
             const child = processSpace.spawn(command, args, {
               ...env,
+              BASH_ENV: path.posix.join(directories.state, bashEnvironmentFile),
               ONTOMATO_SKILL_SCENARIO: "platform",
               ONTOMATO_SESSION_ID: id,
               ONTOMATO_LANGUAGE: request.language,
@@ -171,12 +187,19 @@ export class SessionEngines {
   }
 
   beginRun(scope: Scope, id: string, runId: string) {
-    this.live.get(key(scope, id))!.runId = runId;
+    const entry = this.live.get(key(scope, id))!;
+    entry.runId = runId;
+    const directory = entry.sandbox.hostState;
+    const temporary = path.join(directory, `.${activeRunFile}.${process.pid}`);
+    writeFileSync(temporary, runId + "\n", { mode: 0o644 });
+    renameSync(temporary, path.join(directory, activeRunFile));
   }
 
   endRun(scope: Scope, id: string) {
     const entry = this.live.get(key(scope, id));
-    if (entry) entry.runId = undefined;
+    if (!entry) return;
+    entry.runId = undefined;
+    rmSync(path.join(entry.sandbox.hostState, activeRunFile), { force: true });
   }
 
   callbackRun(scope: Scope, id: string, credential: string | undefined) {
