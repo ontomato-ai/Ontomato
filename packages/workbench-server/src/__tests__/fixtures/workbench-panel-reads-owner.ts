@@ -2,7 +2,7 @@ import type { Express, Request } from "express";
 import { isDeepStrictEqual } from "node:util";
 import { isApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type {
-  JavaPanelLocateRef, JavaPanelRead, JavaPanelReadResult, JavaPanelViewer, JavaRegisteredPanelEntry,
+  JavaDirectPanelRead, JavaPanelLocateRef, JavaPanelRead, JavaPanelReadResult, JavaPanelViewer, JavaRegisteredPanelEntry,
 } from "../../services/product-panels/java-panel-reads";
 import type { Decision } from "../../services/product-governance/authorization";
 import { HttpError } from "../../utils/errors";
@@ -83,19 +83,23 @@ export function mountWorkbenchPanelReadsOwner(app: Express, {
         res.sendStatus(403);
         return;
       }
-      const results = await Promise.all((req.body.reads as JavaPanelRead[]).map(async (item): Promise<JavaPanelReadResult> => {
+      const results = await Promise.all((req.body.reads as (JavaPanelRead | JavaDirectPanelRead)[]).map(async (item): Promise<JavaPanelReadResult> => {
         try {
-          const current = await entry(item.source);
-          const use = isApplicationPanelUse(current.use) ? current.use : undefined;
-          if (item.registration.panelId !== (use?.panelId ?? null) || item.registration.framePanelId !== current.framePanelId
-              || !isDeepStrictEqual(item.registration.inputs ?? null, use?.inputs ?? null)) {
-            return { status: "forbidden", code: "PANEL_ENTRY_CHANGED", error: "The panel entry changed" };
-          }
-          if (item.uses.length) {
-            const requests = item.uses.map(use => ({ ...use, verb: "USE" }));
-            const { decisions } = await owner.post("/authorization/objects/decide-batch", { requests }) as { decisions: Decision[] };
-            const refusal = decisions.find(decision => !decision.allowed);
-            if (refusal && !refusal.allowed) return { status: "forbidden", code: refusal.code, error: refusal.reason };
+          // A direct read has no placement to compare or admit: the owner judges the person by itself.
+          if (item.source.kind !== "direct") {
+            const placed = item as JavaPanelRead;
+            const current = await entry(placed.source);
+            const use = isApplicationPanelUse(current.use) ? current.use : undefined;
+            if (placed.registration.panelId !== (use?.panelId ?? null) || placed.registration.framePanelId !== current.framePanelId
+                || !isDeepStrictEqual(placed.registration.inputs ?? null, use?.inputs ?? null)) {
+              return { status: "forbidden", code: "PANEL_ENTRY_CHANGED", error: "The panel entry changed" };
+            }
+            if (placed.uses.length) {
+              const requests = placed.uses.map(use => ({ ...use, verb: "USE" }));
+              const { decisions } = await owner.post("/authorization/objects/decide-batch", { requests }) as { decisions: Decision[] };
+              const refusal = decisions.find(decision => !decision.allowed);
+              if (refusal && !refusal.allowed) return { status: "forbidden", code: refusal.code, error: refusal.reason };
+            }
           }
           const visibility = item.visibleKinds && Object.fromEntries(await Promise.all(item.visibleKinds.map(async ({ kind, verbs }) =>
             [kind, (await owner.post("/authorization/objects/read-ranges", { kind, verbs })).ranges])));
