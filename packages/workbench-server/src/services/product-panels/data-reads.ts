@@ -20,7 +20,6 @@ import type { ProductOwner } from "../product-governance/service-authentication"
 import type { ObjectDefinition } from "../product-governance/authorization";
 import { isProductAssetGraphRead, prepareProductAssetGraphRead } from "./asset-graph-read";
 import { preparePanelMetricQuery } from "../dashboard/panel-chart-read-plan";
-import { prepareCustomerNeighborsRead } from "../ontology-model/customer-reads";
 import type { McpRequestLocation } from "../mcp/catalog";
 import { readProjectionComponent } from "./component-catalogue";
 import { resolvePinnedInputs } from "./input-wiring";
@@ -30,7 +29,7 @@ import { unwrapReadDirective } from "./read-directive";
 import type { PanelOperationActor } from "./server-operations";
 import { readSelectedPanelOwner, type PanelReadSelection } from "./panel-owner-reads";
 import { currentDefinition } from "./access";
-import { prepareCustomerObjectRead } from "./customer-data-read-plan";
+import { prepareCustomerDataRead } from "./customer-data-read-plan";
 import { isFavoriteObjectRead, prepareScopedFavoriteObjectRead } from "./favorite-panel";
 import { readViaJava, type JavaPanelRead } from "./java-panel-reads";
 
@@ -267,9 +266,7 @@ export async function readResolvedPanelOwner(
   const modelRead = !isGraph && retrievalScopeId !== undefined
     ? (await import("./scoped-model-reads")).prepareScopedModelRead(selection, params, projection, viewer.locale)
     : undefined;
-  const ownerRead = isRelationship
-    ? prepareCustomerNeighborsRead(selection.typeId, params, viewer.locale)
-    : isGraph ? undefined : modelRead ?? prepareCustomerObjectRead(selection, params);
+  const ownerRead = isGraph ? undefined : modelRead ?? prepareCustomerDataRead(selection, params, viewer.locale);
   const scopedFavorites = retrievalScopeId !== undefined && isFavoriteObjectRead(selection, params);
   const metric = !isGraph && !ownerRead && !scopedFavorites
     ? await preparePanelMetricQuery(owner, projection, { selection, params }, viewer.locale) : undefined;

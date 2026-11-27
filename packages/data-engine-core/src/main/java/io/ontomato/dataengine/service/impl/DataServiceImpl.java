@@ -24,6 +24,7 @@ import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.DataService;
+import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.QueryPermissions;
 import io.ontomato.dataengine.service.sys.bean.permission.FieldPermission;
@@ -62,8 +63,8 @@ public class DataServiceImpl implements DataService {
 	private LiveInstanceGraph liveInstanceGraph;
 	
 	@Override
-	public JSONObject queryInstanceGraph(String operation, JSONObject request, UserDataPermission permission, String domainId) {
-		return liveInstanceGraph.query(operation, request, permission, domainId);
+	public JSONObject queryInstanceGraph(String operation, JSONObject request, UserDataPermission permission, String domainId, ExecutionTarget target) {
+		return liveInstanceGraph.query(operation, request, permission, domainId, target);
 	}
 	
 	@Override

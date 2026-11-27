@@ -201,9 +201,10 @@ class OntologyModelPanelReadsTest {
                 new GraphRead(owner.objectTypeInstanceGraphSearch(), "search", search),
                 new GraphRead(owner.objectTypeInstanceNeighbors(), "neighborhood", node));
         for (var graph : reads) {
-            when(data.queryInstanceGraph(graph.operation(), new JSONObject(graph.parameters()), permission, "d1")).thenReturn(reply);
+            when(data.queryInstanceGraph(graph.operation(), new JSONObject(graph.parameters()), permission, "d1", MODEL_SCOPE)).thenReturn(reply);
             assertTrue(graph.read().requiresLiveData());
-            assertSame(reply, graph.read().handler().read(captured, graph.parameters()));
+            assertSame(reply, ((WorkbenchPanelRead.CallerScopedHandler) graph.read().handler())
+                    .read(captured, graph.parameters(), MODEL_SCOPE));
         }
         verifyNoInteractions(authorization, model);
     }
