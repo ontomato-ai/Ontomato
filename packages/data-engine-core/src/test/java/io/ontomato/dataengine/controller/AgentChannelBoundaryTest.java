@@ -200,28 +200,34 @@ class AgentChannelBoundaryTest {
     assertEquals(List.of("preview","live"),sent.getAllValues().stream().map(request->request.getJSONObject("authority").getString("executionKind")).toList());
   }
 
-  @Test void aRunsOwnCommandRunsAsThatRunWithItsClassScopeNeverAsAnExternalUser() throws Exception {
+  @Test void aRunsCallbackCannotUseTheExternalEntryNorOpenATopLevelConversation() throws Exception {
     var runtime=mock(AgentRuntimeClient.class);
     var access=mock(OntologyAgentAccess.class);
     var owner=new OntologyAgentStore.Owner("U","a");
     when(access.authenticated(any())).thenReturn(new OntologyAgentAccess.Context(owner,null,"tk",null,"en",null,null));
-    var actor=JSONObject.of("id",SESSION,"domainId","a");
-    when(runtime.run("a",RUN)).thenReturn(JSONObject.of("run",JSONObject.of("channel",JSONObject.of("actor",actor,
-        "authority",JSONObject.of("classNames",List.of("Orders"),"executionKind","preview")))));
+    when(access.forAgentUse(any(),anyString())).thenReturn(new OntologyAgentAccess.Context(owner,null,"tk",null,"en",null,null));
+    when(callers.open(anyString(),any(OntologyAgentAccess.Context.class))).thenReturn(JSONObject.of("id",RUN,"domainId","a"));
     var controller=new AgentChannelController(callers,directory,store,runtime,mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),access,mock(io.ontomato.dataengine.service.LangService.class),mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
-    var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-    var start=JSONObject.of("op","start","agent",JSONObject.of("providerId","workbench","agentId","analyst"),"message","How many orders?");
-    mvc.perform(post("/platform/agent-channel/commands").header("X-Ontomato-Run-Id",RUN)
-        .contentType(MediaType.APPLICATION_JSON).content(start.toJSONString())).andExpect(status().isOk());
-    // The caller's own run, which decides the child's classes, identity and delegation: no external caller is opened.
-    verify(callers).authorize(actor,owner);
-    verify(runtime).json("a",RUN,"/v1/channel/runs/"+RUN+"/commands","POST",JSONObject.of("command",start),null);
+    var host=mock(OntologyAgentHost.class);
+    var mvc=MockMvcBuilders.standaloneSetup(controller,new OntologyAgentController(host,access,runtime,mock(OntologyRetrievalService.class)))
+        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    String start=JSONObject.of("op","start","agent",JSONObject.of("providerId","workbench","agentId","analyst"),"message","How many orders?").toJSONString();
+    // Node's callback proxy always adds the header to a run's request; the run cannot drop it.
+    for (String command : List.of(start,JSONObject.of("op","list").toJSONString(),JSONObject.of("op","cancel","taskId",RUN).toJSONString()))
+      mvc.perform(post("/platform/agent-channel/commands").header(OntologyAgentAccess.AGENT_EXECUTION_HEADER,RUN)
+          .contentType(MediaType.APPLICATION_JSON).content(command)).andExpect(status().isForbidden());
+    String create=JSONObject.of("agentId",OntologyAgentStore.RETRIEVER).toJSONString();
+    mvc.perform(post("/ontology/ai/sessions").header(OntologyAgentAccess.AGENT_EXECUTION_HEADER,RUN).header("Idempotency-Key",SESSION)
+        .contentType(MediaType.APPLICATION_JSON).content(create)).andExpect(status().isForbidden());
     verify(callers,never()).open(anyString(),any(OntologyAgentAccess.Context.class));
-    // A run that is not the caller's is not found, and nothing is forwarded.
-    doThrow(AgentHttpException.missing()).when(callers).authorize(actor,owner);
-    mvc.perform(post("/platform/agent-channel/commands").header("X-Ontomato-Run-Id",RUN)
-        .contentType(MediaType.APPLICATION_JSON).content(start.toJSONString())).andExpect(status().isNotFound());
-    verify(runtime,times(1)).json(eq("a"),eq(RUN),eq("/v1/channel/runs/"+RUN+"/commands"),eq("POST"),any(),isNull());
+    verify(runtime,never()).json(anyString(),anyString(),anyString(),anyString(),any(),any());
+    verify(host,never()).create(any(),any(),any());
+    // A person outside the product, without it, starts an agent and opens a conversation as before.
+    mvc.perform(post("/platform/agent-channel/commands").contentType(MediaType.APPLICATION_JSON).content(start)).andExpect(status().isOk());
+    mvc.perform(post("/ontology/ai/sessions").header("Idempotency-Key",SESSION).contentType(MediaType.APPLICATION_JSON).content(create))
+        .andExpect(status().isCreated());
+    verify(runtime).json(eq("a"),eq(RUN),eq("/v1/channel/commands"),eq("POST"),any(),isNull());
+    verify(host).create(SESSION,OntologyAgentStore.RETRIEVER,owner);
   }
 
   @Test void aPreviewStopsOnlyAPreviewsRun() throws Exception {

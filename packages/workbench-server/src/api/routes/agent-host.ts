@@ -12,6 +12,7 @@ import type { AgentHostService } from "../../services/agent-host/types";
 import { openPresentationView, PRESENTATION_CALL_PATH, receivePresentation, requestPresentation } from "../../services/agent-host/presentation";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { HttpError } from "../../utils/errors";
+import { refuseAgentExecution } from "../../utils/request-identity";
 import { publishBrowserEvents } from "./browser-events";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 export function createAgentHostRouter(service: AgentHostService<[AssistantCredentials]>, workspaces = false) {
@@ -32,6 +33,7 @@ router.get(
 router.post(
   "/sessions",
   wrap(async (req, res) => {
+    refuseAgentExecution(req);
     const { owner, credentials } = context(req);
     res
       .status(201)

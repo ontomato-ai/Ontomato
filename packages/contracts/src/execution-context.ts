@@ -33,7 +33,9 @@ type PlatformService = "" | "/data-query";
  *   `/assistant/sessions`, `/observe/agent/sessions` and `/observe/diagnoses` conversations and their `/runs`, DataRAG's
  *   `/ontology/ai/sessions/{id}/runs` and the agent channel's `/platform/agent-channel/commands`.
  * - Stopping an agent run (`/assistant|observe/agent/sessions/{id}/runs/{run}/cancel`,
- *   `/ontology/ai/sessions/{id}/runs/{run}/cancel`) carries the identity too: a preview stops only a preview's run.
+ *   `/ontology/ai/sessions/{id}/runs/{run}/cancel`), and deciding whether an agent's pending page operation still goes
+ *   ahead (`/panel-operations/intents/{id}/cancel`, `/panel-operations/questions/{id}/cancel-if-pending`,
+ *   `/panel-operations/local-confirmations/{id}/claim`), carry the identity too: a preview decides only a preview run's.
  *
  * `/action/trial`, `/metricView/test` and `/ontology/ai/generation/…` write only inside the run's own sandbox.
  */
@@ -47,6 +49,7 @@ const previewEntries: readonly (readonly [service: PlatformService, method: stri
   ["/data-query", "POST", /^\/ontology\/ai\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],
   ["", "POST", /^\/praxis\/(?:runs|runs\/[^/]+\/(?:tick|acts-on|case\/(?:submit|fill|close))|steps\/[^/]+\/(?:decide|assign))$/iu],
   ["", "POST", /^\/panel-operations\/intents\/[^/]+\/dispatch$/iu],
+  ["", "POST", /^\/panel-operations\/(?:intents\/[^/]+\/cancel|questions\/[^/]+\/cancel-if-pending|local-confirmations\/[^/]+\/claim)$/iu],
   ["", "POST", /^\/assistant\/sessions$/iu],
   ["", "POST", /^\/assistant\/sessions\/[^/]+\/runs$/iu],
   ["", "POST", /^\/(?:assistant|observe\/agent)\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],

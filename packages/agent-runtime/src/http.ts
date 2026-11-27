@@ -367,16 +367,6 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     if(body.actor.domainId!==ctx.scope.domainId) throw new RuntimeError(403,"CROSS_DOMAIN","Actor belongs to another domain");
     res.json(await runtime.channel.execute(ctx.scope,{kind:"external",actor:body.actor,authority:body.authority,language:body.language,credential:body.credential},body.command));
   }));
-  /**
-   * A host forwards a command one of its runs sent it: it runs as that run, with the run's own authority and delegation,
-   * never as an external caller. The host has checked that the run is its caller's.
-   */
-  app.post("/v1/channel/runs/:runId/commands",route(async(req,res)=>{
-    const ctx=gateway(req),body=z.object({command:agentChannelCommandSchema}).strict().parse(req.body);
-    const {run}=await runtime.store.run(ctx.scope,runtimeIdSchema.parse(req.params.runId));
-    if(!run.channel || run.status!=="running") throw new RuntimeError(409,"RUN_CLOSED","Execution is closed");
-    res.json(await runtime.channel.execute(ctx.scope,run,body.command));
-  }));
   app.get("/v1/channel/tasks/:taskId/actor",route(async(req,res)=>{
     const ctx=gateway(req),entry=await runtime.channel.facts.task(ctx.scope.domainId,runtimeIdSchema.parse(req.params.taskId));
     if(!entry) throw new RuntimeError(404,"NOT_FOUND","Task not found");

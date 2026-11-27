@@ -3,6 +3,7 @@ import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontoma
 import type { RequestIdentity } from "@ontomato/contracts/identity";
 import { Request } from "express";
 import {buildBackendHeaders} from "./backend-client";
+import { HttpError } from "./errors";
 import { workbenchIdentity } from "../identity/installed";
 
 export interface AuthenticatedRequest extends Request, RequestIdentity {
@@ -33,4 +34,14 @@ export function credentialsFromRequest(request:AuthenticatedRequest) {
     // to a business-data write entry carries it again, so every other call to Java travels as it would live.
     ...(request.header(EXECUTION_CONTEXT_HEADER) === previewExecutionContextHeader && { executionKind: "preview" as const }),
   };
+}
+
+/**
+ * A run starts agents only through its own agent channel, which keeps its classes, identity and delegation. Its callback
+ * (the proxy always adds the narrowing execution header, which the run cannot drop) never opens a new top-level
+ * conversation as its user.
+ */
+export function refuseAgentExecution(request: Request) {
+  if (request.header(AGENT_EXECUTION_HEADER) !== undefined)
+    throw new HttpError(403, "A run starts agents through its own agent channel", "FORBIDDEN");
 }

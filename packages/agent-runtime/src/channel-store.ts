@@ -26,9 +26,9 @@ export class ChannelStore {
       return record;
     });
   }
-  async pending(scope: Scope, sessionId: string, mode?: "steer", runId?: string): Promise<MessageRow[]> {
-    const { rows } = await this.store.pool.query(`SELECT m.id,m.run_id,m.seq,m.context_seq,m.message FROM ${this.store.table("messages")} m LEFT JOIN ${this.store.table("admissions")} a ON a.host_id=m.host_id AND a.domain_id=m.domain_id AND a.key=m.intent_id WHERE m.host_id=$1 AND m.domain_id=$2 AND m.session_id=$3 AND m.run_id IS NULL AND ($4::text IS NULL OR m.input_mode=$4) AND ($5::uuid IS NULL OR m.intent_id IS NULL OR m.intent_id=$5) AND (a.intent IS NULL OR a.intent->>'status' NOT IN ('failed','cancelled')) ORDER BY m.seq`, [...this.key(scope),sessionId,mode ?? null,runId ?? null]);
-    return rows.map(row => ({ id: row.id,runId: null,messageSeq: Number(row.seq),contextSeq: null,message: row.message }));
+  async pending(scope: Scope, sessionId: string, mode?: "steer", runId?: string): Promise<Array<MessageRow & { intentId: string | null }>> {
+    const { rows } = await this.store.pool.query(`SELECT m.id,m.run_id,m.intent_id,m.seq,m.context_seq,m.message FROM ${this.store.table("messages")} m LEFT JOIN ${this.store.table("admissions")} a ON a.host_id=m.host_id AND a.domain_id=m.domain_id AND a.key=m.intent_id WHERE m.host_id=$1 AND m.domain_id=$2 AND m.session_id=$3 AND m.run_id IS NULL AND ($4::text IS NULL OR m.input_mode=$4) AND ($5::uuid IS NULL OR m.intent_id IS NULL OR m.intent_id=$5) AND (a.intent IS NULL OR a.intent->>'status' NOT IN ('failed','cancelled')) ORDER BY m.seq`, [...this.key(scope),sessionId,mode ?? null,runId ?? null]);
+    return rows.map(row => ({ id: row.id,runId: null,intentId: row.intent_id,messageSeq: Number(row.seq),contextSeq: null,message: row.message }));
   }
   async receipt(scope: Scope, id: string): Promise<(MessageRow & { sessionId: string; intentId: string | null }) | null> {
     const { rows } = await this.store.pool.query(`SELECT id,session_id,run_id,intent_id,seq,context_seq,message FROM ${this.store.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[...this.key(scope),id]);

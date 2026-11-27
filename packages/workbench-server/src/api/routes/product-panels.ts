@@ -355,16 +355,16 @@ panelOperationsRouter.post("/panel-operations/intents/:intentId/dispatch", wrap(
   res.set("Cache-Control", "no-store").json(panelHumanOperationDispatchResponseSchema.parse(await dispatchHumanPanelOperation(owner, credentials, intentId)));
 }));
 panelOperationsRouter.post("/panel-operations/intents/:intentId/cancel", wrap(async (req, res) => {
-  const { owner } = context(req);
+  const { owner, credentials } = context(req);
   const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
   const reason = cancelPanelOperationIntentRequestSchema.parse(req.body);
-  res.json(await cancelHumanPanelOperation(owner, intentId, reason));
+  res.json(await cancelHumanPanelOperation(owner, credentials, intentId, reason));
 }));
 panelOperationsRouter.post("/panel-operations/questions/:questionId/cancel-if-pending", wrap(async (req, res) => {
-  const { owner } = context(req);
+  const { owner, credentials } = context(req);
   const questionId = z.string().uuid().parse(req.params.questionId);
   const reason = cancelPanelOperationIntentRequestSchema.parse(req.body);
-  res.json(await cancelPendingAgentPageQuestion(owner, questionId, reason));
+  res.json(await cancelPendingAgentPageQuestion(owner, credentials, questionId, reason));
 }));
 panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
@@ -398,14 +398,14 @@ panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (
       source: { session: { providerId: run.channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
       ...questionPrompt,
     }, questionId);
-    registerPendingLocalConfirmation(owner, questionId, intentId);
+    registerPendingLocalConfirmation(owner, questionId, intentId, preview);
   }
   res.json({ intentId, questionId, autoMode, label: input.operationLabel });
 }));
 panelOperationsRouter.post("/panel-operations/local-confirmations/:questionId/claim", wrap(async (req, res) => {
-  const { owner } = context(req);
+  const { owner, credentials } = context(req);
   const questionId = z.string().uuid().parse(req.params.questionId);
-  res.json(claimPendingLocalConfirmation(owner, questionId));
+  res.json(claimPendingLocalConfirmation(owner, credentials, questionId));
 }));
 panelOperationsRouter.get("/panel-operation-settings/:providerId/:sessionId",wrap(async(req,res)=>{
   const c=context(req),root=agentSessionRefSchema.parse(req.params);

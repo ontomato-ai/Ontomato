@@ -32,6 +32,9 @@ test("a preview identity is carried to the entries that run something and to no 
     ["", "/observe/autotest/runs"],
     ["", "/observe/autotest/runs/r-1/stop"],
     ["/data-query", "/ontology/ai/sessions/s-1/runs/r-1/cancel"],
+    ["", "/panel-operations/intents/i-1/cancel"],
+    ["", "/panel-operations/questions/q-1/cancel-if-pending"],
+    ["", "/panel-operations/local-confirmations/q-1/claim"],
   );
   for (const [service, path] of running) assert.ok(carriesPreviewIdentity(service, "POST", path), `${service}${path}`);
   assert.ok(carriesPreviewIdentity("", "DELETE", "/observe/autotest/runs/r-1"));
@@ -48,6 +51,7 @@ test("a preview identity is carried to the entries that run something and to no 
     ["", "GET", "/praxis/inbox"],
     ["", "POST", "/assistant/agent-definitions"],
     ["", "POST", "/panel-operations/intents"],
+    ["", "POST", "/panel-operations/local-confirmations"],
     ["", "POST", "/observe/autotest/case-sets"],
     ["", "GET", "/observe/autotest/runs/r-1"],
     // The same path at the other service is another owner's.

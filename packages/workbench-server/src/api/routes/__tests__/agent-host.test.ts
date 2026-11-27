@@ -204,6 +204,18 @@ it("creates a session with the verified owner and replays the same id", async ()
   expect(fake.seen()).toEqual([owner, owner]);
 });
 
+it("refuses to open a new conversation for a run's callback, and opens one for a person in a preview", async () => {
+  const create = (headers: Record<string, string>) => fetch(url + "/sessions", {
+    method: "POST", headers: { ...auth, "Idempotency-Key": secondSessionId, ...headers }, body: JSON.stringify({ agentId }),
+  });
+  const seen = fake.seen().length;
+  const refused = await create({ "X-Ontomato-Agent-Execution": runId });
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+  expect(fake.seen()).toHaveLength(seen);
+  expect((await create({ "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(201);
+});
+
 it("renames only the caller's conversation and rejects blank or oversized titles", async () => {
   const rename = (title: string, user = owner.userId) => fetch(url + `/sessions/${sessionId}`, {
     method: "PATCH", headers: { ...auth, "fixture-auth": user }, body: JSON.stringify({ title }),

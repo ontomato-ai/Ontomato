@@ -429,12 +429,18 @@ No external provider registration endpoint is introduced.
 Channel commands never read an execution-context header: a command runs with its caller's
 channel authority. A preview run delegates as itself (the agent it starts inherits the same preview
 authority, classes and delegation); an external caller's authority is the one its host states.
-`/v1/channel/runs/:runId/commands` lets a host forward a command one of its runs sent it, so it runs
-as that run rather than as an external caller. A preview stops (`cancel`) only a preview's run;
+A run's own commands enter only through its session command route with its callback credential,
+which binds them to the session's active run. Its business callbacks carry `X-Ontomato-Agent-Execution`, and
+DataRAG's external entry (`/platform/agent-channel/commands`) and the routes that open a new
+top-level conversation refuse such a request (403 `FORBIDDEN`), so a run cannot start agents as its
+user outside its classes and delegation. A preview stops (`cancel`) only a preview's run;
 stopping a live one is refused with 422 `PREVIEW_WRITE_FORBIDDEN`.
-An input joins a running or waiting run only when it runs with the same identity — the caller's
-channel, the delegating run, or the run it is addressed to (an answer's asking run, a result's
-recipient, a delegated agent's creator); otherwise it queues as a run of its own.
+An input runs with its sender's identity (a web input's channel, otherwise the sending run's, the
+external caller's, the answering human's or the reporting child's settled authority), never its
+recipient's; an answer to a preview's question is that preview's input. It joins a running or
+waiting run only with the same identity, otherwise it queues as a run of its own; a preview's
+answer to a live run's question is refused before anything is written. The authority a provider
+settles at prepare is stored with the intent, so stopping and queueing read it.
 See `execution-context.md`.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 

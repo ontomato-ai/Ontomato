@@ -12,6 +12,21 @@ import org.springframework.web.server.ResponseStatusException;
 /** Authenticated request context is captured before leaving the servlet thread. */
 @Service
 public class OntologyAgentAccess {
+  /**
+   * The narrowing header a run's callback always carries (Node's callback proxy sets it after authenticating the run). It
+   * never grants anything; a caller that adds it only narrows itself.
+   */
+  public static final String AGENT_EXECUTION_HEADER = "X-Ontomato-Agent-Execution";
+
+  /**
+   * A run starts agents only through its own agent channel, which keeps its classes, identity and delegation: through its
+   * callback it never opens a top-level conversation or an external caller's command as its user.
+   */
+  public static void refuseAgentExecution(HttpServletRequest request) {
+    if (request.getHeader(AGENT_EXECUTION_HEADER) != null)
+      throw new AgentHttpException(403, "FORBIDDEN", "A run starts agents through its own agent channel");
+  }
+
   private final QueryAccessService queries;
   private final IdentityService identity;
   private final QueryGrantService grants;

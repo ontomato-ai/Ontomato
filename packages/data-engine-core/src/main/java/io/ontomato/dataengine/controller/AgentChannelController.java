@@ -84,16 +84,9 @@ public class AgentChannelController {
   }
   @PostMapping("/commands")
   public Object commands(@RequestBody Map<String,Object> input,HttpServletRequest request) throws Exception {
+    // The entry for callers outside the product. A run's commands go through its own runtime channel, never through here.
+    OntologyAgentAccess.refuseAgentExecution(request);
     var command=body(input);String op=validateCommand(command);var context=access.authenticated(request);
-    String named=request.getHeader("X-Ontomato-Run-Id");
-    if(named!=null) {
-      // A run's own command, forwarded by its callback: it delegates as that run, with the run's class scope, identity and
-      // delegation tree. Naming a run narrows what a caller may do, so it is enough that the run is the caller's.
-      String run=AgentJson.id(named);
-      var channel=runtime.run(context.owner().domainId(),run).getJSONObject("run").getJSONObject("channel");
-      callers.authorize(channel.getJSONObject("actor"),context.owner());
-      return runtime.json(context.owner().domainId(),run,"/v1/channel/runs/"+run+"/commands","POST",JSONObject.of("command",command),null);
-    }
     JSONObject actor;
     if(op.equals("read") || op.equals("cancel")) actor=taskActor(command.getString("taskId"),context);
     else {

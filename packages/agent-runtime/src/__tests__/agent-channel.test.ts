@@ -14,7 +14,7 @@ import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { RuntimeRun, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
-import type { AgentInput, AgentNotification, AgentPrepareRequest, AgentRunContext, AgentRunIntent } from "@ontomato/contracts/agent-channel";
+import type { AgentInput, AgentNotification, AgentPrepareRequest, AgentRunContext, AgentRunIntent, AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import type { AddressInfo } from "node:net";
 const sessionId = "11111111-1111-4111-8111-111111111111", runId = "22222222-2222-4222-8222-222222222222", inputId = "33333333-3333-4333-8333-333333333333";
 const scope = { hostId: "test-host", domainId: "a" };
@@ -232,36 +232,6 @@ it("drops a submitted presentation binding at the credentialFrom HTTP entry", as
   }
 });
 
-it("runs a command a host forwards for one of its runs as that run, keeping its class scope and delegation", async () => {
-  const execute = vi.fn(async () => ({ taskId: inputId }));
-  const restricted = { ...humanChannel, authority: { classNames: ["Orders"], executionKind: "preview" as const } };
-  const runs: Record<string, RuntimeRun> = {
-    [runId]: { ...run, status: "running", channel: restricted },
-    [inputId]: { ...run, id: inputId, status: "stopped", channel: restricted },
-  };
-  const runtime = {
-    options: { hosts: [{ id: scope.hostId, token: "fixture-host-token", channelGateway: true }] },
-    store: { run: vi.fn(async (_scope: unknown, id: string) => ({ run: runs[id] })) },
-    channel: { execute },
-  } as unknown as AgentRuntime;
-  const server = createRuntimeHttp(runtime).listen(0, "127.0.0.1");
-  await new Promise<void>(done => server.once("listening", done));
-  const post = (id: string) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/channel/runs/${id}/commands`, {
-    method: "POST", headers: { authorization: "Bearer fixture-host-token", "Content-Type": "application/json",
-      "x-domain-id": scope.domainId, "x-correlation-id": "fixture" },
-    body: JSON.stringify({ command: { op: "start", agent: context.agent, message: "Count active rows" } }),
-  });
-  try {
-    expect((await post(runId)).status).toBe(200);
-    // The run itself, never an external caller: the child it starts inherits its classes, identity and delegation.
-    expect(execute).toHaveBeenCalledWith(scope, runs[runId], { op: "start", agent: context.agent, message: "Count active rows" });
-    expect((await post(inputId)).status).toBe(409);
-    expect(execute).toHaveBeenCalledTimes(1);
-  } finally {
-    await new Promise<void>(done => server.close(() => done()));
-  }
-});
-
 it("accepts a delegated process cursor from the URL and rejects invalid cursor queries", async () => {
   const streamId = "55555555-5555-4555-8555-555555555555";
   const taskId = inputId;
@@ -306,7 +276,7 @@ it("accepts a delegated process cursor from the URL and rejects invalid cursor q
 
 it("a registered provider sees typed inputs outside the lock; PI keeps their receipt identity", async () => {
   const { channel: port, locked } = channel();
-  vi.spyOn(port.facts, "pending").mockResolvedValue([{ id: inputId, runId: null, messageSeq: 8, contextSeq: null, message: notification }]);
+  vi.spyOn(port.facts, "pending").mockResolvedValue([{ id: inputId, runId: null, intentId: null, messageSeq: 8, contextSeq: null, message: notification }]);
   const fetch = vi.fn(async (_url: unknown, init: { body?: string }) => {
     expect(locked()).toBe(false);
     expect(JSON.parse(init.body as string)).toMatchObject({ mode: "steer", input: notification, agent: context.agent, actor: context.actor });
@@ -319,7 +289,7 @@ it("a registered provider sees typed inputs outside the lock; PI keeps their rec
 });
 it("does not turn a provider refusal into model input or an empty success", async () => {
   const { channel: port } = channel();
-  vi.spyOn(port.facts, "pending").mockResolvedValue([{ id: inputId, runId: null, messageSeq: 8, contextSeq: null, message: notification }]);
+  vi.spyOn(port.facts, "pending").mockResolvedValue([{ id: inputId, runId: null, intentId: null, messageSeq: 8, contextSeq: null, message: notification }]);
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "CALLER_EXPIRED", message: "Caller expired" } }, { status: 403 })));
   await expect(port.prepareSteer(scope, run, receipt(notification))).rejects.toMatchObject({ code: "CALLER_EXPIRED" });
 });
@@ -464,7 +434,7 @@ it("ordinary busy send refuses before receipt, while replyTo selects steering au
   const target={...source.session,sessionId:inputId};
   vi.spyOn(port.facts,"binding").mockResolvedValue({agent:context.agent,actor:context.actor,parent:source});
   const receive=vi.spyOn(port.facts,"receive");
-  await expect(port.deliver(target,context.actor,{...notification,kind:"agent-message",replyTo:undefined})).rejects.toMatchObject({code:"SESSION_BUSY"});
+  await expect(port.deliver(target,context.actor,{...notification,kind:"agent-message",replyTo:undefined},{senderAuthority:context.authority})).rejects.toMatchObject({code:"SESSION_BUSY"});
   expect(receive).not.toHaveBeenCalled();
   vi.spyOn(port.facts,"question").mockResolvedValue({...notification,kind:"agent-question",source:{session:target,runId:inputId}});
   const deliver=vi.spyOn(port,"deliver").mockResolvedValue({messageId:inputId,taskId:null,sessionRef:target});
@@ -481,7 +451,7 @@ it("a question without a creator is output on its own run and does not stop it",
 it("fails explicitly after runtime memory is lost and never passes a missing credential to prepare",async()=>{
   const {runtime}=channel(),port=new AgentChannel(runtime);
   vi.spyOn(port.facts,"intent").mockResolvedValue({id:runId,session:source.session,channel:context,inputId,status:"running",language:"en",createdAt:new Date(0).toISOString(),error:null,cancelled:false});
-  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8, contextSeq: null,message:notification}]);const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,intentId:null,messageSeq:8, contextSeq: null,message:notification}]);const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
   await expect(port.prepareSteer(scope, run, receipt(notification))).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -505,14 +475,14 @@ it("retains only the root credential until delegated business attachments finish
 
 it("turns an expired initiating credential into an explicit restart instruction",async()=>{
   const {channel:port}=channel();
-  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8, contextSeq: null,message:notification}]);
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,intentId:null,messageSeq:8, contextSeq: null,message:notification}]);
   vi.stubGlobal("fetch",vi.fn(async()=>Response.json({success:false},{status:401})));
   await expect(port.prepareSteer(scope, run, receipt(notification))).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
 });
 
 it("projects the original question, default and reply as one context message for steering and a new round",async()=>{
   const {channel:port}=channel();
-  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8, contextSeq: null,message:notification}]);
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,intentId:null,messageSeq:8, contextSeq: null,message:notification}]);
   vi.spyOn(port.facts,"question").mockResolvedValue({role:"notification",kind:"agent-question",source,content:"Which period?",defaultAssumption:"Current year",timestamp:0});
   vi.stubGlobal("fetch",vi.fn(async()=>Response.json({accepted:true})));
   const { message: inserted, id } = await port.prepareSteer(scope, run, receipt(notification));
@@ -583,7 +553,7 @@ it("imports provider dataset bytes into the caller's ordinary output snapshots",
 it.each(["running","preparing"])("web input joins the %s execution and reaches the shared steer preparation",async phase=>{
   const {runtime,channel:port}=channel();
   const message={role:"user" as const,content:"Use the current period",timestamp:2};
-  const record={id:inputId,runId:null,messageSeq:9,contextSeq:null,message};
+  const record={id:inputId,runId:null,intentId:null,messageSeq:9,contextSeq:null,message};
   runtime.store.session=vi.fn().mockResolvedValue({activeRunId:phase==="running"?runId:null});
   runtime.acceptsInput=vi.fn(()=>phase==="running");runtime.inputReceived=vi.fn();
   vi.spyOn(port.facts,"binding").mockResolvedValue({agent:context.agent,actor:context.actor,parent:null});
@@ -619,7 +589,7 @@ it("web input after sealing reserves one next intent without preparing against t
 
 it("keeps the run's fixed executor while its actor and credential remain the initiator", async () => {
   const {channel:port}=channel();
-  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,contextSeq:null,message:notification}]);
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,intentId:null,messageSeq:8,contextSeq:null,message:notification}]);
   const prepared=vi.fn(async (_url:unknown,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
     const body=JSON.parse(String(init.body));
     expect(body.actor).toEqual(context.actor);
@@ -636,7 +606,7 @@ it("keeps the run's fixed executor while its actor and credential remain the ini
 
 it("keeps a selected user equal to the initiator distinct from null self mode",async()=>{
  const {channel:port}=channel();
- vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,contextSeq:null,message:notification}]);
+ vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,intentId:null,messageSeq:8,contextSeq:null,message:notification}]);
  const actors:unknown[]=[];
  vi.stubGlobal("fetch",vi.fn(async (_url:unknown,init:NonNullable<Parameters<typeof fetch>[1]>)=>{actors.push(JSON.parse(String(init.body)).executionActor);return Response.json({accepted:true});}));
  await port.prepareSteer(scope, {...run,executionUserId:null}, receipt(notification));
@@ -697,7 +667,7 @@ it("wakes an idle questioning session for the ordinary user answer with the huma
  vi.spyOn(port.facts,"latest").mockResolvedValue(previous);
  const reserve=vi.spyOn(port.facts,"reserve").mockImplementation(async(_scope,_session,id,inputId,channel)=>({...previous,id,inputId,channel,status:"starting"}));
  const prepare=vi.spyOn(port,"prepare").mockResolvedValue();
- await port.deliver(source.session,fresh,{...notification,source:{kind:"user"},selectedOption:1,answerId:inputId},{steer:true});
+ await port.deliver(source.session,fresh,{...notification,source:{kind:"user"},selectedOption:1,answerId:inputId},{steer:true,senderAuthority:context.authority});
  expect(reserve.mock.calls[0][4]).toMatchObject({actor:fresh,root:source});expect(prepare).toHaveBeenCalledTimes(1);
 });
 
@@ -906,58 +876,147 @@ it("lets a preview stop only a preview's run, and a live run stop as before", as
   expect(cancel).toHaveBeenCalledTimes(2);
 });
 
-describe("native deliveries into a conversation that holds runs of both identities", () => {
+describe("an input runs with its sender's identity, never its recipient's", () => {
   const previewRunId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   const childId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const questionId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
   const childSession = { providerId: "registered-custom", sessionId: childId };
+  const humanSession = "abababab-abab-4bab-8bab-abababababab";
   const previewAuthority = { ...humanChannel.authority, executionKind: "preview" as const };
-  function mixed() {
-    // A live turn is running; an earlier preview turn in the same conversation delegated to a child.
+  const intentOf = (id: string, session: AgentSessionRef, channel: AgentRunContext, status: AgentRunIntent["status"]): AgentRunIntent =>
+    ({ id, session, channel, inputId: id, status, language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false });
+  function live() {
+    // The conversation's live turn is running. Its child was settled as a preview by its provider, and an earlier preview
+    // turn of the same conversation is waiting for an answer.
     const fixture = currentRun(humanChannel, "running");
     const { port, intents } = fixture;
     const previewChannel = { ...humanChannel, authority: previewAuthority, root: { session: source.session, runId: previewRunId } };
-    intents.set(previewRunId, { id: previewRunId, session: source.session, channel: previewChannel, inputId, status: "completed",
-      language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false });
-    const childChannel = { ...previewChannel, requestedBy: { session: source.session, runId: previewRunId } };
-    intents.set(childId, { id: childId, session: childSession, channel: childChannel, inputId: childId, status: "completed",
-      language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false });
+    intents.set(previewRunId, intentOf(previewRunId, source.session, previewChannel, "completed"));
+    const childChannel = { ...humanChannel, authority: previewAuthority, requestedBy: { session: source.session, runId } };
+    intents.set(childId, intentOf(childId, childSession, childChannel, "completed"));
     vi.spyOn(port.facts, "delivered").mockResolvedValue(undefined);
     vi.mocked(port.facts.binding).mockImplementation(async (_scope, id) => ({
-      agent: context.agent, actor: context.actor, parent: id === childId ? { session: source.session, runId: previewRunId } : null,
+      agent: context.agent, actor: context.actor, parent: id === childId ? { session: source.session, runId } : null,
     }));
     const childRun = { ...run, id: childId, sessionId: childId, status: "running" as const, channel: childChannel };
-    return { ...fixture, childRun };
+    return { ...fixture, childRun, previewChannel };
   }
+  const queuedAs = (fixture: ReturnType<typeof live>, taskId: string | null) => {
+    expect(taskId).not.toBeNull();
+    expect(taskId).not.toBe(runId);
+    expect(fixture.runtime.inputReceived).not.toHaveBeenCalled();
+    return fixture.intents.get(taskId!)!.channel.authority.executionKind;
+  };
 
-  it("queues a preview child's result as the preview's own run instead of merging it into the running live turn", async () => {
-    const { port, intents, runtime } = mixed();
-    const delivered = await port.deliver(source.session, context.actor, {
+  it("queues a preview child's result to its live creator as a preview run, with the creator's classes", async () => {
+    const fixture = live();
+    const delivered = await fixture.port.deliver(source.session, context.actor, {
       role: "notification", kind: "agent-result", source: { session: childSession, runId: childId },
       outcome: "completed", content: "3 rows", timestamp: 2,
-    }, { resultRecipientRunId: previewRunId });
-    expect(delivered.taskId).not.toBeNull();
-    expect(delivered.taskId).not.toBe(runId);
-    expect(intents.get(delivered.taskId!)!.channel.authority.executionKind).toBe("preview");
-    expect(runtime.inputReceived).not.toHaveBeenCalled();
+    }, { resultRecipientRunId: runId, senderAuthority: previewAuthority });
+    expect(queuedAs(fixture, delivered.taskId)).toBe("preview");
+    expect(fixture.intents.get(delivered.taskId!)!.channel.authority.classNames).toEqual(humanChannel.authority.classNames);
   });
 
-  it("delivers a preview child's message to its creator run's identity, never into the running live turn", async () => {
-    const { port, intents, runtime, childRun } = mixed();
-    const sent = await port.execute(scope, childRun, { op: "send", session: "parent", message: "Which period?", steer: true });
-    expect(sent).toMatchObject({ sessionRef: source.session });
-    const queued = (sent as { taskId: string | null }).taskId;
-    expect(queued).not.toBeNull();
-    expect(intents.get(queued!)!.channel.authority.executionKind).toBe("preview");
-    expect(runtime.inputReceived).not.toHaveBeenCalled();
+  it("queues a preview child's message to its live creator as a preview run, never steering the creator", async () => {
+    const fixture = live();
+    const sent = await fixture.port.execute(scope, fixture.childRun, { op: "send", session: "parent", message: "Which period?", steer: true });
+    expect(queuedAs(fixture, (sent as { taskId: string | null }).taskId)).toBe("preview");
+  });
+
+  it("refuses a preview's answer to a live run's question before anything is written, on every route", async () => {
+    const fixture = live();
+    const receive = vi.mocked(fixture.port.facts.receive);
+    const question = { role: "notification" as const, kind: "agent-question" as const, source: { session: source.session, runId },
+      content: "Which period?", defaultAssumption: "This year", timestamp: 1 };
+    const answer = { role: "notification" as const, kind: "agent-answer" as const, replyTo: questionId, source: { kind: "user" as const },
+      content: "Last year", timestamp: 2 };
+    const refused = { status: 422, code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验" };
+    const previewHuman = { ...humanChannel, authority: previewAuthority };
+    // A human, from a preview, answering the question the live run sent to them.
+    vi.mocked(fixture.port.facts.question).mockResolvedValue({ ...question, recipient: "user" });
+    vi.spyOn(fixture.port.facts, "userQuestion").mockResolvedValue({ scope, sessionId: humanSession,
+      record: { id: questionId, runId, messageSeq: 1, contextSeq: null, message: { ...question, recipient: "user" } } });
+    await expect(fixture.port.request(scope, humanSession, nextRunId, previewHuman, answer, "en", undefined, initiatingCredential))
+      .rejects.toMatchObject(refused);
+    // The conversation's own user, from a preview, answering the live run's question in that conversation.
+    vi.mocked(fixture.port.facts.question).mockResolvedValue(question);
+    vi.mocked(fixture.port.facts.pendingQuestions).mockResolvedValue([{ requestId: questionId, source: question.source,
+      message: question.content, defaultAssumption: question.defaultAssumption }]);
+    await expect(fixture.port.request(scope, sessionId, nextRunId, previewHuman, answer, "en", undefined, initiatingCredential))
+      .rejects.toMatchObject(refused);
+    // A preview run answering the question its live child asked it.
+    fixture.intents.get(childId)!.channel.authority = humanChannel.authority;
+    vi.mocked(fixture.port.facts.question).mockResolvedValue({ ...question, source: { session: childSession, runId: childId } });
+    vi.mocked(fixture.port.facts.binding).mockImplementation(async (_scope, id) => ({
+      agent: context.agent, actor: context.actor, parent: id === childId ? { session: source.session, runId: previewRunId } : null,
+    }));
+    const previewRun = { ...run, id: previewRunId, status: "running" as const, channel: fixture.previewChannel };
+    Object.assign(fixture.runtime.store, { run: vi.fn(async () => ({ run: previewRun })) });
+    await expect(fixture.port.execute(scope, previewRun, { op: "send", session: childSession, message: "Last year", replyTo: questionId }))
+      .rejects.toMatchObject(refused);
+    expect(receive).not.toHaveBeenCalled();
+    expect(fixture.runtime.inputReceived).not.toHaveBeenCalled();
+  });
+
+  it("gives a live answer to the preview that asked, as that preview's input", async () => {
+    const fixture = live();
+    const delivered = await fixture.port.deliver(source.session, context.actor,
+      { ...notification, source: { kind: "user" }, answerId: inputId }, { steer: true, targetRunId: previewRunId, senderAuthority: humanChannel.authority });
+    expect(queuedAs(fixture, delivered.taskId)).toBe("preview");
   });
 
   it("still merges a live input into the running live turn", async () => {
-    const { port, runtime } = mixed();
+    const { port, runtime } = live();
     const delivered = await port.deliver(source.session, context.actor,
-      { ...notification, source: { kind: "user" }, answerId: inputId }, { steer: true, targetRunId: runId });
+      { ...notification, source: { kind: "user" }, answerId: inputId }, { steer: true, targetRunId: runId, senderAuthority: humanChannel.authority });
     expect(delivered.taskId).toBeNull();
     expect(runtime.inputReceived).toHaveBeenCalledWith(scope, runId, expect.anything());
   });
+
+  it("follows up left-over input as the run it was given to, not as the run that just stopped", async () => {
+    const fixture = live();
+    fixture.receipts.set(questionId, { id: questionId, sessionId, intentId: previewRunId, runId: null, messageSeq: 1, contextSeq: null,
+      message: { ...userInput, content: "Also last year" } });
+    const followUp = await fixture.finish();
+    expect(followUp?.channel.authority.executionKind).toBe("preview");
+    expect(followUp?.inputId).toBe(questionId);
+  });
+});
+
+it("records the authority a provider settles with the run, so stopping and queueing read the run's real identity", async () => {
+  const { port, intents, submit, runtime } = presentationAdmission();
+  const previewAuthority = { ...humanChannel.authority, executionKind: "preview" as const };
+  const provider = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    const prepared = await (await provider(url, init)).json();
+    return Response.json({ ...prepared, authority: previewAuthority });
+  });
+  // The stored intent, not the object being prepared, is what later readers see.
+  const reserve = vi.mocked(port.facts.reserve).getMockImplementation()!;
+  vi.mocked(port.facts.reserve).mockImplementation(async (...args) => {
+    const intent = await reserve(...args);
+    intents.set(intent.id, structuredClone(intent));
+    return intent;
+  });
+  vi.mocked(port.facts.intent).mockImplementation(async (_scope, id) => structuredClone(intents.get(id)!));
+  vi.mocked(port.facts.update).mockImplementation(async (_scope, intent) => { intents.set(intent.id, structuredClone(intent)); });
+  // A live message to a conversation its provider keeps as a preview's.
+  await submit();
+  expect(intents.get(runId)!.channel.authority).toEqual(previewAuthority);
+  expect((runtime.start as ReturnType<typeof vi.fn>).mock.calls[0]?.[5]).toMatchObject({ channel: { authority: previewAuthority } });
+  // A preview may stop it: it is a preview's run.
+  const cancel = vi.spyOn(port, "cancel").mockResolvedValue();
+  vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: intents.get(runId)! });
+  await expect(port.execute(scope, { ...run, channel: { ...context, authority: previewAuthority } }, { op: "cancel", taskId: runId }))
+    .resolves.toMatchObject({ accepted: true });
+  expect(cancel).toHaveBeenCalledWith(scope, intents.get(runId));
+  // A preview's message joins it while it waits, as a run of the same identity.
+  vi.mocked(port.facts.waiting).mockResolvedValue(runId);
+  intents.set(runId, { ...intents.get(runId)!, status: "starting" });
+  const joined = await port.request(scope, sessionId, nextRunId, { ...humanChannel, authority: previewAuthority,
+    root: { session: source.session, runId: nextRunId } }, userInput, "en", undefined, initiatingCredential);
+  expect(joined.delivery).toMatchObject({ runId, delivery: "steer" });
 });
 
 it("keeps the original human message when the background turn is still preparing", async () => {

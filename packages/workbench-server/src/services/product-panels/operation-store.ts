@@ -37,6 +37,15 @@ export const panelOperationStore = {
     )).rows[0];
     return row ? readStoredPanelOperationIntent(row.intent) : null;
   },
+  async findAgentPageQuestion(owner: AssistantOwner, questionId: string) {
+    const row = (await db().query(
+      `SELECT intent FROM ${t("panel_operation_intents")}
+       WHERE domain_id=$1 AND owner_id=$2 AND question_id=$3 AND intent->'source'->>'kind'='agent-page'
+       LIMIT 1`,
+      [owner.domainId, owner.userId, questionId],
+    )).rows[0];
+    return row ? readStoredPanelOperationIntent(row.intent) : null;
+  },
   async cancelIntent(owner: AssistantOwner, id: string, reason: { code: string; message: string }): Promise<boolean> {
     const result = await db().query(
       `UPDATE ${t("panel_operation_intents")}

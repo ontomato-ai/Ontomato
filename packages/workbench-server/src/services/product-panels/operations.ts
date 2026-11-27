@@ -602,15 +602,29 @@ const pendingLocalConfirmations = new Map<string, {
   readonly domainId: string;
   readonly userId: string;
   readonly intentId: string;
+  /** Whether the run that asked for the confirmation is a preview's. */
+  readonly preview: boolean;
   readonly createdAt: number;
 }>();
 const MAX_PENDING_LOCAL_CONFIRMATIONS = 1000;
 
-export function registerPendingLocalConfirmation(owner: AssistantOwner, questionId: string, intentId: string): void {
+/**
+ * Cancelling or claiming a pending operation decides whether it still goes ahead, so a preview decides only a preview
+ * run's: judged by the run that prepared it, before anything is changed.
+ */
+function refusePreviewDeciding(credentials: AssistantCredentials, preparedByPreview: boolean) {
+  if (credentials.executionKind === "preview" && !preparedByPreview) throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
+}
+function preparedByPreview(record: StoredPanelOperationIntent) {
+  return record.kind === "current" && record.intent.source.kind === "agent-page" && record.intent.source.executionKind === "preview";
+}
+
+export function registerPendingLocalConfirmation(owner: AssistantOwner, questionId: string, intentId: string, preview: boolean): void {
   pendingLocalConfirmations.set(questionId, {
     domainId: owner.domainId,
     userId: owner.userId,
     intentId,
+    preview,
     createdAt: Date.now(),
   });
   while (pendingLocalConfirmations.size > MAX_PENDING_LOCAL_CONFIRMATIONS) {
@@ -620,31 +634,45 @@ export function registerPendingLocalConfirmation(owner: AssistantOwner, question
   }
 }
 
+function ownLocalConfirmation(owner: AssistantOwner, questionId: string) {
+  const entry = pendingLocalConfirmations.get(questionId);
+  return entry && entry.domainId === owner.domainId && entry.userId === owner.userId ? entry : undefined;
+}
+
 export function claimPendingLocalConfirmation(
   owner: AssistantOwner,
+  credentials: AssistantCredentials,
   questionId: string,
 ): { readonly ok: true; readonly intentId: string } | { readonly ok: false; readonly message: string } {
-  const entry = pendingLocalConfirmations.get(questionId);
-  if (!entry || entry.domainId !== owner.domainId || entry.userId !== owner.userId) {
+  const entry = ownLocalConfirmation(owner, questionId);
+  if (!entry) {
     return {
       ok: false,
       message: "The local confirmation question was already consumed, cancelled, or expired.",
     };
   }
+  refusePreviewDeciding(credentials, entry.preview);
   pendingLocalConfirmations.delete(questionId);
   return { ok: true, intentId: entry.intentId };
 }
 
-export async function cancelHumanPanelOperation(owner: AssistantOwner, id: string, reason: { code: string; message: string }) {
+export async function cancelHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, id: string, reason: { code: string; message: string }) {
+  if (credentials.executionKind === "preview") refusePreviewDeciding(credentials, preparedByPreview(await store.get(owner, id)));
   const cancelled = await store.cancelIntent(owner, id, reason);
   return { intentId: id, cancelled };
 }
 
-export async function cancelPendingAgentPageQuestion(owner: AssistantOwner, questionId: string, reason: { code: string; message: string }) {
+export async function cancelPendingAgentPageQuestion(owner: AssistantOwner, credentials: AssistantCredentials, questionId: string, reason: { code: string; message: string }) {
+  if (credentials.executionKind === "preview") {
+    const prepared = await store.findAgentPageQuestion(owner, questionId);
+    const local = ownLocalConfirmation(owner, questionId);
+    if (prepared) refusePreviewDeciding(credentials, preparedByPreview(prepared));
+    else if (local) refusePreviewDeciding(credentials, local.preview);
+  }
   const cancelled = await store.cancelPendingAgentPageQuestion(owner, questionId, reason);
   if (cancelled) return { stale: true as const, intentId: cancelled.intentId };
-  const local = pendingLocalConfirmations.get(questionId);
-  if (local && local.domainId === owner.domainId && local.userId === owner.userId) {
+  const local = ownLocalConfirmation(owner, questionId);
+  if (local) {
     pendingLocalConfirmations.delete(questionId);
     return { stale: true as const, intentId: local.intentId };
   }

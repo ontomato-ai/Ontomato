@@ -48,6 +48,7 @@ public class OntologyAgentController {
       @RequestBody JSONObject body,
       HttpServletRequest req)
       throws Exception {
+    OntologyAgentAccess.refuseAgentExecution(req);
     AgentJson.fields(body, "agentId");
     return host.create(
         AgentJson.id(key), AgentJson.id(body.getString("agentId")), access.forAgentUse(req,body.getString("agentId")).owner());

@@ -42,6 +42,7 @@ vi.mock("../../assistant/store", () => ({ assistantStore: { opsDiagnosis: vi.fn(
 vi.mock("../../assistant/authorization", () => ({ agentAllowed: async () => true, requireAgent: async () => {} }));
 vi.mock("../../agent-host/caller", () => ({ openAgentCaller: async () => ({ id: "caller", domainId: "domain" }) }));
 vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: {} }));
+vi.mock("../../../identity/management", () => ({ requireManagement: () => (_req: unknown, _res: unknown, next: () => void) => next() }));
 vi.mock("../../../utils/request-identity", async original => ({
   ...await original<typeof import("../../../utils/request-identity")>(), requireDomainId: (req: { domainId: string }) => req.domainId,
 }));
@@ -102,6 +103,15 @@ it("runs a live conversation live, a preview's message in it as the preview, and
   sent.length = 0;
   await post(`/sessions/${sessionId}/runs`, { ...preview, "Idempotency-Key": runId }, { message: "And now?" });
   expect(startedAuthority()).toBe("preview");
+});
+
+it("refuses a run's callback opening a diagnosis conversation, before anything is stored", async () => {
+  const execution = { "X-Ontomato-Agent-Execution": runId };
+  expect((await post("/sessions", execution, { agentId: DIAGNOSIS_AGENT_ID })).status).toBe(403);
+  const diagnoses = await fetch(base.replace("/agent", "/diagnoses"), { method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": sessionId, ...execution }, body: JSON.stringify({ target: {} }) });
+  expect(diagnoses.status).toBe(403);
+  expect(state.rows.size).toBe(0);
 });
 
 it("lets a preview stop only a preview's run", async () => {
