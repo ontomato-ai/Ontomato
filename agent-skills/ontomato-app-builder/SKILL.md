@@ -118,4 +118,6 @@ use the product's analyst skill and follow [agent delegation](GUIDE.md#agent-del
 
 When an Action starts or advances a workflow, use the `query_runtime` `praxis_*` scaffold with the
 platform-provided `ONTOMATO_PRAXIS_URL` and `ONTOMATO_CALLER_TK`. Never declare the caller token as an
-Action parameter, print it, or expose it through a panel.
+Action parameter, print it, or expose it through a panel. Read
+[Praxis helper contracts](references/praxis-helpers.md) before writing the Action; the runtime's
+`helpers` output remains authoritative for exact signatures.

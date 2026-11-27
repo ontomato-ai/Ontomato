@@ -221,7 +221,9 @@ A definition without an ID creates an asset; with an ID it updates that asset. U
 Actions that orchestrate Praxis use the `praxis_*` helpers from `query_runtime`. The Action runtime supplies
 `ONTOMATO_PRAXIS_URL` and a server-only `ONTOMATO_CALLER_TK` for the current human caller. Do not add the token to
 `function.parameters`, print it, write it to an ontology object, or return it from an Action. The helpers cover Runs,
-assignments, decisions, inbox/candidates, and Case reads/writes through the product `/api/praxis` boundary.
+assignments, decisions, inbox/candidates, and Case reads/writes through the product `/api/praxis` boundary. Read
+[Praxis helper contracts](references/praxis-helpers.md) for the minimum input and result shapes, plus the idempotent
+Run lookup pattern.
 
 ## Agent delegation
 

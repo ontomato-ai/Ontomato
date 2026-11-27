@@ -193,9 +193,14 @@ from query_runtime import parameters as params, praxis_start_run
 
 run = praxis_start_run(
     workflow_id="campus_midterm_check_v1",
-    inputs={"s1": {"task_id": params["task_id"]}},
-    # These are candidate.principal values from praxis_step_candidates(), normally loginCode.
+    # Template step id -> that step's parameter object.
+    inputs={
+        "s1": {"task_id": params["task_id"]},
+        "s2": {"task_id": params["task_id"]},
+    },
+    # Template step id -> candidate.principal from praxis_step_candidates(), normally loginCode.
     assignments={"s1": params["teacher"], "s2": params["director"]},
+    acts_on=[{"targetClass": "school_task", "targetId": params["task_id"]}],
 )
 
 print(json.dumps({
@@ -205,30 +210,36 @@ print(json.dumps({
 }, ensure_ascii=False))
 ```
 
-Supported helpers:
+Compact contract:
 
-| Helper | Product Praxis route |
-|---|---|
-| `praxis_list_runs(status=None, limit=None)` | `GET /runs` |
-| `praxis_get_run(run_id)` | `GET /runs/:id` |
-| `praxis_start_run(...)` | `POST /runs` |
-| `praxis_tick_run(run_id)` | `POST /runs/:id/tick` |
-| `praxis_bind_run(run_id, target_class, target_id)` | `POST /runs/:id/acts-on` |
-| `praxis_inbox(assignee=None)` | `GET /inbox` |
-| `praxis_subjects()` | `GET /subjects` |
-| `praxis_assign_step(step_id, principal)` | `POST /steps/:id/assign` |
-| `praxis_decide_step(step_id, verdict, comment=None)` | `POST /steps/:id/decide` |
-| `praxis_step_candidates(step_id)` | `GET /steps/:id/candidates` |
-| `praxis_case(run_id)` | `GET /runs/:id/case` |
-| `praxis_case_submit/fill/close(...)` | `POST /runs/:id/case/*` |
+| Purpose | Helpers | Result |
+|---|---|---|
+| Find Runs | `praxis_list_runs(status=None, limit=None, target_class=None, target_id=None)` | `RunSummary[]` |
+| Read/advance one Run | `praxis_get_run`, `praxis_tick_run`, `praxis_bind_run` | `RunRecord` |
+| Start a workflow | `praxis_start_run` | `RunRecord` |
+| Assign/decide a step | `praxis_assign_step`, `praxis_decide_step` | Updated `RunRecord` |
+| Read work or subjects | `praxis_inbox`, `praxis_subjects(role=None)`, `praxis_step_candidates` | `InboxItem[]` or `CandidateReport` |
+| Read/write a Case | `praxis_case`, `praxis_case_submit`, `praxis_case_fill`, `praxis_case_close` | `CaseRecord` |
+
+`RunSummary` has `id, templateRef, status, requester, createdAt, updatedAt` and no `steps`.
+`RunRecord` has `id, status, requester, actsOn, steps`; steps expose
+`id, stepRef, status, assignee, assignedTo, decision, output, error`. A step's `id` is the
+run-time id used by assignment/decision helpers; `stepRef` is the template name such as `s1`.
+`CandidateReport.candidates[]` has `principal, displayName, roleIds`. Run the
+`generation.mjs helpers` command for the exact signatures and the full `InboxItem` and
+`CaseRecord` shapes when those are needed.
+
+`inputs` is a mapping from template step id to a parameter object. `assignments` maps template
+step ids to `candidate.principal`, normally `loginCode`; do not substitute an arbitrary member id
+or `assignedBy`. `acts_on` is a list of
+`{"targetClass": "...", "targetId": "..."}` objects. Successful helpers return JSON directly,
+without a `{success, data}` wrapper; HTTP failures and `{error: ...}` raise `RuntimeError`.
 
 The helpers use the signed-in caller identity for `requester`, `assignedBy` and `decider`. An Action
 must not accept another subject's token, impersonate another caller, or call `/internal/*`. Prefer one
 short retry after a timeout only when the business object carries an idempotency key and the Action can
-first query the existing Run; otherwise report the ambiguity instead of blindly creating a duplicate.
-Explicit assignees are legitimate Action parameters: declare one string parameter per human step and
-pass the `principal` returned by `praxis_step_candidates()` for that step. That value is currently the
-subject's `loginCode` when one exists; do not substitute an unrelated member id or `assignedBy`.
+first query the existing Run with `target_class` and `target_id`; otherwise report the ambiguity
+instead of blindly creating a duplicate.
 The authoring generation sandbox may not carry a human session. In that case, never synthesize or hard-code
 one: validate the business-write portion there, and leave the external Praxis integration for the saved
 Action's `/action/trial`, which runs with the signed-in caller's token.
