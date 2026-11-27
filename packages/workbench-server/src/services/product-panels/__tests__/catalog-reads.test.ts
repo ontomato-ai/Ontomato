@@ -2,12 +2,15 @@ import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations
 import { PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { HttpError } from "../../../utils/errors";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
+import type { PanelReadBatchCache } from "../member-path";
+import type { RegisteredDataReadContext } from "../registered-data-read";
 import type { PanelOperationHost } from "../server-operations";
 
 const mocks = vi.hoisted(() => ({
@@ -216,14 +219,21 @@ it("requests only USE for panel picker options and projection facets", async () 
 
 it("preserves picker options and uses the admitted range without another authorization round", async () => {
   const { productCatalogueDataReadRegistrations } = await import("../catalog-reads");
-  const options = productCatalogueDataReadRegistrations.find(registration =>
-    registration.typeId === PRODUCT_PANEL && registration.method === "options")!.local!;
+  const registration = productCatalogueDataReadRegistrations.find(item =>
+    item.typeId === PRODUCT_PANEL && item.method === "options")!;
+  const keyword = "Orders";
+  const page = { number: 2, size: 3 };
+  const readContext: RegisteredDataReadContext = {
+    owner, credentials,
+    selection: { kind: "platform", typeId: PRODUCT_PANEL, method: "options" },
+    params: { keyword, page }, inputs: {}, projection: {} as ProductProjection,
+    cache: { read: (_key: string, read: () => Promise<unknown>) => read() } as PanelReadBatchCache,
+  };
+  const options = await registration.plan(readContext);
   const panel = {
     ...storedPanel("reader-panel", "another-user"), ...healthyDefinition, definition: healthyDefinition,
     sortKey: "orders", editable: false,
   };
-  const keyword = "Orders";
-  const page = { number: 2, size: 3 };
   const seed = () => mocks.query.mockResolvedValueOnce({ rows: [panel] }).mockResolvedValueOnce({ rows: [{ total: 4 }] });
   seed();
   const legacy = await adapter.options(keyword, page);
@@ -234,10 +244,10 @@ it("preserves picker options and uses the admitted range without another authori
     USE: { fixed: true, authorId: null, objectIds: grantedIds.use, all: false },
     EDIT: { fixed: false, authorId: owner.userId, objectIds: grantedIds.edit, all: false },
   };
-  await expect(options.read(owner, { PANEL: ranges }, undefined, credentials, undefined, { keyword, page }))
+  await expect(options.present([{ status: "ready", visibility: { PANEL: ranges } }], readContext))
     .resolves.toEqual(legacy);
   expect(legacy).toEqual({ options: [{ primaryKey: panel.id, value: panel.id, label: "Orders" }], total: 4 });
-  expect(options.visibility).toEqual([{ kind: "PANEL", verbs: ["USE"] }]);
+  expect(options.reads[0].visibleKinds).toEqual([{ kind: "PANEL", verbs: ["USE"] }]);
   expect(mocks.ranges).not.toHaveBeenCalled();
   expect(mocks.decide).not.toHaveBeenCalled();
 });

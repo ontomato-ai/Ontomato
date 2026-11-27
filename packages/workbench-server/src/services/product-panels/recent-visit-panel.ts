@@ -9,7 +9,7 @@ import type { ProductOwner } from "../product-governance/service-authentication"
 import { APPLICATION_NAVIGATION_READ, applicationCatalogueClient, applicationNavigationFactsSchema } from "./application-catalogue";
 import { formatShortDateTime } from "./agent-session-panel";
 import type { PanelReadSelection } from "./panel-owner-reads";
-import type { RegisteredDataReadRegistration } from "./registered-data-read";
+import { ownerReadRegistration, type RegisteredDataReadRegistration } from "./registered-data-read";
 
 const recentText = (locale: string | undefined, key: string) => tForLocale(locale, `panels.recentVisit.${key}`);
 
@@ -99,8 +99,6 @@ export function prepareRecentVisitRead(
 }
 
 export const recentVisitDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  {
-    typeId: RECENT_VISIT, method: "list",
-    prepare: ({ owner, credentials, selection, params }) => prepareRecentVisitRead(owner, credentials, selection, params),
-  },
+  ownerReadRegistration(RECENT_VISIT, "list", ({ owner, credentials, selection, params }) =>
+    prepareRecentVisitRead(owner, credentials, selection, params)),
 ];

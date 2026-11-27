@@ -10,7 +10,7 @@ import { assertManagement } from "../../identity/management";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { PanelReadServerOperation } from "../product-panels/server-operations";
-import { managedRegisteredOpsRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { localReadRegistration, managedRegisteredOpsRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { countFeedback, listFeedback } from "./feedback-store";
 import { exportFeedback, feedbackExportTimeZone } from "./feedback-export";
@@ -198,16 +198,10 @@ export const feedbackExportOperation = {
 } satisfies PanelReadServerOperation & { labelKey: string };
 
 export const feedbackDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  {
-    typeId: FEEDBACK_RECORD, method: "query",
-    local: managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, _key, params) => reads.query(params)),
-  },
-  {
-    typeId: FEEDBACK_RECORD, method: "counts",
-    local: managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, _key, params) => reads.counts(params)),
-  },
-  {
-    typeId: FEEDBACK_RECORD, method: "record",
-    local: managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, key) => reads.record(key)),
-  },
+  localReadRegistration(FEEDBACK_RECORD, "query",
+    managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, _key, params) => reads.query(params))),
+  localReadRegistration(FEEDBACK_RECORD, "counts",
+    managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, _key, params) => reads.counts(params))),
+  localReadRegistration(FEEDBACK_RECORD, "record",
+    managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, key) => reads.record(key))),
 ];

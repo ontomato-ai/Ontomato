@@ -13,7 +13,8 @@ import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { currentDefinitionAccess, definitionVisibleInRange, type DefinitionVisibilityRange } from "./access";
 import { findDetailPanel, findObjectDetailPanelId } from "./object-detail";
-import type { RegisteredDataReadRegistration, RegisteredLocalDataRead } from "./registered-data-read";
+import { stableJson, type JavaPanelReadResult } from "./java-panel-reads";
+import { readyPayload, type RegisteredDataReadContext, type RegisteredDataReadRegistration, type RegisteredLocalDataRead } from "./registered-data-read";
 
 export const objectDetailText = (locale: string | undefined, key: string) =>
   tForLocale(locale, `panels.objectDetail.${key}`);
@@ -118,7 +119,6 @@ function objectDetailRegisteredRead(
   return {
     visibility: [{ kind: "PANEL", verbs: ["USE"] }],
     readJavaFacts: true,
-    cache: true,
     read(owner, ranges, facts, credentials, primaryKey, params) {
       const adapter = createRegisteredObjectDetailReadAdapter(owner, credentials, z.boolean().parse(facts), ranges!.PANEL.USE);
       return read(adapter, primaryKey!, params);
@@ -126,20 +126,37 @@ function objectDetailRegisteredRead(
   };
 }
 
+
 const objectDetailFactsCall = (method: string) => ({ type: OBJECT_TYPE, name: method === "detailPanelForm" ? "detailPanel" : method, parameters: {} });
+
+function objectDetailPlan(
+  context: RegisteredDataReadContext,
+  local: RegisteredLocalDataRead,
+  method: string,
+) {
+  return {
+    reads: [{ call: objectDetailFactsCall(method), visibleKinds: local.visibility }],
+    present: async (results: readonly JavaPanelReadResult[]) => {
+      const { payload, visibility } = readyPayload(results[0]);
+      const read = () => local.read(context.owner, visibility, payload, context.credentials, context.selection.primaryKey, context.params);
+      return context.cache.read(
+        stableJson([context.selection.typeId, context.selection.method, context.selection.primaryKey ?? null, context.params, results[0]]),
+        async () => read(),
+      );
+    },
+  };
+}
 
 export const objectDetailDataReadRegistrations: RegisteredDataReadRegistration[] = [
   {
     typeId: OBJECT_TYPE, method: "detailPanel",
-    javaCall: () => objectDetailFactsCall("detailPanel"),
-    local: objectDetailRegisteredRead((adapter, key) => adapter.record(key)),
+    plan: context => objectDetailPlan(context, objectDetailRegisteredRead((adapter, key) => adapter.record(key)), "detailPanel"),
   },
   {
     typeId: OBJECT_TYPE, method: "detailPanelForm",
-    javaCall: () => objectDetailFactsCall("detailPanelForm"),
-    local: objectDetailRegisteredRead((adapter, key, params) => {
+    plan: context => objectDetailPlan(context, objectDetailRegisteredRead((adapter, key, params) => {
       requireFormFieldNames(params.values, "values");
       return adapter.form(key, params.values as PanelFormValues | undefined);
-    }),
+    }), "detailPanelForm"),
   },
 ];

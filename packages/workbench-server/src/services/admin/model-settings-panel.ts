@@ -65,7 +65,7 @@ import {
   type DataQueryOperationHost,
 } from "../product-panels/data-query-operations";
 import type { JavaPanelRead } from "../product-panels/java-panel-reads";
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { ownerReadRegistration, type RegisteredDataReadContext, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { operationHost } from "../product-panels/operation-host";
 import type {
   PanelImpactInspector,
@@ -2136,18 +2136,15 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
   },
 ];
 
-function prepareRegisteredModelSettingsRead(context: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) {
+function prepareRegisteredModelSettingsRead(context: RegisteredDataReadContext) {
   return prepareModelSettingsRead(context.selection, context.params, context.credentials.locale);
 }
 
 export const modelSettingsDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  ...(["list", "record", "form", "createForm", "createModelForm", "models", "usages"] as const).map(method => ({
-    typeId: MODEL_CONNECTION, method, prepare: prepareRegisteredModelSettingsRead,
-  })),
-  ...(["record", "form"] as const).map(method => ({
-    typeId: MODEL_ENTRY, method, prepare: prepareRegisteredModelSettingsRead,
-  })),
-  ...(["form", "vectorRebuild"] as const).map(method => ({
-    typeId: MODEL_USAGE, method, prepare: prepareRegisteredModelSettingsRead,
-  })),
+  ...(["list", "record", "form", "createForm", "createModelForm", "models", "usages"] as const).map(method =>
+    ownerReadRegistration(MODEL_CONNECTION, method, prepareRegisteredModelSettingsRead)),
+  ...(["record", "form"] as const).map(method =>
+    ownerReadRegistration(MODEL_ENTRY, method, prepareRegisteredModelSettingsRead)),
+  ...(["form", "vectorRebuild"] as const).map(method =>
+    ownerReadRegistration(MODEL_USAGE, method, prepareRegisteredModelSettingsRead)),
 ];

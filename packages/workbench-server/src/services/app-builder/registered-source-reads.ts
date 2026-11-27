@@ -8,7 +8,7 @@ import type { AssistantOwner } from "../assistant/store";
 import { fixedRowOperationTarget, presentRowOperationsForRows, resolvePinnedBoundParams } from "../product-panels/direct-operations";
 import type { PreparedOwnerReadFacts } from "../product-panels/java-panel-reads";
 import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { ownerFactsRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { withReadDirective } from "../product-panels/read-directive";
 import { ApplicationBuilderReadAdapter, sourceCommitPage } from "./application-panel-reads";
 import {
@@ -99,9 +99,7 @@ export async function prepareBuilderSourceFacts(
 }
 
 export const applicationBuilderSourceDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  ...(["sourceFiles", "sourceFile", "sourceDiff", "sourceCommits", "sourceReleases"] as const).map(method => ({
-    typeId: APPLICATION, method,
-    facts: ({ owner, credentials, selection, params, projection, inputs }: Parameters<NonNullable<RegisteredDataReadRegistration["facts"]>>[0]) =>
-      prepareBuilderSourceFacts(owner, credentials, selection, params, projection, inputs),
-  })),
+  ...(["sourceFiles", "sourceFile", "sourceCommits", "sourceDiff", "sourceReleases"] as const).map(method =>
+    ownerFactsRegistration(APPLICATION, method, ({ owner, credentials, selection, params, projection, inputs }) =>
+      prepareBuilderSourceFacts(owner, credentials, selection, params, projection, inputs))),
 ];

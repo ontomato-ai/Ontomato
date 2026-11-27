@@ -281,17 +281,14 @@ export function createFunctionReadAdapter(_owner: ProductOwner, viewer: Assistan
   };
 }
 
+
 export const metricFunctionDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  ...(["list", "record", "form", "createForm"] as const).map(method => ({
-    ...presentedRegisteredDataRead(FUNCTION, method, createFunctionPanelReadPresenter),
-    ...(method === "record" && { messageOnlyCodes: ["FUNCTION_NOT_FOUND"] }),
-  })),
-  {
-    ...presentedRegisteredDataRead(FUNCTION, "query", createFunctionPanelReadPresenter),
-    javaCall: ({ params }) => ({ type: FUNCTION, name: "list", parameters: { ...(params.operation !== undefined && { operation: params.operation }) } }),
-  },
-  ...(["list", "query", "record", "form", "createForm"] as const).map(method => ({
-    ...presentedRegisteredDataRead(METRIC_VIEW, method, createMetricPanelReadPresenter),
-    ...(method === "record" && { messageOnlyCodes: ["METRIC_VIEW_NOT_FOUND"] }),
-  })),
+  ...(["list", "record", "form", "createForm"] as const).map(method =>
+    presentedRegisteredDataRead(FUNCTION, method, createFunctionPanelReadPresenter, undefined,
+      method === "record" ? { messageOnlyCodes: ["FUNCTION_NOT_FOUND"] } : undefined)),
+  presentedRegisteredDataRead(FUNCTION, "query", createFunctionPanelReadPresenter, undefined, undefined,
+    ({ params }) => ({ type: FUNCTION, name: "list", parameters: { ...(params.operation !== undefined && { operation: params.operation }) } })),
+  ...(["list", "query", "record", "form", "createForm"] as const).map(method =>
+    presentedRegisteredDataRead(METRIC_VIEW, method, createMetricPanelReadPresenter, undefined,
+      method === "record" ? { messageOnlyCodes: ["METRIC_VIEW_NOT_FOUND"] } : undefined)),
 ];

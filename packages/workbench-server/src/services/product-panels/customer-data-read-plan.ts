@@ -2,6 +2,7 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import { panelReadParameterSchemas } from "@ontomato/contracts/panel-projection";
 import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { z } from "zod";
+import { HttpError } from "../../utils/errors";
 import {
   customerClassPageRequest, customerObjectRecordCall, customerQueryParams,
   prepareCustomerNeighborsRead,
@@ -13,7 +14,9 @@ import {
   instanceNeighborsParams, instanceNeighborsRequest,
 } from "../ontology-model/instance-graph-reads";
 import { presentObjectTypeLabel } from "../ontology-model/model-reads";
-import type { RegisteredDataReadRegistration } from "./registered-data-read";
+import { defaultRegisteredJavaCall, ownerReadPlan, readyPayload, RegisteredDataReadFailure, type RegisteredDataReadContext, type RegisteredDataReadRegistration } from "./registered-data-read";
+import { panelMemberReadRefusal } from "./data-reads";
+import type { JavaPanelReadResult } from "./java-panel-reads";
 import { formParams, type PanelReadSelection } from "./panel-owner-reads";
 
 const instanceRecordFacts = z.object({ record: z.unknown(), type: z.unknown() });
@@ -89,13 +92,30 @@ export function prepareCustomerDataRead(selection: PanelReadSelection, params: R
   }
 }
 
-const customerReadError = {
-  messageOnlyCodes: ["OBJECT_TYPE_NOT_FOUND"],
-  memberReadRefusal: true,
-} as const;
 
-function customerRegisteredPrepare(context: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) {
-  return prepareCustomerDataRead(context.selection, context.params, context.credentials.locale);
+async function customerRegisteredPlan(context: RegisteredDataReadContext) {
+  const ownerRead = prepareCustomerDataRead(context.selection, context.params, context.credentials.locale);
+  const base = ownerRead
+    ? ownerReadPlan(ownerRead, { messageOnlyCodes: ["OBJECT_TYPE_NOT_FOUND"] })
+    : {
+      reads: [{ call: defaultRegisteredJavaCall(context) }],
+      present: (results: readonly JavaPanelReadResult[]) =>
+        readyPayload(results[0], { messageOnlyCodes: ["OBJECT_TYPE_NOT_FOUND"] }).payload,
+    };
+  return {
+    ...base,
+    async present(results: Parameters<typeof base.present>[0], presentContext: RegisteredDataReadContext) {
+      try {
+        return await base.present(results, presentContext);
+      } catch (error) {
+        if (error instanceof HttpError) {
+          const response = panelMemberReadRefusal(error);
+          if (response) throw new RegisteredDataReadFailure(response);
+        }
+        throw error;
+      }
+    },
+  };
 }
 
 const objectTypeInstanceReadMethods = [
@@ -110,8 +130,8 @@ const objectTypeInstanceReadMethods = [
 ] as const;
 
 export const customerDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  { kind: "customer", prepare: customerRegisteredPrepare, ...customerReadError },
+  { kind: "customer", plan: customerRegisteredPlan },
   ...objectTypeInstanceReadMethods.map(method => ({
-    typeId: OBJECT_TYPE, method, prepare: customerRegisteredPrepare, ...customerReadError,
+    typeId: OBJECT_TYPE, method, plan: customerRegisteredPlan,
   })),
 ];

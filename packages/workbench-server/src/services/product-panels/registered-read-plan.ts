@@ -14,12 +14,15 @@ import { personalEntry, withPanelReadRegistration } from "./application-use";
 import { presentRowOperationsForRows } from "./direct-operations";
 import { effectiveInputs, panelMemberReadRefusal, panelReadUseCollector, prepareProjectionDataRead, projectionDataReadOutcome, resolveReadMember } from "./data-reads";
 import { prepareGovernanceListRows } from "./governance-list-row-operations";
-import { locateViaJava, readViaJava, stableJson, type JavaPanelLocateRef, type JavaPanelRead, type JavaPanelReadResult } from "./java-panel-reads";
+import { locateViaJava, readViaJava, type JavaPanelLocateRef, type JavaPanelRead } from "./java-panel-reads";
 import { memberQueryOperationParams, memberQueryPayloadSchema, presentMemberQueryRowOperations } from "./member-query-presentation";
 import { PanelReadBatchCache } from "./member-path";
 import { operationHost } from "./operation-host";
 import { attributeDeleteRowBindings, presentAttributeDeleteRows } from "./registered-attribute-reads";
-import { registeredDataReadKey, type RegisteredDataReadContext, type RegisteredDataReadRegistration } from "./registered-data-read";
+import {
+  defaultRegisteredJavaCall, readyPayload, RegisteredDataReadFailure, registeredDataReadKey,
+  type RegisteredDataReadContext, type RegisteredDataReadPlan,
+} from "./registered-data-read";
 import { registeredDataReads } from "./registered-data-reads";
 import { prepareRegisteredOperationRead } from "./registered-operation-reads";
 
@@ -41,21 +44,23 @@ function registrationFor(selection: { kind: string; typeId: string; method: stri
     : registeredByTypeAndMethod.get(registeredDataReadKey(selection.typeId, selection.method));
 }
 
-function ownerError(message: string, code: string | null | undefined, registration?: RegisteredDataReadRegistration): ProductPanelReadResponse {
-  const messageOnly = code && registration?.messageOnlyCodes?.includes(code);
-  return { status: "error", message, ...(code && !messageOnly && { code }) };
-}
-
-function refusal(error: unknown, registration?: RegisteredDataReadRegistration): ProductPanelReadResponse {
+function refusal(error: unknown): ProductPanelReadResponse {
   if (!(error instanceof HttpError)) throw error;
   if (error.code === "PANEL_DATA_NAME_UNKNOWN") return panelMemberReadRefusal(error)!;
   return error.status === 403
     ? { status: "forbidden", reason: error.message }
-    : ownerError(error.message, error.code, registration);
+    : { status: "error", message: error.message, ...(error.code && { code: error.code }) };
 }
 
 function javaCall(call: { type: string; name: string; parameters: Record<string, unknown> }): NonNullable<JavaPanelRead["call"]> {
   return { ...call, parameters: runtimeJsonObjectSchema.parse(call.parameters) };
+}
+
+function defaultDataReadPlan(context: RegisteredDataReadContext): RegisteredDataReadPlan {
+  return {
+    reads: [{ call: defaultRegisteredJavaCall(context) }],
+    present: results => readyPayload(results[0]).payload,
+  };
 }
 
 /** Build the execution plan only after the entry owner has authenticated this request and returned its facts. */
@@ -102,41 +107,28 @@ export async function prepareRegisteredDataReads(
         owner: viewer, credentials, selection, params, inputs,
         projection: placement.projection, cache, ...(location && { location }),
       };
-      await registration?.validate?.(readContext);
-      const ownerRead = await registration?.prepare?.(readContext);
-      const factPlan = await registration?.facts?.(readContext);
-      const local = registration?.local;
-      const ownerFacts = factPlan && {
-        ...factPlan,
-        facts: factPlan.facts.map(fact => ({ ...path(), ...fact })),
-      };
-      const visibleKinds = ownerRead && "visibility" in ownerRead ? ownerRead.visibility : local?.visibility;
       const governanceRows = prepareGovernanceListRows(selection, prepared.declaration, placement.projection);
       const deleteBindings = selection.typeId === ATTRIBUTE && selection.method === "list"
         ? attributeDeleteRowBindings(placement.projection) : {};
       const attributeDelete = Object.keys(deleteBindings).length > 0;
-      const defaultCall = (): NonNullable<JavaPanelRead["call"]> => javaCall({
-        type: selection.typeId,
-        name: selection.method,
-        parameters: {
-          ...params,
-          ...(selection.primaryKey !== undefined && { primaryKey: selection.primaryKey }),
-          ...governanceRows?.parameters,
-          ...(attributeDelete && { includeDeleteFacts: true }),
-          ...(selection.typeId === USER && selection.method === "query" && memberQueryOperationParams(placement.projection, inputs)),
-        },
-      });
-      const registeredCall = ownerRead?.call !== undefined ? javaCall(ownerRead.call) : undefined;
-      const defaultRegisteredCall = async () => javaCall(registration?.javaCall ? await registration.javaCall(readContext) : defaultCall());
-      const call = ownerRead ? registeredCall
-        : !ownerFacts && (!local || local.readJavaFacts) ? await defaultRegisteredCall() : undefined;
-      const read: JavaPanelRead = {
-        ...path(),
-        ...(visibleKinds && { visibleKinds }),
-        ...(call && { call }),
+      const dataPlan = registration ? await registration.plan(readContext) : defaultDataReadPlan(readContext);
+      const admittedPath = path();
+      const rowOperationParameters = {
+        ...governanceRows?.parameters,
+        ...(attributeDelete && { includeDeleteFacts: true }),
+        ...(selection.typeId === USER && selection.method === "query" && memberQueryOperationParams(placement.projection, inputs)),
       };
-      return { ok: true as const, kind: "data" as const, read, prepared, placement, local, ownerRead, ownerFacts,
-        registration, readContext, attributeDelete: attributeDelete ? deleteBindings : undefined, governanceRows };
+      const reads = dataPlan.reads.map((item, itemIndex) => ({
+        ...admittedPath,
+        ...(item.visibleKinds && { visibleKinds: item.visibleKinds }),
+        ...(item.call && {
+          call: javaCall(itemIndex === 0 && Object.keys(rowOperationParameters).length > 0
+            ? { ...item.call, parameters: { ...item.call.parameters, ...rowOperationParameters } }
+            : item.call),
+        }),
+      }));
+      return { ok: true as const, kind: "data" as const, reads, dataPlan, prepared, placement,
+        readContext, attributeDelete: attributeDelete ? deleteBindings : undefined, governanceRows };
     } catch (error) {
       // A path error must not disclose a definition that the reader cannot use.
       const result = error instanceof ZodError || error instanceof URIError
@@ -148,52 +140,29 @@ export async function prepareRegisteredDataReads(
   return { viewer, plans, cache };
 }
 
-type PreparedRead = Extract<Awaited<ReturnType<typeof prepareRegisteredDataReads>>["plans"][number], { prepared: unknown }>;
-type PresentOwnerResult = (
-  plan: PreparedRead, result: Extract<JavaPanelReadResult, { status: "ready" }>, credentials: AssistantCredentials, domainId: string,
-) => Promise<ProductPanelReadResponse>;
-
-async function presentReadOutcome(
-  declaration: PlatformReadDeclaration, payload: unknown, render?: (value: unknown) => unknown | Promise<unknown>,
-) {
-  const { declaration: _declaration, ...answer } = await projectionDataReadOutcome(declaration, payload, render);
+async function presentReadOutcome(declaration: PlatformReadDeclaration, payload: unknown) {
+  const { declaration: _declaration, ...answer } = await projectionDataReadOutcome(declaration, payload);
   return answer;
 }
 
-const presentRegisteredOwnerResult: PresentOwnerResult = async ({ prepared, placement, governanceRows, registration, readContext }, { payload }, _credentials) => {
-  const { selection: { typeId, method }, declaration, inputs } = prepared;
-  if (governanceRows) {
-    const { value, rowRefusals } = governanceRows.unpack(payload);
-    const answer = await presentReadOutcome(declaration, value);
-    if (answer.status !== "ready") return answer;
-    const rowOperations = await governanceRows.present(answer.value, inputs, rowRefusals);
-    return { ...answer, ...(rowOperations && { rowOperations }) };
-  }
-  if (typeId === USER && method === "query") {
-    const { query, rowRefusals } = memberQueryPayloadSchema.parse(payload);
-    const answer = await presentReadOutcome(declaration, query);
-    if (answer.status !== "ready") return answer;
-    const { rows } = answer.value as PanelRecordQuery;
-    const rowOperations = await presentMemberQueryRowOperations(
-      placement.projection, inputs, rows, declaration.rowType ?? typeId, rowRefusals,
-    );
-    return { ...answer, ...(rowOperations && { rowOperations }) };
-  }
-  return presentReadOutcome(declaration, payload,
-    registration?.present && (raw => registration.present!(raw, readContext)));
-};
+function presentationFailure(error: unknown): ProductPanelReadResponse {
+  if (error instanceof RegisteredDataReadFailure) return error.response;
+  if (error instanceof ZodError)
+    return { status: "error", message: error.message, code: "PANEL_READ_OWNER_RESPONSE_INVALID" };
+  if (error instanceof SyntaxError) return panelMemberReadRefusal(error)!;
+  if (error instanceof HttpError) return refusal(error);
+  throw error;
+}
 
 /** Resolve all items from the second Java response without starting a new downstream read for a refused item. */
 export async function runPreparedDataReads(
   credentials: AssistantCredentials, prepared: Awaited<ReturnType<typeof prepareRegisteredDataReads>>,
-  present = presentRegisteredOwnerResult,
 ): Promise<ProductPanelReadResponse[]> {
-  const { viewer, plans, cache } = prepared;
+  const { viewer, plans } = prepared;
   const reads = plans.flatMap<JavaPanelRead>(plan => {
     if (plan.kind === "operations") return plan.reads;
-    if (!plan.read) return [];
-    if (plan.kind !== "data") return [plan.read];
-    return [plan.read, ...(plan.ownerFacts?.facts ?? [])];
+    if (!plan.ok) return plan.read ? [plan.read] : [];
+    return plan.reads;
   });
   const batch = reads.length ? await readViaJava(viewer, reads, credentials) : undefined;
   const results = batch?.results ?? [];
@@ -208,91 +177,89 @@ export async function runPreparedDataReads(
         return refusal(error);
       }
     }
-    if (!plan.ok && !plan.read) return plan.result;
-    const result = results[index++];
-    const facts = plan.kind === "data" && plan.ownerFacts
-      ? results.slice(index, index + plan.ownerFacts.facts.length) : undefined;
-    index += facts?.length ?? 0;
-    if (result.status === "empty") return { status: "empty" };
-    if (result.status === "forbidden") return { status: "forbidden", reason: result.error };
-    if (result.status === "error") {
-      const registration = plan.ok && plan.kind === "data" ? plan.registration : undefined;
-      const context = plan.ok && plan.kind === "data" ? plan.readContext : undefined;
-      const message = registration && context ? registration.errorMessage?.(result, context) : undefined;
-      return ownerError(message ?? result.error, result.code, registration);
+    if (!plan.ok) {
+      if (plan.read) {
+        index += 1;
+        try {
+          readyPayload(results[index - 1]);
+        } catch (error) {
+          if (error instanceof RegisteredDataReadFailure) return error.response;
+          throw error;
+        }
+      }
+      return plan.result;
     }
-    if (!plan.ok) return plan.result;
+    const readResults = results.slice(index, index + plan.reads.length);
+    index += plan.reads.length;
     try {
-      if (plan.ownerFacts)
-        return presentReadOutcome(plan.prepared.declaration, await plan.ownerFacts.present(batch!.viewer, facts!));
-      if (plan.ownerRead) {
-        const answer = await presentReadOutcome(plan.prepared.declaration, await plan.ownerRead.present(result.payload, result.visibility));
-        const { typeId, method } = plan.prepared.selection;
-        if (answer.status === "ready" && typeId === APPLICATION && method === "builderProjects") {
-          const { projection } = plan.placement;
-          const operations = Object.fromEntries(Object.entries(projection.operations ?? {}).filter(([, { operation, target }]) =>
-            operation.kind === "PlatformOperation" && target && "row" in target
-            && (operation.id === APPLICATION_DELETE_DRAFT || operation.id === "applications.delete")));
-          const host = operationHost({ owner: viewer, credentials });
-          const rowOperations = await presentRowOperationsForRows(
-            { ...projection, operations }, plan.prepared.inputs, answer.value as PanelRecord[], APPLICATION,
-            (handler, _binding, targets) => handler.effect === "write" ? handler.unavailableBatch!(host, targets) : new Map(),
+      const payload = await plan.dataPlan.present(readResults, { ...plan.readContext, ...(batch && { javaViewer: batch.viewer }) });
+      const { selection: { typeId, method }, declaration, inputs } = plan.prepared;
+      let answer: ProductPanelReadResponse;
+      if (plan.governanceRows) {
+        const { value, rowRefusals } = plan.governanceRows.unpack(payload);
+        answer = await presentReadOutcome(declaration, value);
+        if (answer.status === "ready") {
+          const rowOperations = await plan.governanceRows.present(answer.value, inputs, rowRefusals);
+          answer = { ...answer, ...(rowOperations && { rowOperations }) };
+        }
+      } else if (typeId === USER && method === "query") {
+        const { query, rowRefusals } = memberQueryPayloadSchema.parse(payload);
+        answer = await presentReadOutcome(declaration, query);
+        if (answer.status === "ready") {
+          const { rows } = answer.value as PanelRecordQuery;
+          const rowOperations = await presentMemberQueryRowOperations(
+            plan.placement.projection, inputs, rows, declaration.rowType ?? typeId, rowRefusals,
           );
-          return { ...answer, ...(rowOperations && { rowOperations }) };
+          answer = { ...answer, ...(rowOperations && { rowOperations }) };
         }
-        if (answer.status === "ready" && plan.ownerRead.rowOperations) {
-          const rowOperations = await plan.ownerRead.rowOperations(result.payload, plan.prepared.inputs, (answer.value as PanelRecordQuery).rows);
-          return { ...answer, ...(rowOperations && { rowOperations }) };
-        }
-        if (answer.status === "ready" && typeId === WORKFLOW && (method === "list" || method === "query")) {
-          const rows = method === "list" ? answer.value as PanelRecord[] : (answer.value as PanelRecordQuery).rows;
-          const rowOperations = await presentWorkflowLifecycleRows(plan.placement.projection, plan.prepared.inputs, rows, credentials.locale);
-          return { ...answer, ...(rowOperations && { rowOperations }) };
-        }
-        return answer;
+      } else {
+        answer = await presentReadOutcome(declaration, payload);
       }
-      if (!plan.local) {
-        const answer = await present(plan, result, credentials, viewer.domainId);
-        if (answer.status === "ready" && plan.attributeDelete) {
-          const rowOperations = await presentAttributeDeleteRows(
-            { ...plan.placement.projection, operations: plan.attributeDelete }, result.payload,
-            answer.value as PanelRecord[], credentials.locale,
-          );
-          return { ...answer, ...(rowOperations && { rowOperations }) };
-        }
-        return answer;
+      if (answer.status === "ready" && typeId === APPLICATION && method === "builderProjects") {
+        const { projection } = plan.placement;
+        const operations = Object.fromEntries(Object.entries(projection.operations ?? {}).filter(([, { operation, target }]) =>
+          operation.kind === "PlatformOperation" && target && "row" in target
+          && (operation.id === APPLICATION_DELETE_DRAFT || operation.id === "applications.delete")));
+        const host = operationHost({ owner: viewer, credentials });
+        const rowOperations = await presentRowOperationsForRows(
+          { ...projection, operations }, inputs, answer.value as PanelRecord[], APPLICATION,
+          (handler, _binding, targets) => handler.effect === "write" ? handler.unavailableBatch!(host, targets) : new Map(),
+        );
+        return { ...answer, ...(rowOperations && { rowOperations }) };
       }
-      const { typeId, method, primaryKey } = plan.prepared.selection;
-      const { params } = plan.prepared;
-      const local = plan.local;
-      const read = async () => local.read(viewer, result.visibility, result.payload, credentials, primaryKey, params);
-      const payload = local.cache
-        ? await cache.read(stableJson([typeId, method, primaryKey ?? null, params, result]), read)
-        : await read();
-      const answer = await presentReadOutcome(plan.prepared.declaration, payload);
+      if (answer.status === "ready" && plan.dataPlan.rowOperations) {
+        const firstPayload = readResults[0]?.status === "ready" ? readResults[0].payload : undefined;
+        const rowOperations = await plan.dataPlan.rowOperations(firstPayload, inputs, (answer.value as PanelRecordQuery).rows);
+        return { ...answer, ...(rowOperations && { rowOperations }) };
+      }
+      if (answer.status === "ready" && typeId === WORKFLOW && (method === "list" || method === "query")) {
+        const rows = method === "list" ? answer.value as PanelRecord[] : (answer.value as PanelRecordQuery).rows;
+        const rowOperations = await presentWorkflowLifecycleRows(plan.placement.projection, inputs, rows, credentials.locale);
+        return { ...answer, ...(rowOperations && { rowOperations }) };
+      }
+      if (answer.status === "ready" && plan.attributeDelete) {
+        const rowOperations = await presentAttributeDeleteRows(
+          { ...plan.placement.projection, operations: plan.attributeDelete },
+          readResults[0]?.status === "ready" ? readResults[0].payload : undefined,
+          answer.value as PanelRecord[], credentials.locale,
+        );
+        return { ...answer, ...(rowOperations && { rowOperations }) };
+      }
       if (answer.status === "ready" && typeId === TURN_EVIDENCE && method === "list") {
         const rowOperations = await presentTurnEvidenceRetentionRows(
-          plan.placement.projection, plan.prepared.inputs, answer.value as PanelRecord[], credentials.locale,
+          plan.placement.projection, inputs, answer.value as PanelRecord[], credentials.locale,
         );
         return { ...answer, ...(rowOperations && { rowOperations }) };
       }
       if (answer.status === "ready" && typeId === AUTOTEST_RUN && method === "list") {
         const rowOperations = await presentAutotestRunRowOperations(
-          plan.placement.projection, plan.prepared.inputs, answer.value as PanelRecord[], credentials.locale,
+          plan.placement.projection, inputs, answer.value as PanelRecord[], credentials.locale,
         );
         return { ...answer, ...(rowOperations && { rowOperations }) };
       }
       return answer;
     } catch (error) {
-      if (error instanceof ZodError)
-        return { status: "error", message: error.message, code: "PANEL_READ_OWNER_RESPONSE_INVALID" };
-      if (plan.local && error instanceof SyntaxError) return panelMemberReadRefusal(error)!;
-      if (plan.registration?.memberReadRefusal && error instanceof HttpError) return panelMemberReadRefusal(error)!;
-      if (error instanceof HttpError && (
-        plan.local || plan.ownerRead || plan.ownerFacts || error.code === "PANEL_READ_OWNER_RESPONSE_INVALID" || error.code === "PANEL_OPERATION_READ_UNAVAILABLE"
-        || error.code === "INVALID_CURSOR"
-      )) return refusal(error, plan.registration);
-      throw error;
+      return presentationFailure(error);
     }
   }));
 }

@@ -1,4 +1,4 @@
-import type { RegisteredDataReadRegistration } from "./registered-data-read";
+import { localReadRegistration, type RegisteredDataReadRegistration } from "./registered-data-read";
 import { z } from "zod";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { AGENT_SESSION, DELETE_AGENT_SESSION, FAVORITE, RENAME_AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
@@ -251,17 +251,11 @@ export const agentSessionServerOperations: readonly PanelWriteServerOperation[] 
 ];
 
 export const agentSessionDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  {
-    typeId: AGENT_SESSION, method: "list",
-    local: {
-      read: (owner, _ranges, _facts, credentials, _key, params) => createAgentSessionReadAdapter(owner, credentials)
-        .list(params as Parameters<ReturnType<typeof createAgentSessionReadAdapter>["list"]>[0]),
-    },
-  },
-  {
-    typeId: AGENT_SESSION, method: "record",
-    local: {
-      read: (owner, _ranges, _facts, credentials, primaryKey) => createAgentSessionReadAdapter(owner, credentials).record(primaryKey!),
-    },
-  },
+  localReadRegistration(AGENT_SESSION, "list", {
+    read: (owner, _ranges, _facts, credentials, _key, params) => createAgentSessionReadAdapter(owner, credentials)
+      .list(params as Parameters<ReturnType<typeof createAgentSessionReadAdapter>["list"]>[0]),
+  }),
+  localReadRegistration(AGENT_SESSION, "record", {
+    read: (owner, _ranges, _facts, credentials, primaryKey) => createAgentSessionReadAdapter(owner, credentials).record(primaryKey!),
+  }),
 ];

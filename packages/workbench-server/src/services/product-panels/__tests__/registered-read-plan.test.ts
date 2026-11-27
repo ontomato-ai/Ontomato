@@ -161,8 +161,7 @@ it("uses one authenticated registration lookup and one batch, without reading a 
   mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "forbidden", error: "Owner denied read" }] });
   const prepared = await prepareRegisteredDataReads(credentials, [request, unavailable]);
   expect(mocks.locate).toHaveBeenLastCalledWith([entryRef, { ...entryRef, useId: "not-found" }], credentials);
-  const present = vi.fn();
-  expect(await runPreparedDataReads(credentials, prepared, present)).toEqual([
+  expect(await runPreparedDataReads(credentials, prepared)).toEqual([
     { status: "forbidden", reason: "Owner denied read" }, { status: "error", message: "Entry not found" },
   ]);
   expect(mocks.read).toHaveBeenCalledTimes(1);
@@ -171,7 +170,6 @@ it("uses one authenticated registration lookup and one batch, without reading a 
     uses: [{ target: { kind: "PANEL", id: entry.use.panelId, domainId: viewer.domainId }, ownerFacts: { ownerId: "author", state: "PUBLISHED" } }],
     call: { type: OBJECT_TYPE, name: "list", parameters: { search: "registered input" } },
   }], credentials);
-  expect(present).not.toHaveBeenCalled();
 });
 
 it("plans both policy picker candidate reads with their field, draft and keyword", async () => {
@@ -376,10 +374,8 @@ it("does not reveal a planning error from a definition denied by its owner", asy
   });
   mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "forbidden", error: "Owner denied definition" }] });
   const prepared = await prepareRegisteredDataReads(credentials, [request]);
-  const present = vi.fn();
-  expect(await runPreparedDataReads(credentials, prepared, present)).toEqual([{ status: "forbidden", reason: "Owner denied definition" }]);
+  expect(await runPreparedDataReads(credentials, prepared)).toEqual([{ status: "forbidden", reason: "Owner denied definition" }]);
   expect(mocks.read.mock.lastCall?.[1][0]).not.toHaveProperty("call");
-  expect(present).not.toHaveBeenCalled();
 });
 
 it.each(["form", "createForm"] as const)("keeps the role %s draft key contract in the registered batch", async method => {
@@ -1203,12 +1199,10 @@ it("counts Node-owned components only using the second call's visibility range",
   mocks.components.mockResolvedValueOnce(ready.value);
   const prepared = await prepareRegisteredDataReads(credentials, [request]);
   expect(mocks.components).not.toHaveBeenCalled();
-  const present = vi.fn();
-  expect(await runPreparedDataReads(credentials, prepared, present)).toEqual([ready]);
+  expect(await runPreparedDataReads(credentials, prepared)).toEqual([ready]);
   expect(mocks.read.mock.lastCall?.[1][0]).toMatchObject({ visibleKinds: [{ kind: "COMPONENT", verbs: ["USE"] }] });
   expect(mocks.read.mock.lastCall?.[1][0]).not.toHaveProperty("call");
   expect(mocks.components).toHaveBeenCalledWith(viewer.domainId, range);
-  expect(present).not.toHaveBeenCalled();
 });
 
 it("counts the P1 skill library behind the Java read gate without locating sources", async () => {

@@ -7,7 +7,7 @@ import {
   countSdkComponentsInRange, listSdkComponents, readSdkComponent, readSdkComponentConfigRows, readSdkComponentDataRows,
   readSdkComponentInputRows, readSdkComponentOperationRows, readSdkComponentOutputRows, readSdkComponentRecord,
 } from "./component-catalogue";
-import type { RegisteredDataReadRegistration, RegisteredLocalDataRead } from "./registered-data-read";
+import { localReadRegistration, type RegisteredDataReadRegistration, type RegisteredLocalDataRead } from "./registered-data-read";
 function sdkComponentUseRegisteredRead(
   read: (owner: ProductOwner, primaryKey: string, credentials: AssistantCredentials, range: DefinitionVisibilityRange,
     params: Record<string, unknown>) => Promise<unknown>,
@@ -23,23 +23,19 @@ function sdkComponentUseRegisteredRead(
 }
 
 export const sdkComponentDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  {
-    typeId: SDK_COMPONENT, method: "count",
-    local: {
+  localReadRegistration(SDK_COMPONENT, "count",
+    {
       visibility: [{ kind: "COMPONENT", verbs: ["USE"] }],
       read: (owner, ranges) => countSdkComponentsInRange(owner.domainId, ranges!.COMPONENT.USE),
-    },
-  },
-  {
-    typeId: SDK_COMPONENT, method: "catalogue",
-    local: sdkComponentUseRegisteredRead((owner, _key, credentials, range, params) =>
-      listSdkComponents(owner, credentials, params.search as string | undefined, range)),
-  },
-  { typeId: SDK_COMPONENT, method: "definition", local: sdkComponentUseRegisteredRead(readSdkComponent) },
-  { typeId: SDK_COMPONENT, method: "record", local: sdkComponentUseRegisteredRead(readSdkComponentRecord) },
-  { typeId: SDK_COMPONENT, method: "dataRows", local: sdkComponentUseRegisteredRead(readSdkComponentDataRows) },
-  { typeId: SDK_COMPONENT, method: "configRows", local: sdkComponentUseRegisteredRead(readSdkComponentConfigRows) },
-  { typeId: SDK_COMPONENT, method: "inputRows", local: sdkComponentUseRegisteredRead(readSdkComponentInputRows) },
-  { typeId: SDK_COMPONENT, method: "outputRows", local: sdkComponentUseRegisteredRead(readSdkComponentOutputRows) },
-  { typeId: SDK_COMPONENT, method: "operationRows", local: sdkComponentUseRegisteredRead(readSdkComponentOperationRows) },
+    }),
+  localReadRegistration(SDK_COMPONENT, "catalogue",
+    sdkComponentUseRegisteredRead((owner, _key, credentials, range, params) =>
+      listSdkComponents(owner, credentials, params.search as string | undefined, range))),
+  localReadRegistration(SDK_COMPONENT, "definition", sdkComponentUseRegisteredRead(readSdkComponent)),
+  localReadRegistration(SDK_COMPONENT, "record", sdkComponentUseRegisteredRead(readSdkComponentRecord)),
+  localReadRegistration(SDK_COMPONENT, "dataRows", sdkComponentUseRegisteredRead(readSdkComponentDataRows)),
+  localReadRegistration(SDK_COMPONENT, "configRows", sdkComponentUseRegisteredRead(readSdkComponentConfigRows)),
+  localReadRegistration(SDK_COMPONENT, "inputRows", sdkComponentUseRegisteredRead(readSdkComponentInputRows)),
+  localReadRegistration(SDK_COMPONENT, "outputRows", sdkComponentUseRegisteredRead(readSdkComponentOutputRows)),
+  localReadRegistration(SDK_COMPONENT, "operationRows", sdkComponentUseRegisteredRead(readSdkComponentOperationRows)),
 ];

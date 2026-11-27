@@ -961,12 +961,12 @@ const actionPresenterMethods = [
   "derivedSummary", "derivedEffects", "derivedParameters", "derivedConditions", "annotatedExplanation",
 ] as const;
 
-export const actionDataReadRegistrations: RegisteredDataReadRegistration[] = actionPresenterMethods.map(method => ({
-  ...presentedRegisteredDataRead(ACTION, method, createActionPanelReadPresenter),
-  ...((method === "definition" || method === "explanation") && {
-    javaCall: ({ selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["javaCall"]>>[0]) => ({
-      type: ACTION, name: "record",
-      parameters: { ...params, ...(selection.primaryKey !== undefined && { primaryKey: selection.primaryKey }) },
-    }),
-  }),
-}));
+
+export const actionDataReadRegistrations: RegisteredDataReadRegistration[] = actionPresenterMethods.map(method =>
+  presentedRegisteredDataRead(ACTION, method, createActionPanelReadPresenter, undefined, undefined,
+    (method === "definition" || method === "explanation")
+      ? ({ selection, params }) => ({
+        type: ACTION, name: "record",
+        parameters: { ...params, ...(selection.primaryKey !== undefined && { primaryKey: selection.primaryKey }) },
+      })
+      : undefined));

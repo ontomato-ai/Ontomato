@@ -36,7 +36,7 @@ import { requireFormFieldNames } from "../../utils/form-field-names";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { AssistantOwner } from "../assistant/store";
 import type { VisibleAgentMcpUsage } from "../product-panels/agent-definition-directory";
-import { managedRegisteredOpsRead, type RegisteredDataReadRegistration, type RegisteredLocalDataRead } from "../product-panels/registered-data-read";
+import { localReadPlan, localReadRegistration, managedRegisteredOpsRead, type RegisteredDataReadRegistration, type RegisteredLocalDataRead } from "../product-panels/registered-data-read";
 import type { ObjectVisibilityRange } from "../product-governance/authorization";
 import type {
   PanelImpactInspector,
@@ -823,43 +823,39 @@ function externalMcpJavaFactsCall(selection: { typeId: string; method: string; p
   };
 }
 
-const validateExternalMcpForm: NonNullable<RegisteredDataReadRegistration["validate"]> = ({ params }) => {
+
+const validateExternalMcpForm = ({ params }: { params: Record<string, unknown> }) => {
   requireFormFieldNames(params.values, "values");
 };
 
 export const externalMcpDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  { typeId: EXTERNAL_MCP_SERVICE, method: "list", local: externalMcpDirectoryRegisteredRead(reads => reads.list()) },
-  { typeId: EXTERNAL_MCP_SERVICE, method: "record", local: externalMcpDirectoryRegisteredRead((reads, key) => reads.record(key)) },
-  {
-    typeId: EXTERNAL_MCP_SERVICE, method: "tools",
-    local: {
-      readJavaFacts: true,
-      read: (owner, _ranges, facts, credentials, key) => readRegisteredExternalMcpTools(owner, credentials.locale, facts, key!),
-    },
-  },
-  {
-    typeId: EXTERNAL_MCP_SERVICE, method: "options",
-    local: { read: (owner, _ranges, _facts, credentials) => createExternalMcpReads(owner, credentials).options() },
-  },
-  {
-    typeId: EXTERNAL_MCP_SERVICE, method: "resolve",
-    local: {
-      read: (owner, _ranges, _facts, credentials, _key, params) =>
-        createExternalMcpReads(owner, credentials).resolve(params.values as readonly unknown[]),
-    },
-  },
+  localReadRegistration(EXTERNAL_MCP_SERVICE, "list", externalMcpDirectoryRegisteredRead(reads => reads.list())),
+  localReadRegistration(EXTERNAL_MCP_SERVICE, "record", externalMcpDirectoryRegisteredRead((reads, key) => reads.record(key))),
+  localReadRegistration(EXTERNAL_MCP_SERVICE, "tools", {
+    readJavaFacts: true,
+    read: (owner, _ranges, facts, credentials, key) => readRegisteredExternalMcpTools(owner, credentials.locale, facts, key!),
+  }),
+  localReadRegistration(EXTERNAL_MCP_SERVICE, "options", {
+    read: (owner, _ranges, _facts, credentials) => createExternalMcpReads(owner, credentials).options(),
+  }),
+  localReadRegistration(EXTERNAL_MCP_SERVICE, "resolve", {
+    read: (owner, _ranges, _facts, credentials, _key, params) =>
+      createExternalMcpReads(owner, credentials).resolve(params.values as readonly unknown[]),
+  }),
   {
     typeId: EXTERNAL_MCP_SERVICE, method: "form",
-    validate: validateExternalMcpForm,
-    javaCall: ({ selection }) => externalMcpJavaFactsCall(selection),
-    local: managedRegisteredOpsRead(createRegisteredExternalMcpFormReads, (reads, key, params) =>
-      reads.form(key, params as Parameters<typeof reads.form>[1])),
+    plan(context) {
+      validateExternalMcpForm(context);
+      return localReadPlan(context, managedRegisteredOpsRead(createRegisteredExternalMcpFormReads, (reads, key, params) =>
+        reads.form(key, params as Parameters<typeof reads.form>[1])), externalMcpJavaFactsCall(context.selection));
+    },
   },
   {
     typeId: EXTERNAL_MCP_SERVICE, method: "createForm",
-    validate: validateExternalMcpForm,
-    javaCall: ({ selection }) => externalMcpJavaFactsCall(selection),
-    local: managedRegisteredOpsRead(createRegisteredExternalMcpFormReads, (reads, _key, params) =>
-      reads.createForm(params as Parameters<typeof reads.createForm>[0])),
+    plan(context) {
+      validateExternalMcpForm(context);
+      return localReadPlan(context, managedRegisteredOpsRead(createRegisteredExternalMcpFormReads, (reads, _key, params) =>
+        reads.createForm(params as Parameters<typeof reads.createForm>[0])), externalMcpJavaFactsCall(context.selection));
+    },
   },
 ];

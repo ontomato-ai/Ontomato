@@ -28,7 +28,7 @@ import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { favoriteTargetKey, readFavoriteKeySet } from "../platform-home/service";
 import type { JavaPanelRead } from "../product-panels/java-panel-reads";
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { localReadRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { getOwnedDashboard } from "./access";
 import { DashboardMetricClient } from "./metric-client";
 import { metricCardParameterForm, ownedCard } from "./metric-data";
@@ -451,20 +451,16 @@ export function createDashboardCardOwnerReadAdapter(owner: ProductOwner, viewer:
 }
 
 export const dashboardLocalDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  {
-    typeId: DASHBOARD, method: "list",
-    local: { read: (owner, _ranges, _facts, credentials) => createDashboardReadAdapter(owner, credentials).list() },
-  },
-  {
-    typeId: DASHBOARD, method: "record",
-    local: { read: (owner, _ranges, _facts, credentials, primaryKey) => createDashboardReadAdapter(owner, credentials).record(primaryKey!) },
-  },
-  {
-    typeId: DASHBOARD, method: "cards",
-    local: { read: (owner, _ranges, _facts, credentials, primaryKey) => createDashboardReadAdapter(owner, credentials).cards(primaryKey!) },
-  },
-  {
-    typeId: DASHBOARD_CARD, method: "record",
-    local: { read: (owner, _ranges, _facts, credentials, primaryKey) => createDashboardCardOwnerReadAdapter(owner, credentials).record(primaryKey!) },
-  },
+  localReadRegistration(DASHBOARD, "list", {
+    read: (owner, _ranges, _facts, credentials) => createDashboardReadAdapter(owner, credentials).list(),
+  }),
+  localReadRegistration(DASHBOARD, "record", {
+    read: (owner, _ranges, _facts, credentials, primaryKey) => createDashboardReadAdapter(owner, credentials).record(primaryKey!),
+  }),
+  localReadRegistration(DASHBOARD, "cards", {
+    read: (owner, _ranges, _facts, credentials, primaryKey) => createDashboardReadAdapter(owner, credentials).cards(primaryKey!),
+  }),
+  localReadRegistration(DASHBOARD_CARD, "record", {
+    read: (owner, _ranges, _facts, credentials, primaryKey) => createDashboardCardOwnerReadAdapter(owner, credentials).record(primaryKey!),
+  }),
 ];

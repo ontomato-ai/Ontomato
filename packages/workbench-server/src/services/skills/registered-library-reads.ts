@@ -12,7 +12,7 @@ import { objectDecisionSchema } from "../product-governance/authorization";
 import { presentRowOperationsForRows } from "../product-panels/direct-operations";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { ownerReadRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { createSkillReadAdapter, type SkillResolveRequest } from "./panel-reads";
 import { generatedSkillExportRefusal, skillDeleteRefusal } from "./panel-operations";
 import { readSkillView } from "./view";
@@ -86,13 +86,10 @@ export async function prepareSkillDeleteRefusal(owner: ProductOwner, credentials
 }
 
 export const skillDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  ...(["count", "query", "record", "files", "file"] as const).map(method => ({
-    typeId: SKILL, method,
-    prepare: ({ owner, credentials, selection, params, projection }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) =>
-      prepareSkillLibraryRead(owner, credentials, selection, params, projection),
-  })),
-  ...(["options", "resolve"] as const).map(method => ({
-    typeId: SKILL, method,
-    prepare: ({ owner, credentials, selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) => prepareSkillSelectorRead(owner, credentials, selection, params),
-  })),
+  ...(["count", "query", "record", "files", "file"] as const).map(method =>
+    ownerReadRegistration(SKILL, method, ({ owner, credentials, selection, params, projection }) =>
+      prepareSkillLibraryRead(owner, credentials, selection, params, projection))),
+  ...(["options", "resolve"] as const).map(method =>
+    ownerReadRegistration(SKILL, method, ({ owner, credentials, selection, params }) =>
+      prepareSkillSelectorRead(owner, credentials, selection, params))),
 ];

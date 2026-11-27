@@ -17,7 +17,7 @@ import type { AssistantCredentials } from "../../utils/assistant-credentials";
 import { HttpError } from "../../utils/errors";
 import type { JavaPanelReadResult, PreparedOwnerReadFacts } from "../product-panels/java-panel-reads";
 import { formParams, type PanelReadSelection } from "../product-panels/panel-owner-reads";
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { ownerFactsRegistration, type RegisteredDataReadContext, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { withReadDirective } from "../product-panels/read-directive";
 import {
   describeTriggerTargets, presentTriggerApplications, readTriggerApplicationForm, triggerApplicationDirectorySchema,
@@ -193,7 +193,7 @@ export function prepareRegisteredTriggerRead(
   }
 }
 
-function prepareRegisteredTriggerEntry(context: Parameters<NonNullable<RegisteredDataReadRegistration["facts"]>>[0]) {
+function prepareRegisteredTriggerEntry(context: RegisteredDataReadContext) {
   return prepareRegisteredTriggerRead(context.selection, context.params, context.credentials);
 }
 
@@ -201,9 +201,6 @@ export const triggerDataReadRegistrations: RegisteredDataReadRegistration[] = [
   ...([
     "form", "createForm", "list", "catalogue", "record", "counts", "status", "runs", "runRecords", "run", "runRecord",
     "memberOptions", "memberResolve",
-  ] as const).map(method => ({
-    typeId: TRIGGER, method,
-    facts: prepareRegisteredTriggerEntry,
-    ...(method === "record" && { messageOnlyCodes: ["TASK_NOT_FOUND"] }),
-  })),
+  ] as const).map(method => ownerFactsRegistration(TRIGGER, method, prepareRegisteredTriggerEntry,
+    method === "record" ? { messageOnlyCodes: ["TASK_NOT_FOUND"] } : undefined)),
 ];

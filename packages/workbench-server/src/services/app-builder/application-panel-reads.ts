@@ -25,7 +25,7 @@ import { requireFormFieldNames } from "../../utils/form-field-names";
 import { APPLICATION_NAVIGATION_READ } from "../product-panels/application-catalogue";
 import type { PreparedOwnerReadFacts } from "../product-panels/java-panel-reads";
 import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { ownerFactsRegistration, ownerReadRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { assertAppBuilderAccess, requireAppBuilderNavigation } from "./access";
 import {
   authorizeBuilderProject,
@@ -616,12 +616,10 @@ export function sourceCommitPage(params: Record<string, unknown>) {
 }
 
 export const applicationBuilderPanelDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  ...(["builderCreateForm", "builderProjects", "builderSessions", "builderMetaForm"] as const).map(method => ({
-    typeId: APPLICATION, method,
-    prepare: ({ owner, credentials, selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) => prepareBuilderPanelRead(owner, credentials, selection, params),
-  })),
-  ...(["builderProject", "builderPublishForm"] as const).map(method => ({
-    typeId: APPLICATION, method,
-    facts: ({ owner, credentials, selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["facts"]>>[0]) => prepareBuilderPanelFacts(owner, credentials, selection, params),
-  })),
+  ...(["builderCreateForm", "builderProjects", "builderSessions", "builderMetaForm"] as const).map(method =>
+    ownerReadRegistration(APPLICATION, method, ({ owner, credentials, selection, params }) =>
+      prepareBuilderPanelRead(owner, credentials, selection, params))),
+  ...(["builderProject", "builderPublishForm"] as const).map(method =>
+    ownerFactsRegistration(APPLICATION, method, ({ owner, credentials, selection, params }) =>
+      prepareBuilderPanelFacts(owner, credentials, selection, params))),
 ];

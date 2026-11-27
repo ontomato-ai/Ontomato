@@ -7,7 +7,7 @@ import { metricResultParameters } from "../metric-function/result-read";
 import { requireChartReadRegistration } from "../product-panels/chart-sources";
 import type { prepareProjectionDataRead } from "../product-panels/data-reads";
 import type { JavaPanelRead } from "../product-panels/java-panel-reads";
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { ownerReadRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { createDashboardCardReadSource, dashboardCardMetricQuery } from "./chart-sources";
 import { requireMatchingOutput } from "./metric-data";
 import { prepareDashboardCardMetadataRead } from "./panel-reads";
@@ -74,15 +74,10 @@ export async function preparePanelMetricRead(
 }
 
 export const dashboardMetricDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  {
-    typeId: METRIC_VIEW, method: "result",
-    prepare: ({ owner, projection, selection, params, credentials }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) =>
-      preparePanelMetricRead(owner, projection, { selection, params }, credentials.locale),
-    messageOnlyCodes: ["ONTOLOGY_QUERY_FAILED", "METRIC_VIEW_NOT_FOUND", "METRIC_VIEW_NOT_EXECUTABLE"],
-  },
-  ...(["form", "metricSource", "result", "chartTemplate"] as const).map(method => ({
-    typeId: DASHBOARD_CARD, method,
-    prepare: ({ owner, projection, selection, params, credentials }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) =>
-      preparePanelMetricRead(owner, projection, { selection, params }, credentials.locale),
-  })),
+  ownerReadRegistration(METRIC_VIEW, "result", ({ owner, projection, selection, params, credentials }) =>
+    preparePanelMetricRead(owner, projection, { selection, params }, credentials.locale),
+    { messageOnlyCodes: ["ONTOLOGY_QUERY_FAILED", "METRIC_VIEW_NOT_FOUND", "METRIC_VIEW_NOT_EXECUTABLE"] }),
+  ...(["form", "metricSource", "result", "chartTemplate"] as const).map(method =>
+    ownerReadRegistration(DASHBOARD_CARD, method, ({ owner, projection, selection, params, credentials }) =>
+      preparePanelMetricRead(owner, projection, { selection, params }, credentials.locale))),
 ];

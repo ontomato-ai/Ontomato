@@ -1,4 +1,4 @@
-import { presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { presentedRegisteredDataRead, type RegisteredDataReadContext, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import { generalConfigSaveEndpoints, type GeneralConfigKey } from "@ontomato/contracts/general-settings";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
@@ -187,12 +187,12 @@ export const generalSettingsOperations = [{
   execute: (host, _target, input) => saveGeneralSettings(host, host.executor, submittedValues(input)),
 }] satisfies readonly PanelServerOperation[];
 
-const validateGeneralSettingsForm: NonNullable<RegisteredDataReadRegistration["validate"]> = ({ params }) => {
+const validateGeneralSettingsForm = ({ params }: RegisteredDataReadContext) => {
   requireFormFieldNames(params.values, "values");
 };
 
 export const generalSettingsDataReadRegistrations: RegisteredDataReadRegistration[] = [
   presentedRegisteredDataRead(GENERAL_SETTINGS, "list", createGeneralSettingsPanelReadPresenter),
   presentedRegisteredDataRead(GENERAL_SETTINGS, "record", createGeneralSettingsPanelReadPresenter),
-  { ...presentedRegisteredDataRead(GENERAL_SETTINGS, "form", createGeneralSettingsPanelReadPresenter), validate: validateGeneralSettingsForm },
+  presentedRegisteredDataRead(GENERAL_SETTINGS, "form", createGeneralSettingsPanelReadPresenter, validateGeneralSettingsForm),
 ];

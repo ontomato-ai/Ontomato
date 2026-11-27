@@ -1,4 +1,4 @@
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { defaultRegisteredJavaCall, readyPayload, renderReadPayload, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
@@ -497,27 +497,32 @@ export function createOntologyModelReadAdapter(
   };
 }
 
-function presentOntologyModelRegisteredRead(typeId: string, method: string): NonNullable<RegisteredDataReadRegistration["present"]> {
-  return (payload, { params, selection, credentials }) => {
-    const value = renderModelRead(typeId, method, payload, params, credentials.locale);
-    return method === "record" && typeId !== ATTRIBUTE
-      ? withModelingPath(value as Parameters<typeof withModelingPath>[0], typeId === OBJECT_TYPE ? "object" : "relation", selection.primaryKey!)
-      : value;
-  };
+
+function presentOntologyModelRegisteredRead(typeId: string, method: string, payload: unknown, context: Parameters<RegisteredDataReadRegistration["plan"]>[0]) {
+  const value = renderModelRead(typeId, method, payload, context.params, context.credentials.locale);
+  return method === "record" && typeId !== ATTRIBUTE
+    ? withModelingPath(value as Parameters<typeof withModelingPath>[0], typeId === OBJECT_TYPE ? "object" : "relation", context.selection.primaryKey!)
+    : value;
 }
 
-const validateOntologyModelForm: NonNullable<RegisteredDataReadRegistration["validate"]> = ({ params }) => {
+const validateOntologyModelForm = ({ params }: { params: Record<string, unknown> }) => {
   requireFormFieldNames(params.values, "values");
 };
 
 function ontologyModelRegistration(typeId: string, method: string): RegisteredDataReadRegistration {
   return {
     typeId, method,
-    ...((method === "form" || method === "createForm" || method === "inlineForm") && { validate: validateOntologyModelForm }),
-    ...(typeId === OBJECT_TYPE && (method === "options" || method === "resolve") && {
-      javaCall: () => ({ type: OBJECT_TYPE, name: "options", parameters: {} }),
-    }),
-    present: presentOntologyModelRegisteredRead(typeId, method),
+    plan(context) {
+      if (method === "form" || method === "createForm" || method === "inlineForm") validateOntologyModelForm(context);
+      const call = typeId === OBJECT_TYPE && (method === "options" || method === "resolve")
+        ? { type: OBJECT_TYPE, name: "options", parameters: {} }
+        : defaultRegisteredJavaCall(context);
+      return {
+        reads: [{ call }],
+        present: results => renderReadPayload(readyPayload(results[0]).payload,
+          value => presentOntologyModelRegisteredRead(typeId, method, value, context)),
+      };
+    },
   };
 }
 

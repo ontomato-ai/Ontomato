@@ -11,7 +11,7 @@ import type { ProductOwner } from "../product-governance/service-authentication"
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import { operationHost } from "../product-panels/operation-host";
 import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
-import type { RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { defaultReadRegistration, ownerReadRegistration, presentedRegisteredDataRead, type ContextualReadyPayloadOptions, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import {
   canActivateWorkflow, canDeactivateWorkflow, requireWorkflow, scopeKinds, stepInvocation,
   workflowForm, workflowFormValues, workflowSchema, workflowText, type Workflow, type WorkflowStep,
@@ -387,24 +387,17 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
   };
 }
 
-const workflowRegisteredErrorMessage: NonNullable<RegisteredDataReadRegistration["errorMessage"]> = (result, { credentials }) =>
-  result.code === "WORKFLOW_NOT_FOUND" ? workflowText(credentials.locale)("notFound") : undefined;
 
-const workflowErrorPresentation = { errorMessage: workflowRegisteredErrorMessage } as const;
+
+const workflowReadyOptions: ContextualReadyPayloadOptions = ({ credentials }) => ({
+  errorMessage: result => result.code === "WORKFLOW_NOT_FOUND" ? workflowText(credentials.locale)("notFound") : undefined,
+});
 
 export const workflowDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  ...(["list", "query", "record", "form", "createForm", "count"] as const).map(method => ({
-    typeId: WORKFLOW, method,
-    ...(method !== "count" && {
-      prepare: ({ selection, params, credentials }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) =>
-        prepareWorkflowPanelRead(selection, params, credentials.locale),
-    }),
-    ...workflowErrorPresentation,
-  })),
-  ...(["grantCaseScopedSteps", "grantInForce", "grantSuperseded", "grantDirect"] as const).map(method => ({
-    typeId: WORKFLOW, method,
-    present: (payload: unknown, { credentials, selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["present"]>>[1]) =>
-      createWorkflowPanelReadPresenter(credentials.locale)[method](payload, { ...params, primaryKey: selection.primaryKey! }),
-    ...workflowErrorPresentation,
-  })),
+  ...(["list", "query", "record", "form", "createForm"] as const).map(method =>
+    ownerReadRegistration(WORKFLOW, method, ({ selection, params, credentials }) =>
+      prepareWorkflowPanelRead(selection, params, credentials.locale), workflowReadyOptions)),
+  defaultReadRegistration(WORKFLOW, "count", workflowReadyOptions),
+  ...(["grantCaseScopedSteps", "grantInForce", "grantSuperseded", "grantDirect"] as const).map(method =>
+    presentedRegisteredDataRead(WORKFLOW, method, createWorkflowPanelReadPresenter, undefined, workflowReadyOptions)),
 ];

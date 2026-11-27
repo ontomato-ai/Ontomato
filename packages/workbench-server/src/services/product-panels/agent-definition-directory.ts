@@ -30,7 +30,7 @@ import { agentObject, allowedAgents } from "../assistant/authorization";
 import { ownerEnvelopeSchema } from "./data-query-operations";
 import { operationHost } from "./operation-host";
 import { formParams, type PanelReadSelection } from "./panel-owner-reads";
-import type { RegisteredDataReadRegistration } from "./registered-data-read";
+import { localReadRegistration, ownerReadRegistration, type RegisteredDataReadRegistration } from "./registered-data-read";
 
 const retrievalPath = `${DATA_QUERY_GATEWAY}/ontology/ai/agent-models`;
 export const systemFormValues = modelSelectionWrite.extend({ name: z.string().optional(), description: z.string().optional() });
@@ -426,26 +426,19 @@ export async function prepareAgentDefinitionRead(
 }
 
 export const agentDefinitionDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  ...(["record", "grantRows", "form", "createForm"] as const).map(method => ({
-    typeId: AGENT_DEFINITION, method,
-    prepare: ({ owner, credentials, selection, params }: Parameters<NonNullable<RegisteredDataReadRegistration["prepare"]>>[0]) => prepareAgentDefinitionRead(owner, credentials, selection, params),
-  })),
-  {
-    typeId: AGENT_DEFINITION, method: "count",
-    local: {
-      visibility: [{ kind: "AGENT", verbs: ["VIEW"] }],
-      readJavaFacts: true,
-      read: (owner, ranges, facts, credentials) =>
-        createAgentDefinitionDirectory(owner, credentials).countFromBatch(ranges!.AGENT.VIEW, facts),
-    },
-  },
-  {
-    typeId: AGENT_DEFINITION, method: "list",
-    local: {
-      visibility: [{ kind: "AGENT", verbs: ["VIEW", "EDIT"] }],
-      readJavaFacts: true,
-      read: (owner, ranges, facts, credentials) =>
-        createAgentDefinitionDirectory(owner, credentials).listFromBatch(ranges!.AGENT, facts),
-    },
-  },
+  ...(["record", "grantRows", "form", "createForm"] as const).map(method =>
+    ownerReadRegistration(AGENT_DEFINITION, method, ({ owner, credentials, selection, params }) =>
+      prepareAgentDefinitionRead(owner, credentials, selection, params))),
+  localReadRegistration(AGENT_DEFINITION, "count", {
+    visibility: [{ kind: "AGENT", verbs: ["VIEW"] }],
+    readJavaFacts: true,
+    read: (owner, ranges, facts, credentials) =>
+      createAgentDefinitionDirectory(owner, credentials).countFromBatch(ranges!.AGENT.VIEW, facts),
+  }),
+  localReadRegistration(AGENT_DEFINITION, "list", {
+    visibility: [{ kind: "AGENT", verbs: ["VIEW", "EDIT"] }],
+    readJavaFacts: true,
+    read: (owner, ranges, facts, credentials) =>
+      createAgentDefinitionDirectory(owner, credentials).listFromBatch(ranges!.AGENT, facts),
+  }),
 ];

@@ -1,4 +1,4 @@
-import { presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { presentedRegisteredDataRead, type RegisteredDataReadContext, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { z } from "zod";
 import {
   dataAdapterTestResultSchema,
@@ -1727,12 +1727,12 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
   } satisfies PanelReadServerOperation,
 ];
 
-const validateDataAdapterForm: NonNullable<RegisteredDataReadRegistration["validate"]> = ({ params }) => {
+const validateDataAdapterForm = ({ params }: RegisteredDataReadContext) => {
   requireFormFieldNames(params.values, "values");
 };
 
 export const dataAdapterDataReadRegistrations: RegisteredDataReadRegistration[] = [
   presentedRegisteredDataRead(DATA_ADAPTER_CONFIG, "record", createDataAdapterConfigPanelReadPresenter),
-  { ...presentedRegisteredDataRead(DATA_ADAPTER_CONFIG, "form", createDataAdapterConfigPanelReadPresenter), validate: validateDataAdapterForm },
-  { ...presentedRegisteredDataRead(DATA_ADAPTER_CONFIG, "routingForm", createDataAdapterConfigPanelReadPresenter), validate: validateDataAdapterForm },
+  presentedRegisteredDataRead(DATA_ADAPTER_CONFIG, "form", createDataAdapterConfigPanelReadPresenter, validateDataAdapterForm),
+  presentedRegisteredDataRead(DATA_ADAPTER_CONFIG, "routingForm", createDataAdapterConfigPanelReadPresenter, validateDataAdapterForm),
 ];
