@@ -2,10 +2,9 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn(),workspace:vi.fn(),buildTest:vi.fn()}));
-vi.mock('../../../services/app-builder/build-tests',()=>({
- sessionBuildTestWorkspace:mocks.workspace,
- WorkspaceBuildTests:class { current=mocks.buildTest; },
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn(),session:vi.fn()}));
+vi.mock('../../../services/assistant/store',()=>({
+ assistantStore:{session:mocks.session},
 }));
 vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring,adoptAppBuilderDefinition:mocks.adopt}));
 vi.mock('../../../core/skills/registry/manager',()=>({skillRegistryManager:{}}));
@@ -39,37 +38,99 @@ async function call(path:string,extra:Record<string,string>={},method='POST',tok
 it("resolves the workspace only for the active App Builder session", async () => {
  const path = "workbench/api/app-builder/workspace";
  expect((await call(path, {}, "GET")).status).toBe(403);
- expect(mocks.workspace).not.toHaveBeenCalled();
- mocks.run.mockResolvedValue({status:"running",sessionId:other,channel:{authority:{executionKind:"build-test"}}});
- mocks.workspace.mockResolvedValue(run);
+ expect(mocks.session).not.toHaveBeenCalled();
+ mocks.run.mockResolvedValue({status:"running",sessionId:other,channel:{authority:{executionKind:"preview"}}});
+ mocks.session.mockResolvedValue({workspace_id:run});
  const response = await call(path, {}, "GET");
  expect(await response.json()).toEqual({workspaceId:run});
- expect(mocks.workspace).toHaveBeenCalledWith({userId:"U",domainId:"domain"},other);
+ expect(mocks.session).toHaveBeenCalledWith(other,{userId:"U",domainId:"domain"});
 });
-it.each([{contextId:other},null])("binds action execution to the run workspace even if the sandbox leaves out the header: %j", async current => {
+it("injects the exact preview execution header from the run authority", async () => {
  const upstream=vi.fn(async(_url: string,_init?:Parameters<typeof fetch>[1])=>Response.json({result:"test"}));
  vi.stubGlobal("fetch",upstream);
- mocks.restore.mockResolvedValue({run:{sessionId:other,channel:{authority:{executionKind:"build-test"}}},credentials:{locale:"en"}});
- mocks.workspace.mockResolvedValue(run);
- mocks.buildTest.mockResolvedValue(current);
+ mocks.restore.mockResolvedValue({run:{sessionId:other,channel:{authority:{executionKind:"preview"}}},credentials:{locale:"en"}});
  expect((await call("ontology/action/execute")).status).toBe(200);
- expect(mocks.workspace).toHaveBeenCalledWith({userId:"U",domainId:"domain"},other);
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
-   .toBe(JSON.stringify({kind:"build-test",contextId:current?.contextId??null}));
+   .toBe('{"kind":"preview"}');
 });
-it("does not let a build-test run select a different context or omit the marker for other data paths", async () => {
+it("forwards no execution context for a live run", async () => {
+ const upstream=vi.fn(async(_url: string,_init?:Parameters<typeof fetch>[1])=>Response.json({result:"test"}));
+ vi.stubGlobal("fetch",upstream);
+ expect((await call("ontology/action/execute")).status).toBe(200);
+ expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context")).toBeNull();
+});
+it("rejects a caller-supplied execution context that differs from the run authority", async () => {
  const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
  vi.stubGlobal("fetch", upstream);
  mocks.restore.mockResolvedValue({
-   run: { channel: { authority: { executionKind: "build-test", executionContextId: other } } },
+   run: { channel: { authority: { executionKind: "preview" } } },
    credentials: { token: "initiator-token", locale: "en" },
  });
- const override = JSON.stringify({ kind: "build-test", contextId: run });
- expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": override })).status).toBe(403);
+ expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"live"}' })).status).toBe(403);
  expect(upstream).not.toHaveBeenCalled();
- expect((await call("ontology/dsl/executeV1")).status).toBe(200);
+ expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(200);
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
-   .toBe(JSON.stringify({ kind: "build-test", contextId: other }));
+   .toBe('{"kind":"preview"}');
+ // A read or a definition write carries no identity: whatever the caller said about it is dropped, not refused.
+ for (const stated of ['{"kind":"preview"}', '{"kind":"live"}']) {
+   upstream.mockClear();
+   expect((await call("ontology/dsl/executeV1", { "X-Ontomato-Execution-Context": stated })).status).toBe(200);
+   expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context")).toBeNull();
+ }
+});
+
+it("marks a preview only where its request writes business data", async () => {
+ const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ success: true }));
+ vi.stubGlobal("fetch", upstream);
+ mocks.restore.mockResolvedValue({
+   run: { channel: { authority: { executionKind: "preview" } } },
+   credentials: { token: "initiator-token", locale: "en" },
+ });
+ const marked = async (path: string, method = "POST") => {
+   upstream.mockClear();
+   expect((await call(path, {}, method)).status).toBe(200);
+   return new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context");
+ };
+ expect(await marked("ontology/action/execute")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/writeFunctionOperation/insert")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/writeFunctionOperation/deleteVector")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/vectorResource/upload")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/vectorResource/delete")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/platform/triggers/trigger-1/runs")).toBe('{"kind":"preview"}');
+ // The workbench dispatch carries a prepared operation out as this run, so the Action it executes is refused too.
+ expect(await marked("workbench/api/panel-operations/intents/8f5df4a4-e30b-48cb-831a-33b759144f76/dispatch")).toBe('{"kind":"preview"}');
+ // Starting a workflow run, and a conversation with its runs, which then run as the preview.
+ expect(await marked("workbench/api/praxis/runs")).toBe('{"kind":"preview"}');
+ expect(await marked("workbench/api/assistant/sessions")).toBe('{"kind":"preview"}');
+ expect(await marked("workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs")).toBe('{"kind":"preview"}');
+ // The legacy diagnosis conversations and their runs, which then run as the preview.
+ for (const entry of [
+   "workbench/api/observe/agent/sessions", "workbench/api/observe/agent/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs",
+   "workbench/api/observe/diagnoses",
+ ]) expect(await marked(entry), entry).toBe('{"kind":"preview"}');
+ // Stopping runs, deleting conversations and workspaces, and ops test runs are platform work, never marked.
+ for (const entry of [
+   "workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
+   "workbench/api/observe/agent/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
+   "ontology/ontology/ai/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
+   "workbench/api/observe/autotest/runs", "workbench/api/observe/autotest/runs/run-1/stop", "workbench/api/observe/autotest/case-sets",
+ ]) expect(await marked(entry), entry).toBeNull();
+ for (const entry of ["workbench/api/observe/autotest/runs/run-1", "workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76",
+   "workbench/api/workspaces/8f5df4a4-e30b-48cb-831a-33b759144f76", "ontology/ontology/ai/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76"])
+   expect(await marked(entry, "DELETE"), entry).toBeNull();
+ // A read, a definition write and a platform write travel as they do live: their owner judges the caller's permission.
+ expect(await marked("ontology/writeFunctionOperation/query")).toBeNull();
+ expect(await marked("ontology/ontology/query/execute-dsl")).toBeNull();
+ expect(await marked("ontology/function/save")).toBeNull();
+ expect(await marked("ontology/action/setStatus")).toBeNull();
+ expect(await marked("ontology/metricView/save")).toBeNull();
+ expect(await marked("ontology/function/delete")).toBeNull();
+ expect(await marked("ontology/platform/triggers")).toBeNull();
+ expect(await marked("ontology/action/trial")).toBeNull();
+ expect(await marked("workbench/api/assistant/agent-definitions")).toBeNull();
+ expect(await marked("workbench/api/product-panels/read")).toBeNull();
+ // Preparing a page operation carries the identity so the operation is recorded as the preview's.
+ expect(await marked("workbench/api/panel-operations/intents")).toBe('{"kind":"preview"}');
 });
 
 it('restores the initiator before resolving the executor and forwards only ordinary business authentication',async()=>{
@@ -263,9 +324,6 @@ it.each([
   ["GET", `workbench/api/workspaces/${other}/tree`, `http://workbench.test/api/workspaces/${other}/tree`],
   ["GET", `workbench/api/workspaces/${other}/files/content?path=panel.json`, `http://workbench.test/api/workspaces/${other}/files/content?path=panel.json`],
   ["GET", `workbench/api/workspaces/${other}/panel-candidate?ref=working`, `http://workbench.test/api/workspaces/${other}/panel-candidate?ref=working`],
-  ["GET", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
-  ["POST", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
-  ["DELETE", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
   ["POST", `workbench/api/workspaces/${other}/import`, `http://workbench.test/api/workspaces/${other}/import`],
   ["POST", `workbench/api/workspaces/${other}/publish`, `http://workbench.test/api/workspaces/${other}/publish`],
   ["GET", "workbench/api/product-panels/panel-1", "http://workbench.test/api/product-panels/panel-1"],
@@ -329,21 +387,28 @@ it("forwards projection catalog list queries with componentId and objectType fil
   );
 });
 
-it("forwards the bound execution context and reuse-panel header", async () => {
+it("forwards the reuse-panel header", async () => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ ok: true }));
   vi.stubGlobal("fetch", upstream);
-  mocks.restore.mockResolvedValue({
-    run: { channel: { authority: { executionKind: "build-test", executionContextId: "ctx-1" } } },
-    credentials: { token: "initiator-token", locale: "en" },
-  });
   const response = await call("workbench/api/product-projections/proj-1", {
-    "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: "ctx-1" }),
     "X-Ontomato-Projection-Reuse-Panel": "panel-1",
   }, "PUT");
   expect(response.status).toBe(200);
   expect(upstream.mock.calls[0]?.[1]?.headers).toMatchObject({
-    "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: "ctx-1" }),
     "X-Ontomato-Projection-Reuse-Panel": "panel-1",
+  });
+});
+
+it("carries a preview into the panel operation dispatch, which executes the Action at its owner", async () => {
+  const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ ok: true }));
+  vi.stubGlobal("fetch", upstream);
+  mocks.restore.mockResolvedValue({
+    run: { channel: { authority: { executionKind: "preview" } } },
+    credentials: { token: "initiator-token", locale: "en" },
+  });
+  expect((await call("workbench/api/panel-operations/intents/8f5df4a4-e30b-48cb-831a-33b759144f76/dispatch")).status).toBe(200);
+  expect(upstream.mock.calls[0]?.[1]?.headers).toMatchObject({
+    "X-Ontomato-Execution-Context": '{"kind":"preview"}',
   });
 });
 

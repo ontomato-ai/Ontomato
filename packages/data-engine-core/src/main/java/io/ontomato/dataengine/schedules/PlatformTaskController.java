@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.schedules;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.ontomato.dataengine.service.PreviewExecution;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import java.util.Locale;
 import java.util.UUID;
@@ -143,8 +144,9 @@ public class PlatformTaskController {
 
   @PostMapping("/{id}/runs")
   public ResponseEntity<JsonNode> run(
-      @PathVariable String id, @RequestHeader("Idempotency-Key") UUID key, Locale locale) {
-    return ResponseEntity.accepted().body(service.manual(id, key, locale.toLanguageTag()));
+      @PathVariable String id, @RequestHeader("Idempotency-Key") UUID key, Locale locale,
+      jakarta.servlet.http.HttpServletRequest request) {
+    return ResponseEntity.accepted().body(service.manual(id, key, locale.toLanguageTag(), PreviewExecution.isPreview(request)));
   }
 
   @GetMapping("/{id}/runs")

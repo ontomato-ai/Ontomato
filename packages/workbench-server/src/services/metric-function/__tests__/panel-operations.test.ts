@@ -469,9 +469,9 @@ describe("metric and function panel server operations", () => {
     ]);
     expect(draft.function.queryPackage.manifest.parameterDefs[0]?.value).toBe(2025);
 
-    const refused = hostWith(() => Response.json({ success: false, message: "DSL error at answer.steps", code: "BUILD_TEST_FORBIDDEN" }));
+    const refused = hostWith(() => Response.json({ success: false, message: "DSL error at answer.steps", code: "PREVIEW_WRITE_FORBIDDEN" }));
     await expect(operation.execute(refused.host, { target: { kind: "draft" }, input: { draft, parameters: {} } }))
-      .rejects.toMatchObject({ status: 422, code: "BUILD_TEST_FORBIDDEN", message: "DSL error at answer.steps" });
+      .rejects.toMatchObject({ status: 422, code: "PREVIEW_WRITE_FORBIDDEN", message: "DSL error at answer.steps" });
     const plainRefusal = hostWith(() => Response.json({ success: false, message: "Read Function not found" }));
     await expect(operation.execute(plainRefusal.host, { target: metricTarget, input: { draft, parameters: {} } }))
       .rejects.toMatchObject({ status: 422, code: "METRIC_VIEW_TEST_REFUSED" });

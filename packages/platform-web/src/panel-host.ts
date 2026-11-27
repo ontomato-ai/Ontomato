@@ -20,8 +20,10 @@ import {
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
-import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
+import {
+  EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE, carriesPreviewIdentity, previewExecutionContextHeader,
+} from "@ontomato/contracts/execution-context";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame, servePageComposer } from "./app-host";
@@ -53,7 +55,7 @@ import {
   type DisplayObjectChange, type PageCounter, type PanelChatHost,
 } from "@ontomato/agent-shell-ui";
 import type { PanelSessionFeed } from "./panel-session-runs";
-import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
+import { createAssistantClient, createPreviewAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
 import { createPanelPreviewHost } from "./panel-preview";
 
 /*
@@ -65,7 +67,7 @@ import { createPanelPreviewHost } from "./panel-preview";
  *   credential; a projection's record is read inside the frame by the projection itself.
  * - An author's workspace candidate is Node's too (`GET /api/workspaces/:id/panel-candidate?ref=`), under the author's
  *   workspace access. It is the same host with another source: no use relation, panel ID or revision of its own, and a
- *   build-test execution context instead of a live one.
+ *   preview execution identity instead of a live one.
  * - Viewers reconcile revisions using short requests. Author hosts share the document's definition stream.
  */
 
@@ -722,7 +724,7 @@ export function builtinFramePanelHost(
 /**
  * The author's preview of a workspace candidate (design 6.2): the same host, reading the candidate instead of a use
  * relation. The preview is an author's host, so it declares author mode: the registered projections the candidate names
- * follow the document's definition stream. Its frame runs on the workspace's build-test context — NONE when the
+ * follow the document's definition stream. Its frame runs on the workspace's preview context — NONE when the
  * workspace has none — and each owner decides what such a request may do.
  */
 export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] & { pageKey: string }): PanelHostPort<CandidatePanelSource> {
@@ -735,7 +737,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
     use: null,
     panel,
     release,
-    frame: (frame, source, open) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), source.workspace, {
+    frame: (frame, source, open) => registerCandidateFrame(frame, source.workspace, {
       pageKey: candidate.pageKey,
       manifest: source.panel.manifest,
     }, open),
@@ -746,19 +748,20 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
       return mountCoded(withNested({
         manifest: source.panel.manifest,
         run,
-        requests: platformRequests,
+        requests: previewRequests,
         readProjection: readPlatformProjection,
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
-        confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
-        expandPageComposer: expandDeclaredComposer,
+        confirmOperation: () => Promise.reject(Object.assign(new Error(PREVIEW_WRITE_MESSAGE), { code: PREVIEW_WRITE_FORBIDDEN })),
+        // Its conversation entries open the preview's own conversation, whichever composer on the page takes them.
+        expandPageComposer: entry => expandDeclaredComposer({ ...entry, preview: true }),
         navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
         translate: (key, params) => global.t(key, params ?? {}),
-      }, { kind: "candidate", workspace: source.workspace }), target, source.panel.content.module);
+      }, { kind: "candidate", workspace: source.workspace }), target, source.panel.content.module, undefined, previewPanelChatHost());
     },
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
@@ -767,7 +770,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
 
 /**
  * Application-scoped candidate preview host: runs a panel from an application's source (or unmaterialized live definition)
- * in author mode under build-test context, reading nested members through `source.kind === "app-candidate"`.
+ * in author mode under preview context, reading nested members through `source.kind === "app-candidate"`.
  */
 export function appCandidatePanelHost(
   initial: AppCandidatePanelSource,
@@ -797,7 +800,6 @@ export function appCandidatePanelHost(
     release,
     frame: (frame, source, open) => registerCandidateFrame(
       frame,
-      buildExecutionContext(source.app.id, source.previewContext.test),
       { id: source.app.id, ref: source.app.ref },
       { pageKey, manifest: source.panel.manifest },
       open,
@@ -807,19 +809,20 @@ export function appCandidatePanelHost(
       return mountCoded(withNested({
         manifest: source.panel.manifest,
         run,
-        requests: platformRequests,
+        requests: previewRequests,
         readProjection: readPlatformProjection,
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "app-candidate", app: source.app }, ...request }),
-        confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
-        expandPageComposer: expandDeclaredComposer,
+        confirmOperation: () => Promise.reject(Object.assign(new Error(PREVIEW_WRITE_MESSAGE), { code: PREVIEW_WRITE_FORBIDDEN })),
+        // Its conversation entries open the preview's own conversation, whichever composer on the page takes them.
+        expandPageComposer: entry => expandDeclaredComposer({ ...entry, preview: true }),
         navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
         translate: (key, params) => global.t(key, params ?? {}),
-      }, { kind: "app-candidate", app: source.app }), target, source.panel.content.module);
+      }, { kind: "app-candidate", app: source.app }), target, source.panel.content.module, undefined, previewPanelChatHost());
     },
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
@@ -832,6 +835,16 @@ export function appCandidatePanelHost(
  */
 const platformRequests: PlatformRequests = {
   request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init),
+};
+
+/**
+ * The same requests for a candidate preview: those that run something, a business-data write or a conversation's run,
+ * carry the preview's identity; reads and building travel as the reader's, as they do live.
+ */
+const previewRequests: PlatformRequests = {
+  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, carriesPreviewIdentity(service, init.method ?? "GET", path)
+    ? { ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } }
+    : init),
 };
 
 /**
@@ -1117,14 +1130,20 @@ function warmTemplateCompiler() {
 function createPanelChatHost(
   defaultAgent?: ApplicationPanelUse["defaultAgent"],
   options?: Pick<PanelChatHost, "claimComposer" | "display">,
+  newClient: () => ReturnType<typeof createAssistantClient> = createAssistantClient,
 ): PanelChatHost {
   let client: ReturnType<typeof createAssistantClient> | null = null;
   return {
-    client: () => (client ??= createAssistantClient()),
+    client: () => (client ??= newClient()),
     ...(defaultAgent ? { defaultAgent } : {}),
     claimComposer: options?.claimComposer,
     display: options?.display,
   };
+}
+
+/** The conversations a candidate preview opens are the preview's: every run in them runs as the preview. */
+function previewPanelChatHost(): PanelChatHost {
+  return createPanelChatHost(undefined, undefined, createPreviewAssistantClient);
 }
 
 /**

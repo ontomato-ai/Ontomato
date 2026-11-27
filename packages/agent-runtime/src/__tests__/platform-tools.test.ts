@@ -241,7 +241,6 @@ describe("registerSkillCallbackRoutes", () => {
         { hostId: "test-host", domainId: "a" },
         sessionId,
         "secret-1",
-        undefined,
         { op: "list" },
       );
 

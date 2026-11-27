@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 import org.springframework.context.annotation.Lazy;
@@ -32,7 +31,6 @@ public class PlatformAuthoringService {
   private final QueryGrantService grants;
   private final IdentityService identity;
   private final DataPermissionLookup permissions;
-  private final DataSandboxService buildTests;
   private final ActionService actions;
   private final ActionDao actionDao;
   private final MetricViewService metrics;
@@ -42,7 +40,7 @@ public class PlatformAuthoringService {
   public PlatformAuthoringService(OntologyAgentStore store, GovernanceRuntimeClient runtime,
       RuntimeCodeClient code, GenerationOperations operations, OntologyGenerationService generation,
       OntologyQueryService ontology, QueryGrantService grants, @Lazy IdentityService identity,
-      @Lazy DataPermissionLookup permissions, DataSandboxService buildTests,
+      @Lazy DataPermissionLookup permissions,
       @Lazy ActionService actions, ActionDao actionDao, @Lazy MetricViewService metrics, MetricViewDao metricDao,
       LangService messages) {
     this.store = store;
@@ -54,7 +52,6 @@ public class PlatformAuthoringService {
     this.grants = grants;
     this.identity = identity;
     this.permissions = permissions;
-    this.buildTests = buildTests;
     this.actions = actions;
     this.actionDao = actionDao;
     this.metrics = metrics;
@@ -103,7 +100,7 @@ public class PlatformAuthoringService {
         requireAction(kind);
         var samples = operations.authorSamples(run.owner().domainId(), input, access.classNames());
         register(run);
-        createSandbox(run, access.target().contextId());
+        createSandbox(run);
         yield operations.storeSamples(window(run, kind, access), samples);
       }
       case "explain-draft" -> {
@@ -142,10 +139,7 @@ public class PlatformAuthoringService {
       return adoptDefinition(run, owner, kind, input.getJSONObject("definition"), caller.language(),
           GenerationOperations.externalEvidenceScope(owner), () -> operations.gate(run, owner));
     }
-    var window = operations.external(run, owner, kind, caller.access(), () -> {
-      var target = caller.access().target();
-      if (target.testing()) buildTests.require(target.contextId(), owner.userId(), owner.domainId());
-    });
+    var window = operations.external(run, owner, kind, caller.access(), () -> {});
     window.recheck().run();
     store.transaction(window.gate());
     return switch (operation) {
@@ -307,13 +301,6 @@ public class PlatformAuthoringService {
     long expiresAt = run.expiresAt();
     var credentialExpiresAt = identity.getCurrentCredentialExpiresAt();
     if (credentialExpiresAt != null) expiresAt = Math.min(expiresAt, credentialExpiresAt);
-    if (target.testing()) {
-      var parentClasses = classes;
-      classes = target.classNames().stream().filter(name -> parentClasses.isEmpty() || parentClasses.contains(name)).toList();
-      if (classes.isEmpty())
-        throw new AgentHttpException(403, "BUILD_TEST_FORBIDDEN", "No test classes in the authoring scope");
-      expiresAt = Math.min(expiresAt, target.expiresAt());
-    }
     if (expiresAt <= System.currentTimeMillis()) throw closed();
     return new QueryAccessService.Access(new QueryAccessService.GrantUser(run.executor(), run.owner().domainId()),
         permission, null, null, expiresAt, QueryAccessService.classScope(permission, classes), target,
@@ -323,46 +310,38 @@ public class PlatformAuthoringService {
   private ExecutionTarget executionTarget(Run run) {
     var target = run.target();
     if (target == null)
-      throw new AgentHttpException(400, "BUILD_TEST_CONTEXT_REQUIRED", "Authoring requires a resolved target");
+      throw new AgentHttpException(400, "AUTHORING_TARGET_REQUIRED", "Authoring requires a resolved target");
     return switch (AgentJson.text(target, "kind")) {
       case "live" -> {
         AgentJson.fields(target, "kind");
         yield ExecutionTarget.LIVE;
-      }
-      case "build-test" -> {
-        AgentJson.fields(target, "kind", "contextId");
-        yield buildTests.require(AgentJson.id(target.getString("contextId")), run.executor(), run.owner().domainId());
       }
       default -> throw AgentHttpException.invalid("Unknown authoring execution target");
     };
   }
 
   private GenerationOperations.Window window(Run run, String kind, QueryAccessService.Access access) {
-    String contextId = access.target().contextId();
     return new GenerationOperations.Window(run.id(), run.owner(), kind, () -> {
       var row = open(run);
       if (kind.equals("action")) {
         if (row.getString("sandbox_id") == null)
           throw AgentHttpException.invalid("Prepare the authoring sandbox first");
-        if (!Objects.equals(contextId, row.getString("sandbox_context")))
-          throw new AgentHttpException(409, "BUILD_TEST_CONTEXT_CHANGED", "Authoring sandbox belongs to another test context");
       }
       row.put("kind", kind);
       return row;
     }, access, () -> {
           if (access.expiresAt() <= System.currentTimeMillis()) throw closed();
           requireActive(run);
-          if (access.target().testing()) executionTarget(run);
         }, run.evidenceScope());
   }
 
-  private void createSandbox(Run run, String contextId) {
+  private void createSandbox(Run run) {
     store.transaction(() -> {
       var row = open(run);
       if (row.getString("sandbox_id") != null) return null;
       String sandbox = operations.openSandbox(run.id(), run.owner(), run.expiresAt(), List.of());
-      store.update("UPDATE ontology_platform_authoring_runs SET sandbox_id=?, sandbox_context=? WHERE run_id=?",
-          sandbox, contextId, uuid(run.id()));
+      store.update("UPDATE ontology_platform_authoring_runs SET sandbox_id=? WHERE run_id=?",
+          sandbox, uuid(run.id()));
       return null;
     });
   }

@@ -9,7 +9,7 @@ import io.ontomato.dataengine.service.agent.AgentHttpException;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** The external sample boundary shared by Action generation and build tests. */
+/** The external sample boundary shared by Action trials and generation tests. */
 class SandboxSampleInputTest {
   @Test void rejectsWrongContainersWithTheirJsonPathBeforeMetadataOrResourceAccess() {
     var schemas = mock(JSONRuleDao.class);

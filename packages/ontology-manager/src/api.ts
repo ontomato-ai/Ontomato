@@ -1,4 +1,4 @@
-import { BUILD_TEST_HEADER, type AppExecutionContext } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader, type AppExecutionContext } from "@ontomato/contracts/execution-context";
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import { createActionsClient } from "./clients/actions";
@@ -55,7 +55,7 @@ function credentialIdentity(credential: ManagerCredential | null) {
  * original main system); it only sets Accept-Language on each request.
  */
 export function hostSource(context: Pick<ManagerRequestContext, "apiBase" | "credential" | "executionContext">) {
-  return JSON.stringify([context.apiBase, credentialIdentity(context.credential), context.executionContext?.kind === "build-test" ? context.executionContext.contextId : "live"]);
+  return JSON.stringify([context.apiBase, credentialIdentity(context.credential)]);
 }
 
 function credentialHeaders(credential: ManagerCredential): Record<string, string> {
@@ -235,9 +235,6 @@ export function createManagerRequest(
     };
 
     const execution=context.executionContext;
-    // A bridged request is admitted by its host and by the resource owner. Direct Manager requests stay on the Java boundary.
-    if(execution?.kind==="build-test" && service!=="/data-query" && !context.transport)
-      throw Object.assign(new Error("This operation is not available for test-data preview"),{code:"BUILD_TEST_UNSUPPORTED"});
     const requestInit:RequestInit = {
       ...init,
       headers: {
@@ -246,8 +243,8 @@ export function createManagerRequest(
         "Accept-Language": context.locale,
         "X-Requested-With": "XMLHttpRequest",
         ...credentialHeaders(credential),
-        ...(service === "/data-query" && execution?.kind === "build-test"
-          ? { [BUILD_TEST_HEADER]: JSON.stringify({kind:"build-test",contextId:execution.contextId}) } : {}),
+        ...(execution?.kind === "preview" && carriesPreviewIdentity(service, init.method ?? "GET", path)
+          ? { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } : {}),
       },
     };
     const response = context.transport?await context.transport(path,requestInit,service):await fetch(`${context.apiBase}${service}${path}`,requestInit);

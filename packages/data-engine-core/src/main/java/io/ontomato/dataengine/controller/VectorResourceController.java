@@ -6,6 +6,7 @@ import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.WriteFunctionOperationService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.ExecutionTarget;
+import io.ontomato.dataengine.service.PreviewExecution;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
 import org.springframework.http.HttpStatus;
@@ -41,7 +42,6 @@ import io.ontomato.dataengine.util.SystemUtils;
 @RestController
 @Owned
 public class VectorResourceController {
-    @Autowired private DataSandboxService buildTests;
     @Autowired private WriteFunctionOperationService writes;
     @Autowired private IdentityService identity;
 
@@ -61,12 +61,12 @@ public class VectorResourceController {
 		ret.put("success", true);
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/vectorResource/delete")
 	@ResponseBody
 	public JSONObject delete(@RequestBody JSONObject param, HttpServletRequest request) throws Exception {
         var execution = vectorWrite(request);
+        var refused = PreviewExecution.refuseLiveWrite(request, execution::target);
+        if (refused != null) return refused;
         String className = requiredText(param, "className");
         String attrName = requiredText(param, "attrName");
         String objectId = requiredText(param, "objectId");
@@ -80,8 +80,6 @@ public class VectorResourceController {
         }
         return JSONObject.of("success", true);
     }
-
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/vectorResource/upload")
 	@ResponseBody
 	public JSONObject upload(
@@ -93,6 +91,8 @@ public class VectorResourceController {
 			@RequestParam(value = "suffix", required = false) String suffix,
 			@RequestParam(value = "items", required = false) String items, HttpServletRequest request) throws Exception {
         var execution = vectorWrite(request);
+        var refused = PreviewExecution.refuseLiveWrite(request, execution::target);
+        if (refused != null) return refused;
         var target = execution.target();
         if (items != null) {
             if (target.testing()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only single-resource uploads are supported in a sandbox");
@@ -129,7 +129,7 @@ public class VectorResourceController {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "An action execution grant is required");
             return new VectorWrite(claims.getString("domainId"), QueryGrantService.target(claims));
         }
-        var target = buildTests.resolve(request);
+        var target = ExecutionTarget.LIVE;
         if (!target.testing())
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "An action execution grant is required for live writes");
         return new VectorWrite(identity.getCurrentUser().getDomainId(), target);

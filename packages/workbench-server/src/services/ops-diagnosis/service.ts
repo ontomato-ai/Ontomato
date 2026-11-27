@@ -1,7 +1,7 @@
 import { agentHostSendResultSchema, type AgentHostAgentList } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { openAgentCaller } from "../agent-host/caller";
-import type { AgentInput, AgentRunContext } from "@ontomato/contracts/agent-channel";
+import type { AgentExecutionActorRef, AgentInput, AgentRunContext } from "@ontomato/contracts/agent-channel";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readDiagnosisModel } from "./model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
@@ -27,6 +27,7 @@ import { HttpError } from "../../utils/errors";
 import type { AgentHostOwner, AgentHostService } from "../agent-host/types";
 import { agentAllowed, requireAgent } from "../assistant/authorization";
 import { assistantStore } from "../assistant/store";
+import { agentExecutionCredentials, executionActor } from "../assistant/execution";
 import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
 
 export async function requireDiagnosisAgent(owner: AgentHostOwner, credentials: AssistantCredentials) {
@@ -35,7 +36,8 @@ export async function requireDiagnosisAgent(owner: AgentHostOwner, credentials: 
   await requireAgent(agent, "USE", credentials);
 }
 
-type Session = { id: string; domain_id: string; owner_id: string; title: string; target: DiagnosisTarget | null; created_at: Date; updated_at: Date };
+/** `preview`: opened by a preview, so every run in it runs as the preview, wherever it is sent from. */
+type Session = { id: string; domain_id: string; owner_id: string; title: string; target: DiagnosisTarget | null; preview: boolean; created_at: Date; updated_at: Date };
 const db = getPostgresPool;
 const skill = { namespace: { kind: "provider" as const, provider: "workbench" }, name: "ops-diagnosis" };
 const missing = () => new HttpError(404, "Conversation not found", "NOT_FOUND");
@@ -56,7 +58,12 @@ const view = (s: Session, latest: LatestRun | null) => ({
   createdAt: new Date(s.created_at).toISOString(), updatedAt: new Date(s.updated_at).toISOString(),
   latestRun: latest ? runStatusView(latest) : null,
 });
-export async function createDiagnosis(id: string, owner: AgentHostOwner, credentials: AssistantCredentials, target: DiagnosisTarget | null = null, fromChannel = false) {
+/**
+ * A replayed public create must name the same conversation, its preview identity included; a provider preparing a run in
+ * an existing conversation (`fromChannel`) takes it as stored.
+ */
+export async function createDiagnosis(id: string, owner: AgentHostOwner, credentials: AssistantCredentials, target: DiagnosisTarget | null = null, fromChannel = false,
+  preview = credentials.executionKind === "preview") {
   await requireDiagnosisAgent(owner, credentials);
   if (target) target = diagnosisTargetSchema.parse(target);
   const inserted = await transaction(async (tx) => {
@@ -64,10 +71,10 @@ export async function createDiagnosis(id: string, owner: AgentHostOwner, credent
     const previous = await tx.query(`SELECT id FROM ${table("ops_sessions")} WHERE id=$1`, [id]);
     if (previous.rowCount) return { rowCount: 0 };
     await assertUnclaimedSession(tx, id, owner, fromChannel);
-    return tx.query(`INSERT INTO ${table("ops_sessions")} (id,domain_id,owner_id,target) VALUES($1,$2,$3,$4)`, [id, owner.domainId, owner.userId, target ? JSON.stringify(target) : null]);
+    return tx.query(`INSERT INTO ${table("ops_sessions")} (id,domain_id,owner_id,target,preview) VALUES($1,$2,$3,$4,$5)`, [id, owner.domainId, owner.userId, target ? JSON.stringify(target) : null, preview]);
   });
   const row = await diagnosisSession(id, owner);
-  if (canonical(row.target) !== canonical(target)) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+  if (canonical(row.target) !== canonical(target) || (!fromChannel && row.preview !== preview)) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   await client.createSession(id);
   return { session: view(row, (await client.session(id)).latestRun?.run ?? null), replayed: !inserted.rowCount };
@@ -135,10 +142,12 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
   },
   async send(session, run, input, owner, credentials, entry) {
     await requireDiagnosisAgent(owner, credentials);
+    // A preview's conversation, or a preview's message, runs as the preview, as an assistant conversation does.
+    const preview = (await diagnosisSession(session, owner)).preview || credentials.executionKind === "preview";
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
-    const channel: AgentRunContext = { agent, actor, authority: { classNames: [], executionKind: "live" }, requestedBy: null, root: { session: { providerId: "observe", sessionId: session }, runId: run }, userRecipient: entry === "human" ? {session: {providerId: "observe",sessionId: session},actor} : null };
+    const channel: AgentRunContext = { agent, actor, authority: { classNames: [], executionKind: preview ? "preview" : "live" }, requestedBy: null, root: { session: { providerId: "observe", sessionId: session }, runId: run }, userRecipient: entry === "human" ? {session: {providerId: "observe",sessionId: session},actor} : null };
     const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption, presentationBinding: entry === "human" ? input.presentationBinding : undefined }, run));
     return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
   },
@@ -183,7 +192,14 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
   },
 };
 
-export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials, reader?: AgentVisibilityReader): Promise<RuntimeStartRunRequest> {
+/**
+ * `authority` is the run's as delegated or sent; a conversation opened as the preview's keeps every run in it the
+ * preview's. `bound` is the execution account the runtime binds a preview's run to (null being its initiator's own): the
+ * run executes, and its evidence callback reads, as that account. Any other diagnosis (`bound` absent) runs as its
+ * initiator, as it always has.
+ */
+export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials, reader?: AgentVisibilityReader,
+  authority?: AgentRunContext["authority"], bound?: AgentExecutionActorRef | null): Promise<RuntimeStartRunRequest> {
   await requireDiagnosisAgent(owner, credentials);
   const message = input.content;
   const row = await diagnosisSession(session, owner);
@@ -227,9 +243,13 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
   if (intent.fingerprint !== fingerprint(definition.data.skills))
     throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
   await db().query(`UPDATE ${table("ops_sessions")} SET title=CASE WHEN title='' THEN $2 ELSE title END,updated_at=now() WHERE id=$1`, [session, message]);
+  const executionUserId = bound?.userId ?? null;
+  const execution = await agentExecutionCredentials(DIAGNOSIS_AGENT_ID, executionUserId, owner, credentials);
   const evidencePath = "/api/observe/evidence";
   const baseUrl = environment.agentRuntime().callbackUrl.replace(/\/$/, "") + evidencePath;
   return {
+    ...(authority && { authority: { ...authority, executionKind: row.preview ? "preview" as const : authority.executionKind } }),
+    executionActor: executionActor(executionUserId, owner.domainId),
     language: intent.language,
     input,
     definition: definition.data,
@@ -241,8 +261,8 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
           scope: { purpose: "diagnosis-evidence" },
           runId: run,
           expiresAt: Date.now() + definition.data.sandbox.limits.wallTimeMs,
-          token: credentials.token ?? "",
-          apiKey: credentials.apiKey ?? "",
+          token: execution.token ?? "",
+          apiKey: execution.apiKey ?? "",
         }).value,
       },
     },

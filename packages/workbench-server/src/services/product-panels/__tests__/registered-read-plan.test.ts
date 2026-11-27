@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
   ACTION, ACTIVATE_WORKFLOW, ADD_ROLE_MEMBERS, ADD_ROLE_POLICIES, AGENT_DEFINITION, AGENT_SESSION, APPLICATION, APPLICATION_DELETE_DRAFT, APPROVE_KNOWLEDGE, ATTRIBUTE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET,
-  APPLICATION_RESTART_BUILD_TEST, APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
+  APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
   AUTOTEST_RUN, BUSINESS_KNOWLEDGE, CLEAR_OBJECT_DETAIL_PANEL, DASHBOARD, DASHBOARD_CARD, DATA_ADAPTER_CONFIG, DEACTIVATE_WORKFLOW,
   DELETE_ACTION, DELETE_AGENT, DELETE_ATTRIBUTE, DELETE_AUTOTEST_RUN, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_UNIT,
   DELETE_ORG_POSITION, DELETE_PERMISSION_POLICY, DELETE_ROLE, DELETE_SKILL, DELETE_WORKFLOW, DOWNLOAD_AUTOTEST_CASE_ARTIFACT, EXPORT_SKILL, DOWNLOAD_TURN_EVIDENCE, DSL_QUERY,
@@ -15,7 +15,6 @@ import {
   RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_ROLE_MEMBERS, REMOVE_ROLE_POLICIES, REMOVE_USER, RESET_USER_PASSWORD, REVOKE_USER_API_KEY, ROLE, SDK_COMPONENT, SET_ACTION_STATUS,
   SET_PRIMARY_KEY, SKILL, TRIGGER, TURN_EVIDENCE, UNKEEP_AUTOTEST_RUN, UNKEEP_TURN_EVIDENCE, USER, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
 import { panelAddress, productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
 import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
@@ -4792,8 +4791,6 @@ it("uses the same customer neighbors owner for an admitted live reader and prese
   const path = { source: request.source, registration: { panelId: "panel", framePanelId: "frame", inputs: undefined }, uses: [] };
   const reader = { owner: viewer, viewer: { apiKey: "executor-key", locale: "en" } };
   const previousCalls = mocks.read.mock.calls.length;
-  await expect(readResolvedPanelOwner({ ...reader, viewer: { ...reader.viewer, headers: { [BUILD_TEST_HEADER]: "{}" } } },
-    selection, { node }, projection, path)).rejects.toMatchObject({ status: 422, code: "BUILD_TEST_UNSUPPORTED" });
   await expect(readResolvedPanelOwner({ ...reader, viewer: { ...reader.viewer, headers: { "X-Ontomato-Retrieval-Caller-Id": "run" } } },
     selection, { node }, projection, path)).rejects.toMatchObject({ status: 403 });
   expect(mocks.read).toHaveBeenCalledTimes(previousCalls);
@@ -5308,7 +5305,7 @@ it("uses the built-in graph search class picker declaration and shares the owner
   }
 });
 
-it("uses admitted builder project and test facts for detail, publish and operations without separate Java reads", async () => {
+it("uses admitted builder project facts for detail, publish and operations without separate Java reads", async () => {
   const { appBuilderProjectStore } = await import("../../app-builder/project-store");
   const { RuntimeClient } = await import("../../../infrastructure/agent-runtime/client");
   const java = vi.spyOn(await import("../../../utils/backend-client"), "backendGet")
@@ -5345,8 +5342,7 @@ it("uses admitted builder project and test facts for detail, publish and operati
       path: `/applications/${id}/main`, names: { en: "Main preview" } }],
   });
   const operations = Object.fromEntries([
-    ["sync", APPLICATION_SYNC_BUILDER_SOURCE], ["restartBuildTest", APPLICATION_RESTART_BUILD_TEST],
-  ].map(([name, id]) => [name, { operation: { kind: "PlatformOperation", id },
+    ["sync", APPLICATION_SYNC_BUILDER_SOURCE],  ].map(([name, id]) => [name, { operation: { kind: "PlatformOperation", id },
     target: { literal: { className: APPLICATION, primaryKey } } }]));
   const opRequest: RegisteredDataRead = { source, memberPath: request.memberPath, inputs: {}, operations: true };
   const operationPlacement = { inputs: {}, member: {}, projection: { inputs: {}, operations } };
@@ -5356,7 +5352,6 @@ it("uses admitted builder project and test facts for detail, publish and operati
     params: { values: { icon: "box" }, defaultCommit: headCommit },
     selection: { typeId: APPLICATION, method: "builderPublishForm", primaryKey: draftId } };
   const ready = (payload?: object): JavaPanelReadResult => ({ status: "ready", payload });
-  const test = ready({ status: "EXPIRED", expiresAt: 48_000, sampleSummary: { name: "test-data/sample.json" } });
 
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const read of [detail(primaryKey), publish, detail("app-live"), detail(primaryKey), detail(primaryKey), detail("app-denied")]) {
@@ -5367,14 +5362,14 @@ it("uses admitted builder project and test facts for detail, publish and operati
   mocks.read.mockImplementationOnce(async () => {
     expect(workspace).not.toHaveBeenCalled();
     return { viewer, results: [
-      ready(), ready(catalog(primaryKey)), test,
-      ready(), { status: "empty" },
+      ready(), ready(catalog(primaryKey)),
+      ready(),
       ready(), ready(catalog("app-live")),
-      ready(), ready(catalog(primaryKey)), { status: "forbidden", error: "No query admission" },
-      ready(), ready(catalog(primaryKey)), { status: "error", code: "UNAUTHENTICATED", error: "Credential expired" },
+      ready(), ready(catalog(primaryKey)),
+      ready(), ready(catalog(primaryKey)),
       ready(), ready(catalog("app-denied", false)),
-      ready(draftMeta), test,
-      ready(draftMeta), { status: "empty" },
+      ready(draftMeta),
+      ready(draftMeta),
     ] };
   });
   try {
@@ -5384,29 +5379,26 @@ it("uses admitted builder project and test facts for detail, publish and operati
     const results = await runPreparedDataReads(credentials, prepared);
     expect(results).toMatchObject([
       { status: "ready", value: { label: "Live application", outputs: {
-        workspaceId, materialized: true, hasDrift: true, buildTestStatus: "EXPIRED", buildTestCanRestart: true,
+        workspaceId, materialized: true, hasDrift: true,
       } } },
       { status: "ready", value: { values: { name: "My draft", commit: headCommit, icon: "box" },
         save: { path: "/api/app-builder/projects/app-draft/publish" } } },
-      { status: "ready", value: { outputs: { materialized: false, sourceKind: "panel", buildTestStatus: "NONE" },
+      { status: "ready", value: { outputs: { materialized: false, sourceKind: "panel" },
         fields: { previewEntries: { value: [{ id: "main", label: "Main preview" }] } } } },
-      { status: "forbidden", reason: "No query admission" },
-      { status: "error", code: "UNAUTHENTICATED", message: "Credential expired" },
+      { status: "ready", value: { outputs: { materialized: true } } },
+      { status: "ready", value: { outputs: { materialized: true } } },
       { status: "forbidden" },
-      { status: "ready", value: { sync: {}, restartBuildTest: {} } },
-      { status: "ready", value: { restartBuildTest: { unavailable: { reason: expect.any(String) } } } },
+      { status: "ready", value: { sync: {} } },
+      { status: "ready", value: { sync: {} } },
     ]);
-    expect(results[6]).not.toHaveProperty("value.restartBuildTest.unavailable");
     const calls = mocks.read.mock.lastCall![1].map(({ call }: JavaPanelRead) => call);
-    expect(calls.slice(0, 5)).toEqual([
+    expect(calls.slice(0, 3)).toEqual([
       undefined, { type: APPLICATION, name: "record", parameters: { primaryKey } },
-      { type: APPLICATION, name: "builderTestStatus", parameters: { workspaceId } },
-      undefined, { type: APPLICATION, name: "builderTestStatus", parameters: { workspaceId } },
+      undefined,
     ]);
-    expect(calls.slice(-4)).toEqual([0, 1].flatMap(() => [
-      { type: APPLICATION, name: "builderProjectMetadata", parameters: { primaryKey } },
-      { type: APPLICATION, name: "builderTestStatus", parameters: { workspaceId } },
-    ]));
+    expect(calls.slice(-2)).toEqual([0, 1].map(() =>
+      ({ type: APPLICATION, name: "builderProjectMetadata", parameters: { primaryKey } })
+    ));
     expect(mocks.read).toHaveBeenCalledTimes(1);
     expect(java).not.toHaveBeenCalled();
     expect(claim).not.toHaveBeenCalled();
@@ -5686,9 +5678,9 @@ it("describes builder history row actions from the admitted workspace, drift and
   });
   mocks.read.mockResolvedValueOnce({ viewer, results: [
     ready(), ready(),
-    ready(), record("app-clean"), { status: "empty" },
-    ready(), record("app-drift"), { status: "empty" },
-    ready(), record("app-denied"), { status: "forbidden", error: "No query admission" },
+    ready(), record("app-clean"),
+    ready(), record("app-drift"),
+    ready(), { status: "forbidden", error: "No query admission" },
     ready(), ready(),
   ] });
   const operations: RegisteredDataRead = { source, memberPath: request.memberPath, inputs: {}, operations: true };
@@ -5720,12 +5712,11 @@ it("describes builder history row actions from the admitted workspace, drift and
       { status: "ready", value: { rollback: { effect: "write" } } },
     ]);
     const calls = mocks.read.mock.lastCall![1].map(({ call }: JavaPanelRead) => call);
-    expect(calls.filter(Boolean)).toEqual(["app-clean", "app-drift", "app-denied"].flatMap(primaryKey => [
-      { type: APPLICATION, name: "record", parameters: { primaryKey } },
-      { type: APPLICATION, name: "builderTestStatus", parameters: { workspaceId: idleWorkspace } },
-    ]));
+    expect(calls.filter(Boolean)).toEqual(["app-clean", "app-drift", "app-denied"].map(primaryKey =>
+      ({ type: APPLICATION, name: "record", parameters: { primaryKey } })
+    ));
     expect(runtime.mock.calls.filter(([path]) => !path.includes("/commits?"))).toHaveLength(4);
-    expect(releases).toHaveBeenCalledTimes(3);
+    expect(releases).toHaveBeenCalledTimes(2);
     expect(mocks.read).toHaveBeenCalledTimes(1);
     expect(java).not.toHaveBeenCalled();
   } finally {

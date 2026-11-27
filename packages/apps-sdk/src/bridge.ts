@@ -1,6 +1,6 @@
 import {APP_BRIDGE_CHANNEL,appBridgeConfirmPanelOperationResultSchema,appBridgeConfirmPanelOperationSchema,type AppBridgeConfirmPanelOperation,type AppBridgeConfirmPanelOperationResult,type AppBridgeExpandPageComposer,type AppBridgeResponse} from '@ontomato/contracts/app-bridge';
 import type {AppHost,AppHostSnapshot,AppHostPreferences,AppFrameInsets} from '@ontomato/contracts/app-host';
-import type {AppExecutionContext} from '@ontomato/contracts/build-tests';
+import type {AppExecutionContext} from '@ontomato/contracts/execution-context';
 import {randomId} from '@ontomato/contracts/random-id';
 
 const composerExpanders=new WeakMap<AppHost,(request:AppBridgeExpandPageComposer)=>Promise<void>>();

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
+import io.ontomato.dataengine.service.agent.OntologyAgentAccess;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -93,7 +94,7 @@ public class PanelResources {
         if (!domain.equals(user.getDomainId()))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Application registration must be in the registrant's domain");
         var servlet = attributes.getRequest();
-        if (servlet.getAttribute(QueryGrantService.ATTRIBUTE) != null || servlet.getHeader(DataSandboxService.HEADER) != null)
+        if (servlet.getAttribute(QueryGrantService.ATTRIBUTE) != null)
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The current credential cannot register an application");
 
         var headers = new HttpHeaders();
@@ -101,7 +102,7 @@ public class PanelResources {
         var token = servlet.getParameter("tk");
         if (token == null || token.isEmpty()) token = servlet.getHeader("tk");
         if (token != null) headers.set("tk", token);
-        for (var name : List.of("X-API-Key", "X-Ontomato-Retrieval-Caller-Id", "X-Ontomato-Agent-Execution")) {
+        for (var name : List.of("X-API-Key", "X-Ontomato-Retrieval-Caller-Id", OntologyAgentAccess.AGENT_EXECUTION_HEADER)) {
             var value = servlet.getHeader(name);
             if (value != null) headers.set(name, value);
         }

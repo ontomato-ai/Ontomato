@@ -1,4 +1,4 @@
-import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
+import type { AppExecutionContext } from "@ontomato/contracts/execution-context";
 import { computed, readonly, ref, shallowReactive, shallowRef, watch, type App, type Ref } from "vue";
 import { createI18n } from "vue-i18n";
 import { provideGlobalConfig } from "element-plus/es/components/config-provider/src/hooks/use-global-config";

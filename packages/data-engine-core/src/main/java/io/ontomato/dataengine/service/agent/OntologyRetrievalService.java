@@ -194,15 +194,16 @@ public class OntologyRetrievalService {
     return replayed;
   }
 
-  public JSONObject send(String session,String run,String message,String replyTo,Integer selectedOption,OntologyAgentAccess.Context context) throws Exception {
+  public JSONObject send(String session,String run,String message,String replyTo,Integer selectedOption,OntologyAgentAccess.Context context,boolean preview) throws Exception {
     var input=JSONObject.of("role","user","content",message,"timestamp",System.currentTimeMillis());
     if(replyTo!=null) input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"replyTo",replyTo,"content",message,"timestamp",System.currentTimeMillis());
     if(selectedOption!=null) input.put("selectedOption",selectedOption);
-    return channel.send(RETRIEVER,session,run,input,null,context,true);
+    return channel.send(RETRIEVER,session,run,input,null,context,null,true,preview);
   }
 
   /** One business admission owns the retriever's round. */
-  public JSONObject prepareRun(String session,String run,JSONObject message,String inputId,JSONObject parameters,String rootRunId,OntologyAgentAccess.Context context) throws Exception {
+  /** `executionKind` is the identity the run was started with; the retrieval narrows its classes and keeps it. */
+  public JSONObject prepareRun(String session,String run,JSONObject message,String inputId,JSONObject parameters,String rootRunId,OntologyAgentAccess.Context context,String executionKind) throws Exception {
     launching.add(run);
     boolean admitted = false;
     try {
@@ -237,7 +238,7 @@ public class OntologyRetrievalService {
       var effective = new OntologyAgentAccess.Context(context.owner(),
           withClasses(context.access(), input.getList("classNames", String.class)), context.token(), context.apiKey(),
           context.language(), context.expiresAt(), context.callerId(), context.executionUserId());
-      return runtimeRequest(session,run,message,effective);
+      return runtimeRequest(session,run,message,effective,executionKind);
     } catch(Exception error) {
       if(admitted) {
         store.closeRun(session,run,context.owner());
@@ -339,7 +340,7 @@ public class OntologyRetrievalService {
               row.getJSONObject("request").getString("message"));
      return AgentJson.json(user);
   }
-  private JSONObject runtimeRequest(String id,String runId,JSONObject message,OntologyAgentAccess.Context context) throws Exception {
+  private JSONObject runtimeRequest(String id,String runId,JSONObject message,OntologyAgentAccess.Context context,String executionKind) throws Exception {
     var record=store.retrieval(id,context.owner());
     var input=record.getJSONObject("input");
     var row=store.run(id,runId,context.owner());
@@ -353,7 +354,7 @@ public class OntologyRetrievalService {
     String base = runtime.ontologyUrl().replaceFirst("/$", "");
     String contextUrl = base + "/ontology/retrievals/runtime-context";
     return JSONObject.of("language",context.language(),"input",message,"definition",definition,
-      "authority", JSONObject.of("classNames", classes, "executionKind", "live"),
+      "authority", JSONObject.of("classNames", classes, "executionKind", executionKind),
       "businessCallbacks", JSONObject.of(
         "ontology", retrievalCallback(base, java.net.URI.create(base + "/ontology/").getRawPath(), grant),
         "retrieval", retrievalCallback(contextUrl, java.net.URI.create(contextUrl).getRawPath(), grant)));

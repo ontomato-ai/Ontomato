@@ -48,6 +48,7 @@ public class OntologyAgentController {
       @RequestBody JSONObject body,
       HttpServletRequest req)
       throws Exception {
+    OntologyAgentAccess.refuseAgentExecution(req);
     AgentJson.fields(body, "agentId");
     return host.create(
         AgentJson.id(key), AgentJson.id(body.getString("agentId")), access.forAgentUse(req,body.getString("agentId")).owner());
@@ -149,11 +150,14 @@ public class OntologyAgentController {
       @RequestBody JSONObject body,
       HttpServletRequest req)
       throws Exception {
+    // A run messages another conversation only through its own agent channel, never as its user.
+    OntologyAgentAccess.refuseAgentExecution(req);
     AgentJson.fields(body, "message", "replyTo", "selectedOption");
     if(body.containsKey("selectedOption") && (!(body.get("selectedOption") instanceof Integer) || body.getIntValue("selectedOption")<0 || !body.containsKey("replyTo"))) throw AgentHttpException.invalid("selectedOption requires a question and a nonnegative integer");
     if(body.containsKey("replyTo")) AgentJson.id(body.getString("replyTo"));
     return host.send(
-        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), body.getString("replyTo"), body.getInteger("selectedOption"), access.forSessionUse(req,id));
+        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), body.getString("replyTo"), body.getInteger("selectedOption"), access.forSessionUse(req,id),
+        io.ontomato.dataengine.service.PreviewExecution.isPreview(req));
   }
 
   @GetMapping("/sessions/{id}/runs/{run}")

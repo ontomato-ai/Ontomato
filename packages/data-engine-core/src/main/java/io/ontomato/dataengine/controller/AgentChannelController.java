@@ -3,6 +3,7 @@ package io.ontomato.dataengine.controller;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 
 import com.alibaba.fastjson2.*;
+import io.ontomato.dataengine.service.PreviewExecution;
 import io.ontomato.dataengine.service.RuntimeCodeClient;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.agent.*;
@@ -81,6 +82,8 @@ public class AgentChannelController {
   }
   @PostMapping("/commands")
   public Object commands(@RequestBody Map<String,Object> input,HttpServletRequest request) throws Exception {
+    // The entry for callers outside the product. A run's commands go through its own runtime channel, never through here.
+    OntologyAgentAccess.refuseAgentExecution(request);
     var command=body(input);String op=validateCommand(command);var context=access.authenticated(request);
     JSONObject actor;
     if(op.equals("read") || op.equals("cancel")) actor=taskActor(command.getString("taskId"),context);
@@ -88,7 +91,9 @@ public class AgentChannelController {
       if(op.equals("send")) sessionActor(command.getJSONObject("session"),context);
       actor=callers.open(UUID.randomUUID().toString(),context);
     }
-    return runtime.json(context.owner().domainId(),actor.getString("id"),"/v1/channel/commands","POST",JSONObject.of("actor",actor,"authority",JSONObject.of("classNames",List.of(),"executionKind","live"),"language",context.language(),"command",command,"credential",AgentChannelRuns.credential(context)),null);
+    // An agent a preview starts or messages here runs as the preview, as one it delegates to does.
+    String executionKind=PreviewExecution.isPreview(request)?"preview":"live";
+    return runtime.json(context.owner().domainId(),actor.getString("id"),"/v1/channel/commands","POST",JSONObject.of("actor",actor,"authority",JSONObject.of("classNames",List.of(),"executionKind",executionKind),"language",context.language(),"command",command,"credential",AgentChannelRuns.credential(context)),null);
   }
   @GetMapping("/tasks/{task}/events")
   public org.springframework.http.ResponseEntity<org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody> events(@PathVariable String task,HttpServletRequest request) throws Exception {
@@ -128,8 +133,9 @@ public class AgentChannelController {
     String agent=ref.getString("agentId"),session=AgentJson.id(body.getString("sessionId")),run=AgentJson.id(body.getString("runId"));
     String kind=OntologyGenerationService.kindForAgent(agent);
     if(!OntologyAgentStore.isKnownAgent(agent)) throw AgentHttpException.missing();
+    // A delegated run keeps the identity its caller runs with: a preview's reads its data, and its runs are refused where
+    // they would run.
     var authority=body.getJSONObject("authority");
-    if("build-test".equals(authority.getString("executionKind")) && (body.getJSONObject("requestedBy")!=null || kind==null)) throw new AgentHttpException(422,"BUILD_TEST_UNSUPPORTED","The agent channel is not available in a build-test execution");
     var actor=body.getJSONObject("actor");String language=body.getString("language");
     var requestedBy=body.getJSONObject("requestedBy");
     var root=body.getJSONObject("root");
@@ -140,7 +146,7 @@ public class AgentChannelController {
       var context=callers.retrieval(actor,domain,language,authority,requestedBy,root,executionActor);
       if(steer) return retrieval.prepareSteer(session,run,body.getJSONObject("input"),context);
       var prepared=retrieval.prepareRun(session,run,body.getJSONObject("input"),body.getString("inputId"),
-          body.getJSONObject("context"),root.getString("runId"),context);
+          body.getJSONObject("context"),root.getString("runId"),context,authority.getString("executionKind"));
       prepared.put("executionActor",executionActor);
       return OntologyAgentDefinitions.withVisibility(prepared,reader);
     }

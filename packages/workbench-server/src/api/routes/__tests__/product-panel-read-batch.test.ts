@@ -2,7 +2,7 @@ import { objectDecisions } from "../../../__tests__/fixtures/agent-object-decisi
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { Request, RequestHandler, Response } from "express";
 import { tmpdir } from "node:os";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { ATTRIBUTE, DASHBOARD_CARD, DELETE_ATTRIBUTE, EXTERNAL_MCP_SERVICE, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
@@ -82,9 +82,8 @@ function postRead(path: "/product-panels/read" | "/product-panels/read-batch", b
   });
 }
 
-const previewHeader = JSON.stringify({ kind: "build-test", contextId: null });
-function postPreviewBatch(body: unknown) {
-  return postRead("/product-panels/read-batch", body, { tk: "reader-token", [BUILD_TEST_HEADER]: previewHeader });
+function postScopedBatch(body: unknown) {
+  return postRead("/product-panels/read-batch", body, { tk: "reader-token", [AGENT_EXECUTION_HEADER]: "run-fixture" });
 }
 
 beforeEach(() => {
@@ -144,7 +143,7 @@ const useRequest = (kind: string, id: string) => ({
 });
 
 it("reads a 19-member frame with one entry lookup, two grant calls and isolated results", async () => {
-  const response = await postPreviewBatch({ reads });
+  const response = await postScopedBatch({ reads });
   expect(response).toEqual({ status: 200, body: { results: [
     { status: "ready", value: [record] },
     { status: "empty" },
@@ -155,7 +154,7 @@ it("reads a 19-member frame with one entry lookup, two grant calls and isolated 
   expect(mocks.get).toHaveBeenCalledTimes(1);
   expect(mocks.get).toHaveBeenCalledWith(
     "registered-panel-entry", expect.stringContaining("/platform/applications/registered-entry?"),
-    expect.objectContaining({ headers: expect.objectContaining({ tk: "reader-token", [BUILD_TEST_HEADER]: expect.any(String) }) }),
+    expect.objectContaining({ headers: expect.objectContaining({ tk: "reader-token" }) }),
   );
   expect(mocks.post.mock.calls.map(([, url, body]) => [new URL(url, "http://data-engine.test").pathname, body])).toEqual([
     ["/authorization/objects/decide-batch", { requests: [useRequest("PANEL", root)] }],
@@ -171,12 +170,12 @@ it("reads a 19-member frame with one entry lookup, two grant calls and isolated 
 
 it("does not carry cached entries or grants across batches or inspect a denied root's members", async () => {
   const sample = [reads[0], { ...reads[0], source: { ...source, useId: "denied-entry" } }];
-  expect((await postPreviewBatch({ reads: sample })).body).toEqual({
+  expect((await postScopedBatch({ reads: sample })).body).toEqual({
     results: [{ status: "ready", value: [record] }, { status: "forbidden", reason: expect.stringMatching(/\S/u) }],
   });
   mocks.query.mockClear();
   mocks.post.mockImplementation(async (_endpoint, _url, body) => ({ text: JSON.stringify(objectDecisions(body, () => false)) }));
-  expect((await postPreviewBatch({ reads: sample })).body).toEqual({
+  expect((await postScopedBatch({ reads: sample })).body).toEqual({
     results: [{ status: "forbidden", reason: expect.stringMatching(/\S/u) }, { status: "forbidden", reason: expect.stringMatching(/\S/u) }],
   });
   expect(mocks.get).toHaveBeenCalledTimes(4);
@@ -198,7 +197,7 @@ it("rejects invalid envelopes before entry or grant lookup", async () => {
 it("rejects an incomplete grant response before reading member data", async () => {
   mocks.post.mockResolvedValueOnce({ text: JSON.stringify({ decisions: [{ allowed: true }] }) })
     .mockResolvedValueOnce({ text: JSON.stringify({ decisions: [{ allowed: true }] }) });
-  const result = await postPreviewBatch({ reads: reads.slice(0, 2) });
+  const result = await postScopedBatch({ reads: reads.slice(0, 2) });
   expect(result).toEqual({ status: 200, body: { results: [
     { status: "error", message: expect.stringMatching(/decisions|grant/i) },
     { status: "error", message: expect.stringMatching(/decisions|grant/i) },
@@ -310,7 +309,8 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
   const cardRead = kind === "card result" ? "result" : kind === "card form" ? "form" : kind === "card metric source" ? "metricSource" : undefined;
   const runId = "11111111-1111-4111-8111-111111111111";
   const sessionId = "22222222-2222-4222-8222-222222222222";
-  const run = { status: "running", sessionId, channel: { authority: { executionKind: "live" } } };
+  // A preview run that no page presents reads as any run does: the preview adds no refusal to a read.
+  const run = { status: "running", sessionId, channel: { authority: { executionKind: kind === "metric" ? "preview" : "live" } } };
   const use = { id: source.useId, names: { en: String(source.useId) }, pageKey: "list", panelId: "panel-content", path: "/ontology/list" };
   mocks.run.mockResolvedValue(run);
   mocks.get.mockImplementation(async (_endpoint, url: string, options) => {

@@ -5,9 +5,8 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { WorkbenchIdentity } from "../../../identity/types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
-import { buildTestAccess } from "../../build-test-access";
 import { errorHandler } from "../../middleware/error-handler";
 import { HttpError } from "../../../utils/errors";
 
@@ -68,8 +67,7 @@ async function app() {
     Object.assign(req, { userId: req.header("x-user") ?? "alice", domainId: "domain", token: req.header("x-user") === "bob" ? "bob" : "original", apiKey: "", locale: "en" });
     next();
   });
-  router.use("/api", buildTestAccess);
-  router.use("/api/assistant", assistantRouter);
+    router.use("/api/assistant", assistantRouter);
   router.use(errorHandler);
   const server = createServer(router);
   servers.push(server);
@@ -117,10 +115,10 @@ it("requires the same create-agent permission as a save", async () => {
 
 const target = { kind: "draft" };
 const id = "8f5df4a4-e30b-48cb-831a-33b759144f76";
-it("opens a create form in build-test without validating empty values or admitting a write", async () => {
+it("opens a create form in preview without validating empty values", async () => {
   mocks.options.mockResolvedValue({ canSetExecutionUser: false, users: [] });
   const request = await app();
-  const headers = { [BUILD_TEST_HEADER]: "preview" };
+  const headers = { [EXECUTION_CONTEXT_HEADER]: '{"kind":"preview"}' };
   const response = await request({ target, changedField: null }, "alice", "/form", headers);
   expect(response.status).toBe(200);
   const opened = await response.json();
@@ -136,8 +134,6 @@ it("opens a create form in build-test without validating empty values or admitti
   expect(opened.fields).toContainEqual(expect.objectContaining({ path: "/icon", control: { kind: "avatar" } }));
   expect(opened.fields).toContainEqual(expect.objectContaining({ path: "/executionUserId", readOnly: true }));
   expect(mocks.setting).not.toHaveBeenCalled();
-  expect((await request(form, "alice", "", headers)).status).toBe(422);
-  expect((await request(form, "alice", `/${id}`, headers, "PUT")).status).toBe(422);
   expect(mocks.pool).not.toHaveBeenCalled();
 });
 it("checks and normalizes a complete typed draft without writing", async () => {

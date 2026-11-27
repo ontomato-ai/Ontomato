@@ -3,7 +3,7 @@ import type { Router } from "vue-router";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import { pageCounterKey, type PageCounter } from "@ontomato/agent-shell-ui";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
+import { createAssistantClient, createPreviewAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
 import { readRememberedAgent, readRememberedSession } from "@ontomato/workbench-ui";
 
 /*
@@ -25,8 +25,9 @@ export function providePlatformPageCounter(router: Router) {
     preferredAgentId: ref(readRememberedAgent()),
     async ask(agentId, text, page, entry) {
       if (entry?.submit) {
-        const client = createAssistantClient();
-        const held = entry.newSession ? null : readRememberedSession(agentId);
+        // A preview's entry opens a conversation of its own, as the preview's, so every run in it runs as the preview.
+        const client = entry.preview ? createPreviewAssistantClient() : createAssistantClient();
+        const held = entry.newSession || entry.preview ? null : readRememberedSession(agentId);
         const sessionId = held && await client.listSessions(agentId, null).then(result => result.sessions.some(session => session.id === held))
           ? held
           : (await client.createSession(agentId)).id;

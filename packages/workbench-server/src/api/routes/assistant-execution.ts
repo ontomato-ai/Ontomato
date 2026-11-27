@@ -1,4 +1,3 @@
-import { isLivePresentationEligibleRun } from "../../services/agent-host/presentation";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import {
   directPanelMemberPathSchema, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema, productPanelReadRequestSchema,
@@ -8,8 +7,7 @@ import { readAssistantPanelMember } from "../../services/assistant/registered-pa
 import { readNestedPanel, resolvePanelMemberPath } from "../../services/product-panels/member-path";
 import { requirePanelUseEntry } from "../../services/product-panels/application-use";
 import { readCurrentPanelRecord } from "../../services/product-panels/current";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
-import { isAssistantBuildTestOperation } from "../build-test-access";
+import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { PROJECTION_REUSE_PANEL_HEADER } from "@ontomato/contracts/product-panels";
 import { Router, type Request } from "express";
 import { AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE, bindingKey, panelClientReads } from "@ontomato/contracts/panel-client-requests";
@@ -27,7 +25,7 @@ import { pageCatalogRequestSchema, pageDescriptionRequestSchema, pageSearchReque
 import { readPageCatalog, readPageDescription, searchPages } from "../../services/product-panels/page-discovery";
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
 import { credentialsForRun, ownedRun, runForOwner } from "../../services/assistant/execution";
-import { sessionBuildTestWorkspace, WorkspaceBuildTests } from "../../services/app-builder/build-tests";
+import { assistantStore } from "../../services/assistant/store";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { adoptAppBuilderDefinition, executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
 import { authoringAdoptionRequestSchema, authoringKindSchema, authoringOperations } from "@ontomato/contracts/authoring";
@@ -37,6 +35,17 @@ export const assistantExecutionMountPath = "/api/assistant/executions";
 export const assistantOwnerCallbackPath = "/:runId/:target(ontology|workbench)/*";
 
 const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u;
+
+/**
+ * Whether a run's callback request reaches an entry its preview identity is carried to: an ontology path is DataRAG's,
+ * a workbench path Node's below `/api`, which Node routes in any letter case. Anywhere else (a read, a definition, a
+ * model, a platform object) the request travels exactly as a live one does.
+ */
+function carriesRunPreview(target: "ontology" | "workbench", method: string, path: string): boolean {
+  if (target === "ontology") return carriesPreviewIdentity("/data-query", method, path);
+  const api = /^\/api(?=\/)/iu.exec(path);
+  return api !== null && carriesPreviewIdentity("", method, path.slice(api[0].length));
+}
 
 // These existing reads and personal operations belong to the initiator, including on runs
 // with a separate execution account. Every other route uses the run's execution identity.
@@ -50,9 +59,6 @@ async function panelReader(req: Request, runId: string, source: ProductPanelRead
   const run = await runForOwner(owner, runId);
   if (!run.channel || run.status !== "running")
     throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
-  if (run.channel.authority.executionKind === "build-test"
-      && !isLivePresentationEligibleRun({ host: "workbench", owner, runId, sessionId: run.sessionId, channel: run.channel }))
-    throw new HttpError(422, "Page operation reads do not support test data", "BUILD_TEST_UNSUPPORTED");
   if (source.kind === "frame")
     throw new HttpError(403, "The application frame is not a page operation target", "PANEL_FRAME_SKILL_REQUIRED");
   const { use } = await requirePanelUseEntry(credentials, source, owner);
@@ -139,9 +145,11 @@ assistantExecutionRouter.get("/:runId/workbench/api/app-builder/workspace", wrap
   const runId = callbackRun(req, res.locals.runtimeCallback);
   const { owner } = context(req);
   const run = await runForOwner(owner, runId);
-  if (run.status !== "running" || run.channel?.authority.executionKind !== "build-test")
+  if (run.status !== "running" || run.channel?.authority.executionKind !== "preview")
     throw new HttpError(403, "An active App Builder run is required", "FORBIDDEN");
-  res.json({ workspaceId: await sessionBuildTestWorkspace(owner, run.sessionId) });
+  const session = await assistantStore.session(run.sessionId, owner);
+    if (!session.workspace_id) throw new HttpError(422, "The run has no workspace", "WORKSPACE_REQUIRED");
+    res.json({ workspaceId: session.workspace_id });
 }));
 
 for (const kind of ["action", "metric-view"] as const) {
@@ -187,8 +195,7 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
   const businessGrant = target === "ontology" && governanceAction.test(path) ? callback.businessGrant : undefined;
   let credentials: AssistantCredentials = initiatorCredentials;
   let retrievalScopeId: string | null = null;
-  const requestedContext = req.header(BUILD_TEST_HEADER);
-  let executionContext: string | undefined;
+  let authority: { executionKind: string } | undefined;
   if (initiatorResourceRead || ownership || businessGrant) {
     if (target === "ontology") {
       const { turn, run } = await ownedRun(owner, runId);
@@ -196,29 +203,27 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
         throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
       }
       retrievalScopeId = turn?.retrieval_scope_id ?? null;
+      authority = run.channel?.authority;
     } else {
       const run = await runForOwner(owner, runId);
       if (initiatorResourceRead && (!run.channel || run.status !== "running")) {
         throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
       }
+      authority = run.channel?.authority;
     }
   } else {
     const resolved = await credentialsForRun(owner, runId, initiatorCredentials);
     credentials = resolved.credentials;
     retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
-    const authority = resolved.run.channel?.authority;
-    if (authority?.executionKind === "build-test") {
-      let contextId = authority.executionContextId ?? null;
-      if (contextId === null && target === "ontology" && isAssistantBuildTestOperation(req.method, path)) {
-        const workspaceId = await sessionBuildTestWorkspace(owner, resolved.run.sessionId);
-        const current = await new WorkspaceBuildTests(owner, initiatorCredentials, workspaceId).current();
-        contextId = current?.contextId ?? null;
-      }
-      executionContext = JSON.stringify({ kind: "build-test", contextId });
-    }
+    authority = resolved.run.channel?.authority;
   }
-  if (requestedContext !== undefined && requestedContext !== executionContext)
-    throw new HttpError(403, "Execution context differs from the run's bound target", "BUILD_TEST_FORBIDDEN");
+  const previewEntry = carriesRunPreview(target, req.method, path);
+  const executionContext = previewEntry && authority?.executionKind === "preview" ? previewExecutionContextHeader : undefined;
+  // At those entries the run's own identity is the only one a caller may state; elsewhere what the caller said about it
+  // is dropped and the request travels as a live one does. Values are never merged.
+  const requestedContext = req.header(EXECUTION_CONTEXT_HEADER);
+  if (previewEntry && requestedContext !== undefined && requestedContext !== executionContext)
+    throw new HttpError(403, "Execution context differs from the run's bound target", "PREVIEW_EXECUTION_FORBIDDEN");
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
   if (businessGrant) {
     headers.tk = businessGrant;
@@ -228,7 +233,7 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
   headers[AGENT_EXECUTION_HEADER] = runId;
   if (retrievalScopeId) headers["X-Ontomato-Retrieval-Caller-Id"] = retrievalScopeId;
   else delete headers["X-Ontomato-Retrieval-Caller-Id"];
-  if (executionContext !== undefined) headers[BUILD_TEST_HEADER] = executionContext;
+  if (executionContext !== undefined) headers[EXECUTION_CONTEXT_HEADER] = executionContext;
   const reusePanel = req.header(PROJECTION_REUSE_PANEL_HEADER);
   if (reusePanel !== undefined) headers[PROJECTION_REUSE_PANEL_HEADER] = reusePanel;
   const upstream = new URL(target === "ontology" ? config.dataQuery.baseUrl : environment.agentRuntime().callbackUrl);

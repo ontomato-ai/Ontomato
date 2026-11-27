@@ -77,7 +77,7 @@ test("sendAgentCommand uses the session callback credential and leaves the run h
   process.env.ONTOMATO_EXECUTION_CALLBACK = "business-callback";
   try {
     const result = await sendAgentCommand({ op: "start", agent: { providerId: "ontology", agentId: "retriever" }, message: "Sales?" }, {
-      headers: { "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test" }) },
+      headers: { "X-Ontomato-Execution-Context": JSON.stringify({ kind: "preview" }) },
     });
     assert.deepEqual(result, { taskId: "task-1", status: "starting" });
     assert.equal(received[0].headers["x-ontomato-callback-credential"], "session-secret");

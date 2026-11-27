@@ -85,7 +85,7 @@ class QueryGrantScopeTest {
     var contexts = mock(DataSandboxService.class);
     ReflectionTestUtils.setField(grants, "contexts", contexts);
     var target = new ExecutionTarget("context", "context-sandbox", List.of("Order"), deadline);
-    when(contexts.require("context", "user", "domain")).thenReturn(target);
+    when(contexts.requireActionTrial("context", "user", "domain")).thenReturn(target);
     var authority = PythonAuthority.write("user", "domain", "context-sandbox").withTarget(target)
         .withAuthorSandbox("author-sandbox");
     var parent = grants.issueAuthoringParent(authority, "parent", deadline);
@@ -107,7 +107,7 @@ class QueryGrantScopeTest {
     var contexts = mock(DataSandboxService.class);
     ReflectionTestUtils.setField(grants, "contexts", contexts);
     var target = new ExecutionTarget("context", "sample", List.of("Order"), deadline);
-    when(contexts.require("context", "initiator", "domain")).thenReturn(target);
+    when(contexts.requireActionTrial("context", "initiator", "domain")).thenReturn(target);
     var user = new QueryAccessService.GrantUser("executor", "domain");
     var access = new QueryAccessService.Access(user, null, null, null, deadline, List.of("Order"), target);
     var token = grants.issueForTarget("ontology-generation", "run", deadline + 60_000, access,
@@ -142,10 +142,11 @@ class QueryGrantScopeTest {
     doAnswer(call -> null).when(executions).requireMember("domain", "user");
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Query permission revoked")).when(identity).requireQueryAccess("user", "domain");
     assertBlocked(filter, request(token));
+    doAnswer(call -> null).when(identity).requireQueryAccess("user", "domain");
 
     var override = request(token);
-    override.addHeader(DataSandboxService.HEADER, "{}");
-    assertBlocked(filter, override);
+    override.addHeader(PreviewExecution.HEADER, "{\"kind\":\"preview\"}");
+    assertAdmitted(filter, override);
   }
 
   private static MockHttpServletRequest request(String token) {
@@ -162,6 +163,13 @@ class QueryGrantScopeTest {
     assertEquals(403, response.getStatus());
     assertNull(request.getAttribute(QueryGrantService.ATTRIBUTE));
     verifyNoInteractions(chain);
+  }
+
+  private static void assertAdmitted(QueryGrantFilter filter, MockHttpServletRequest request) throws Exception {
+    var response = new MockHttpServletResponse();
+    var chain = mock(jakarta.servlet.FilterChain.class);
+    filter.doFilter(request, response, chain);
+    verify(chain).doFilter(request, response);
   }
 
   private static void rejected(HttpStatus status, org.junit.jupiter.api.function.Executable call) {

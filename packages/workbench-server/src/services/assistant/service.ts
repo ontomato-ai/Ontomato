@@ -96,7 +96,9 @@ export const assistantService = {
     if (project && input.workspaceId !== undefined && input.workspaceId !== project.workspaceId)
       throw new HttpError(409, "Session workspace does not match context.appId", "WORKSPACE_CHANGED");
     const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId, appId ? appWorkspaceSlot(appId) : owner.userId);
-    const { row, replayed } = await assistantStore.create(id, owner, input.agentId, origin, project?.workspaceId ?? input.workspaceId);
+    // A conversation a preview opens is the preview's: its runs run as the preview, wherever they are later sent from.
+    const { row, replayed } = await assistantStore.create(id, owner, input.agentId, origin, project?.workspaceId ?? input.workspaceId,
+      false, credentials.executionKind === "preview");
     try {
       await runtime.createSession(id, row.workspace_id ?? undefined);
     } catch (e) {
@@ -301,9 +303,12 @@ export const assistantService = {
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
     const { sessionId, runId: id, input, authority } = body;
     const { agent: a } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
-    // When a logged-in user is present (direct chat or delegated sub-agent under a user chat),
-    // both reads and writes inherit that user's permissions. `execution_user_id` is only for unattended automation.
-    const executionUserId = isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
+    // With a logged-in user present the run reads and writes as that user, and `execution_user_id` is only for unattended
+    // automation: this agent's own configuration chooses, for a live run whether it is delegated or not. A preview's run
+    // keeps the execution account the runtime binds it to (`executionActor`, null being the initiator's own), so the
+    // preview carries its identity and permissions down; the runtime refuses a start under any other.
+    const executionUserId = authority.executionKind === "preview" && body.executionActor !== undefined ? body.executionActor?.userId ?? null
+      : isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
     const executionCredentials = await agentExecutionCredentials(a.id, executionUserId, owner, credentials);
     const appId = isAppBuilderKind(a.kind) ? requiredBuilderAppId(body.context) : undefined;
     const project = appId ? await ensureMaterializedWorkspace(owner, credentials, appId) : undefined;
@@ -312,9 +317,12 @@ export const assistantService = {
       const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId, slot);
       await runtime.request(`/v1/channel/sessions/${sessionId}/workspace`, "POST", { workspaceId: project.workspaceId, ownerId: slot });
     }
-    const { row: session } = await assistantStore.create(sessionId, owner, a.id, "delegated", project?.workspaceId, true);
+    const { row: session } = await assistantStore.create(sessionId, owner, a.id, "delegated", project?.workspaceId, true, authority.executionKind === "preview");
     const message = input.content;
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
+    // A run keeps the identity it was started or delegated with: an App Builder run is always the preview's, any other
+    // agent's when its caller's run was or its conversation was opened as the preview's.
+    const preview = isAppBuilderKind(a.kind) || authority.executionKind === "preview" || session.preview;
     const request = await withDomainSkills(owner.domainId,async () => {
       const prepare = isAppBuilderKind(a.kind)
         ? prepareAppBuilderRun
@@ -327,15 +335,14 @@ export const assistantService = {
       const reader = visibilityReader(body);
       const pageSkillContext = reader === "user" && input.role === "user" && body.root.runId === id
         ? pageSkillContextSchema.optional().parse(body.context?.pageSkillContext) : undefined;
-      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader }, appId);
+      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader,lane:preview ? "preview" : "live" }, appId);
     });
     await assistantStore.admitted(id,message);
-    return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
+    return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: preview ? "preview" : "live" } };
   },
   async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
     const a = await assistantStore.agent(id,owner);
     if (!a.enabled) throw new HttpError(409,"Agent disabled","AGENT_DISABLED");
-    if (authority?.executionKind === "build-test" && !isAppBuilderKind(a.kind)) throw new HttpError(403,"Build-test runs cannot delegate to a live agent","BUILD_TEST_FORBIDDEN");
     if (authority?.classNames.length) {
       a.class_names = a.class_names.length ? a.class_names.filter(name => authority.classNames.includes(name)) : authority.classNames;
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
@@ -358,7 +365,9 @@ export const assistantService = {
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId, appId ? appWorkspaceSlot(appId) : owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
-    const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
+    // The run is the preview's when its agent builds applications, its conversation was opened by a preview, or a preview sends it.
+    const preview = isAppBuilderKind(a.kind) || session.preview || credentials.executionKind === "preview";
+    const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: preview ? "preview" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
     const context = {
       ...(appId ? { appId } : {}),
       ...(input.variables ? { variables: input.variables } : {}),

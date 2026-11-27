@@ -23,10 +23,8 @@ const host = {
 
 test("authoring operation input cannot carry Workbench authority", () => {
   assert.equal(authoringHostRunSchema.safeParse({ ...host, target: { kind: "live" } }).success, true);
-  assert.equal(authoringHostRunSchema.safeParse({
-    ...host, target: { kind: "build-test", contextId: executionId },
-  }).success, true);
-  assert.equal(authoringHostRunSchema.safeParse({ ...host, target: { kind: "build-test" } }).success, false);
+  assert.equal(authoringHostRunSchema.safeParse({ ...host, target: { kind: "live", contextId: executionId } }).success, false);
+  assert.equal(authoringHostRunSchema.safeParse({ ...host, target: { kind: "bogus" } }).success, false);
 
   const action = { code: "print('checked')", parameterDefs: [] };
   assert.deepEqual(authoringOperations.action.test.body.parse(action), action);

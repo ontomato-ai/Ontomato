@@ -6,7 +6,6 @@ import { HttpError } from "../../utils/errors";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import { restoreAgentCaller } from "../agent-host/caller";
-import { sessionBuildTestWorkspace, WorkspaceBuildTests } from "../app-builder/build-tests";
 import { authoringAdoptionResponseSchema, type AuthoringKind, type AuthoringHostRun, type AuthoringHistoricalRun, type authoringOperations } from "@ontomato/contracts/authoring";
 import { loadedSkillVersion } from "./skills";
 import { agentExecutionCredentials, ownedRun } from "./execution";
@@ -91,7 +90,7 @@ export async function executeAuthoring(
   sessionId?: string,
 ) {
   const authoring = await authoringRun(owner, credentials, runId, kind, sessionId);
-  const { run, binding, authority, actor, agentId } = authoring;
+  const { run, binding, actor, agentId } = authoring;
   if (operation === "read-test") {
     const result = await java(`/${kind}/read-test`, owner.domainId, { run: binding, input }, { locale: credentials.locale });
     return JSON.parse(result.text);
@@ -100,13 +99,7 @@ export async function executeAuthoring(
   const caller = await restoreAgentCaller(actor, owner.domainId, false, credentials);
   const expiresAt = Math.min(binding.expiresAt, caller.expiresAt);
   const executor = await agentExecutionCredentials(agentId, run.executionUserId ?? null, owner, credentials);
-  let target: AuthoringHostRun["target"] = { kind: "live" };
-  if (authority.executionKind === "build-test") {
-    const workspaceId = await sessionBuildTestWorkspace(owner, binding.sessionId);
-    const context = await new WorkspaceBuildTests(owner, credentials, workspaceId).current();
-    if (!context) throw new HttpError(422, "Start a build-test for this workspace", "BUILD_TEST_CONTEXT_REQUIRED");
-    target = { kind: "build-test", contextId: context.contextId };
-  }
+  const target: AuthoringHostRun["target"] = { kind: "live" };
   const result = await java(`/${kind}/${operation}`, owner.domainId, { run: { ...binding, expiresAt, target }, input }, executor);
   return JSON.parse(result.text);
 }

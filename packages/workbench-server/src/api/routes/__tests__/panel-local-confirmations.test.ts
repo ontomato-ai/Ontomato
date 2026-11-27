@@ -11,13 +11,16 @@ const mocks = vi.hoisted(() => ({
   runForOwner: vi.fn(),
   runtimeRequest: vi.fn(),
   settings: vi.fn(),
+  cancelPending: vi.fn(),
 }));
 vi.mock("../../../services/agent-host/presentation", async (original) => ({
   ...await original<typeof import("../../../services/agent-host/presentation")>(),
   hasActivePresentationForRun: () => true,
 }));
 vi.mock("../../../services/assistant/execution", () => ({ runForOwner: mocks.runForOwner }));
-vi.mock("../../../services/product-panels/operation-store", () => ({ panelOperationStore: { settings: mocks.settings } }));
+vi.mock("../../../services/product-panels/operation-store", () => ({ panelOperationStore: {
+  settings: mocks.settings, cancelPendingAgentPageQuestion: mocks.cancelPending,
+} }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: class {
     request = mocks.runtimeRequest;
@@ -82,7 +85,7 @@ function post(url: string, body: object) {
 it.each([
   { executionKind: "live", requireConfirmation: true },
   { executionKind: "live", requireConfirmation: undefined },
-  { executionKind: "build-test", requireConfirmation: false },
+  { executionKind: "preview", requireConfirmation: false },
 ])("handles local action confirmation in full-auto mode (%j)", async ({ executionKind, requireConfirmation }) => {
   const actor = { id: "reader", domainId: "domain" };
   mocks.runForOwner.mockResolvedValue({
@@ -102,7 +105,7 @@ it.each([
   expect(response.status).toBe(200);
   const result = await response.json();
 
-  if (executionKind === "build-test" || requireConfirmation) {
+  if (executionKind === "preview" || requireConfirmation) {
     expect(result).toMatchObject({ autoMode: false, questionId: expect.any(String) });
     expect(mocks.runtimeRequest).toHaveBeenCalledWith(
       "/v1/channel/user-questions", "POST",
@@ -114,4 +117,25 @@ it.each([
     expect(result).toMatchObject({ autoMode: true, questionId: null });
     expect(mocks.runtimeRequest).not.toHaveBeenCalled();
   }
+});
+
+it("lets a preview claim or cancel a live run's pending confirmation: it is the platform's record, not a business write", async () => {
+  const actor = { id: "reader", domainId: "domain" };
+  mocks.runForOwner.mockResolvedValue({
+    status: "running", sessionId,
+    channel: { agent: { providerId: session.providerId }, actor, root: { session, runId }, requestedBy: null,
+      userRecipient: { session, actor }, authority: { executionKind: "live" } },
+  });
+  const ask = async () => (await (await post(endpoint, { agentRun: { sessionId, runId, toolCallId: "discard" }, operationLabel: "Discard",
+    targetLabel: "Task", requireConfirmation: true })).json()) as { intentId: string; questionId: string };
+  const preview = { "X-Ontomato-Execution-Context": '{"kind":"preview"}' };
+  const claimed = await ask();
+  expect(await (await fetch(`${endpoint}/${claimed.questionId}/claim`, { method: "POST", headers: { "Content-Type": "application/json", ...preview }, body: "{}" })).json())
+    .toEqual({ ok: true, intentId: claimed.intentId });
+  const cancelled = await ask();
+  mocks.cancelPending.mockResolvedValue(null);
+  const response = await fetch(`${endpoint.replace("local-confirmations", "questions")}/${cancelled.questionId}/cancel-if-pending`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...preview }, body: JSON.stringify({ code: "STALE", message: "The page changed" }),
+  });
+  expect(await response.json()).toEqual({ stale: true, intentId: cancelled.intentId });
 });

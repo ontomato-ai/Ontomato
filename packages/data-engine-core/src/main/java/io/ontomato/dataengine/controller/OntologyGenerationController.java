@@ -90,8 +90,6 @@ public class OntologyGenerationController {
     platform.close(AgentJson.id(run), AgentJson.id(body.getString("sessionId")),
         new Owner(AgentJson.text(body, "ownerId"), AgentJson.text(body, "domainId")), AgentJson.text(body, "outcome"));
   }
-
-  @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
   @PostMapping("/{run}/authoring/{kind}/{operation}")
   public Object externalAuthoring(@PathVariable String run, @PathVariable String kind,
       @PathVariable String operation, @RequestBody Map<String, Object> input,
@@ -118,8 +116,6 @@ public class OntologyGenerationController {
     var gate = store.one("SELECT kind FROM ontology_generations WHERE run_id=?", uuid(run));
     return JSONObject.of("runId", run, "kind", gate.getString("kind"));
   }
-
-  @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
   @PostMapping("/gates")
   public Object open(@RequestBody Map<String, Object> input, HttpServletRequest request) {
     access.authenticated(request);

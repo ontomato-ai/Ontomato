@@ -20,7 +20,7 @@ public record ExecutionTarget(String contextId, String sandboxId, List<String> c
   public static final ExecutionTarget LIVE = new ExecutionTarget(null, null, List.of(), null);
   public ExecutionTarget { classNames = List.copyOf(classNames); }
   public static void failure(JSONObject response, Exception error) {
-    if(error instanceof ResponseStatusException failure && failure.getReason()!=null && failure.getReason().startsWith("BUILD_TEST_"))
+    if(error instanceof ResponseStatusException failure && failure.getReason()!=null && failure.getReason().startsWith("SANDBOX_"))
       response.put("code",failure.getReason().split(":",2)[0]);
   }
   public enum Mode { LIVE, SANDBOX }
@@ -31,7 +31,7 @@ public record ExecutionTarget(String contextId, String sandboxId, List<String> c
   }
   public void requireClasses(List<String> names) {
     if (!allowsClasses(names)) {
-      if(testing()) throw new BuildTestException(HttpStatus.FORBIDDEN, "BUILD_TEST_FORBIDDEN: empty or out-of-context class declaration");
+      if(testing()) throw new SandboxException(HttpStatus.FORBIDDEN, "SANDBOX_FORBIDDEN: empty or out-of-context class declaration");
       throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Execution exceeds the caller class scope");
     }
   }

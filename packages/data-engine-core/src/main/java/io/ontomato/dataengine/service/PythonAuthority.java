@@ -55,7 +55,7 @@ public record PythonAuthority(String domainId, String userId, String purpose, St
         value.initiatorUserId()!=null?value.initiatorUserId():initiatorUserId, action, callerToken);
   }
 
-  /** The build-test scope remains active while the author's writes go to the run's own sandbox. */
+  /** The execution target remains active while the author's writes go to the run's own sandbox. */
   public PythonAuthority withAuthorSandbox(String sandbox) {
     return new PythonAuthority(domainId, userId, purpose, sandbox, classNames, executionId,
         parentGrant, packageInput, identity, target, executionUserId, initiatorUserId, action, callerToken);

@@ -21,7 +21,7 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://o
 vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>900_000}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench"})}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;status=mocks.status;finalReply=async()=>null;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
+vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=(path:string,...rest:unknown[])=>path.endsWith("/run-identities")?Promise.resolve({runs:[]}):mocks.request(path,...rest);run=mocks.run;status=mocks.status;finalReply=async()=>null;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",runId:null,messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
 vi.mock("../../../platform/agent-runtime/runtime",()=>({messageText:(message:{content:string})=>message.content,answerText:()=>"",runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
 import { assistantService } from "../service";
 import { assistantScheduleApplication } from "../scheduling";
@@ -105,6 +105,28 @@ it.each(["interactive", "automation", "older automation"] as const)("uses the ex
   else expect(mocks.resolveExecution).toHaveBeenCalledWith({ id: agent.id, execution_user_id: defaultUser }, owner, credentials);
 });
 
+it.each([
+  { kind: "live" as const, offered: "parent-account", userRecipient: false, runsAs: "agent-account" },
+  { kind: "live" as const, offered: "parent-account", userRecipient: true, runsAs: null },
+  { kind: "preview" as const, offered: "parent-account", userRecipient: false, runsAs: "parent-account" },
+  { kind: "preview" as const, offered: "parent-account", userRecipient: true, runsAs: "parent-account" },
+  { kind: "preview" as const, offered: null, userRecipient: false, runsAs: null },
+])("runs a $kind delegated or continued run offered $offered as $runsAs", async ({ kind, offered, userRecipient, runsAs }) => {
+  const agent = await mocks.agent();
+  mocks.agent.mockResolvedValue({ ...agent, execution_user_id: "agent-account" });
+  mocks.resolveExecution.mockResolvedValue({ credentials: { apiKey: "resolved-key" } });
+  // A live run, delegated or continuing a conversation that ran as another account before the agent's configuration
+  // changed, runs as this agent's current configuration; a preview's keeps the account the runtime binds.
+  const request = { ...preparation(), authority: { classNames: [], executionKind: kind },
+    executionActor: offered === null ? null : { userId: offered, domainId: owner.domainId } };
+  if (userRecipient) request.userRecipient = { session: request.root.session, actor: request.actor };
+  const credentials = { token: "logged-in-user" };
+  const prepared = await assistantService.prepare(request, owner, credentials);
+  expect(prepared.executionActor).toEqual(runsAs === null ? null : { userId: runsAs, domainId: owner.domainId });
+  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({ executionUserId: runsAs }), credentials);
+  if (runsAs === null) expect(mocks.resolveExecution).not.toHaveBeenCalled();
+  else expect(mocks.resolveExecution).toHaveBeenCalledWith({ id: agent.id, execution_user_id: runsAs }, owner, credentials);
+});
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
   const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageControl:false});

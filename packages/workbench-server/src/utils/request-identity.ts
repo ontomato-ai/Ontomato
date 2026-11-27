@@ -1,7 +1,9 @@
 import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import type { RequestIdentity } from "@ontomato/contracts/identity";
 import { Request } from "express";
 import {buildBackendHeaders} from "./backend-client";
+import { HttpError } from "./errors";
 import { workbenchIdentity } from "../identity/installed";
 
 export interface AuthenticatedRequest extends Request, RequestIdentity {
@@ -23,7 +25,23 @@ export function credentialsFromRequest(request:AuthenticatedRequest) {
     ...(caller && { "X-Ontomato-Retrieval-Caller-Id": caller }),
     ...(execution !== undefined && { [AGENT_EXECUTION_HEADER]: execution }),
   };
-  return { token, apiKey, locale, ...((caller || execution !== undefined) && {
-    headers: buildBackendHeaders(token, undefined, locale, apiKey, scope),
-  }) };
+  return {
+    token, apiKey, locale,
+    ...((caller || execution !== undefined) && {
+      headers: buildBackendHeaders(token, undefined, locale, apiKey, scope),
+    }),
+    // A preview arrives as the header its caller sends and stays here as a marker: only a request this caller then sends
+    // to a business-data write entry carries it again, so every other call to Java travels as it would live.
+    ...(request.header(EXECUTION_CONTEXT_HEADER) === previewExecutionContextHeader && { executionKind: "preview" as const }),
+  };
+}
+
+/**
+ * A run starts agents only through its own agent channel, which keeps its classes, identity and delegation. Its callback
+ * (the proxy always adds the narrowing execution header, which the run cannot drop) never opens a new top-level
+ * conversation as its user.
+ */
+export function refuseAgentExecution(request: Request) {
+  if (request.header(AGENT_EXECUTION_HEADER) !== undefined)
+    throw new HttpError(403, "A run starts agents through its own agent channel", "FORBIDDEN");
 }

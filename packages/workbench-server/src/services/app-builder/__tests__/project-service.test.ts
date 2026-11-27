@@ -214,7 +214,6 @@ beforeEach(() => {
   vi.mocked(assistantService.deleteWorkspaceSessions).mockImplementation(async () => { timeline.push("sessions"); });
   vi.mocked(backendGet).mockImplementation(async (_operation, raw, options) => {
     const { pathname, searchParams } = new URL(raw, "http://java.test");
-    if (pathname.endsWith("/build-tests/current")) return answer({ contextId: "test", status: "READY", expiresAt: date.getTime(), sampleSummary: { classes: 0, sha256: null }, classNames: [], resources: [], workspaceId: searchParams.get("workspaceId") });
     const id = pathname.split("/").at(-1)!;
     const summary = (appId: string, app: ApplicationSourceManifest) => ({
       id: appId, source: "domain", canMaintain: options?.headers?.tk !== "visitor",
@@ -239,11 +238,8 @@ beforeEach(() => {
     return answer({ success: true });
   });
   vi.mocked(backendDelete).mockImplementation(async (_operation, raw) => {
-    if (new URL(raw, "http://java.test").pathname.includes("/build-tests/")) timeline.push("test");
-    else {
-      timeline.push("application");
-      apps.delete(new URL(raw, "http://java.test").pathname.split("/").at(-1)!);
-    }
+    timeline.push("application");
+    apps.delete(new URL(raw, "http://java.test").pathname.split("/").at(-1)!);
     return answer(null);
   });
 });
@@ -384,7 +380,7 @@ it("keeps drafts private and shares published source only with maintainers, excl
 it("deletes a draft directly and a published app through catalogue deletion before cleaning shared artifacts", async () => {
   const draft = await createDraftProject(owner, credentials, { name: "Private draft" });
   await deleteApplicationBuilderDraft(owner, credentials, draft.appId);
-  expect(timeline).toEqual(["test", "workspace", "sessions", "project"]);
+  expect(timeline).toEqual(["workspace", "sessions", "project"]);
   expect(projects.has(draft.appId)).toBe(false);
   expect(workspaces.has(draft.workspaceId)).toBe(false);
   timeline.length = 0;
@@ -395,7 +391,7 @@ it("deletes a draft directly and a published app through catalogue deletion befo
     .rejects.toMatchObject({ status: 409, code: "APPLICATION_PUBLISHED" });
   expect(timeline).toEqual([]);
   expect(await deletePublished("app-delete")).toMatchObject({ kind: "success" });
-  expect(timeline).toEqual(["application", "test", "workspace", "sessions", "project"]);
+  expect(timeline).toEqual(["application", "workspace", "sessions", "project"]);
   expect(assistantService.deleteWorkspaceSessions).toHaveBeenLastCalledWith(owner.domainId, project.workspaceId);
   expect(projects.has("app-delete")).toBe(false);
   expect(workspaces.has(project.workspaceId)).toBe(false);

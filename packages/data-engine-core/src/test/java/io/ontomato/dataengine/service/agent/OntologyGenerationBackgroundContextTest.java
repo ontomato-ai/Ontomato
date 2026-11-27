@@ -68,7 +68,7 @@ class OntologyGenerationBackgroundContextTest {
     var channel = mock(AgentChannelRuns.class);
     var sentContext = new AtomicReference<OntologyAgentAccess.Context>();
     var sentSourceRun = new AtomicReference<String>();
-    when(channel.send(anyString(), anyString(), anyString(), any(), any(), any(), nullable(String.class), eq(false)))
+    when(channel.send(anyString(), anyString(), anyString(), any(), any(), any(), nullable(String.class), eq(false), eq(false)))
         .thenAnswer(call -> {
           sentContext.set(call.getArgument(5));
           sentSourceRun.set(call.getArgument(6));

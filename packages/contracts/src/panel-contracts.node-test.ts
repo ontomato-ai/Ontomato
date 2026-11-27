@@ -1911,12 +1911,12 @@ test("canonical relation paths are already routable and carry no view state", ()
     assert.equal(applicationPanelUsePathSchema.safeParse(path).success, false);
 });
 
-test("candidate source needs only workspace identity, content and build-test context", () => {
+test("candidate source needs only workspace identity, content and the preview execution identity", () => {
   const candidate = {
     kind: "candidate",
     workspace: { id: "5931a639-a70d-4dae-96db-6b8a4460d228", ref: "a".repeat(40) },
     panel: { content: { html: "", module: "" }, manifest: { state: {}, members: {} } },
-    previewContext: { kind: "build-test", test: null },
+    previewContext: { kind: "preview" },
   };
   assert.ok(candidatePanelSourceSchema.safeParse(candidate).success);
   assert.equal(candidatePanelSourceSchema.safeParse({ ...candidate, previewContext: { kind: "live" } }).success, false);

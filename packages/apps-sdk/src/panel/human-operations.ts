@@ -3,6 +3,7 @@ import {
   type PanelAgentRunRef, type PanelHumanOperationPreparation, type PanelLocalConfirmationRequest, type PanelUseRef,
 } from "@ontomato/contracts/panel-agent";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
+import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import type { PanelMemberPath, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { PlatformRequests } from "./platform-objects";
@@ -127,6 +128,11 @@ export function panelHumanOperations(use: PanelOperationUse | null, requests: Pl
       ...(memberPath ? { memberPath } : {}),
     };
   };
+  // A write asked for in a preview is refused here, in the words every preview host refuses it with.
+  const written = (operationId: string, memberPath?: PanelMemberPath) => {
+    if (!use) throw Object.assign(new Error(PREVIEW_WRITE_MESSAGE), { code: PREVIEW_WRITE_FORBIDDEN });
+    return of(operationId, memberPath);
+  };
   const post = (path: string, body: unknown) =>
     answer(requests.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, ""));
   return {
@@ -152,13 +158,13 @@ export function panelHumanOperations(use: PanelOperationUse | null, requests: Pl
     async upload(operationId, file, memberPath) {
       // The browser sets the multipart boundary; the operation travels beside the file as JSON text.
       const form = new FormData();
-      form.set("operation", JSON.stringify(of(operationId, memberPath)));
+      form.set("operation", JSON.stringify(written(operationId, memberPath)));
       form.set("file", file, file.name);
       return panelUploadReceiptSchema.parse(await answer(requests.request(PANEL_UPLOADS_PATH, { method: "POST", body: form }, "")));
     },
     async prepare(operationId, invocation, memberPath, agentRun) {
       return panelHumanOperationPreparationSchema.parse(await post("/panel-operations/intents", {
-        ...of(operationId, memberPath),
+        ...written(operationId, memberPath),
         ...(agentRun ? { agentRun } : {}),
         ...invocation,
       }));
