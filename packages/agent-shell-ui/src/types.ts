@@ -170,6 +170,10 @@ export interface MessageActionContext {
 
 /** Fixed shell text supplied by the host's i18n. */
 export interface ShellLabels {
+  conversationTab?: string;
+  fileTab?: string;
+  reportTab?: string;
+  backToFile?: string;
   newConversation: string;
   agent: string;
   sessions: string;

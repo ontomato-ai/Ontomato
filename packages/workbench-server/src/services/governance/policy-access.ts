@@ -202,6 +202,7 @@ async function entryContext(viewer: AssistantCredentials, domainId: string, poli
     const owners = entries.filter(entry => entryPanels.get(entry.entryId)?.has(panelId)).map(entry => entry.entryId);
     add({ kind: "PANEL", id: panelId, verb: "USE" }, owners);
     for (const { objectType, objectKey, verb } of dependencies.get(panelId) ?? []) {
+      if (objectType === "COMPONENT" && !isDomainComponentId(objectKey)) continue;
       add({ kind: objectType, id: objectKey, verb }, owners);
     }
   }

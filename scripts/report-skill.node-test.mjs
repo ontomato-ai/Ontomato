@@ -14,10 +14,10 @@ before(async () => {
   await promisify(execFile)(process.execPath, [path.join(server, "report-skill/build.mjs")], { cwd: root });
 });
 
-test("rejects a slide list that omits a dataset referenced by the report before reading fonts", async (t) => {
+for (const report of ["outputs/reports/sample/report.md", "outputs/reports/acceptance.md", "outputs/reports/sample/analysis.md"]) {
+test(`rejects omitted evidence for ${report} before reading fonts`, async (t) => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), "report-skill-coverage-"));
   t.after(() => rm(workspace, { recursive: true, force: true }));
-  const report = "outputs/reports/sample/report.md";
   const dataset = "outputs/omitted.dataset.json";
   await mkdir(path.join(workspace, path.dirname(report)), { recursive: true });
   await writeFile(path.join(workspace, report), `# Report\n\n![Evidence](${dataset})\n`);
@@ -32,3 +32,4 @@ test("rejects a slide list that omits a dataset referenced by the report before 
     return true;
   });
 });
+}

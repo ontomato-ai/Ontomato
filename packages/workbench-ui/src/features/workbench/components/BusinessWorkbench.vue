@@ -14,6 +14,7 @@ import "@ontomato/agent-shell-ui/style.css";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { createSchedulesApi } from "@ontomato/platform-schedules";
 import { scheduledTaskFrequencyText } from "@ontomato/platform-schedules/panel-text";
+import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { nodeApiRequest } from "../../../utils/api";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
@@ -24,7 +25,7 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import { useDashboardStore } from "../../dashboard";
 import { formatRelativeTime } from "../../../utils/relative-time";
-import { Calendar, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, X } from "lucide-vue-next";
+import { Calendar, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, Presentation, X } from "lucide-vue-next";
 import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
 import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
@@ -327,10 +328,30 @@ const shellLabels = useShellLabels();
 const labels = computed(() => {
   const base = shellLabels.value;
   if (!props.splitNavigation) return base;
-  if (locale.value === "zh-CN") return { ...base, newConversation: "新建会话", sessions: "历史会话", send: "查询" };
-  if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", send: "查詢" };
-  return base;
+  if (locale.value === "zh-CN") return { ...base, newConversation: "新建会话", sessions: "历史会话", conversationTab: "会话", reportTab: "报告", fileTab: "文件预览", backToFile: "返回上一级文件" };
+  if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", conversationTab: "會話", reportTab: "報告", fileTab: "檔案預覽", backToFile: "返回上一層檔案" };
+  return { ...base, conversationTab: "Conversation", reportTab: "Report", fileTab: "File preview", backToFile: "Back to previous file" };
 });
+const pptLabel = computed(() => locale.value === "zh-CN" ? "生成 PPT" : locale.value === "zh-TW" ? "產生 PPT" : "Generate PPT");
+const requestingPpt = ref(false);
+function isReport(artifact: RuntimeArtifact) {
+  return artifact.path.startsWith("outputs/") && /\.md$/i.test(artifact.path);
+}
+async function generatePpt(artifact: RuntimeArtifact) {
+  if (!shell.value || requestingPpt.value) return;
+  requestingPpt.value = true;
+  try {
+    const path = JSON.stringify(artifact.path);
+    await shell.value.requestArtifactAction(locale.value.startsWith("zh")
+      ? `请使用报告技能，把当前会话中的报告 ${path}（来源运行 ${artifact.runId}）生成 PPT，并在回复里提供 .pptx 文件链接。`
+      : `Use the report skill to generate a PPT from the report ${path} (source run ${artifact.runId}) in this conversation, and link the .pptx file in your reply.`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : labels.value.loadFailed);
+  } finally {
+    requestingPpt.value = false;
+  }
+}
+
 const dashboards = props.internalPages ? useDashboardStore() : null;
 if (dashboards) {
   dashboards.bindSurface({
@@ -441,6 +462,12 @@ function openSettings() {
 }
 
 const showingTasks = ref(false);
+const scheduleAgent = computed(() => nav.agents.value.find((agent) => agent.id === agentId.value));
+const canScheduleAgent = computed(() => {
+  const agent = scheduleAgent.value;
+  return Boolean(agent?.enabled && agent.kind !== "app-builder" && agent.kind !== "ops-diagnosis");
+});
+
 const taskSessions = ref<AgentHostSession[]>([]);
 const taskCursor = ref<string | null>(null);
 const tasksLoading = ref(false);
@@ -716,7 +743,8 @@ watch(
 function openDashboardApplication(dashboardId: string) {
   if (props.internalPages) {
     closeDashboards();
-    void display.navigate(panelAddress(props.internalPages.dashboard, { dashboardId }), { history: "push" });
+    void display.navigate(panelAddress(props.internalPages.dashboard, { dashboardId }), { history: "push" })
+      .then((opened) => { if (opened) showingTasks.value = false; });
     return;
   }
   openDashboardPage(dashboardId);
@@ -729,7 +757,7 @@ function openDashboardPage(dashboardId: string) {
 }
 
 function openSchedule(task?: PlatformTask) {
-  if (!props.internalPages?.schedules || !agentId.value) return;
+  if (!props.internalPages?.schedules || !agentId.value || (!task && !canScheduleAgent.value)) return;
   closeDashboards();
   const state = { workspaceAgent: agentId.value, ...(task ? { selectedTask: task.id } : { workspaceCompose: "new" }) };
   void display.navigate(panelAddress(props.internalPages.schedules, state), { history: "push" });
@@ -767,7 +795,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :title="workbench.label"
     agent-picker
     :split-navigation="splitNavigation"
-    :history-page-selected="inStandaloneSchedules"
+    :inline-artifacts="splitNavigation"
+    :history-page-selected="inStandaloneSchedules || inStandaloneDashboard"
+    :neutral-agent-selection="showingTasks || inStandaloneDashboard"
     :editor-title="editorTitle"
     :format-session-date="splitNavigation ? formatRelativeTime : undefined"
     :agent-actions="agentActions"
@@ -819,12 +849,12 @@ function appearanceSaved(value: WorkbenchAppearance) {
         <ChevronDown class="legacy-dashboard-arrow" :size="12" aria-hidden="true" />
       </button>
     </template>
-    <template v-if="internalPages?.schedules && agentId" #before-history>
+    <template v-if="internalPages?.schedules && (canScheduleAgent || agentSchedules.length)" #before-history>
       <section class="agent-schedules" :aria-label="t('platform.schedules')">
         <div class="section-title agent-schedules-heading">
           <span class="history-list-marker" aria-hidden="true" />
           <span>{{ t('platform.schedules') }}<template v-if="agentSchedules.length"> ({{ agentSchedules.length }})</template></span>
-          <button v-if="nav.agents.value.find(agent => agent.id === agentId)?.enabled"
+          <button v-if="canScheduleAgent"
             type="button" :title="t('platformSchedules.newTask')" :aria-label="t('platformSchedules.newTask')"
             :aria-pressed="creatingSchedule" @click="openSchedule()">
             <Plus :size="15" aria-hidden="true" />
@@ -859,7 +889,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
       </header>
       <div v-loading="tasksLoading && !taskSessions.length" class="legacy-task-body" :aria-busy="tasksLoading" :element-loading-text="t('common.loading')">
         <p v-if="tasksError" class="legacy-task-note" role="alert">{{ labels.loadFailed }} <button type="button" @click="loadAnalysisTasks()">{{ labels.retry }}</button></p>
-        <p v-else-if="!tasksLoading && !taskSessions.length" class="legacy-task-note">{{ labels.noSessions }}</p>
+        <p v-else-if="!tasksLoading && !taskSessions.length" class="legacy-task-note">{{ locale === 'zh-CN' ? '暂无分析任务' : locale === 'zh-TW' ? '暫無分析任務' : 'No analysis tasks yet' }}</p>
         <div v-if="taskSessions.length" class="session-list legacy-task-list">
           <section v-for="group in taskGroups" :key="group.key" class="legacy-task-group" :aria-label="group.label">
             <h2><span class="history-list-marker" :data-status="group.key" aria-hidden="true" />{{ group.label }} ({{ group.sessions.length }})</h2>
@@ -880,6 +910,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
           <button v-if="taskCursor" type="button" class="more" :disabled="tasksLoading" @click="loadAnalysisTasks(true)">{{ labels.more }}</button>
         </div>
       </div>
+    </template>
+    <template v-if="showingTasks" #conversation-empty>
+      <p>{{ locale === 'zh-CN' ? '从列表中选择分析任务查看详情' : locale === 'zh-TW' ? '從清單中選擇分析任務查看詳情' : 'Choose an analysis task to view its details' }}</p>
     </template>
     <template v-if="$slots.welcome" #welcome="scope">
       <slot name="welcome" v-bind="scope" />
@@ -909,6 +942,11 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #artifact-actions="{ artifact, title, caption }">
+      <button v-if="splitNavigation && isReport(artifact)" type="button" class="report-ppt-action"
+        :disabled="requestingPpt || !shell?.canRequestArtifactAction" :title="pptLabel" @click="generatePpt(artifact)">
+        <Presentation :size="15" aria-hidden="true" />
+        {{ pptLabel }}
+      </button>
       <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
            into cards there, a chart file is put on the board as it is. -->
       <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardPage" />
@@ -935,4 +973,20 @@ function appearanceSaved(value: WorkbenchAppearance) {
   min-width: 0;
   border-radius: var(--radius-sm);
 }
+.report-ppt-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  color: var(--el-color-primary);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.report-ppt-action:hover { background: var(--el-color-primary-light-9); }
+.report-ppt-action:disabled { opacity: .6; cursor: wait; }
 </style>

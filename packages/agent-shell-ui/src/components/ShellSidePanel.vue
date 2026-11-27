@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, ref } from "vue";
+import { computed, inject, provide, ref } from "vue";
 import type { DisplayLoad } from "@ontomato/contracts/agent-presentation";
-import { Download, X } from "lucide-vue-next";
+import { ArrowLeft, Download, X } from "lucide-vue-next";
 import { fileName, saveBlob } from "../artifacts";
 import { shellContextKey, useDisplayPlacement } from "../context";
 import { artifactIcon } from "../icons";
@@ -11,12 +11,18 @@ import ArtifactView from "./ArtifactView.vue";
 import SlotOutlet from "./SlotOutlet.vue";
 
 /** Right-side outlet. Absent when nothing is open, so it never reserves width. */
-const props = defineProps<{ open: OpenArtifact }>();
+const props = defineProps<{ open: OpenArtifact; inline?: boolean; back?: boolean }>();
 /** `loaded` passes on what the artifact's loader knows. */
 const emit = defineEmits<{ close: []; loaded: [load: DisplayLoad] }>();
 const root = ref<HTMLElement | null>(null);
-useDisplayPlacement(root);
+if (!props.inline) useDisplayPlacement(root);
 const shell = inject(shellContextKey)!;
+provide(shellContextKey, {
+  ...shell,
+  get workspaceId() { return shell.workspaceId; },
+  get readVectorResource() { return shell.readVectorResource; },
+  openArtifact: (next) => shell.openArtifact(next, props.open.key),
+});
 const { width, resizing, startResize } = usePanelWidth();
 const icon = computed(() => artifactIcon(props.open.artifact.path));
 const title = computed(() => props.open.title || fileName(props.open.artifact.path));
@@ -27,12 +33,15 @@ async function download() {
 </script>
 
 <template>
-  <aside ref="root" class="side-panel" :class="{ resizing }" :style="{ '--panel-width': `${width}px` }" @keydown.escape="emit('close')">
-    <div class="panel-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
+  <aside ref="root" class="side-panel" :class="{ resizing, inline }" :style="{ '--panel-width': `${width}px` }" @keydown.escape.stop="emit('close')">
+    <div v-if="!inline" class="panel-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
     <header class="panel-header">
+      <button v-if="back" type="button" class="panel-button" :title="shell.labels.value.backToFile ?? shell.labels.value.close" :aria-label="shell.labels.value.backToFile ?? shell.labels.value.close" @click="emit('close')">
+        <ArrowLeft :size="17" />
+      </button>
       <span class="panel-icon"><component :is="icon" :size="17" /></span>
       <span class="panel-heading">
-        <span class="panel-title">{{ title }}</span>
+        <span class="panel-title" :title="title">{{ title }}</span>
       </span>
       <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title, caption: open.caption }" />
       <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
@@ -172,5 +181,19 @@ async function download() {
   .panel-resize {
     display: none;
   }
+}
+.side-panel.inline {
+  position: static;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  border: 0;
+  box-shadow: none;
+  animation: none;
+}
+@media (max-width: 700px) {
+  .inline .panel-header { gap: 4px; padding-inline: 4px; }
+  .inline .panel-icon { display: none; }
 }
 </style>

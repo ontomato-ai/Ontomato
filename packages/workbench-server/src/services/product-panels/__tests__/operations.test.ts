@@ -950,6 +950,55 @@ it.each([false, true])("handles an Action-backed form with another tab saving fi
  expect(JSON.stringify([outcome, intents.get(intentId)])).not.toContain(token);
 });
 
+
+it("uses the owner form's display labels in the confirmation input summary", async () => {
+  const originalBackend = mocks.backend.getMockImplementation()!;
+  mocks.panel.mockResolvedValue({
+    id: "P", manifest: { state: {}, members: { form: { target: { projectionId: "form" } } } },
+  });
+  mocks.projection.mockResolvedValue({
+    id: "form", binding: { kind: "PlatformObjectType", id: "platform:ObjectType" }, inputs: {},
+  });
+  mockRegisteredOperation({
+    handlerRef: "platform:ObjectType.save", labelKey: "test.perform", binding: { kind: "PlatformObjectType", id: "platform:ObjectType" },
+    kind: "form.save", effect: "write", batch: false, targetType: "platform:ObjectType", create: true,
+    targetSchema: z.object({ kind: z.literal("draft") }).strict(),
+    inputSchema: z.object({ values: z.record(z.unknown()) }), resultSchema: z.object({}),
+    draftInput: input => input,
+    execute: async () => ({ kind: "success", data: {}, affected: { objects: [], objectTypes: ["platform:ObjectType"] } }),
+  });
+  const textField = (path: string, label: string, required: boolean) => ({
+    path, label, control: { kind: "text" }, valueSchema: { type: "string" }, required, readOnly: false,
+  });
+  mocks.backend.mockImplementation(async (...args) => {
+    const url = new URL(args[1]);
+    if (url.pathname === "/ontology/model/object-type/form") {
+      expect(args[2]).toMatchObject({ target: { kind: "draft" }, changedField: null });
+      return { text: JSON.stringify({
+        fields: [
+          textField("/className", "API name", true),
+          textField("/primaryKeyName", "Primary key name", true),
+          textField("/showName", "Display name", true),
+          textField("/classDesc", "Description", false),
+        ],
+        values: { className: "", primaryKeyName: "", showName: "", classDesc: "" },
+        save: { method: "POST", path: "/ontology/model/object-type/create", bodySchema: { type: "object" } },
+      }) };
+    }
+    return originalBackend(...args);
+  });
+
+  await prepareLiveAction({
+    intentId: uuid(98), applicationId: "A", useId: "tasks", operationId: "form.save",
+    call: { target: { kind: "draft" }, input: { values: {
+      className: "Order", primaryKeyName: "id", showName: "Order", classDesc: "Orders",
+    } } },
+  });
+  const { message } = mocks.request.mock.calls[0]![2] as { message: string };
+  expect(message).toContain("API name, Primary key name, Display name, Description");
+  expect(message).not.toContain("className, primaryKeyName, showName, classDesc");
+});
+
 it("admits a cross-member form.save write operation bound to another form member via operationDrafts", async () => {
   const { readAdmittedProjectionOperations } = await import("../direct-operations");
   const saveId = "test.cross.save";

@@ -157,8 +157,9 @@ describe("targetless page Action preparation, dispatch, and cancellation", () =>
 
     const questionBody = mocks.request.mock.calls[0]?.[2] as { message: string };
     expect(questionBody.message).toContain("Create order");
-    expect(questionBody.message).toContain("customer");
-    expect(questionBody.message).toContain("amount");
+    expect(questionBody.message).toContain("Customer");
+    expect(questionBody.message).toContain("Amount");
+    expect(questionBody.message).not.toContain("customer, amount");
     expect(questionBody.message).not.toContain("ACME");
     expect(questionBody.message).not.toContain("42");
     expect(fixture.intent(intentId)?.operation.action).toEqual({
