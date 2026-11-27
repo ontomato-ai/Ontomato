@@ -252,7 +252,7 @@ export class AgentChannel {
     this.emitChange(scope,sessionId);
     // Existing transport credentials are scoped to this live delivery; no executor key or new credential store.
     this.remember(origin.channel,credential);
-    await this.deliver(source.session,channel.actor,{...received.message as AgentNotification,answerId:received.id},{steer:true,senderAuthority:channel.authority});
+    await this.deliver(source.session,channel.actor,{...received.message as AgentNotification,answerId:received.id},{steer:true});
     return {input:received,replayed,pendingQuestions:await this.facts.pendingQuestions(scope,sessionId),
       delivery:{messageId:received.id,sessionRef:{providerId:channel.agent.providerId,sessionId},runId:question.record.runId,delivery:"receipt" as const,status:"completed" as const}};
   }
@@ -352,9 +352,8 @@ export class AgentChannel {
   private async accept(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentInput, options: {
     requestedBy?: AgentExecutionRef; resultRecipientRunId?: string; steer?: boolean; external?: ExternalAgentCaller;
     web?: {runId:string;channel:AgentRunContext;language:string;context:AgentRunIntent["context"];credential:AgentCredential;executionUserId?:string|null;presentationBinding?:PresentationBinding};
-    senderAuthority?: AgentRunContext["authority"]; senderRun?: RuntimeRun;
-  }) {
-    const {requestedBy,resultRecipientRunId,steer=false,external,web,senderAuthority}=options, scope=this.scope(target,actor.domainId);
+  } = {}) {
+    const {requestedBy,resultRecipientRunId,steer=false,external,web}=options, scope=this.scope(target,actor.domainId);
     let launch: AgentRunIntent | undefined;
     const accepted=await this.runtime.locked(scope,target.sessionId,async (): Promise<{delivery:AgentInputDelivery | null;input:MessageRow;replayed:boolean}> => {
       if(input.role === "notification" && input.kind === "agent-result" && "session" in input.source) {
@@ -418,12 +417,10 @@ export class AgentChannel {
       const runId=web?.runId ?? randomUUID();
       const requesterRun=requestedBy ? (await this.runtime.store.run(this.scope(requestedBy.session,actor.domainId),requestedBy.runId)).run : null;
       const requester=requesterRun?.channel;
-      const callerAuthority=web?.channel.authority ?? external?.authority ?? senderAuthority!;
-      const executionKind=latest?.channel.authority.executionKind ?? callerAuthority.executionKind;
       const baseChannel:AgentRunContext=web?.channel ?? {agent:binding.agent,actor:requestedBy || external || (input.role === "notification" && "kind" in input.source && input.source.kind === "user") ? actor : previous!.channel.actor,authority:external?.authority ?? requester?.authority ?? previous!.channel.authority,
         requestedBy:external?null:requestedBy ?? previous!.channel.requestedBy,root:external?{session:target,runId}:requester?.root ?? previous!.channel.root,
         userRecipient:external ? null : requester?.userRecipient ?? previous?.channel.userRecipient ?? null};
-      const channel:AgentRunContext={...baseChannel,authority:{...baseChannel.authority,executionKind}};
+      const channel:AgentRunContext={...baseChannel,authority:{...baseChannel.authority,executionKind:latest?.channel.authority.executionKind ?? baseChannel.authority.executionKind}};
       const intent = await this.facts.reserve(scope,target.sessionId,runId,received.id,channel,{
         language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,
         context:resultRecipientRunId ? previous!.context : web?.context ?? binding.context,
@@ -445,7 +442,7 @@ export class AgentChannel {
     const {id,runId,messageSeq,contextSeq,message}=accepted.input;
     return {...accepted,input:{id,runId,messageSeq,contextSeq,message},pendingQuestions:await this.facts.pendingQuestions(scope,target.sessionId)};
   }
-  async deliver(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentNotification, options:{requestedBy?:AgentExecutionRef;resultRecipientRunId?:string;steer?:boolean;external?:ExternalAgentCaller;senderAuthority:AgentRunContext["authority"];senderRun?:RuntimeRun}) {
+  async deliver(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentNotification, options:{requestedBy?:AgentExecutionRef;resultRecipientRunId?:string;steer?:boolean;external?:ExternalAgentCaller}={}) {
     const accepted=await this.accept(target,actor,input,options);
     return {messageId:accepted.input.id,taskId:accepted.delivery?.delivery==="run"?accepted.delivery.runId:null,sessionRef:target};
   }
@@ -502,7 +499,7 @@ export class AgentChannel {
       await this.deliver(parent.session, intent.channel.actor, {
         role: "notification", kind: "agent-result", source: { session: intent.session, runId },
         outcome: delivery.status, content, files, timestamp: Date.now(),
-      }, { resultRecipientRunId: parent.runId, senderAuthority: intent.channel.authority });
+      }, { resultRecipientRunId: parent.runId });
     }
     if (delivery.settled) this.release(intent);
   }
@@ -601,7 +598,7 @@ export class AgentChannel {
         const question = await this.facts.question(scope.domainId,command.replyTo);
         if (!("session" in question.source) || question.source.session.providerId !== target.providerId || question.source.session.sessionId !== target.sessionId) throw new RuntimeError(400,"INVALID_REPLY","The question was sent by another conversation");
       }
-      return this.deliver(target,channel.actor,input,{requestedBy:child?source:undefined,steer:command.steer===true || !!command.replyTo,senderAuthority:channel.authority,...(external?{external}:{senderRun:current!})});
+      return this.deliver(target,channel.actor,input,{requestedBy:child?source:undefined,steer:command.steer===true || !!command.replyTo,...(external?{external}:{})});
     }
     const entry = await this.facts.task(scope.domainId,command.taskId);
     if (!entry || (source?!await this.accessible(entry.intent,source.session,scope.domainId):channel.actor.id!==entry.intent.channel.actor.id)) throw new RuntimeError(403, "FORBIDDEN", "Execution is outside your delegation tree");

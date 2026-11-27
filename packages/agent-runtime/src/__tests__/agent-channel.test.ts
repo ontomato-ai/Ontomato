@@ -517,7 +517,7 @@ it("ordinary busy send refuses before receipt, while replyTo selects steering au
   const target={...source.session,sessionId:inputId};
   vi.spyOn(port.facts,"binding").mockResolvedValue({agent:context.agent,actor:context.actor,parent:source});
   const receive=vi.spyOn(port.facts,"receive");
-  await expect(port.deliver(target,context.actor,{...notification,kind:"agent-message",replyTo:undefined},{senderAuthority:context.authority})).rejects.toMatchObject({code:"SESSION_BUSY"});
+  await expect(port.deliver(target,context.actor,{...notification,kind:"agent-message",replyTo:undefined})).rejects.toMatchObject({code:"SESSION_BUSY"});
   expect(receive).not.toHaveBeenCalled();
   vi.spyOn(port.facts,"question").mockResolvedValue({...notification,kind:"agent-question",source:{session:target,runId:inputId}});
   const deliver=vi.spyOn(port,"deliver").mockResolvedValue({messageId:inputId,taskId:null,sessionRef:target});
@@ -734,7 +734,7 @@ it("wakes an idle questioning session for the ordinary user answer with the huma
  vi.spyOn(port.facts,"latestOrNull").mockResolvedValue(previous);
  const reserve=vi.spyOn(port.facts,"reserve").mockImplementation(async(_scope,_session,id,inputId,channel)=>({...previous,id,inputId,channel,status:"starting"}));
  const prepare=vi.spyOn(port,"prepare").mockResolvedValue();
- await port.deliver(source.session,fresh,{...notification,source:{kind:"user"},selectedOption:1,answerId:inputId},{steer:true,senderAuthority:context.authority});
+ await port.deliver(source.session,fresh,{...notification,source:{kind:"user"},selectedOption:1,answerId:inputId},{steer:true});
  expect(reserve.mock.calls[0][4]).toMatchObject({actor:fresh,root:source});expect(prepare).toHaveBeenCalledTimes(1);
 });
 
@@ -948,7 +948,7 @@ it("delivers a preview child's result as ordinary input to the live run open in 
   const delivered = await fixture.port.deliver(source.session, context.actor, {
     role: "notification", kind: "agent-result", source: { session: childSession, runId: childId },
     outcome: "completed", content: "3 rows", timestamp: 2,
-  }, { resultRecipientRunId: runId, senderAuthority: { ...humanChannel.authority, executionKind: "preview" } });
+  }, { resultRecipientRunId: runId });
   expect(delivered.taskId).toBeNull();
   expect(fixture.runtime.inputReceived).toHaveBeenCalledWith(scope, runId, expect.objectContaining({
     message: expect.objectContaining({ kind: "agent-result" }),

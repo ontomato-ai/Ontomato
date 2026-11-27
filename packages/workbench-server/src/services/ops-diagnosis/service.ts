@@ -136,7 +136,6 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
   },
   async send(session, run, input, owner, credentials, entry) {
     await requireDiagnosisAgent(owner, credentials);
-    await diagnosisSession(session, owner);
     const preview = credentials.executionKind === "preview";
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
