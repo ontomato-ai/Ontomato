@@ -745,14 +745,8 @@ await mountPanel({
     async function openChat() {
       if (!selectedKey.value) return;
       if (detailDraft.value?.dirty) {
-        let allowed;
-        if (panel.confirmLeaveUnsaved) {
-          allowed = await panel.confirmLeaveUnsaved();
-          if (allowed) instance.forms.discard("form");
-        } else {
-          allowed = await instance.forms.reset("form", { confirm: true });
-        }
-        if (!allowed) return;
+        notify({ kind: "warning", text: t("action.saveBeforeChat") });
+        return;
       }
       await navigate(`/agents/chat?agentId=${encodeURIComponent(selectedKey.value)}`).catch(() => undefined);
     }
