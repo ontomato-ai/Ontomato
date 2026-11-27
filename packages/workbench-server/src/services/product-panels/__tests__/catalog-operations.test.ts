@@ -368,13 +368,13 @@ it("saves a new entry from submitted fields using the registration DTO", async (
   const save = productCatalogServerOperations.find(op => op.handlerRef === `${APPLICATION}.save`)!;
   if (save.kind !== "form.save") throw new Error("Expected a form save");
   const entry = { path: "/applications/app-1", renderer: "panels" };
-  const use = { id: "roles", pageKey: "roles-view", panelId: "panel-roles", path: `${entry.path}/roles` };
+  const use = { id: "roles", names: { en: "roles" }, pageKey: "roles-view", panelId: "panel-roles", path: `${entry.path}/roles` };
   applicationForm.mockResolvedValue({ values: { entry, panelUses: [] }, fields: [] });
   applicationSaveEntries.mockResolvedValue(undefined);
 
   await save.execute(impactHost, { kind: "object", objectType: APPLICATION, primaryKey: "app-1" }, {
     values: use,
-    submittedFields: ["/id", "/pageKey", "/panelId", "/path"],
+    submittedFields: ["/id", "/pageKey", "/panelId", "/path", "/names"],
   }, "intent-new-entry");
 
   expect(applicationSaveEntries).toHaveBeenCalledWith("app-1", { entry, panelUses: [use] });

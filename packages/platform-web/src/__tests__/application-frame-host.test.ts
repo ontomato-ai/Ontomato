@@ -46,7 +46,7 @@ const appBHomeUse: ApplicationPanelUse = {
 };
 
 const conversationUse: ApplicationOpenResponse["use"] = {
-  kind: "frame-conversation", id: "chat", pageKey: "chat", path: "/applications/app-b/chat",
+  kind: "frame-conversation", id: "chat", names: { en: "chat" }, pageKey: "chat", path: "/applications/app-b/chat",
 };
 const runFeed = vi.hoisted(() => ({ subscribe: vi.fn(), detach: vi.fn() }));
 vi.mock("@ontomato/workbench-ui/features/workbench/assistant-host", () => ({
@@ -295,7 +295,7 @@ function resolutionOf(
     allowStandalone: true,
     frame: null,
     content: null,
-    menu: { singleEntry: singleEntry ?? panelUses.filter((entry) => Boolean(entry.names)).length <= 1, groups: [], panelUses },
+    menu: { singleEntry: singleEntry ?? panelUses.filter(entry => entry.inMenu !== false).length <= 1, groups: [], panelUses },
   };
 }
 

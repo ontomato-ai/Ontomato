@@ -292,7 +292,7 @@ await mountPanel({
 /** A use relation of one of the trial's applications, as Java declares it. */
 export function panelUse(id: string, pageKey: string, panelId: string, path: string): ApplicationPanelUse {
   return {
-    id,
+    id,     names: { en: String(id) },
     pageKey,
     panelId,
     path,

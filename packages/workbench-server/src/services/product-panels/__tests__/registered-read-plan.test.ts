@@ -129,7 +129,7 @@ const request: RegisteredDataRead = { source, memberPath: [{ member: "catalog" }
 const entryRef = { applicationId: source.applicationId, useId: source.useId };
 const entry = {
   applicationId: source.applicationId, framePanelId: "builtin-product-frame", use: {
-    id: source.useId, pageKey: "objects", path: "/applications/app-test/objects", panelId: "objects-panel",
+    id: source.useId, names: { en: String(source.useId) }, pageKey: "objects", path: "/applications/app-test/objects", panelId: "objects-panel",
     inputs: { search: { literal: "registered input" } },
   },
 };
@@ -2441,7 +2441,7 @@ it("reads application detail with the admitted frame label and preserves masked 
     id: primaryKey, names: { en: "Shipping" }, descriptions: { en: "Shipment catalogue" },
     icon: "pages", source: "domain", canMaintain: true, canEditEntries: true, entryCount: 1, ownerName: "Owner",
     entry: { path: "/applications/app-shipping", home: "/applications/app-shipping/overview" },
-    panelUses: [{ id: "overview", pageKey: "shipping:overview", panelId: "panel-shipping", path: "/applications/app-shipping/overview" }],
+    panelUses: [{ id: "overview", names: { en: "overview" }, pageKey: "shipping:overview", panelId: "panel-shipping", path: "/applications/app-shipping/overview" }],
     groups: [], framePanelId, theme: { light: { accent: "#123456" } },
   };
   const time = new Date("2026-11-26T00:00:00Z");
@@ -3134,7 +3134,7 @@ it("keeps application entries and a masked missing application as separate batch
   const entries = {
     applicationId: primaryKey,
     entry: { path: "/applications/app-shipping", home: "/applications/app-shipping/overview", entryKey: "overview" },
-    panelUses: [{ id: "overview", pageKey: "shipping:overview", panelId: "panel-shipping", path: "/applications/app-shipping/overview" }],
+    panelUses: [{ id: "overview", names: { en: "overview" }, pageKey: "shipping:overview", panelId: "panel-shipping", path: "/applications/app-shipping/overview" }],
     groups: [],
     framePanelId: "panel-frame",
     theme: { light: { accent: "#123456" } },
@@ -3169,7 +3169,7 @@ it("keeps application entries and a masked missing application as separate batch
 it("names admitted application entry rows with same-item USE or EDIT and local default agent options", async () => {
   const primaryKey = "app-shipping";
   const path = "/applications/app-shipping";
-  const panelUse = (id: string) => ({ id, pageKey: `shipping:${id}`, path: `${path}/${id}`, panelId: `panel-${id}` });
+  const panelUse = (id: string) => ({ id, names: { en: String(id) }, pageKey: `shipping:${id}`, path: `${path}/${id}`, panelId: `panel-${id}` });
   const panelUses = [
     {
       ...panelUse("overview"), names: { en: "Overview" }, groupKey: "main",
@@ -4094,7 +4094,7 @@ it("reads published MCP declarations after batch admission using the server requ
     ...request, source: { kind: "registered", applicationId: "settings", useId: "published-mcp" },
   };
   const mcpEntry = { applicationId: "settings", use: {
-    id: "published-mcp", pageKey: "published-mcp", panelId: "builtin-product-published-mcp", path: "/settings/mcp-services",
+    id: "published-mcp", names: { en: "published-mcp" }, pageKey: "published-mcp", panelId: "builtin-product-published-mcp", path: "/settings/mcp-services",
   } };
   const run = async (items: typeof cases, requestLocation: typeof location | undefined) => {
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry: mcpEntry }] });

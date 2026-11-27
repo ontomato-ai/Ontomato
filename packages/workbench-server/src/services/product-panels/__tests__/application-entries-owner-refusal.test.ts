@@ -11,7 +11,7 @@ const refusal = {
   errors: [{ field: "/values/panelUses/1/defaultAgent", code: "target_unavailable", message: reason }],
 };
 const use = (id: string, agentId: string) => ({
-  id, pageKey: id, panelId: `panel-${id}`, path: `/applications/app-one/${id}`,
+  id, names: { en: String(id) }, pageKey: id, panelId: `panel-${id}`, path: `/applications/app-one/${id}`,
   defaultAgent: { kind: "id", id: agentId },
 });
 

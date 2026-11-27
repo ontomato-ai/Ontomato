@@ -460,7 +460,7 @@ export const pageCatalogEntrySchema = pageEntranceSchema.extend({
   panelId: z.string().min(1).nullable(),
   kind: z.enum(["panel", "native", "frame-conversation"]),
   path: z.string().min(1).startsWith("/"),
-  name: z.string().min(1).optional(),
+  name: z.string().min(1),
   description: z.string().min(1).optional(),
   groupKey: z.string().min(1).optional(),
 }).strict();

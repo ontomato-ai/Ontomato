@@ -43,8 +43,8 @@ final class ApplicationCatalogueForm {
     private static final JSONObject USE_SCHEMA = objectSchema(JSONObject.of(
         "id", STRING, "pageKey", STRING, "panelId", STRING, "path", STRING,
         "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING, "groupKey", STRING, "inputs", INPUTS,
-        "defaultAgent", DEFAULT_AGENT, "pageComposer", PAGE_COMPOSER),
-        List.of("id", "pageKey", "panelId", "path"));
+        "defaultAgent", DEFAULT_AGENT, "pageComposer", PAGE_COMPOSER, "inMenu", BOOLEAN),
+        List.of("id", "pageKey", "panelId", "path", "names"));
 
     private static final List<Locale> LOCALES = List.of("en", "zh-CN", "zh-TW", "ja", "fr", "de", "it", "ar")
         .stream().map(Locale::forLanguageTag).toList();
@@ -79,7 +79,7 @@ final class ApplicationCatalogueForm {
         List<ObjectNode> errors;
         if (values == null) {
             var uses = app.getList("panelUses", ApplicationPanelUse.class);
-            values = JSONObject.of("entry", app.getJSONObject("entry"), "panelUses", uses);
+            values = JSONObject.of("entry", app.getJSONObject("entry"), "panelUses", uses.stream().map(ApplicationCatalogueForm::editableUse).toList());
             values.putAll(app.getJSONObject("panelSettings"));
             var savedErrors = new PanelFormErrors();
             for (int i = 0; i < uses.size(); i++)
@@ -104,12 +104,12 @@ final class ApplicationCatalogueForm {
         List<ObjectNode> errors;
         if (draft == null) {
             if (existingUse != null) {
-                values = JSONObject.from(existingUse);
+                values = editableUse(existingUse);
                 var savedErrors = new PanelFormErrors();
                 validatePageKey(existingUse.pageKey(), "/pageKey", conflicts, savedErrors);
                 errors = savedErrors.list();
             } else {
-                values = JSONObject.of("id", "", "pageKey", "", "panelId", "", "path", root + "/");
+                values = JSONObject.of("id", "", "pageKey", "", "panelId", "", "path", root + "/", "inMenu", true);
                 errors = List.of();
             }
         } else {
@@ -140,6 +140,12 @@ final class ApplicationCatalogueForm {
         fields.add(allowStandaloneField());
         return describe(fields, values, draft == null ? List.of() : entryErrors(id, draft, null, conflicts),
             APPLICATIONS + id + "/panel-uses?create=true", registrationSchema(true));
+    }
+
+    private static JSONObject editableUse(ApplicationPanelUse use) {
+        var values = JSONObject.from(use);
+        values.put("inMenu", use.appearsInMenu());
+        return values;
     }
 
     private JSONObject allowStandaloneField() {
@@ -180,7 +186,8 @@ final class ApplicationCatalogueForm {
             field("/pageKey", "pageKey", PanelFormFields.text(false), STRING, true),
             field("/path", "address", PanelFormFields.text(false), STRING, true),
             field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
-            field("/names", "menuNames", localizedText(List.of(), false), STRING_MAP, false),
+            field("/names", "entryNames", localizedText(List.of(), false), STRING_MAP, true),
+            field("/inMenu", "inMenu", PanelFormFields.switchControl(), BOOLEAN, false),
             field("/descriptions", "entryDescriptions", localizedText(List.of(), true), STRING_MAP, false),
             field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),
             field("/defaultAgent", "defaultAgent", PanelFormFields.select(new JSONArray()), DEFAULT_AGENT, false),
@@ -196,7 +203,8 @@ final class ApplicationCatalogueForm {
             field("/path", "address", PanelFormFields.text(false), STRING, true),
             field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
             inputs,
-            field("/names", "menuNames", localizedText(List.of(), false), STRING_MAP, false),
+            field("/names", "entryNames", localizedText(List.of(), false), STRING_MAP, true),
+            field("/inMenu", "inMenu", PanelFormFields.switchControl(), BOOLEAN, false),
             field("/descriptions", "entryDescriptions", localizedText(List.of(), true), STRING_MAP, false),
             field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),
             field("/defaultAgent", "defaultAgent", PanelFormFields.select(new JSONArray()), DEFAULT_AGENT, false));
@@ -204,7 +212,7 @@ final class ApplicationCatalogueForm {
         return JSONArray.of(
             field("/entry/path", "applicationAddress", PanelFormFields.text(false), STRING, true),
             field("/panelUses", "entries", PanelFormFields.objectArray(item,
-                JSONObject.of("id", "", "pageKey", "", "panelId", "", "path", root + "/"), "/id"),
+                JSONObject.of("id", "", "pageKey", "", "panelId", "", "path", root + "/", "inMenu", true), "/id"),
                 PanelFormFields.arraySchema(USE_SCHEMA), true));
     }
 

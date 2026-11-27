@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.applications;
 
+import com.alibaba.fastjson2.annotation.JSONCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonParser;
@@ -21,11 +22,14 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                                   DefaultAgentTarget defaultAgent, Map<String, String> names,
                                   @JsonDeserialize(using = DescriptionsDeserializer.class) Map<String, String> descriptions,
                                   Map<String, Map<String, Object>> inputs, String groupKey, String icon, String kind,
-                                  String pageComposer) {
+                                  String pageComposer, Boolean inMenu) {
     public static final String NATIVE_KIND = "native";
     public static final String FRAME_CONVERSATION_KIND = "frame-conversation";
     public static final String PAGE_COMPOSER_BOTTOM = "bottom";
     public static final String PAGE_COMPOSER_NONE = "none";
+
+    @JSONCreator
+    public ApplicationPanelUse {}
 
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                DefaultAgentTarget defaultAgent, Map<String, String> names) {
@@ -53,6 +57,18 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                                Map<String, String> descriptions,
                                Map<String, Map<String, Object>> inputs, String groupKey, String icon, String kind) {
         this(id, pageKey, panelId, path, defaultAgent, names, descriptions, inputs, groupKey, icon, kind, null);
+    }
+
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path,
+                               DefaultAgentTarget defaultAgent, Map<String, String> names,
+                               Map<String, String> descriptions,
+                               Map<String, Map<String, Object>> inputs, String groupKey, String icon, String kind,
+                               String pageComposer) {
+        this(id, pageKey, panelId, path, defaultAgent, names, descriptions, inputs, groupKey, icon, kind, pageComposer, null);
+    }
+
+    public boolean appearsInMenu() {
+        return !Boolean.FALSE.equals(inMenu);
     }
 
     /** True when this entry points to a built-in native page rather than a product panel. */
@@ -101,7 +117,7 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses, boolean allowNative) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
             canonicalPath(use.path), use.defaultAgent, use.names, use.descriptions, use.inputs,
-            use.groupKey, use.icon, use.kind, use.pageComposer)).toList();
+            use.groupKey, use.icon, use.kind, use.pageComposer, use.inMenu)).toList();
         validate(normalized, allowNative);
         return normalized;
     }
@@ -162,9 +178,8 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                 && !PAGE_COMPOSER_NONE.equals(use.pageComposer())) {
                 throw ApplicationCatalog.bad("Panel entry " + use.pageKey() + " pageComposer must be bottom or none");
             }
-            if (use.names() != null && (use.names().isEmpty()
-                || use.names().values().stream().anyMatch(name -> name == null || name.isBlank())))
-                throw ApplicationCatalog.bad("A panel use's names require at least one nonblank localized name");
+            if (!ApplicationCatalog.validLocalizedNames(use.names()))
+                throw ApplicationCatalog.bad("Panel entry " + use.id() + " names require at least one nonblank localized name");
             if (use.descriptions() != null && (use.descriptions().isEmpty()
                 || use.descriptions().values().stream().anyMatch(text -> text == null || blankDescription(text))))
                 throw ApplicationCatalog.bad("Panel entry " + use.pageKey() + " descriptions require at least one nonblank localized description");

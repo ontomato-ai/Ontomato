@@ -63,7 +63,7 @@ it("gives page control to a custom agent only when the operator is explicitly se
 
 it("accepts the exact admitted current placement and rejects mismatches as forbidden", async () => {
   mocks.requirePanelEntry.mockResolvedValue({
-    use: { id: "entry", pageKey: "page", panelId: "panel", path: "/applications/app/entry" },
+    use: { id: "entry", names: { en: "entry" }, pageKey: "page", panelId: "panel", path: "/applications/app/entry" },
   });
   await expect(validateCurrentPageContext(domainId, credentials, placement, "user")).resolves.toEqual(placement);
 

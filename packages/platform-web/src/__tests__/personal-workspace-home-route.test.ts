@@ -14,6 +14,7 @@ import { HOME_PREFERENCES_CHANGED } from "../features/home/api";
 
 const homeUse: ApplicationPanelUse = {
   id: "home",
+  names: { en: "home" },
   pageKey: "home",
   panelId: "builtin-product-personal-workspace",
   path: "/home",

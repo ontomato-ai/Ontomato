@@ -570,6 +570,7 @@ export function framePanelHost(
 export function builtinFramePanelHost(
   applicationId: string,
   framePanelId: string,
+  frameTitle: string,
   router?: Router,
   chat?: FrameChatOptions,
   /** Optional one-shot provider returning the frame definition bundled in the active route opening response. */
@@ -580,6 +581,7 @@ export function builtinFramePanelHost(
     pageKey: applicationId,
     panelId: framePanelId,
     path: `/${applicationId}`,
+    names: { en: frameTitle },
   };
   const panelChatHost = createPanelChatHost(undefined, chat);
   const shown: PanelUseRef = { applicationId, useId: placeholderUse.id };

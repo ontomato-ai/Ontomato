@@ -76,7 +76,7 @@ const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 const owner={domainId:"d",userId:"U"},credentials={token:"U-token",locale:"en"};
 const session={providerId:"workbench",sessionId:uuid(1)},root={providerId:"ontology",sessionId:uuid(2)};
 const skill={namespace:{kind:"domain" as const,domainId:"d"},name:"derived-panel"};
-const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P"};
+const use={id:"tasks", names: { en: "tasks" },pageKey:"tasks",path:"/applications/A/tasks",panelId:"P"};
 let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun;
 const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:Trigger",primaryKey:uuid(9)},input:{}}});
 function prepareLiveAction({ intentId, ...request }: CreatePanelHumanOperationIntentRequest & { intentId: string }) {

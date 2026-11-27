@@ -1195,7 +1195,7 @@ test("current entry is supplied from the resolved use and its slot cannot overri
   assert.deepEqual(applicationEntryResolutionQuerySchema.parse({ applicationId, useId }), { applicationId, useId });
   assert.equal(applicationEntryResolutionQuerySchema.safeParse({ path, applicationId, useId }).success, false);
   const use = {
-    id: useId, pageKey: "school.orders", panelId: "orders-panel", path,
+    id: useId, names: { en: String(useId) }, pageKey: "school.orders", panelId: "orders-panel", path,
     inputs: { term: { literal: "A" } },
   };
   const menu = { singleEntry: true, groups: [], panelUses: [use] };
@@ -1838,7 +1838,7 @@ test("an opening carries the admitted entry and current page placement separatel
   assert.deepEqual(productPanelResponseSchema.parse({ panel }), { panel });
   assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext }).success, false);
   const resolution = { applicationId: "ontology",
-    use: { id: "ontology-agent-settings", panelId: panel.id, pageKey: "agent-settings",
+    use: { id: "ontology-agent-settings", names: { en: "ontology-agent-settings" }, panelId: panel.id, pageKey: "agent-settings",
       path: "/ontology/agents" },
     menu: { singleEntry: true, panelUses: [], groups: [] } };
   assert.deepEqual(applicationEntryResolutionSchema.parse({ ...resolution, pageSkillContext }).pageSkillContext, pageSkillContext);
@@ -2846,7 +2846,7 @@ test("a frame can prepare a human intent and only the host can dispatch it", () 
 });
 
 test("application uses declare the explicit agent target", () => {
-  const use = { id: "governance", pageKey: "report", panelId: "reports", path: "/governance/reports" };
+  const use = { id: "governance", names: { en: "governance" }, pageKey: "report", panelId: "reports", path: "/governance/reports" };
   const preset = { kind: "preset", agentKind: "knowledge-governance" };
   const concrete = { kind: "id", id: "saved-agent" };
   assert.deepEqual(applicationPanelUseSchema.parse({ ...use, defaultAgent: concrete }).defaultAgent, concrete);

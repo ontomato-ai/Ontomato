@@ -31,7 +31,7 @@ export type PageDescriptionEntrance = {
   applicationId: string;
   useId: string;
   path: string;
-  names?: Record<string, string>;
+  names: Record<string, string>;
   applicationNames?: Record<string, string>;
 };
 
@@ -226,7 +226,7 @@ function describePanel(
 }
 
 function localizedName(names: PageDescriptionEntrance["names"], locale: string) {
-  return names && (names[locale] ?? names.en ?? Object.values(names)[0]);
+  return names[locale] ?? names.en ?? Object.values(names)[0];
 }
 
 function describeEntrances(sources: readonly PageDescriptionEntrance[], locale: string): string {
@@ -236,8 +236,8 @@ function describeEntrances(sources: readonly PageDescriptionEntrance[], locale: 
     heading,
     'Even when no page is open beside the conversation, call `present({ target: "<path>" })` with a target below to open that entrance beside the conversation.',
     ...sources.map(({ names, applicationNames, path, applicationId, useId }) => {
-      const name = localizedName(names, locale) ?? useId;
-      const applicationName = localizedName(applicationNames, locale);
+      const name = localizedName(names, locale);
+      const applicationName = applicationNames && localizedName(applicationNames, locale);
       const label = applicationName && applicationName !== name ? `${name} (${applicationName})` : name;
       const source = { kind: "registered", applicationId, useId };
       return `- ${label} · target: \`${path}\` · /read source: \`${JSON.stringify(source)}\``;

@@ -797,7 +797,8 @@ public class ApplicationCatalog {
                 "pageKey", newId + ":" + use.id(),
                 "panelId", use.panelId(),
                 "path", candidatePath);
-            if (use.names() != null && !use.names().isEmpty()) entry.put("names", new JSONObject(use.names()));
+            entry.put("names", new JSONObject(use.names()));
+            if (use.inMenu() != null) entry.put("inMenu", use.inMenu());
             if (use.descriptions() != null && !use.descriptions().isEmpty()) entry.put("descriptions", new JSONObject(use.descriptions()));
             if (use.icon() != null && !use.icon().isBlank()) entry.put("icon", use.icon());
             if (use.groupKey() != null && !use.groupKey().isBlank()) {
@@ -954,7 +955,8 @@ public class ApplicationCatalog {
         var pageKey = entry.getString("pageKey");
         if (pageKey == null) pageKey = entryKey;
         var nativeEntry = new ApplicationPanelUse(entryKey, pageKey, null, home == null ? entry.getString("path") : home,
-            null, null, null, null, null, null, ApplicationPanelUse.NATIVE_KIND);
+            null, app.getObject("names", new TypeReference<Map<String, String>>() {}),
+            null, null, null, null, ApplicationPanelUse.NATIVE_KIND);
         var entries = new ArrayList<>(uses);
         entries.add(nativeEntry);
         return entries;
@@ -1033,7 +1035,7 @@ public class ApplicationCatalog {
         }
         return uses.stream().map(use -> use.icon() != null && Objects.equals(priorIcons.get(use.id()), use.icon())
             ? new ApplicationPanelUse(use.id(), use.pageKey(), use.panelId(), use.path(),
-                use.defaultAgent(), use.names(), use.descriptions(), use.inputs(), use.groupKey(), null, use.kind(), use.pageComposer())
+                use.defaultAgent(), use.names(), use.descriptions(), use.inputs(), use.groupKey(), null, use.kind(), use.pageComposer(), use.inMenu())
             : use).toList();
     }
 
@@ -1093,7 +1095,7 @@ public class ApplicationCatalog {
             if (home == null) home = entry.getString("path");
             var requestedHome = home;
             var selected = admitted.stream().filter(use -> use.path().equals(requestedHome)).findFirst()
-                .orElseGet(() -> admitted.stream().filter(use -> use.names() != null).findFirst().orElse(admitted.getFirst()));
+                .orElseGet(() -> admitted.stream().filter(ApplicationPanelUse::appearsInMenu).findFirst().orElse(admitted.getFirst()));
             entry.put("home", selected.path());
             entry.put("entryKey", selected.id());
         }
@@ -1451,14 +1453,13 @@ public class ApplicationCatalog {
     }
 
     private static boolean singleEntry(JSONObject app, BuiltinPageKeys pageKeys) {
-        return pageKeys.activeUses(app).stream().filter(entry -> entry.names() != null).count() <= 1;
+        return pageKeys.activeUses(app).stream().filter(ApplicationPanelUse::appearsInMenu).count() <= 1;
     }
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed,
                                              BuiltinPageKeys pageKeys, boolean opening) {
-        var named = allowed.stream().filter(entry -> entry.names() != null).toList();
-        var menuUses = allowed.stream().filter(entry -> entry.names() != null || entry.frameConversationEntry()).toList();
-        var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
+        var menuUses = allowed.stream().filter(ApplicationPanelUse::appearsInMenu).toList();
+        var groupKeys = new HashSet<>(menuUses.stream().map(ApplicationPanelUse::groupKey).toList());
         var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
             .sorted(Comparator.comparingInt(Group::sort)).toList();
         var appNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
