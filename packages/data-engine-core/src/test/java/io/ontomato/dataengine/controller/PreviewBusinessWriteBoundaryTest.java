@@ -61,11 +61,8 @@ class PreviewBusinessWriteBoundaryTest {
     return controller;
   }
 
-  private void assertRefused(JSONObject result) {
-    assertEquals(422, response.getStatus());
-    assertFalse(result.getBooleanValue("success"));
-    assertEquals(PreviewExecution.WRITE_CODE, result.getString("code"));
-    assertEquals(PreviewExecution.WRITE_MESSAGE, result.getString("message"));
+  private static void assertRefused(org.junit.jupiter.api.function.Executable write) {
+    assertThrows(PreviewExecution.Refused.class, write);
   }
 
   private static JSONObject inserted() {
@@ -80,14 +77,21 @@ class PreviewBusinessWriteBoundaryTest {
   void aLiveWriteIsRefusedBeforeItsParametersAreRead() throws Exception {
     var controller = writeController();
     preview(LIVE);
-    assertRefused(controller.insert(inserted()));
-    for (var body : List.of(new JSONObject(), JSONObject.of("className", "person")))
-      for (var result : List.of(controller.update(body), controller.delete(body), controller.createEdge(body),
-          controller.deleteEdge(body), controller.appendVector(body), controller.updateVector(body),
-          controller.deleteVector(body)))
-        assertRefused(result);
-    assertRefused(vectorController().delete(vector(), preview(LIVE)));
-    assertRefused(vectorController().upload(null, "text", "person", "photo", "p", null, null, preview(LIVE)));
+    assertRefused(() -> controller.insert(inserted()));
+    for (var body : List.of(new JSONObject(), JSONObject.of("className", "person"))) {
+      assertRefused(() -> controller.update(body));
+      assertRefused(() -> controller.delete(body));
+      assertRefused(() -> controller.createEdge(body));
+      assertRefused(() -> controller.deleteEdge(body));
+      assertRefused(() -> controller.appendVector(body));
+      assertRefused(() -> controller.updateVector(body));
+      assertRefused(() -> controller.deleteVector(body));
+    }
+    var vectorEntry = vectorController();
+    var deleting = preview(LIVE);
+    assertRefused(() -> vectorEntry.delete(vector(), deleting));
+    var uploading = preview(LIVE);
+    assertRefused(() -> vectorEntry.upload(null, "text", "person", "photo", "p", null, null, uploading));
     verifyNoInteractions(writes, vectors);
   }
 
