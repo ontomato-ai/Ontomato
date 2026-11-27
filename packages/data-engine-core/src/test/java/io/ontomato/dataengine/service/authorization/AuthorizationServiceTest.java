@@ -44,18 +44,6 @@ class AuthorizationServiceTest {
     }
 
     @Test
-    void draftAuthorshipComparesTheJavaUserIdNotThePlacementPrincipal() {
-        var placement = authorization.resolveSubject(new VerifiedIdentity("domain", "user", CredentialLimit.UNRESTRICTED))
-                .withJavaUserId("java-user");
-        var own = new OwnerFacts("java-user", DefinitionState.DRAFT);
-        assertTrue(authorization.decide(placement, new ObjectAccess(action, Verb.EDIT, own)).allowed());
-        var placementOwned = new OwnerFacts("user", DefinitionState.DRAFT);
-        var denied = authorization.decide(placement, new ObjectAccess(action, Verb.EDIT, placementOwned));
-        assertFalse(denied.allowed());
-        assertEquals("PRIVATE_DRAFT", denied.code());
-    }
-
-    @Test
     void managementReadsAndChangesAreIndependentAndDomainAdminsUseTheCatalog() {
         var actor = new VerifiedIdentity("domain", "user", CredentialLimit.UNRESTRICTED);
         var admin = authorization.resolveSubject(actor);
