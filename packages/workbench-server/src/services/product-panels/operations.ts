@@ -480,9 +480,12 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
       return humanPreparation(existing.intent);
     }
     const { run, channel, root } = await requireActivePageRun(owner, input.agentRun);
-    const preview = channel.authority.executionKind === "preview";
-    if (preview && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
+    const runPreview = channel.authority.executionKind === "preview";
+    if (runPreview && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
       throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
+    // The operation is the preview's when either the run it is for or the trusted request preparing it is one: whoever
+    // confirms it later, the write it executes reaches its entry as the preview.
+    const preview = runPreview || credentials.executionKind === "preview";
     const { use, framePanelId } = await requireAgentPanelUse(owner, credentials, input);
     const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
     const current = writeOperation(await declaredOperation(owner, credentials, panel, use.panelId, use, input, invocationTarget(input), {

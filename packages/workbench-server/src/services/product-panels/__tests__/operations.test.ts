@@ -300,6 +300,33 @@ it("carries a preview run's identity into the business write its page operation 
  expect(ownerWrites()).toHaveLength(1);
 });
 
+it.each([
+ { request: "preview", run: "live" },
+ { request: "live", run: "preview" },
+] as const)("records a $request request's page operation for a $run run as the preview's, so a live page's confirmation still reaches the write as the preview",async({ request, run })=>{
+ current.channel!.authority.executionKind=run;
+ current.channel!.root = { session, runId: current.id };
+ current.channel!.userRecipient = { session, actor: current.channel!.actor };
+ mocks.projection.mockImplementation(async(_o:unknown,_c:unknown,id:string)=>({id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"triggers.runNow"}:{kind:"PlatformObjectType",id:"platform:Trigger"},inputs:{task:{kind:"object",objectType:"platform:Trigger"}}}));
+ const { intentId: toolCallId, ...operation } = action();
+ const caller = request === "preview" ? { ...credentials, executionKind: "preview" as const } : credentials;
+ const { intentId } = await prepareHumanPanelOperation(owner, caller,
+   { ...operation, agentRun: { runId: current.id, sessionId: current.sessionId, toolCallId } }, "Alice");
+ expect(intents.get(intentId)).toMatchObject({ source: { kind: "agent-page", executionKind: "preview" } });
+ vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   const marked = new Headers(init.headers).get(EXECUTION_CONTEXT_HEADER);
+   if ((init.method ?? "GET") === "GET") return Response.json({...task,title:"Inventory summary"});
+   expect(url).toMatch(/\/platform\/triggers\/[^/]+\/runs$/u);
+   expect(marked).toBe('{"kind":"preview"}');
+   return Response.json({error:{code:"PREVIEW_WRITE_FORBIDDEN",message:"预览里不执行写操作，动作的对错用动作试跑验"},correlationId:"test"},{status:422});
+ }));
+ // The person on the live page confirms with their own, unmarked credentials.
+ expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({ kind: "dispatched", outcome: {
+   kind: "refusal", code: "PREVIEW_WRITE_FORBIDDEN",
+ } });
+ expect(ownerWrites()).toHaveLength(1);
+});
+
 it("carries a preview's identity into the business write when it confirms a live run's page operation",async()=>{
  const { intentId } = await prepareLiveAction(action());
  expect(intents.get(intentId)!.source).not.toHaveProperty("executionKind");

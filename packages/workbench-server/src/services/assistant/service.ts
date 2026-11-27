@@ -303,11 +303,11 @@ export const assistantService = {
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
     const { sessionId, runId: id, input, authority } = body;
     const { agent: a } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
-    // The execution account is chosen once, when a run is admitted at the top: with a logged-in user present the run
-    // reads and writes as that user, and `execution_user_id` is only for unattended automation. A delegated or continued
-    // run keeps the account it is bound to (`executionActor`, null being the initiator's own), whatever this agent's own
-    // configuration would choose; the runtime refuses a start under any other.
-    const executionUserId = body.executionActor !== undefined ? body.executionActor?.userId ?? null
+    // With a logged-in user present the run reads and writes as that user, and `execution_user_id` is only for unattended
+    // automation: this agent's own configuration chooses, for a live run whether it is delegated or not. A preview's run
+    // keeps the execution account the runtime binds it to (`executionActor`, null being the initiator's own), so the
+    // preview carries its identity and permissions down; the runtime refuses a start under any other.
+    const executionUserId = authority.executionKind === "preview" && body.executionActor !== undefined ? body.executionActor?.userId ?? null
       : isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
     const executionCredentials = await agentExecutionCredentials(a.id, executionUserId, owner, credentials);
     const appId = isAppBuilderKind(a.kind) ? requiredBuilderAppId(body.context) : undefined;

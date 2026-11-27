@@ -69,7 +69,9 @@ export const agentChannelService = {
     if (provider === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID) throw new HttpError(404, "Agent not found", "NOT_FOUND");
       await createDiagnosis(body.sessionId, owner, credentials, null, true, body.authority.executionKind === "preview");
-      prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body), body.authority, body.executionActor);
+      // A preview's diagnosis run keeps the account the runtime binds it to; a live one runs as its initiator, as before.
+      prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body), body.authority,
+        body.authority.executionKind === "preview" ? body.executionActor : undefined);
     } else {
       prepared = await assistantService.prepare(body,owner,credentials);
     }

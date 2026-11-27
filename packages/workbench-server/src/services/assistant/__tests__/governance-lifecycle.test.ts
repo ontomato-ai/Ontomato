@@ -106,21 +106,25 @@ it.each(["interactive", "automation", "older automation"] as const)("uses the ex
 });
 
 it.each([
-  { bound: "sender-account", userRecipient: false },
-  { bound: "sender-account", userRecipient: true },
-  { bound: null, userRecipient: false },
-])("keeps the execution account a delegated or continued run is bound to ($bound), not this agent's own", async ({ bound, userRecipient }) => {
+  { kind: "live" as const, offered: "parent-account", userRecipient: false, runsAs: "agent-account" },
+  { kind: "live" as const, offered: "parent-account", userRecipient: true, runsAs: null },
+  { kind: "preview" as const, offered: "parent-account", userRecipient: false, runsAs: "parent-account" },
+  { kind: "preview" as const, offered: "parent-account", userRecipient: true, runsAs: "parent-account" },
+  { kind: "preview" as const, offered: null, userRecipient: false, runsAs: null },
+])("runs a $kind delegated run offered $offered as $runsAs", async ({ kind, offered, userRecipient, runsAs }) => {
   const agent = await mocks.agent();
   mocks.agent.mockResolvedValue({ ...agent, execution_user_id: "agent-account" });
-  mocks.resolveExecution.mockResolvedValue({ credentials: { apiKey: "bound-key" } });
-  const request = { ...preparation(), executionActor: bound === null ? null : { userId: bound, domainId: owner.domainId } };
+  mocks.resolveExecution.mockResolvedValue({ credentials: { apiKey: "resolved-key" } });
+  // A live delegated run is chosen by this agent's own configuration; a preview's keeps the account the runtime binds.
+  const request = { ...preparation(), authority: { classNames: [], executionKind: kind },
+    executionActor: offered === null ? null : { userId: offered, domainId: owner.domainId } };
   if (userRecipient) request.userRecipient = { session: request.root.session, actor: request.actor };
   const credentials = { token: "logged-in-user" };
   const prepared = await assistantService.prepare(request, owner, credentials);
-  expect(prepared.executionActor).toEqual(bound === null ? null : { userId: bound, domainId: owner.domainId });
-  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({ executionUserId: bound }), credentials);
-  if (bound === null) expect(mocks.resolveExecution).not.toHaveBeenCalled();
-  else expect(mocks.resolveExecution).toHaveBeenCalledWith({ id: agent.id, execution_user_id: bound }, owner, credentials);
+  expect(prepared.executionActor).toEqual(runsAs === null ? null : { userId: runsAs, domainId: owner.domainId });
+  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({ executionUserId: runsAs }), credentials);
+  if (runsAs === null) expect(mocks.resolveExecution).not.toHaveBeenCalled();
+  else expect(mocks.resolveExecution).toHaveBeenCalledWith({ id: agent.id, execution_user_id: runsAs }, owner, credentials);
 });
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};

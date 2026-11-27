@@ -194,9 +194,9 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
 
 /**
  * `authority` is the run's as delegated or sent; a conversation opened as the preview's keeps every run in it the
- * preview's. `bound` is the execution account a delegated or continued run is bound to (null being its initiator's own):
- * the run executes, and its evidence callback reads, as that account. A top-level diagnosis (`bound` absent) runs as its
- * initiator.
+ * preview's. `bound` is the execution account the runtime binds a preview's run to (null being its initiator's own): the
+ * run executes, and its evidence callback reads, as that account. Any other diagnosis (`bound` absent) runs as its
+ * initiator, as it always has.
  */
 export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials, reader?: AgentVisibilityReader,
   authority?: AgentRunContext["authority"], bound?: AgentExecutionActorRef | null): Promise<RuntimeStartRunRequest> {

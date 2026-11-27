@@ -451,12 +451,15 @@ reference (`sessions.engine_ref`, `sessions.preview_engine_ref`); an engine open
 only what runs of its identity consumed, and only live runs read stored compaction summaries.
 `GET /v1/channel/sessions/:sessionId/run-identities` returns each run's identity, so a host
 continues and quotes only what runs of the same identity did.
-The execution account is bound once. A top-level admission (no binding and no delegating run) sends
-`/prepare` no `executionActor` and the provider chooses; a delegated or continued run sends the
-account it is bound to (`null` for the initiator's own), and the runtime refuses to start it with 403
-`EXECUTION_ACCOUNT_CHANGED` if the provider returns any other. Workbench's assistant and legacy
-`observe` providers both run a bound run as that account and return it; the legacy diagnosis
-evidence callback carries that account's credential.
+An intent that already holds an execution account (its conversation's, kept by a continuation or a
+retry) and a preview's delegated run (the delegating run's account, `null` for the initiator's own)
+are bound to it: `/prepare` receives it as `executionActor` and the runtime refuses to start the run
+with 403 `EXECUTION_ACCOUNT_CHANGED` if the provider returns any other. A live delegated run is not
+bound: its provider is offered the delegating run's account as before and chooses (DataRAG's agents
+run delegated work as it; Workbench's assistant and legacy `observe` agents choose from their own
+configuration). A live run's new conversation input continues that conversation's own account; a
+preview's continues its sender's. Workbench's providers run a bound preview run as that account and
+return it; the legacy diagnosis evidence callback carries that account's credential.
 See `execution-context.md`.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 

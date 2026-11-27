@@ -23,7 +23,7 @@ below the API root. There is no list of entries a preview may call.
 | `POST /writeFunctionOperation/insert\|update\|delete\|createEdge\|deleteEdge\|appendVector\|updateVector\|deleteVector` | DataRAG | Refused when the grant binds live data; admitted when it binds an action-trial or generation sandbox (`sandboxId`), where the run writes and reads back what it wrote |
 | `POST /vectorResource/upload\|delete` | DataRAG | As the `writeFunctionOperation` writes |
 | `POST /praxis/runs` (start), `/praxis/runs/{id}/tick` (advance), `/praxis/runs/{id}/case/submit\|fill\|close`, `/praxis/runs/{id}/acts-on`, `/praxis/steps/{id}/decide\|assign` | Praxis, through Node's `/api/praxis` | Refused before the body is read: no run, ledger entry, case, step or tick is touched |
-| `POST /panel-operations/intents` (prepare a page operation) | Node | Not refused: an operation a preview prepares is recorded as the preview's |
+| `POST /panel-operations/intents` (prepare a page operation) | Node | Not refused: the operation is recorded as the preview's when the request preparing it or the agent run it is for is one |
 | `POST /panel-operations/intents/{id}/dispatch` | Node | The operation executes as the caller, or as the preview that prepared it whoever confirms it; an Action it executes is refused at `/action/execute` |
 | `POST /assistant/sessions`, `POST /assistant/sessions/{id}/runs` | Node | Not refused: the conversation and its runs become the preview's (below) |
 | `POST /ontology/ai/sessions/{id}/runs`, `POST /platform/agent-channel/commands` | DataRAG | Not refused: the agent run started there runs as the preview |

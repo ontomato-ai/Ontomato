@@ -275,12 +275,17 @@ export class AgentChannel {
     try {
       const input = (await this.facts.pending(scope, intent.session.sessionId)).find(row => row.id === intent.inputId)!.message as AgentInput;
       const parent = intent.channel.requestedBy;
-      // The execution account is bound once: a top-level admission (no binding, no delegating run) lets the provider
-      // choose it; a delegated or continued run carries the one it is bound to, and the provider must keep it.
-      const bound = intent.executionUserId!==undefined ? intent.executionUserId
-        : parent ? (await this.facts.intent(this.scope(parent.session, scope.domainId), parent.runId)).executionUserId ?? null : undefined;
+      const preview = intent.channel.authority.executionKind === "preview";
+      const parentAccount = parent ? (await this.facts.intent(this.scope(parent.session, scope.domainId), parent.runId)).executionUserId ?? null : undefined;
+      // Bound, and kept by the provider: the account an intent already holds (its conversation's, which a continuation or
+      // a retry keeps), and for a preview's delegated run the delegating run's (null being the initiator's own), so the
+      // preview carries its identity and permissions down. A live delegated run is not bound: its provider chooses as it
+      // always has, offered the delegating run's account (DataRAG's agents run delegated work as it; Workbench's agents
+      // choose from their own configuration). A top-level preview run's provider chooses too.
+      const bound = intent.executionUserId!==undefined ? intent.executionUserId : preview ? parentAccount : undefined;
+      const offered = bound!==undefined ? bound : preview ? undefined : parentAccount ?? null;
       const request: AgentPrepareRequest = { mode: "run",
-        ...(bound!==undefined && { executionActor: bound===null ? null : { userId: bound, domainId: scope.domainId } }), language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, userRecipient: intent.channel.userRecipient ?? null, context: intent.context, presentationBinding };
+        ...(offered!==undefined && { executionActor: offered===null ? null : { userId: offered, domainId: scope.domainId } }), language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, userRecipient: intent.channel.userRecipient ?? null, context: intent.context, presentationBinding };
       const { presentationCallback, ...prepared } = runtimeStartRunRequestSchema.parse(
         await this.post(this.provider(intent.session.providerId), "/prepare", request, scope.domainId, this.credential(intent.channel)));
       hostPrepared = true;
@@ -453,6 +458,9 @@ export class AgentChannel {
       // An addressed input continues its recipient; any other is its sender's (a web input's channel is its own).
       const continues=addressedInput ? previous! : null;
       const bound=web || external || continues ? null : senderRun!;
+      // A preview's run continues the sender's execution account; a live one its own conversation's, which its agent chose.
+      const account=web ? web.executionUserId : external ? null : continues ? continues.executionUserId
+        : identity==="preview" ? bound!.executionUserId : previous?.executionUserId;
       const authority={...(web?.channel.authority ?? external?.authority ?? continues?.channel.authority ?? sender),executionKind:identity};
       const channel:AgentRunContext=web ? {...web.channel,authority} : {agent:binding.agent,actor:requestedBy || external || (input.role === "notification" && "kind" in input.source && input.source.kind === "user") ? actor : previous!.channel.actor,authority,
         requestedBy:external?null:requestedBy ?? previous!.channel.requestedBy,
@@ -461,7 +469,7 @@ export class AgentChannel {
       const intent = await this.facts.reserve(scope,target.sessionId,runId,received.id,channel,{
         language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,
         context:resultRecipientRunId ? previous!.context : web?.context ?? binding.context,
-        executionUserId:web ? web.executionUserId : external ? null : continues ? continues.executionUserId : bound!.executionUserId,
+        executionUserId:account,
         queued,
       });
       if((web || external) && channel.root.runId===runId)
