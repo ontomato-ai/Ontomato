@@ -6,7 +6,7 @@ import {
   type ManagerCredential,
   type ManagerRequestContext,
 } from "../api";
-import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { englishMessages } from "../i18n";
 
 interface RecordedRequest {
@@ -498,26 +498,26 @@ describe("requests used by data browsing and visual modeling", () => {
   });
 });
 
-it("marks only a business-data write with the preview execution identity", async () => {
+it("marks every request a preview sends with its execution identity", async () => {
   const {context,client}=setup({type:"anonymous"});
   context.executionContext={kind:"preview"};
   await client.loadOntology();
-  expect(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
+  expect(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]).toBe(previewExecutionContextHeader);
   const request=createManagerRequest(context,()=>{});
   await request.request("/action/execute",{method:"POST",body:"{}"},"/data-query");
-  expect(JSON.parse(requests[1]!.headers[EXECUTION_CONTEXT_HEADER]!)).toEqual({kind:"preview"});
+  expect(requests[1]!.headers[EXECUTION_CONTEXT_HEADER]).toBe(previewExecutionContextHeader);
   context.executionContext={kind:"live"};await request.request("/action/execute",{method:"POST",body:"{}"},"/data-query");
   expect(requests[2]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
 });
 
-it("leaves the definition and management writes of a preview unmarked and unrefused, and opens its conversations as the preview",async()=>{
+it("marks the definition writes and conversation entries a preview sends the same way",async()=>{
   const {context}=setup({type:"anonymous"});context.executionContext={kind:"preview"};
   const request=createManagerRequest(context,()=>{});
   await request.request("/assistant/agent-definitions",{method:"POST",body:"{}"},"");
   await request.request("/function/save",{method:"POST",body:"{}"},"/data-query");
   await request.request("/assistant/sessions",{method:"POST",body:"{}"},"");
   expect(requests).toHaveLength(3);
-  expect(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
-  expect(requests[1]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
-  expect(JSON.parse(requests[2]!.headers[EXECUTION_CONTEXT_HEADER]!)).toEqual({kind:"preview"});
+  expect(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]).toBe(previewExecutionContextHeader);
+  expect(requests[1]!.headers[EXECUTION_CONTEXT_HEADER]).toBe(previewExecutionContextHeader);
+  expect(requests[2]!.headers[EXECUTION_CONTEXT_HEADER]).toBe(previewExecutionContextHeader);
 });

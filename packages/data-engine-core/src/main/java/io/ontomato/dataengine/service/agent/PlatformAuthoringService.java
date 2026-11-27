@@ -139,7 +139,7 @@ public class PlatformAuthoringService {
       return adoptDefinition(run, owner, kind, input.getJSONObject("definition"), caller.language(),
           GenerationOperations.externalEvidenceScope(owner), () -> operations.gate(run, owner));
     }
-    var window = operations.external(run, owner, kind, caller.access(), () -> {});
+    var window = operations.external(run, owner, kind, caller.access());
     window.recheck().run();
     store.transaction(window.gate());
     return switch (operation) {

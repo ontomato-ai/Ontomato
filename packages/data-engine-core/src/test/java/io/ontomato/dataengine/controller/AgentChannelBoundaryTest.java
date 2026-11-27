@@ -188,7 +188,7 @@ class AgentChannelBoundaryTest {
     var controller=new AgentChannelController(callers,directory,store,runtime,mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),access);
     var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     String start=JSONObject.of("op","start","agent",JSONObject.of("providerId","workbench","agentId","analyst"),"message","How many orders?").toJSONString();
-    mvc.perform(post("/platform/agent-channel/commands").header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"{\"kind\":\"preview\"}")
+    mvc.perform(post("/platform/agent-channel/commands").header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"preview")
         .contentType(MediaType.APPLICATION_JSON).content(start)).andExpect(status().isOk());
     mvc.perform(post("/platform/agent-channel/commands").contentType(MediaType.APPLICATION_JSON).content(start)).andExpect(status().isOk());
     var sent=org.mockito.ArgumentCaptor.forClass(JSONObject.class);
@@ -243,7 +243,7 @@ class AgentChannelBoundaryTest {
     when(access.reader(any(),eq(SESSION),isNull())).thenReturn(owner);
     var mvc=MockMvcBuilders.standaloneSetup(new OntologyAgentController(host,access,runtime,mock(OntologyRetrievalService.class)))
         .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-    String preview="{\"kind\":\"preview\"}";
+    String preview="preview";
     // Stopping and deleting are not business writes: the preview identity is no part of them.
     mvc.perform(post("/ontology/ai/sessions/"+SESSION+"/runs/"+RUN+"/cancel").header(io.ontomato.dataengine.service.PreviewExecution.HEADER,preview))
         .andExpect(status().isOk());

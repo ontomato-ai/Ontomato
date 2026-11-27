@@ -30,8 +30,8 @@ export function credentialsFromRequest(request:AuthenticatedRequest) {
     ...((caller || execution !== undefined) && {
       headers: buildBackendHeaders(token, undefined, locale, apiKey, scope),
     }),
-    // A preview arrives as the header its caller sends and stays here as a marker: only a request this caller then sends
-    // to a business-data write entry carries it again, so every other call to Java travels as it would live.
+    // A preview arrives as the header its caller sends and stays here as a marker: execution requests Node then sends
+    // for this caller carry it again, for each write entry to refuse itself.
     ...(request.header(EXECUTION_CONTEXT_HEADER) === previewExecutionContextHeader && { executionKind: "preview" as const }),
   };
 }

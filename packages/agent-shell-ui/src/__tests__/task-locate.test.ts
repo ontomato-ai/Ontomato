@@ -10,7 +10,7 @@ import { shellContextKey, type ShellContext } from "../context";
 import type { ResponseItem } from "../view";
 
 const task: ChannelAgentTask = {
-  kind: "agent",title:"Sales?",agentRef:{providerId:"ontology",agentId:"retrieval"},sessionRef:{providerId:"ontology",sessionId:"66666666-6666-4666-8666-666666666666"},runId:"88888888-8888-4888-8888-888888888888",requestedBy:{session:{providerId:"workbench",sessionId:"11111111-1111-4111-8111-111111111111"},runId:"22222222-2222-4222-8222-222222222222"},results:[], id: "77777777-7777-4777-8777-777777777777", parentTaskId: null,
+  kind: "agent",title:"Sales?",agentRef:{providerId:"ontology",agentId:"retrieval"},agentName:"Retriever",sessionRef:{providerId:"ontology",sessionId:"66666666-6666-4666-8666-666666666666"},runId:"88888888-8888-4888-8888-888888888888",requestedBy:{session:{providerId:"workbench",sessionId:"11111111-1111-4111-8111-111111111111"},runId:"22222222-2222-4222-8222-222222222222"},results:[], id: "77777777-7777-4777-8777-777777777777", parentTaskId: null,
   root: { sessionId: "22222222-2222-4222-8222-222222222222", runId: "run" }, status: "completed", error: null,
   createdAt: null, process: { mode: "none" },
 };
@@ -115,20 +115,19 @@ it("opens a deeper task's read-only process through the existing proxy and links
   } finally {app.unmount();root.remove();}
 });
 
-it("labels delegated tasks with the delegated role", async () => {
+it("labels delegated tasks with the provider display name", async () => {
   const genericTask: ChannelAgentTask = {
     ...task,
     id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     title: "Inspect deployment health",
   };
-  const handoffItem: ResponseItem = {
+  const responseItem: ResponseItem = {
     ...item,
-    handoff: true,
     process: [{ kind: "task", key: `task:${genericTask.id}`, task: genericTask }],
   };
   const root = document.createElement("div");
   document.body.append(root);
-  const app = createApp({ render: () => h(ShellResponse, { item: handoffItem, sessionId: task.root.sessionId }) });
+  const app = createApp({ render: () => h(ShellResponse, { item: responseItem, sessionId: task.root.sessionId }) });
   app.provide(shellContextKey, {
     labels: ref({
       thinking: "Thinking",
@@ -137,9 +136,6 @@ it("labels delegated tasks with the delegated role", async () => {
       elapsed: (time: string) => time,
       tasks: {
         count: (n: number) => `${n} tasks`,
-        retriever: "Retriever",
-        delegatedAgent: "Delegated agent",
-        delegated: "Delegated work",
         status: { starting: "Starting", running: "Running", completed: "Done", failed: "Failed", cancelled: "Cancelled" },
         errors: {},
       },
@@ -149,11 +145,10 @@ it("labels delegated tasks with the delegated role", async () => {
   app.mount(root);
   try {
     const toggle = root.querySelector<HTMLButtonElement>(".process-toggle")!;
-    expect(toggle.textContent?.trim()).toBe("Delegated work");
     toggle.click();
     await nextTick();
     const card = root.querySelector(`#agent-task-${genericTask.id}`)!;
-    expect(card.querySelector(".executor")?.textContent?.trim()).toBe("Delegated agent");
+    expect(card.querySelector(".executor")?.textContent?.trim()).toBe("Retriever");
     expect(card.querySelector(".detail")?.textContent?.trim()).toBe("Inspect deployment health");
   } finally {
     app.unmount();

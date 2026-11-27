@@ -161,8 +161,8 @@ class DataSandboxServiceLifecycleTest {
                 long expiresAt, long createdAt) {
             rows.put(id, JSONObject.of("id", id, "owner_id", user, "domain_id", domain, "scope_key", workspace,
                     "purpose", purpose, "state", state, "expires_at", expiresAt, "created_at", createdAt,
-                    "cleanup_attempted", false, "data", JSONObject.of("sampleName", id + ".json", "classNames",
-                            new JSONArray(), "resources", new JSONArray(), "binding", new JSONObject())));
+                    "cleanup_attempted", false, "data", JSONObject.of("classNames", new JSONArray(), "resources",
+                            new JSONArray(), "binding", new JSONObject())));
         }
 
         @Override

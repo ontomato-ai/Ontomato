@@ -99,11 +99,11 @@ const stopMessage = (signal: AbortSignal) =>
 
 const DELEGATED_TASK_PROMPT = `Delegated task
 
-Another agent started you to carry out a task for it. Your final reply in this run is handed to that agent verbatim as your result; the user does not see it directly. Write it for that agent:
+Another agent started you to carry out a task for it. Your final reply in this run is the result that agent reads verbatim; the user does not see it directly. Write it for that agent:
 - the result itself, with the key figures or conclusions;
 - what it rests on: the assumptions and choices you made, and why;
 - what to keep in mind when using it, such as what a figure covers and what it leaves out;
-- what each file you leave in outputs/ contains. Those files are delivered with your reply.
+- what each file you leave in outputs/ contains. Those files are delivered with that result.
 To ask the agent that started you something, use the agent tool with needsInput.`;
 /** Digits and whitespace are noise for a command that only drifts a line number or an ID. */
 const shape = (value: string) => value.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
@@ -407,6 +407,11 @@ export class AgentRuntime {
     await this.store.pool.query(`UPDATE ${this.store.table("runs")} SET run=jsonb_set(run,'{definition,context}',$4::jsonb) WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[scope.hostId,scope.domainId,runId,JSON.stringify(context)]);
   }
   acceptsInput(scope: Scope, runId: string) { const active=this.active.get(key(scope,runId));return !!active && !active.sealed; }
+  /** Inputs already handed to the engine but not yet consumed by the model. */
+  inputInFlight(scope: Scope, runId: string) {
+    const active = this.active.get(key(scope, runId));
+    return active ? [...active.sentInputs].map(([id, input]) => ({ id, message: input.message })) : [];
+  }
   private activeForSkillCallback(scope: Scope, sessionId: string, credential: string | undefined) {
     const runId = this.sessionEngines.callbackRun(scope, sessionId, credential);
     const active = this.active.get(key(scope, runId))!;
@@ -655,6 +660,7 @@ export class AgentRuntime {
           active.sealed = true;
           return;
         }
+        this.channel.inputHandedOff(scope, run.sessionId);
       }
     }
   }
@@ -699,12 +705,13 @@ export class AgentRuntime {
     const policy = active.run.definition.toolCallPolicy;
     if (!policy || active.controller.signal.aborted) return;
     active.toolCalls++;
+    const waiting = toolName === "agent" && typeof args === "object" && args !== null && (args as { op?: unknown }).op === "wait";
     const key = shape(toolName) + ":" + shape(JSON.stringify(args ?? null));
-    const same = (active.toolShapes.get(key) ?? 0) + 1;
-    active.toolShapes.set(key, same);
+    const same = waiting ? 0 : (active.toolShapes.get(key) ?? 0) + 1;
+    if (!waiting) active.toolShapes.set(key, same);
     if (active.toolCalls > policy.maxCalls)
       active.controller.abort(new RunStop(`Stopped after more than ${policy.maxCalls} tool calls`));
-    else if (same >= policy.maxSameShape)
+    else if (!waiting && same >= policy.maxSameShape)
       active.controller.abort(new RunStop(`Stopped after ${same} repeated ${toolName} calls without progress`));
   }
   private async execute(

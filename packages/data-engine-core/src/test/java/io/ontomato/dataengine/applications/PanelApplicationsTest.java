@@ -396,7 +396,7 @@ class PanelApplicationsTest {
                 .string("X-App-Proxy-Path", "/connector/config?view=one"));
         // A preview's own request to a connected application is the caller's, as it is live.
         http.perform(get(proxy).header("X-App-Request-Uri", "/apps/app-connected/config")
-                .header("X-App-Credential", "verified-user").header(PreviewExecution.HEADER, "{\"kind\":\"preview\"}"))
+                .header("X-App-Credential", "verified-user").header(PreviewExecution.HEADER, "preview"))
             .andExpect(status().isNoContent());
 
         String select = "?applicationId=app-panel-a&useId=use-denied";

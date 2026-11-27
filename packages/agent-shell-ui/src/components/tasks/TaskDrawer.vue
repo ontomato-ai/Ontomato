@@ -59,7 +59,7 @@ const result = (task: AgentTask) => props.snapshot.qualityResults.find((value) =
           <ShieldCheck v-if="row.task.kind==='quality'" :size="14" />
           <Bot v-else :size="14" />
           <span v-if="row.task.kind==='quality'" class="name">{{ labels.quality }}</span>
-          <span v-else-if="labels.delegatedAgent" class="name">{{ labels.delegatedAgent }}</span>
+          <span v-else class="name">{{ row.task.kind === 'agent' ? row.task.agentName : '' }}</span>
           <span v-if="row.task.kind==='quality'" class="source">{{ row.task.checks.datasets.map((dataset) => dataset.title ?? dataset.id).join("、") }}</span>
           <span v-else class="question">{{ row.task.title }}</span>
           <span class="status" :class="row.task.status">{{ row.task.kind==='quality' && result(row.task)?labels.score(Math.round(result(row.task)!.score)):labels.status[row.task.status] }}</span>

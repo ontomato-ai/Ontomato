@@ -65,8 +65,7 @@ public class VectorResourceController {
 	@ResponseBody
 	public JSONObject delete(@RequestBody JSONObject param, HttpServletRequest request) throws Exception {
         var execution = vectorWrite(request);
-        var refused = PreviewExecution.refuseLiveWrite(request, execution::target);
-        if (refused != null) return refused;
+        PreviewExecution.refuseLiveWrite(request, execution::target);
         String className = requiredText(param, "className");
         String attrName = requiredText(param, "attrName");
         String objectId = requiredText(param, "objectId");
@@ -91,8 +90,7 @@ public class VectorResourceController {
 			@RequestParam(value = "suffix", required = false) String suffix,
 			@RequestParam(value = "items", required = false) String items, HttpServletRequest request) throws Exception {
         var execution = vectorWrite(request);
-        var refused = PreviewExecution.refuseLiveWrite(request, execution::target);
-        if (refused != null) return refused;
+        PreviewExecution.refuseLiveWrite(request, execution::target);
         var target = execution.target();
         if (items != null) {
             if (target.testing()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only single-resource uploads are supported in a sandbox");

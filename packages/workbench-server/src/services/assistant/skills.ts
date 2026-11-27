@@ -132,7 +132,8 @@ async function publishSelectedSkill(domainId: string, ref: RuntimeSkillSelection
       ? await publishSkill(entry.source.path, runtimeSkillRefFromSelection(ref))
       : await publishSkillPackage(await entry.provide(), domainId);
   }
-  return { ...version, ...(ref.preload ? { preload: true } : {}) };
+  const { description: _description, ...admitted } = version as RuntimeSkillVersion & { description?: string };
+  return { ...admitted, ...(ref.preload ? { preload: true } : {}) };
 }
 
 async function validateCurrentPage(owner: AssistantOwner, credentials: AssistantCredentials, pageSkillContext?: CurrentPageContext) {

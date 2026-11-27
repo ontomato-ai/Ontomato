@@ -7,7 +7,7 @@ import { readAssistantPanelMember } from "../../services/assistant/registered-pa
 import { readNestedPanel, resolvePanelMemberPath } from "../../services/product-panels/member-path";
 import { requirePanelUseEntry } from "../../services/product-panels/application-use";
 import { readCurrentPanelRecord } from "../../services/product-panels/current";
-import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { PROJECTION_REUSE_PANEL_HEADER } from "@ontomato/contracts/product-panels";
 import { Router, type Request } from "express";
 import { AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE, bindingKey, panelClientReads } from "@ontomato/contracts/panel-client-requests";
@@ -35,17 +35,6 @@ export const assistantExecutionMountPath = "/api/assistant/executions";
 export const assistantOwnerCallbackPath = "/:runId/:target(ontology|workbench)/*";
 
 const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u;
-
-/**
- * Whether a run's callback request reaches an entry its preview identity is carried to: an ontology path is DataRAG's,
- * a workbench path Node's below `/api`, which Node routes in any letter case. Anywhere else (a read, a definition, a
- * model, a platform object) the request travels exactly as a live one does.
- */
-function carriesRunPreview(target: "ontology" | "workbench", method: string, path: string): boolean {
-  if (target === "ontology") return carriesPreviewIdentity("/data-query", method, path);
-  const api = /^\/api(?=\/)/iu.exec(path);
-  return api !== null && carriesPreviewIdentity("", method, path.slice(api[0].length));
-}
 
 // These existing reads and personal operations belong to the initiator, including on runs
 // with a separate execution account. Every other route uses the run's execution identity.
@@ -217,13 +206,8 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
     retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
     authority = resolved.run.channel?.authority;
   }
-  const previewEntry = carriesRunPreview(target, req.method, path);
-  const executionContext = previewEntry && authority?.executionKind === "preview" ? previewExecutionContextHeader : undefined;
-  // At those entries the run's own identity is the only one a caller may state; elsewhere what the caller said about it
-  // is dropped and the request travels as a live one does. Values are never merged.
-  const requestedContext = req.header(EXECUTION_CONTEXT_HEADER);
-  if (previewEntry && requestedContext !== undefined && requestedContext !== executionContext)
-    throw new HttpError(403, "Execution context differs from the run's bound target", "PREVIEW_EXECUTION_FORBIDDEN");
+  const executionContext = authority?.executionKind === "preview" ? previewExecutionContextHeader : undefined;
+  // The run's own identity decides every callback request. What the caller supplied is never merged or forwarded.
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
   if (businessGrant) {
     headers.tk = businessGrant;
