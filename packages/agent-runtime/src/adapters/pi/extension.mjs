@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   call, config, invoke, createBashToolDefinition, createEditToolDefinition,
   createReadToolDefinition, createWriteToolDefinition,
@@ -80,7 +82,18 @@ export default function (pi) {
     const cwd = directories.workspace;
     for (const tool of [
       createReadToolDefinition(cwd),
-      createBashToolDefinition(cwd, { exposeSessionEnvironment: false }),
+      createBashToolDefinition(cwd, {
+        exposeSessionEnvironment: false,
+        spawnHook(context) {
+          const env = { ...context.env };
+          delete env.ONTOMATO_RUN_ID;
+          try {
+            const runId = readFileSync(join(directories.state, "ontomato-run-id"), "utf8").trim();
+            if (runId) env.ONTOMATO_RUN_ID = runId;
+          } catch {}
+          return { ...context, env };
+        },
+      }),
       createEditToolDefinition(cwd),
       createWriteToolDefinition(cwd),
     ]) pi.registerTool({ ...tool, executionMode: "sequential" });
