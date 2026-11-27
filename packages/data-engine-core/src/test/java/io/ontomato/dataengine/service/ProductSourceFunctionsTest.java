@@ -22,6 +22,7 @@ class ProductSourceFunctionsTest {
     }
     @Test void ordinaryFunctionAuthoringCannotReplaceOrDeleteAPublishedBrowserArtifact(){
         var dao=mock(io.ontomato.dataengine.dao.FunctionDao.class);var service=new io.ontomato.dataengine.service.impl.FunctionServiceImpl();
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"definitions",io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain","user"));
         org.springframework.test.util.ReflectionTestUtils.setField(service,"functionDao",dao);
         var lang=mock(LangService.class);when(lang.get(anyString(),anyString())).thenAnswer(call->call.getArgument(1));org.springframework.test.util.ReflectionTestUtils.setField(service,"langService",lang);
         var published=new io.ontomato.dataengine.bean.function.Function();published.setId("artifact");published.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_PRODUCT);published.setDomainId("domain");
