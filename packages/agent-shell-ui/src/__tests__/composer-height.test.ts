@@ -88,12 +88,12 @@ it("grows upward with the message in a conversation, to eight lines, and scrolls
   conversation.unmount();
 });
 
-it("floats over a page as two layers: the fold and the agent, then one line of input and send", async () => {
+it("floats over a page as two layers: the drag grip, agent and fold, then one line of input and send", async () => {
   const page = mount(true);
   await nextTick();
 
   const bar = page.root.querySelector(".composer-bar")!;
-  expect([...bar.children].map((child) => child.className)).toEqual(["composer-fold", "composer-agent"]);
+  expect([...bar.children].map((child) => child.className)).toEqual(["composer-drag", "composer-agent", "composer-fold"]);
   const body = page.root.querySelector(".composer-body")!;
   expect([...body.children].map((child) => child.className || child.tagName.toLowerCase())).toEqual(["textarea", "composer-controls"]);
   expect(page.input().style.height).toBe(height(1));
