@@ -22,13 +22,13 @@ const stale = [];
 for (const [entry, output] of outputs) {
   const outfile = path.join(repo, output);
   const options = {
+    absWorkingDir: repo,
     entryPoints: [path.join(directory, "src", entry)],
     outfile,
     bundle: true,
     platform: "node",
     target: "node24",
     format: "esm",
-    minify: true,
     legalComments: "none",
     banner: { js: banner },
     logLevel: "silent",
