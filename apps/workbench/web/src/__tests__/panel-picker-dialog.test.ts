@@ -9,6 +9,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { USER } from "@ontomato/contracts/panel-client-requests";
+import { PERMISSION_POLICY } from "@ontomato/contracts/platform-object-types";
 import {
   createDirectPanelInstance,
   type PanelMemberReadRequest,
@@ -317,6 +318,53 @@ describe("PickerDialog", () => {
     expect(confirmed).toHaveBeenCalledWith(["u-1", "u-2"]);
     expect(instance.state.values.value.selectedIds).toEqual(["u-1", "u-2"]);
     expect(instance.state.values.value.pickerOpen).toBe(false);
+  });
+
+  it("reloads candidates when a state-bound read parameter changes while the dialog is open", async () => {
+    const manifest = makeManifest();
+    manifest.state.objectPickerField = {
+      type: { kind: "scalar", type: "string" }, default: "actionGrants", deepLink: false, personal: false, external: false,
+    };
+    manifest.members.picker!.inputs!.field = { state: "objectPickerField" };
+    const projection = makeOptionsProjection();
+    projection.inputs.field = { kind: "scalar", type: "string" };
+    projection.data.options = {
+      source: { object: { literal: { className: PERMISSION_POLICY, primaryKey: "policy-1" } } },
+      read: "objectGrantCandidates",
+      params: {},
+    };
+    const { reads, instance } = mountPanel(
+      manifest,
+      { "member-picker": projection },
+      (request) => {
+        const field = "inputs" in request ? request.inputs.field : undefined;
+        const action = field !== "triggerGrants";
+        return ready({
+          options: [{
+            primaryKey: action ? "action-1" : "trigger-1",
+            value: action ? "action-1" : "trigger-1",
+            label: action ? "Approve expense" : "e2e scheduled governance",
+          }],
+          total: 1,
+        });
+      },
+      { initial: { pickerOpen: true, selectedIds: [], objectPickerField: "actionGrants" } },
+    );
+
+    await vi.waitFor(() => {
+      expect(reads).toHaveLength(1);
+      expect(document.querySelector('[data-picker-option="action-1"]')).not.toBeNull();
+    });
+    expect(reads[0]!.inputs.field).toBe("actionGrants");
+
+    instance.state.set("objectPickerField", "triggerGrants");
+
+    await vi.waitFor(() => {
+      expect(reads).toHaveLength(2);
+      expect(document.querySelector('[data-picker-option="trigger-1"]')).not.toBeNull();
+    });
+    expect(reads[1]!.inputs.field).toBe("triggerGrants");
+    expect(document.querySelector('[data-picker-option="action-1"]')).toBeNull();
   });
 
   it("filters locally without extra owner requests when the owner returns a complete list", async () => {
