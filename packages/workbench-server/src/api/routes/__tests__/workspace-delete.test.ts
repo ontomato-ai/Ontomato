@@ -4,12 +4,8 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
-import { HttpError } from "../../../utils/errors";
 
-/**
- * A workspace's deletion goes to the runtime, which deletes its conversations: on a preview's behalf it is told so, and
- * refuses before the first conversation when any holds a live run. The workbench removes nothing of its own first.
- */
+/** A workspace and its conversations are deleted by their owner, from a preview as from anywhere: deleting is not a business write. */
 const mocks = vi.hoisted(() => ({ remove: vi.fn() }));
 vi.mock("../../../services/assistant/service", () => ({ assistantService: { delete: mocks.remove } }));
 vi.mock("../../../services/workspaces/panel-candidate", () => ({ panelCandidateQuerySchema: {}, readPanelCandidate: vi.fn() }));
@@ -38,18 +34,13 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>(resolve => server.close(() => resolve())); });
 beforeEach(() => { vi.restoreAllMocks(); mocks.remove.mockReset(); });
 
-it("tells the runtime a preview deletes, and removes nothing of its own when the runtime refuses", async () => {
-  const request = vi.spyOn(RuntimeClient.prototype, "request").mockRejectedValue(
-    new HttpError(422, "预览里不执行写操作，动作的对错用动作试跑验", "PREVIEW_WRITE_FORBIDDEN"));
-  const refused = await fetch(`${base}/${workspaceId}`, { method: "DELETE", headers: { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } });
-  expect(refused.status).toBe(422);
-  expect(request).toHaveBeenCalledWith(`/v1/workspaces/${workspaceId}`, "DELETE", { onlyPreviewRuns: true });
-  expect(mocks.remove).not.toHaveBeenCalled();
-});
-
-it("deletes the conversations the runtime deleted, as the caller, for a live owner", async () => {
+it("deletes a workspace and the conversations the runtime deleted with it, for a preview as for anyone", async () => {
   const request = vi.spyOn(RuntimeClient.prototype, "request").mockResolvedValue({ sessionIds: [sessionId] });
-  expect((await fetch(`${base}/${workspaceId}`, { method: "DELETE" })).status).toBe(204);
-  expect(request).toHaveBeenCalledWith(`/v1/workspaces/${workspaceId}`, "DELETE", { onlyPreviewRuns: false });
-  expect(mocks.remove).toHaveBeenCalledWith(sessionId, { domainId: "domain", userId: "U" }, expect.objectContaining({ token: "tk" }));
+  const callers: Record<string, string>[] = [{ [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader }, {}];
+  for (const headers of callers) {
+    request.mockClear(); mocks.remove.mockClear();
+    expect((await fetch(`${base}/${workspaceId}`, { method: "DELETE", headers })).status).toBe(204);
+    expect(request).toHaveBeenCalledWith(`/v1/workspaces/${workspaceId}`, "DELETE");
+    expect(mocks.remove).toHaveBeenCalledWith(sessionId, { domainId: "domain", userId: "U" });
+  }
 });

@@ -21,7 +21,7 @@ export async function deleteUserAssistantSessions(userId: string) {
     }
     if (snapshot?.latestRun?.run.status === "running")
       await assistantService.cancel(s.id, snapshot.latestRun.run.id, owner, {});
-    await assistantService.delete(s.id, owner, {});
+    await assistantService.delete(s.id, owner);
   }
   const auxiliary = (
     await getPostgresPool().query(
@@ -35,7 +35,7 @@ export async function deleteUserAssistantSessions(userId: string) {
       const snapshot = await c.session(s.id);
       if (snapshot.latestRun?.run.status === "running")
         await c.cancel(snapshot.latestRun.run.id);
-      await c.deleteSession(s.id, false);
+      await c.deleteSession(s.id);
     } catch (e) {
       if (!(e instanceof HttpError && e.status === 404)) throw e;
     }

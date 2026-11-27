@@ -433,14 +433,14 @@ A run's own commands enter only through its session command route with its callb
 which binds them to the session's active run. Its business callbacks carry `X-Ontomato-Agent-Execution`, and
 DataRAG's external entry (`/platform/agent-channel/commands`) and the routes that open a new
 top-level conversation refuse such a request (403 `FORBIDDEN`), so a run cannot start agents as its
-user outside its classes and delegation. A preview stops (`cancel`) only a preview's run;
-stopping a live one is refused with 422 `PREVIEW_WRITE_FORBIDDEN`.
+user outside its classes and delegation. Stopping a run (`cancel`) is not a business write: any
+caller in its delegation tree stops it, a preview included.
 An input runs with its sender's identity (a web input's channel, otherwise the sending run's, the
 external caller's, the answering human's or the reporting child's settled authority), never its
 recipient's; an answer to a preview's question is that preview's input. It joins a running or
 waiting run only with the same identity, otherwise it queues as a run of its own; a preview's
 answer to a live run's question is refused before anything is written. The authority a provider
-settles at prepare is stored with the intent, so stopping and queueing read it.
+settles at prepare is stored with the intent, so queueing and delegation read it.
 Results and answers are addressed by contract and continue the run they report or answer to. Any
 other input is bounded by its sender: it joins a run only when that run reaches no further than the
 sender (identity, execution context, classes within the sender's, execution account), and a run it
@@ -449,20 +449,8 @@ A run's identity is also its lane in the session: runs of one identity share a n
 process space (`sessions/<digest>` for live, `sessions/<digest>-preview` for preview) and resume
 reference (`sessions.engine_ref`, `sessions.preview_engine_ref`); an engine opened afresh is given
 only what runs of its identity consumed, and only live runs read stored compaction summaries.
-`GET /v1/channel/sessions/:sessionId/run-identities` returns each run's identity for hosts that read
-or close the conversation. `DELETE /v1/sessions/:sessionId` and `DELETE /v1/workspaces/:id` accept
-`{ "onlyPreviewRuns": true }` from a host deleting on a preview's behalf: inside each session's
-admission lock a session that holds or has queued a live run is refused with 422
-`PREVIEW_WRITE_FORBIDDEN`. Closing a session is a right one deletion takes, inside the session's
-admission lock (`sessions.closing`, set only where it is false): a closing session queues no input
-(409 `SESSION_CLOSING`), starts nothing it has queued and admits no direct run, and a second deletion
-is refused with 409 `SESSION_CLOSING`; only the deletion that took the right gives it back when it does
-not complete. A workspace is deleted without holding one lock while waiting for another: its row is
-locked only for the short steps that mark it `deleting` (no conversation is then created in or bound
-to it), unmark it, or remove it; every conversation is then closed in its own lock, judged (idle, and
-on a preview's behalf holding only the preview's runs) and deleted. A refusal or failure gives back
-the right on every conversation this deletion closed and has not deleted, and unmarks the workspace;
-one already deleted on its own is skipped.
+`GET /v1/channel/sessions/:sessionId/run-identities` returns each run's identity, so a host
+continues and quotes only what runs of the same identity did.
 The execution account is bound once. A top-level admission (no binding and no delegating run) sends
 `/prepare` no `executionActor` and the provider chooses; a delegated or continued run sends the
 account it is bound to (`null` for the initiator's own), and the runtime refuses to start it with 403

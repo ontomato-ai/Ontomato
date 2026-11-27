@@ -232,7 +232,7 @@ export const agentSessionServerOperations: readonly PanelWriteServerOperation[] 
       const { primaryKey } = sessionTargetSchema.parse(target);
       const { assistantService } = await import("../assistant/service");
       try {
-        await assistantService.delete(primaryKey, executor.owner, executor.credentials);
+        await assistantService.delete(primaryKey, executor.owner);
         return {
           kind: "success",
           data: { sessionId: primaryKey },

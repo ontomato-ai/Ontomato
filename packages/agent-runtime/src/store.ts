@@ -21,7 +21,6 @@ import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifact
 import type { RuntimeMessage, RuntimeRunInput } from "@ontomato/contracts/agent-runtime-messages";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError, missing } from "./errors";
-import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import { answerMessageId } from "./answer";
 
 export interface Scope {
@@ -33,12 +32,6 @@ export interface Scope {
  * native engine and its resume reference, and never see another identity's.
  */
 export type ExecutionLane = "live" | "preview";
-export function sessionClosing() {
-  return new RuntimeError(409, "SESSION_CLOSING", "The conversation is being deleted");
-}
-export function workspaceDeleting() {
-  return new RuntimeError(409, "WORKSPACE_DELETING", "The workspace is being deleted");
-}
 export function runLane(run: { channel?: { authority: { executionKind: ExecutionLane } } | null }): ExecutionLane {
   return run.channel?.authority.executionKind ?? "live";
 }
@@ -184,7 +177,6 @@ export class RuntimeStore {
         created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY(host_id,domain_id,id));
         CREATE INDEX IF NOT EXISTS workspaces_owner_idx ON ${this.table("workspaces")}(host_id,domain_id,owner_id,updated_at,id);
-        ALTER TABLE ${this.table("workspaces")} ADD COLUMN IF NOT EXISTS deleting boolean NOT NULL DEFAULT false;
         ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS workspace_id uuid;
         CREATE INDEX IF NOT EXISTS sessions_workspace_idx ON ${this.table("sessions")}(host_id,domain_id,workspace_id);`);
       if (!versions.some(row => row.version === 3)) {
@@ -195,7 +187,6 @@ export class RuntimeStore {
       }
       await c.query(`ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS channel jsonb;
         ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS preparing_run_id uuid;
-        ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS closing boolean NOT NULL DEFAULT false;
         ALTER TABLE ${this.table("admissions")} ADD COLUMN IF NOT EXISTS intent jsonb;
         ALTER TABLE ${this.table("messages")} ALTER COLUMN run_id DROP NOT NULL;`);
       if (!versions.some(row => row.version === 5)) {
@@ -362,9 +353,8 @@ export class RuntimeStore {
   async createSession(scope: Scope, id: string, workspaceId?: string, owner?: string) {
     const replayed = await this.transaction(async (c) => {
       if (workspaceId) {
-        const row = (await c.query(`SELECT id,deleting FROM ${this.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND owner_id=$4`, [...values(scope), workspaceId, owner])).rows[0];
+        const row = (await c.query(`SELECT id FROM ${this.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND owner_id=$4`, [...values(scope), workspaceId, owner])).rows[0];
         if (!row) missing();
-        if (row.deleting) throw workspaceDeleting();
       }
       const repeat = await this.admission(
         c,
@@ -496,7 +486,6 @@ export class RuntimeStore {
           "Session already has an active run",
         );
       if (!reserved && session.preparing_run_id) throw new RuntimeError(409,"SESSION_BUSY","Session has a preparing execution intent");
-      if (!reserved && session.closing) throw sessionClosing();
       const streamId = randomUUID();
       const received = reserved ? (await c.query(`SELECT id,seq FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND id=(SELECT (intent->>'inputId')::uuid FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$4) AND run_id IS NULL`, [...values(scope), run.sessionId, run.id])).rows[0] : null;
       const messageId = received ? received.id : randomUUID();
@@ -617,43 +606,6 @@ export class RuntimeStore {
       FROM ${this.table("messages")} m JOIN ${this.table("runs")} r ON r.host_id=m.host_id AND r.domain_id=m.domain_id AND r.id=m.run_id
       WHERE m.host_id=$1 AND m.domain_id=$2 AND m.session_id=$3 AND m.context_seq IS NOT NULL ORDER BY m.context_seq`, [...values(scope),sessionId]);
     return rows.map(row => ({ id: row.id, runId: row.run_id, messageSeq: Number(row.context_seq), contextSeq: Number(row.context_seq), message: row.message, lane: row.lane }));
-  }
-  /**
-   * Takes the right to close a session, inside its admission lock (which every admission reads `closing` under): from
-   * then on it admits nothing, no input is queued in it and no queued run starts. True when taken, false when the
-   * session no longer exists; a session another deletion is closing is refused, so only the deletion that took the right
-   * gives it back.
-   */
-  async acquireClosing(scope: Scope, sessionId: string): Promise<boolean> {
-    const taken = await this.pool.query(`UPDATE ${this.table("sessions")} SET closing=true WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND NOT closing RETURNING id`, [...values(scope), sessionId]);
-    if (taken.rowCount) return true;
-    const exists = await this.pool.query(`SELECT 1 FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId]);
-    if (exists.rowCount) throw sessionClosing();
-    return false;
-  }
-  /** Gives back the right to close a session its deletion took and did not use; inside the session's admission lock. */
-  async releaseClosing(scope: Scope, sessionId: string) {
-    await this.pool.query(`UPDATE ${this.table("sessions")} SET closing=false WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId]);
-  }
-  async closing(scope: Scope, sessionId: string): Promise<boolean> {
-    const row = (await this.pool.query(`SELECT closing FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId])).rows[0];
-    if (!row) missing();
-    return row.closing;
-  }
-  /** Refused as a deletion would be: the session has a run running or being prepared. */
-  async requireIdle(scope: Scope, sessionId: string) {
-    const row = (await this.pool.query(`SELECT active_run_id,preparing_run_id FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId])).rows[0];
-    if (!row) missing();
-    if (row.active_run_id || row.preparing_run_id)
-      throw new RuntimeError(409, "SESSION_BUSY", "Cancel the active run before deleting the session");
-  }
-  /**
-   * Refuses, for a host closing the session on a preview's behalf, when the session holds or has queued a live run.
-   * Called inside the session's admission lock, so no run is admitted between the check and what the host closes.
-   */
-  async requireOnlyPreviewRuns(scope: Scope, sessionId: string) {
-    if ((await this.sessionRunLanes(scope, sessionId)).some(({ lane }) => lane !== "preview"))
-      throw new RuntimeError(422, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE);
   }
   /** The identity of every run the session holds or has queued (a queued one's is its intent's). */
   async sessionRunLanes(scope: Scope, sessionId: string): Promise<Array<{ runId: string; lane: ExecutionLane }>> {

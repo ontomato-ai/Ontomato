@@ -2,14 +2,17 @@ import express from "express";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+
+/** An ops test run is platform work, not a business write: a preview starts and stops one as anyone may. */
 
 const mocks = vi.hoisted(() => ({ startRun: vi.fn(), stopRun: vi.fn(), deleteRun: vi.fn(), listCaseSets: vi.fn(() => []) }));
 vi.mock("../runner/run-controller", () => ({
   getActiveRun: () => null, isRunActive: () => false, startRun: mocks.startRun, stopRun: mocks.stopRun, subscribeRunEvents: vi.fn(),
 }));
 vi.mock("../results/store", async original => ({
-  ...await original<typeof import("../results/store")>(), deleteRun: mocks.deleteRun, loadRunMeta: () => null,
+  ...await original<typeof import("../results/store")>(), deleteRun: mocks.deleteRun,
+  loadRunMeta: (id: string) => id === "run-1" ? { runId: "run-1", domainId: "domain" } : null,
 }));
 vi.mock("../../../../identity/management", async original => ({
   ...await original<typeof import("../../../../identity/management")>(),
@@ -38,19 +41,14 @@ const preview = { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader };
 const send = (path: string, method: string, headers: Record<string, string> = {}) =>
   fetch(`${base}${path}`, { method, headers: { "Content-Type": "application/json", ...headers }, body: method === "GET" ? undefined : JSON.stringify({ caseSetId: "set-1" }) });
 
-it("refuses a preview's start, stop and delete of a formal test run before the runner hears of it", async () => {
-  for (const [path, method] of [["/runs", "POST"], ["/runs/run-1/stop", "POST"], ["/runs/run-1", "DELETE"]] as const) {
-    const refused = await send(path, method, preview);
-    expect(refused.status, `${method} ${path}`).toBe(422);
-    expect(await refused.json()).toMatchObject({ success: false, error: PREVIEW_WRITE_MESSAGE, code: PREVIEW_WRITE_FORBIDDEN });
-  }
-  expect(mocks.startRun).not.toHaveBeenCalled();
-  expect(mocks.stopRun).not.toHaveBeenCalled();
-  expect(mocks.deleteRun).not.toHaveBeenCalled();
-});
-
-it("starts a run without the preview identity as before", async () => {
+it("starts and stops a formal test run for a preview as for anyone", async () => {
   mocks.startRun.mockResolvedValue({ runId: "run-1", status: "running" });
-  expect((await send("/runs", "POST")).status).toBe(201);
-  expect(mocks.startRun).toHaveBeenCalledWith(expect.objectContaining({ caseSetId: "set-1", userId: "U" }));
+  for (const headers of [preview, {}]) {
+    mocks.startRun.mockClear();
+    expect((await send("/runs", "POST", headers)).status).toBe(201);
+    expect(mocks.startRun).toHaveBeenCalledWith(expect.objectContaining({ caseSetId: "set-1", userId: "U" }));
+  }
+  mocks.stopRun.mockReturnValue({ runId: "run-1", status: "stopped" });
+  expect((await send("/runs/run-1/stop", "POST", preview)).status).toBe(200);
+  expect(mocks.stopRun).toHaveBeenCalledWith("run-1");
 });

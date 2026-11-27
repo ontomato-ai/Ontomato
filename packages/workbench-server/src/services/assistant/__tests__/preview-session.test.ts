@@ -96,19 +96,12 @@ it("refuses a replayed create that names the conversation with another identity,
   expect(await sentAuthority(live)).toBe("live");
 });
 
-it("lets a preview stop only a preview's run", async () => {
+it("lets a preview stop a live run as anyone may: stopping is not a business write", async () => {
   await assistantService.create(sessionId, owner, { agentId }, live);
-  let identity = "live";
-  const request = vi.spyOn(RuntimeClient.prototype, "request").mockImplementation(async (path: string) =>
-    path.includes("/intents/") ? { channel: { authority: { classNames: [], executionKind: identity } } } : {});
+  const request = vi.spyOn(RuntimeClient.prototype, "request").mockResolvedValue({});
   vi.spyOn(RuntimeClient.prototype, "run").mockRejectedValue(new HttpError(404, "Run not found", "NOT_FOUND"));
-  await expect(assistantService.cancel(sessionId, runId, owner, preview)).rejects.toMatchObject({ status: 422, code: "PREVIEW_WRITE_FORBIDDEN" });
-  expect(request.mock.calls.some(([path]) => String(path).endsWith("/cancel"))).toBe(false);
-  identity = "preview";
   await expect(assistantService.cancel(sessionId, runId, owner, preview)).resolves.toEqual({ run: null });
-  // A live caller stops the live run as before, without asking for its identity.
-  request.mockClear();
-  await expect(assistantService.cancel(sessionId, runId, owner, live)).resolves.toEqual({ run: null });
+  expect(request.mock.calls.some(([path]) => String(path).endsWith("/cancel"))).toBe(true);
   expect(request.mock.calls.some(([path]) => String(path).includes("/intents/"))).toBe(false);
 });
 

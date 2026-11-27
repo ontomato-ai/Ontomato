@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
-import { EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
 import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
@@ -52,7 +52,6 @@ const { default: opsDiagnosisRouter } = await import("../../../api/routes/ops-di
 let server: Server;
 let base: string;
 const sent: { path: string; body: unknown }[] = [];
-let runIdentity = "live";
 beforeAll(async () => {
   const app = express();
   app.use(express.json());
@@ -67,14 +66,12 @@ beforeAll(async () => {
 });
 afterAll(async () => { await new Promise<void>(resolve => server.close(() => resolve())); });
 beforeEach(() => {
-  state.rows.clear(); sent.length = 0; runIdentity = "live";
+  state.rows.clear(); sent.length = 0;
   vi.spyOn(RuntimeClient.prototype, "createSession").mockResolvedValue({} as never);
   vi.spyOn(RuntimeClient.prototype, "session").mockResolvedValue({ latestRun: null } as never);
   vi.spyOn(RuntimeClient.prototype, "run").mockRejectedValue(new HttpError(404, "Run not found", "NOT_FOUND"));
   vi.spyOn(RuntimeClient.prototype, "request").mockImplementation(async (path: string, _method?: string, body?: unknown) => {
     sent.push({ path, body });
-    if (path.includes("/intents/")) return { channel: { authority: { classNames: [], executionKind: runIdentity } } };
-    if (path.endsWith("/run-identities")) return { runs: [{ runId, executionKind: runIdentity }] };
     if (path.endsWith("/runs")) throw Object.assign(new Error("captured"), { status: 418 });
     return {};
   });
@@ -116,29 +113,13 @@ it("refuses a run's callback opening a diagnosis conversation, before anything i
   expect(state.rows.size).toBe(0);
 });
 
-it("lets a preview stop only a preview's run", async () => {
+it("lets a preview stop a live run and delete a live conversation as anyone may: neither is a business write", async () => {
   await post("/sessions", {}, { agentId: DIAGNOSIS_AGENT_ID });
-  const refused = await post(`/sessions/${sessionId}/runs/${runId}/cancel`, preview);
-  expect(refused.status).toBe(422);
-  expect(await refused.json()).toMatchObject({ error: { code: PREVIEW_WRITE_FORBIDDEN } });
-  expect(sent.some(entry => entry.path.endsWith(`/run-intents/${runId}/cancel`))).toBe(false);
-  runIdentity = "preview";
   expect((await post(`/sessions/${sessionId}/runs/${runId}/cancel`, preview)).status).toBe(200);
   expect(sent.some(entry => entry.path.endsWith(`/run-intents/${runId}/cancel`))).toBe(true);
-});
-
-it("has the runtime decide a preview's deletion of a diagnosis conversation, before its row is removed", async () => {
-  const remove = vi.spyOn(RuntimeClient.prototype, "deleteSession").mockRejectedValue(
-    new HttpError(422, "预览里不执行写操作，动作的对错用动作试跑验", PREVIEW_WRITE_FORBIDDEN));
-  await post("/sessions", {}, { agentId: DIAGNOSIS_AGENT_ID });
-  const drop = (headers: Record<string, string>) => fetch(`${base}/sessions/${sessionId}`, { method: "DELETE", headers });
-  const refused = await drop(preview);
-  expect(refused.status).toBe(422);
-  expect(await refused.json()).toMatchObject({ error: { code: PREVIEW_WRITE_FORBIDDEN } });
-  expect(remove).toHaveBeenCalledWith(sessionId, true);
-  expect(state.rows.has(sessionId)).toBe(true);
-  remove.mockResolvedValue();
-  expect((await drop({})).status).toBe(204);
-  expect(remove).toHaveBeenLastCalledWith(sessionId, false);
+  expect(sent.some(entry => entry.path.includes("/intents/") || entry.path.endsWith("/run-identities"))).toBe(false);
+  const remove = vi.spyOn(RuntimeClient.prototype, "deleteSession").mockResolvedValue();
+  expect((await fetch(`${base}/sessions/${sessionId}`, { method: "DELETE", headers: preview })).status).toBe(204);
+  expect(remove).toHaveBeenCalledWith(sessionId);
   expect(state.rows.has(sessionId)).toBe(false);
 });

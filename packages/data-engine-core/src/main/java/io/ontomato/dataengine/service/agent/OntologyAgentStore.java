@@ -42,8 +42,7 @@ public class OntologyAgentStore {
         """
 CREATE TABLE IF NOT EXISTS ontology_agent_sessions (
   id uuid PRIMARY KEY, user_id text NOT NULL, domain_id text NOT NULL, agent_id uuid NOT NULL,
-  runtime_owned boolean NOT NULL DEFAULT true, title text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  closing boolean NOT NULL DEFAULT false);
+  runtime_owned boolean NOT NULL DEFAULT true, title text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS ontology_agent_sessions_owner ON ontology_agent_sessions(domain_id,user_id,updated_at DESC,id DESC);
 CREATE TABLE IF NOT EXISTS ontology_retrieval_callers (
   id uuid PRIMARY KEY, user_id text NOT NULL, domain_id text NOT NULL, input_hash text NOT NULL,
@@ -82,7 +81,6 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
     // A database created before this column existed is never altered by CREATE TABLE IF NOT EXISTS, and
     // sites upgrade by replacing the image. Without this, every retrieval start fails on insert.
     jdbc.execute("ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS language text");
-    jdbc.execute("ALTER TABLE ontology_agent_sessions ADD COLUMN IF NOT EXISTS closing boolean NOT NULL DEFAULT false");
     jdbc.execute("ALTER TABLE ontology_generation_tests DROP CONSTRAINT IF EXISTS ontology_generation_tests_run_id_fkey");
     jdbc.execute("ALTER TABLE ontology_generation_tests ADD COLUMN IF NOT EXISTS kind text, ADD COLUMN IF NOT EXISTS evidence_scope text, ADD COLUMN IF NOT EXISTS target_context text");
     jdbc.execute("ALTER TABLE ontology_generations ADD COLUMN IF NOT EXISTS explanation jsonb");
@@ -132,31 +130,6 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
         uuid(id),
         owner.userId(),
         owner.domainId());
-  }
-
-  /**
-   * A run's admission to the conversation, inside the admitting transaction: the row lock orders it against the
-   * conversation's deletion, and a conversation being deleted admits none.
-   */
-  public void admitRun(String sessionId) {
-    if (one("SELECT closing FROM ontology_agent_sessions WHERE id=? FOR UPDATE", uuid(sessionId)).getBooleanValue("closing"))
-      throw new AgentHttpException(409, "SESSION_CLOSING", "The conversation is being deleted");
-  }
-
-  /**
-   * Takes the right to close the conversation, atomically: from this commit on it admits no run, and what it holds now
-   * is all its deletion has to judge and close. A conversation another deletion is already closing is refused, so only
-   * the deletion that took the right ever reopens it.
-   */
-  public void beginClosing(String sessionId, Owner owner) {
-    session(sessionId, owner);
-    if (update("UPDATE ontology_agent_sessions SET closing=true WHERE id=? AND NOT closing", uuid(sessionId)) == 0)
-      throw new AgentHttpException(409, "SESSION_CLOSING", "The conversation is already being deleted");
-  }
-
-  /** The deletion that took the right to close the conversation and did not complete lets it admit runs again. */
-  public void endClosing(String sessionId) {
-    update("UPDATE ontology_agent_sessions SET closing=false WHERE id=?", uuid(sessionId));
   }
 
   public JSONObject run(String session, String id, Owner owner) {
@@ -321,7 +294,6 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
               uuid(sessionId),
               owner.domainId(),
               owner.userId());
-          admitRun(sessionId);
           var prior = rows("SELECT * FROM ontology_agent_runs WHERE id=?", uuid(id));
           if (!prior.isEmpty()) {
             var previous = prior.get(0);

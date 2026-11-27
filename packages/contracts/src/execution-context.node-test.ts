@@ -24,24 +24,31 @@ test("a preview identity is carried to the entries that run something and to no 
     ["", "/assistant/sessions/s-1/runs"],
   ];
   running.push(
-    ["", "/assistant/sessions/s-1/runs/r-1/cancel"],
-    ["", "/observe/agent/sessions/s-1/runs/r-1/cancel"],
     ["", "/observe/agent/sessions"],
     ["", "/observe/agent/sessions/s-1/runs"],
     ["", "/observe/diagnoses"],
-    ["", "/observe/autotest/runs"],
-    ["", "/observe/autotest/runs/r-1/stop"],
-    ["/data-query", "/ontology/ai/sessions/s-1/runs/r-1/cancel"],
-    ["", "/panel-operations/intents/i-1/cancel"],
-    ["", "/panel-operations/questions/q-1/cancel-if-pending"],
-    ["", "/panel-operations/local-confirmations/q-1/claim"],
     ["", "/panel-operations/intents"],
-    ["", "/panel-operations/local-confirmations"],
   );
   for (const [service, path] of running) assert.ok(carriesPreviewIdentity(service, "POST", path), `${service}${path}`);
-  assert.ok(carriesPreviewIdentity("", "DELETE", "/observe/autotest/runs/r-1"));
-  for (const [service, path] of [["", "/assistant/sessions/s-1"], ["", "/observe/agent/sessions/s-1"], ["/data-query", "/ontology/ai/sessions/s-1"], ["", "/workspaces/w-1"]] as const)
-    assert.ok(carriesPreviewIdentity(service, "DELETE", path), `DELETE ${service}${path}`);
+  // Stopping, cancelling and deleting runs, conversations and workspaces, the platform's records of pending page
+  // operations, and ops test runs are not business writes.
+  const platformState: [string, string, string][] = [
+    ["", "POST", "/assistant/sessions/s-1/runs/r-1/cancel"],
+    ["", "POST", "/observe/agent/sessions/s-1/runs/r-1/cancel"],
+    ["/data-query", "POST", "/ontology/ai/sessions/s-1/runs/r-1/cancel"],
+    ["", "DELETE", "/assistant/sessions/s-1"],
+    ["", "DELETE", "/observe/agent/sessions/s-1"],
+    ["/data-query", "DELETE", "/ontology/ai/sessions/s-1"],
+    ["", "DELETE", "/workspaces/w-1"],
+    ["", "POST", "/panel-operations/intents/i-1/cancel"],
+    ["", "POST", "/panel-operations/questions/q-1/cancel-if-pending"],
+    ["", "POST", "/panel-operations/local-confirmations"],
+    ["", "POST", "/panel-operations/local-confirmations/q-1/claim"],
+    ["", "POST", "/observe/autotest/runs"],
+    ["", "POST", "/observe/autotest/runs/r-1/stop"],
+    ["", "DELETE", "/observe/autotest/runs/r-1"],
+  ];
+  for (const [service, method, path] of platformState) assert.ok(!carriesPreviewIdentity(service, method, path), `${method} ${service}${path}`);
   const building: [string, string, string][] = [
     ["/data-query", "POST", "/writeFunctionOperation/query"],
     ["/data-query", "POST", "/action/trial"],

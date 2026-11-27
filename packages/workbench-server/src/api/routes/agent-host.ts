@@ -129,8 +129,7 @@ router.get(
 router.delete(
   "/sessions/:sessionId",
   wrap(async (req, res) => {
-    const { owner, credentials } = context(req);
-    await service.delete(id(req, "sessionId"), owner, credentials);
+    await service.delete(id(req, "sessionId"), context(req).owner);
     res.sendStatus(204);
   }),
 );

@@ -6,16 +6,12 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { installContentLayout } from "../../../content/layout";
-import { EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 
 const mocks = vi.hoisted(() => ({
   runForOwner: vi.fn(),
   runtimeRequest: vi.fn(),
   settings: vi.fn(),
-  get: vi.fn(),
-  findAgentPageQuestion: vi.fn(),
-  cancelIntent: vi.fn(),
-  cancelPendingAgentPageQuestion: vi.fn(),
+  cancelPending: vi.fn(),
 }));
 vi.mock("../../../services/agent-host/presentation", async (original) => ({
   ...await original<typeof import("../../../services/agent-host/presentation")>(),
@@ -23,8 +19,7 @@ vi.mock("../../../services/agent-host/presentation", async (original) => ({
 }));
 vi.mock("../../../services/assistant/execution", () => ({ runForOwner: mocks.runForOwner }));
 vi.mock("../../../services/product-panels/operation-store", () => ({ panelOperationStore: {
-  settings: mocks.settings, get: mocks.get, findAgentPageQuestion: mocks.findAgentPageQuestion,
-  cancelIntent: mocks.cancelIntent, cancelPendingAgentPageQuestion: mocks.cancelPendingAgentPageQuestion,
+  settings: mocks.settings, cancelPendingAgentPageQuestion: mocks.cancelPending,
 } }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: class {
@@ -79,83 +74,13 @@ afterAll(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 });
 
-function post(url: string, body: object, headers: Record<string, string> = {}) {
+function post(url: string, body: object) {
   return fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 }
-const preview = { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader };
-const reason = { code: "STALE", message: "The page changed" };
-async function refused(response: Response) {
-  expect(response.status).toBe(422);
-  expect(await response.json()).toMatchObject({ error: { code: PREVIEW_WRITE_FORBIDDEN } });
-}
-function askingRun(executionKind: "live" | "preview") {
-  const actor = { id: "reader", domainId: "domain" };
-  mocks.runForOwner.mockResolvedValue({
-    status: "running", sessionId,
-    channel: { agent: { providerId: session.providerId }, actor, root: { session, runId }, requestedBy: null,
-      userRecipient: { session, actor }, authority: { executionKind } },
-  });
-}
-async function confirmation(executionKind: "live" | "preview") {
-  askingRun(executionKind);
-  const response = await post(endpoint, { agentRun: { sessionId, runId, toolCallId: "discard" }, operationLabel: "Discard",
-    targetLabel: "Task", requireConfirmation: true });
-  return await response.json() as { intentId: string; questionId: string };
-}
-const stored = (executionKind?: "preview") => ({ kind: "current", intent: { source: { kind: "agent-page", ...(executionKind && { executionKind }) } } });
-
-it("lets a preview claim or cancel only a confirmation a preview run asked for, before it is consumed", async () => {
-  const live = await confirmation("live");
-  await refused(await post(`${endpoint}/${live.questionId}/claim`, {}, preview));
-  await refused(await post(`${endpoint.replace("local-confirmations", "questions")}/${live.questionId}/cancel-if-pending`, reason, preview));
-  // Still pending for the live page that owns it.
-  expect(await (await post(`${endpoint}/${live.questionId}/claim`, {})).json()).toEqual({ ok: true, intentId: live.intentId });
-  const previews = await confirmation("preview");
-  expect(await (await post(`${endpoint}/${previews.questionId}/claim`, {}, preview)).json()).toEqual({ ok: true, intentId: previews.intentId });
-});
-
-it("judges the local confirmation it deletes by that record's own asking run, read in the same step", async () => {
-  const live = await confirmation("live");
-  // The persisted question looked like a preview's and was already gone by the time it was cancelled; the live page's
-  // own confirmation under the same question is what remains.
-  mocks.findAgentPageQuestion.mockResolvedValue(stored("preview"));
-  mocks.cancelPendingAgentPageQuestion.mockResolvedValue(null);
-  await refused(await post(`${endpoint.replace("local-confirmations", "questions")}/${live.questionId}/cancel-if-pending`, reason, preview));
-  expect(await (await post(`${endpoint}/${live.questionId}/claim`, {})).json()).toEqual({ ok: true, intentId: live.intentId });
-});
-
-it("refuses a preview asking for confirmation of a live run's operation before the question is published", async () => {
-  askingRun("live");
-  await refused(await post(endpoint, { agentRun: { sessionId, runId, toolCallId: "discard" }, operationLabel: "Discard",
-    targetLabel: "Task", requireConfirmation: true }, preview));
-  expect(mocks.runtimeRequest).not.toHaveBeenCalled();
-});
-
-it("lets a preview cancel only a pending page operation a preview run prepared, before the intent is changed", async () => {
-  const intentId = "33333333-3333-4333-8333-333333333333";
-  const questionId = "44444444-4444-4444-8444-444444444444";
-  const operations = endpoint.replace("/local-confirmations", "");
-  mocks.get.mockResolvedValue(stored());
-  mocks.findAgentPageQuestion.mockResolvedValue(stored());
-  await refused(await post(`${operations}/intents/${intentId}/cancel`, reason, preview));
-  await refused(await post(`${operations}/questions/${questionId}/cancel-if-pending`, reason, preview));
-  expect(mocks.cancelIntent).not.toHaveBeenCalled();
-  expect(mocks.cancelPendingAgentPageQuestion).not.toHaveBeenCalled();
-  // The person on the live page cancels as before; a preview cancels a preview run's operation.
-  mocks.cancelIntent.mockResolvedValue(true);
-  mocks.cancelPendingAgentPageQuestion.mockResolvedValue({ intentId });
-  expect((await post(`${operations}/intents/${intentId}/cancel`, reason)).status).toBe(200);
-  mocks.get.mockResolvedValue(stored("preview"));
-  mocks.findAgentPageQuestion.mockResolvedValue(stored("preview"));
-  expect((await post(`${operations}/intents/${intentId}/cancel`, reason, preview)).status).toBe(200);
-  expect(await (await post(`${operations}/questions/${questionId}/cancel-if-pending`, reason, preview)).json())
-    .toEqual({ stale: true, intentId });
-  expect(mocks.cancelIntent).toHaveBeenCalledTimes(2);
-});
 
 it.each([
   { executionKind: "live", requireConfirmation: true },
@@ -192,4 +117,25 @@ it.each([
     expect(result).toMatchObject({ autoMode: true, questionId: null });
     expect(mocks.runtimeRequest).not.toHaveBeenCalled();
   }
+});
+
+it("lets a preview claim or cancel a live run's pending confirmation: it is the platform's record, not a business write", async () => {
+  const actor = { id: "reader", domainId: "domain" };
+  mocks.runForOwner.mockResolvedValue({
+    status: "running", sessionId,
+    channel: { agent: { providerId: session.providerId }, actor, root: { session, runId }, requestedBy: null,
+      userRecipient: { session, actor }, authority: { executionKind: "live" } },
+  });
+  const ask = async () => (await (await post(endpoint, { agentRun: { sessionId, runId, toolCallId: "discard" }, operationLabel: "Discard",
+    targetLabel: "Task", requireConfirmation: true })).json()) as { intentId: string; questionId: string };
+  const preview = { "X-Ontomato-Execution-Context": '{"kind":"preview"}' };
+  const claimed = await ask();
+  expect(await (await fetch(`${endpoint}/${claimed.questionId}/claim`, { method: "POST", headers: { "Content-Type": "application/json", ...preview }, body: "{}" })).json())
+    .toEqual({ ok: true, intentId: claimed.intentId });
+  const cancelled = await ask();
+  mocks.cancelPending.mockResolvedValue(null);
+  const response = await fetch(`${endpoint.replace("local-confirmations", "questions")}/${cancelled.questionId}/cancel-if-pending`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...preview }, body: JSON.stringify({ code: "STALE", message: "The page changed" }),
+  });
+  expect(await response.json()).toEqual({ stale: true, intentId: cancelled.intentId });
 });

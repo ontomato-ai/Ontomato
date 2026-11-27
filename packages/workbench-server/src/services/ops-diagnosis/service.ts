@@ -29,7 +29,6 @@ import { agentAllowed, requireAgent } from "../assistant/authorization";
 import { assistantStore } from "../assistant/store";
 import { agentExecutionCredentials, executionActor } from "../assistant/execution";
 import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
-import { requirePreviewMayStop } from "../agent-host/run-identity";
 
 export async function requireDiagnosisAgent(owner: AgentHostOwner, credentials: AssistantCredentials) {
   const agent = await assistantStore.opsDiagnosis(owner.domainId);
@@ -152,9 +151,8 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
     const accepted = agentHostSendResultSchema.omit({snapshot:true}).parse(await client.request(`/v1/channel/sessions/${session}/runs`, "POST", { channel, credential: {token:credentials.token ?? null,apiKey:credentials.apiKey ?? null}, language: resolveLocale(credentials.locale), input: { role: "user", content: input.message, timestamp: Date.now() }, replyTo: input.replyTo, selectedOption: input.selectedOption, presentationBinding: entry === "human" ? input.presentationBinding : undefined }, run));
     return agentHostSendResultSchema.parse({ ...accepted, snapshot: accepted.delivery.delivery === "run" && accepted.delivery.status === "running" ? publicSnapshot(await client.run(accepted.delivery.runId)) : null });
   },
-  async cancel(session, run, owner, credentials) {
+  async cancel(session, run, owner) {
     await diagnosisSession(session, owner);
-    await requirePreviewMayStop(owner, session, run, credentials);
     const intent = (await db().query(`SELECT session_id FROM ${table("ops_run_intents")} WHERE id=$1`, [run])).rows[0];
     if (intent && intent.session_id !== session) throw missing();
     const client = new RuntimeClient(owner.domainId);
@@ -166,10 +164,10 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
     try { return { run: publicRun((await this.readRun(session, run, owner)).run) }; }
     catch (e) { if (e instanceof HttpError && e.status === 404) return { run: null }; throw e; }
   },
-  async delete(id, owner, credentials) {
+  async delete(id, owner) {
     await diagnosisSession(id, owner);
     const client = new RuntimeClient(owner.domainId);
-    try { await client.deleteSession(id, credentials.executionKind === "preview"); }
+    try { await client.deleteSession(id); }
     catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; }
     await db().query(`DELETE FROM ${table("ops_sessions")} WHERE id=$1 AND domain_id=$2 AND owner_id=$3`, [id, owner.domainId, owner.userId]);
   },

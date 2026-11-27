@@ -238,40 +238,24 @@ class AgentChannelBoundaryTest {
     verify(host).send(eq(SESSION),eq(RUN),eq("Count the orders"),isNull(),isNull(),any(),eq(false));
   }
 
-  @Test void aConversationIsDeletedWithTheCallersPreviewIdentityForTheHostToJudge() throws Exception {
-    var access=mock(OntologyAgentAccess.class);
-    var host=mock(OntologyAgentHost.class);
-    var owner=new OntologyAgentStore.Owner("U","a");
-    when(access.reader(any(),eq(SESSION),isNull())).thenReturn(owner);
-    var mvc=MockMvcBuilders.standaloneSetup(new OntologyAgentController(host,access,mock(AgentRuntimeClient.class),mock(OntologyRetrievalService.class)))
-        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION)
-        .header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"{\"kind\":\"preview\"}")).andExpect(status().isNoContent());
-    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION)).andExpect(status().isNoContent());
-    verify(host).delete(SESSION,owner,true);
-    verify(host).delete(SESSION,owner,false);
-  }
-
-  @Test void aPreviewStopsOnlyAPreviewsRun() throws Exception {
+  @Test void aPreviewStopsARunAndDeletesAConversationAsAnyoneMay() throws Exception {
     var runtime=mock(AgentRuntimeClient.class);
     var access=mock(OntologyAgentAccess.class);
     var host=mock(OntologyAgentHost.class);
     var owner=new OntologyAgentStore.Owner("U","a");
     when(access.forSession(any(),eq(SESSION))).thenReturn(new OntologyAgentAccess.Context(owner,null,"tk",null,"en",null,null));
-    var intent=(java.util.function.Function<String,JSONObject>)kind->JSONObject.of("channel",JSONObject.of("authority",JSONObject.of("classNames",List.of(),"executionKind",kind)));
-    String path="/v1/channel/sessions/"+SESSION+"/intents/"+RUN;
-    when(runtime.json("a",RUN,path,"GET",null,null)).thenReturn(intent.apply("live"));
+    when(access.reader(any(),eq(SESSION),isNull())).thenReturn(owner);
     var mvc=MockMvcBuilders.standaloneSetup(new OntologyAgentController(host,access,runtime,mock(OntologyRetrievalService.class)))
         .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-    String cancel="/ontology/ai/sessions/"+SESSION+"/runs/"+RUN+"/cancel";
-    var refused=mvc.perform(post(cancel).header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"{\"kind\":\"preview\"}"))
-        .andExpect(status().isUnprocessableEntity()).andReturn().getResponse().getContentAsString();
-    assertTrue(refused.contains(io.ontomato.dataengine.service.PreviewExecution.WRITE_CODE), refused);
-    verify(host,never()).cancel(any(),any(),any());
-    mvc.perform(post(cancel)).andExpect(status().isOk());
-    when(runtime.json("a",RUN,path,"GET",null,null)).thenReturn(intent.apply("preview"));
-    mvc.perform(post(cancel).header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"{\"kind\":\"preview\"}")).andExpect(status().isOk());
-    verify(host,times(2)).cancel(SESSION,RUN,owner);
+    String preview="{\"kind\":\"preview\"}";
+    // Stopping and deleting are not business writes: the preview identity is no part of them.
+    mvc.perform(post("/ontology/ai/sessions/"+SESSION+"/runs/"+RUN+"/cancel").header(io.ontomato.dataengine.service.PreviewExecution.HEADER,preview))
+        .andExpect(status().isOk());
+    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION)
+        .header(io.ontomato.dataengine.service.PreviewExecution.HEADER,preview)).andExpect(status().isNoContent());
+    verify(host).cancel(SESSION,RUN,owner);
+    verify(host).delete(SESSION,owner);
+    verifyNoInteractions(runtime);
   }
 
   @Test void callerRestorationUsesTheExecutorPermissionWithoutReplacingTheInitiator() {

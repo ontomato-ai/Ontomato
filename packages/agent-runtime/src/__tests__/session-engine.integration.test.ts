@@ -167,7 +167,7 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     expect(new Set((await runtime.store.contextMessages(scope, sessionId)).map(row => row.lane))).toEqual(new Set(["live"]));
     expect(new Set((await runtime.store.sessionRunLanes(scope, sessionId)).map(row => row.lane))).toEqual(new Set(["live"]));
     expect(await runtime.store.sessionEngine(scope, sessionId, "preview")).toEqual({ engine: "pi", engineRef: null });
-    await runtime.deleteSession(scope, sessionId, false);
+    await runtime.deleteSession(scope, sessionId);
     expect(leases.size).toBe(0);
     await expect(readFile(path.join(launched.workspace, "outputs", "probe.txt"))).rejects.toMatchObject({ code: "ENOENT" });
 

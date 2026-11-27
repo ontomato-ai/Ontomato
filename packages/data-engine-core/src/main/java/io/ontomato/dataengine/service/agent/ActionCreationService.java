@@ -148,7 +148,6 @@ public class ActionCreationService {
                   throw conflict("Run input changed");
                 return true;
               }
-              store.admitRun(id);
               store.update(
                   "INSERT INTO"
                       + " ontology_agent_runs(id,session_id,input_hash,request,open,deadline,external,decision_revision)"

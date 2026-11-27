@@ -26,21 +26,16 @@ type PlatformService = "" | "/data-query";
  * - Praxis, through Node's `/praxis`, starts a workflow run (`/runs`), advances one (`/runs/{id}/tick`), changes its case
  *   (`/runs/{id}/case/submit|fill|close`) or its business target (`/runs/{id}/acts-on`), and decides or reassigns a step
  *   (`/steps/{id}/decide|assign`).
- * - Node carries a prepared panel operation out as the caller at `/panel-operations/intents/{id}/dispatch`, and starts,
- *   stops or deletes a formal test run at `/observe/autotest/runs`, `/observe/autotest/runs/{id}/stop` and
- *   `DELETE /observe/autotest/runs/{id}`.
+ * - Node carries a prepared panel operation out at `/panel-operations/intents/{id}/dispatch`: as the caller, or as the
+ *   preview that prepared it (`/panel-operations/intents` records a preview's identity on the operation it prepares),
+ *   so what it executes is refused at the entries above.
  * - Agent runs a preview starts are the preview's, so what they execute is refused at the entries above: Node's
  *   `/assistant/sessions`, `/observe/agent/sessions` and `/observe/diagnoses` conversations and their `/runs`, DataRAG's
  *   `/ontology/ai/sessions/{id}/runs` and the agent channel's `/platform/agent-channel/commands`.
- * - Stopping an agent run (`/assistant|observe/agent/sessions/{id}/runs/{run}/cancel`,
- *   `/ontology/ai/sessions/{id}/runs/{run}/cancel`) or deleting a conversation (`DELETE /assistant/sessions/{id}`,
- *   `DELETE /observe/agent/sessions/{id}`, `DELETE /ontology/ai/sessions/{id}`, and a workspace with its conversations,
- *   `DELETE /workspaces/{id}`) carries the identity too: a preview stops only a preview's run and deletes only what
- *   holds no live run. Writing a workspace's files is building and is not marked.
- * - A pending page operation is the preview's when a preview prepared it (`/panel-operations/intents`,
- *   `/panel-operations/local-confirmations`), and dispatching, cancelling or claiming one
- *   (`/panel-operations/intents/{id}/dispatch|cancel`, `/panel-operations/questions/{id}/cancel-if-pending`,
- *   `/panel-operations/local-confirmations/{id}/claim`) carries the identity: a preview decides only a preview's.
+ *
+ * Stopping, cancelling or deleting runs, conversations and workspaces, the platform's own records of pending page
+ * operations (cancelling one, claiming a local confirmation), and ops test runs are not business writes: they are never
+ * marked.
  *
  * `/action/trial`, `/metricView/test` and `/ontology/ai/generation/…` write only inside the run's own sandbox.
  */
@@ -51,23 +46,14 @@ const previewEntries: readonly (readonly [service: PlatformService, method: stri
   ["/data-query", "POST", /^\/platform\/triggers\/[^/]+\/runs$/iu],
   ["/data-query", "POST", /^\/ontology\/ai\/sessions\/[^/]+\/runs$/iu],
   ["/data-query", "POST", /^\/platform\/agent-channel\/commands$/iu],
-  ["/data-query", "POST", /^\/ontology\/ai\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],
   ["", "POST", /^\/praxis\/(?:runs|runs\/[^/]+\/(?:tick|acts-on|case\/(?:submit|fill|close))|steps\/[^/]+\/(?:decide|assign))$/iu],
   ["", "POST", /^\/panel-operations\/intents\/[^/]+\/dispatch$/iu],
-  ["", "POST", /^\/panel-operations\/(?:intents|local-confirmations)$/iu],
-  ["", "POST", /^\/panel-operations\/(?:intents\/[^/]+\/cancel|questions\/[^/]+\/cancel-if-pending|local-confirmations\/[^/]+\/claim)$/iu],
-  ["/data-query", "DELETE", /^\/ontology\/ai\/sessions\/[^/]+$/iu],
-  ["", "DELETE", /^\/(?:assistant|observe\/agent)\/sessions\/[^/]+$/iu],
-  ["", "DELETE", /^\/workspaces\/[^/]+$/iu],
+  ["", "POST", /^\/panel-operations\/intents$/iu],
   ["", "POST", /^\/assistant\/sessions$/iu],
   ["", "POST", /^\/assistant\/sessions\/[^/]+\/runs$/iu],
-  ["", "POST", /^\/(?:assistant|observe\/agent)\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],
   ["", "POST", /^\/observe\/agent\/sessions$/iu],
   ["", "POST", /^\/observe\/agent\/sessions\/[^/]+\/runs$/iu],
   ["", "POST", /^\/observe\/diagnoses$/iu],
-  ["", "POST", /^\/observe\/autotest\/runs$/iu],
-  ["", "POST", /^\/observe\/autotest\/runs\/[^/]+\/stop$/iu],
-  ["", "DELETE", /^\/observe\/autotest\/runs\/[^/]+$/iu],
 ];
 
 /** A path's percent-decoded spelling, or none when its encoding is malformed: no owner routes such a path. */

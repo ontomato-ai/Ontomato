@@ -3,7 +3,7 @@ import { mkdir, chmod, rm } from "node:fs/promises";
 import path from "node:path";
 import type pg from "pg";
 import type { WorkspaceFile } from "@ontomato/contracts/workspaces";
-import { RuntimeStore, digest, workspaceDeleting, type Scope } from "./store";
+import { RuntimeStore, digest, type Scope } from "./store";
 import { allocateUid, type WorkerPolicy } from "./worker";
 import { RuntimeError, missing } from "./errors";
 import { WorkspaceGit } from "./workspace-git";
@@ -66,30 +66,15 @@ export class Workspaces {
       return { commit: await git.commit(`Restore ${commit}`) };
     });
   }
-  /**
-   * Takes the right to delete the workspace, in a short transaction that waits on no other lock: from its commit on no
-   * conversation is created in or bound to it. Returns the conversations it holds.
-   */
-  async beginDeletion(scope: Scope, owner: string, id: string): Promise<string[]> {
+  async delete(scope: Scope, owner: string, id: string, deleteSession: (id: string) => Promise<void>) {
     return this.store.transaction(async c => {
       const row = await this.row(scope, owner, id, c, true);
-      if (row.deleting) throw workspaceDeleting();
       if (row.active_run_id) throw new RuntimeError(409, "WORKSPACE_BUSY", "Workspace has an active run");
-      await c.query(`UPDATE ${this.store.table("workspaces")} SET deleting=true WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, id]);
-      return (await c.query(`SELECT id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND workspace_id=$3 ORDER BY id`, [scope.hostId, scope.domainId, id]))
-        .rows.map(session => session.id as string);
-    });
-  }
-  /** A deletion that did not complete lets conversations join the workspace again. */
-  async endDeletion(scope: Scope, id: string) {
-    await this.store.pool.query(`UPDATE ${this.store.table("workspaces")} SET deleting=false WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, id]);
-  }
-  /** Removes the workspace once its conversations are gone, in a short transaction of its own. */
-  async completeDeletion(scope: Scope, owner: string, id: string) {
-    await this.store.transaction(async c => {
-      await this.row(scope, owner, id, c, true);
+      const sessions = (await c.query(`SELECT id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND workspace_id=$3`, [scope.hostId, scope.domainId, id])).rows;
+      for (const session of sessions) await deleteSession(session.id);
       await c.query(`DELETE FROM ${this.store.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, id]);
       await rm(this.git(scope, id).directory, { recursive: true });
+      return { sessionIds: sessions.map(s => s.id as string) };
     });
   }
   async saveSession(scope: Scope, sessionId: string, runId: string) {

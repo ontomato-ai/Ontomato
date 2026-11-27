@@ -133,7 +133,7 @@ public class OntologyAgentController {
   @DeleteMapping("/sessions/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void delete(@PathVariable String id, HttpServletRequest req) throws Exception {
-    host.delete(AgentJson.id(id), access.reader(req, id, null), io.ontomato.dataengine.service.PreviewExecution.isPreview(req));
+    host.delete(AgentJson.id(id), access.reader(req, id, null));
   }
   @org.springframework.web.bind.annotation.PatchMapping("/sessions/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -169,14 +169,7 @@ public class OntologyAgentController {
   @PostMapping("/sessions/{id}/runs/{run}/cancel")
   public Object cancel(@PathVariable String id, @PathVariable String run, HttpServletRequest req)
       throws Exception {
-    var owner = access.forSession(req,id).owner();
-    // A preview stops only a preview's run: stopping a live one changes a formal run, judged by the run's own identity.
-    if (io.ontomato.dataengine.service.PreviewExecution.isPreview(req)) {
-      var intent = runtime.json(owner.domainId(), run, "/v1/channel/sessions/"+AgentJson.id(id)+"/intents/"+AgentJson.id(run), "GET", null, null);
-      if (!"preview".equals(intent.getJSONObject("channel").getJSONObject("authority").getString("executionKind")))
-        throw new AgentHttpException(422, io.ontomato.dataengine.service.PreviewExecution.WRITE_CODE, io.ontomato.dataengine.service.PreviewExecution.WRITE_MESSAGE);
-    }
-    return host.cancel(AgentJson.id(id), AgentJson.id(run), owner);
+    return host.cancel(AgentJson.id(id), AgentJson.id(run), access.forSession(req,id).owner());
   }
 
   @GetMapping("/sessions/{id}/runs/{run}/events")

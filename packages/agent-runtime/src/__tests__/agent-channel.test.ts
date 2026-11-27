@@ -25,7 +25,7 @@ const notification: AgentNotification = { role: "notification", kind: "agent-ans
 afterEach(() => { vi.unstubAllGlobals(); });
 function channel() {
   let locked = false;
-  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined), closing: vi.fn(async () => false) },
+  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined) },
     importAgentFile: vi.fn(async () => "outputs/agents/delivered.dataset.json"),
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
@@ -889,20 +889,14 @@ it("queues a preview's message as its own preview run instead of steering a runn
   expect(prepares[0]).toMatchObject({ runId: nextRunId, input: userInput, authority: preview.authority });
 });
 
-it("lets a preview stop only a preview's run, and a live run stop as before", async () => {
+it("lets a preview stop a live run in its delegation tree as any caller may: stopping is not a business write", async () => {
   const { channel: port } = channel();
   const cancel = vi.spyOn(port, "cancel").mockResolvedValue();
   const preview = { ...context, authority: { ...context.authority, executionKind: "preview" as const } };
-  const task = (channel: AgentRunContext) => ({ scope, intent: { id: inputId, session: source.session, channel, inputId, status: "running" as const,
-    language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false } });
-  vi.spyOn(port.facts, "task").mockResolvedValue(task(context));
-  await expect(port.execute(scope, { ...run, channel: preview }, { op: "cancel", taskId: inputId }))
-    .rejects.toMatchObject({ status: 422, code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验" });
-  expect(cancel).not.toHaveBeenCalled();
-  await expect(port.execute(scope, run, { op: "cancel", taskId: inputId })).resolves.toMatchObject({ accepted: true });
-  vi.mocked(port.facts.task).mockResolvedValue(task(preview));
+  vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: { id: inputId, session: source.session, channel: context, inputId,
+    status: "running" as const, language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false } });
   await expect(port.execute(scope, { ...run, channel: preview }, { op: "cancel", taskId: inputId })).resolves.toMatchObject({ accepted: true });
-  expect(cancel).toHaveBeenCalledTimes(2);
+  expect(cancel).toHaveBeenCalledTimes(1);
 });
 
 describe("an input runs with its sender's identity, never its recipient's", () => {
@@ -1042,7 +1036,7 @@ describe("an input runs with its sender's identity, never its recipient's", () =
   });
 });
 
-it("records the authority a provider settles with the run, so stopping and queueing read the run's real identity", async () => {
+it("records the authority a provider settles with the run, so queueing and delegation read the run's real identity", async () => {
   const { port, intents, submit, runtime } = presentationAdmission();
   const previewAuthority = { ...humanChannel.authority, executionKind: "preview" as const };
   const provider = globalThis.fetch;
@@ -1063,50 +1057,12 @@ it("records the authority a provider settles with the run, so stopping and queue
   await submit();
   expect(intents.get(runId)!.channel.authority).toEqual(previewAuthority);
   expect((runtime.start as ReturnType<typeof vi.fn>).mock.calls[0]?.[5]).toMatchObject({ channel: { authority: previewAuthority } });
-  // A preview may stop it: it is a preview's run.
-  const cancel = vi.spyOn(port, "cancel").mockResolvedValue();
-  vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: intents.get(runId)! });
-  await expect(port.execute(scope, { ...run, channel: { ...context, authority: previewAuthority } }, { op: "cancel", taskId: runId }))
-    .resolves.toMatchObject({ accepted: true });
-  expect(cancel).toHaveBeenCalledWith(scope, intents.get(runId));
   // A preview's message joins it while it waits, as a run of the same identity.
   vi.mocked(port.facts.waiting).mockResolvedValue(runId);
   intents.set(runId, { ...intents.get(runId)!, status: "starting" });
   const joined = await port.request(scope, sessionId, nextRunId, { ...humanChannel, authority: previewAuthority,
     root: { session: source.session, runId: nextRunId } }, userInput, "en", undefined, initiatingCredential);
   expect(joined.delivery).toMatchObject({ runId, delivery: "steer" });
-});
-
-describe("a conversation being deleted", () => {
-  it("refuses a live message that arrives after its workspace's deletion closed admission, so the deletion stays whole", async () => {
-    const { runtime, submit, receipts } = presentationAdmission();
-    const closed = new Set<string>();
-    vi.mocked(runtime.store.closing).mockImplementation(async (_scope, id) => closed.has(id));
-    Object.assign(runtime, {
-      files: { withLock: (operation: () => Promise<unknown>) => operation() },
-      workspaces: { beginDeletion: async () => [sessionId], endDeletion: vi.fn(), completeDeletion: vi.fn() },
-      removeSession: vi.fn(async () => {}),
-    });
-    Object.assign(runtime.store, {
-      acquireClosing: async (_scope: unknown, id: string) => { closed.add(id); return true; },
-      releaseClosing: vi.fn(),
-      requireIdle: async () => {},
-      // After the deletion has closed admission and while it judges the conversation, a person's live message comes in.
-      requireOnlyPreviewRuns: async () => {
-        await expect(submit()).rejects.toMatchObject({ status: 409, code: "SESSION_CLOSING" });
-      },
-    });
-    await expect(AgentRuntime.prototype.deleteWorkspace.call(runtime, scope, "owner", "w", true)).resolves.toEqual({ sessionIds: [sessionId] });
-    expect(receipts.size).toBe(0);
-  });
-
-  it("starts nothing it has queued when the running turn ends", async () => {
-    const { runtime, port, send, finish } = currentRun(humanChannel, "running");
-    await send(nextRunId, context, userInput);
-    vi.mocked(runtime.store.closing).mockResolvedValue(true);
-    expect(await finish()).toBeUndefined();
-    expect(port.facts.claimNext).not.toHaveBeenCalled();
-  });
 });
 
 it("keeps the original human message when the background turn is still preparing", async () => {
@@ -1242,7 +1198,7 @@ it("exposes GET /v1/channel/intents/:runId scoped to host and domain and release
 
     const del = await fetch(`${base}/v1/sessions/${sessionId}`, { method: "DELETE", headers });
     expect(del.status).toBe(204);
-    expect(runtime.deleteSession).toHaveBeenCalledWith(scope, sessionId, false);
+    expect(runtime.deleteSession).toHaveBeenCalledWith(scope, sessionId);
     expect(() => port.credential(intent.channel)).toThrow("initiating credential is no longer available");
   } finally {
     await new Promise<void>((done) => server.close(() => done()));

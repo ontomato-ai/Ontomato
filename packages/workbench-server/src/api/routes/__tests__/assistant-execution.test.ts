@@ -103,16 +103,21 @@ it("marks a preview only where its request writes business data", async () => {
  expect(await marked("workbench/api/praxis/runs")).toBe('{"kind":"preview"}');
  expect(await marked("workbench/api/assistant/sessions")).toBe('{"kind":"preview"}');
  expect(await marked("workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs")).toBe('{"kind":"preview"}');
- // Stopping an agent run, the legacy diagnosis conversations, and starting, stopping or deleting a formal test run.
+ // The legacy diagnosis conversations and their runs, which then run as the preview.
+ for (const entry of [
+   "workbench/api/observe/agent/sessions", "workbench/api/observe/agent/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs",
+   "workbench/api/observe/diagnoses",
+ ]) expect(await marked(entry), entry).toBe('{"kind":"preview"}');
+ // Stopping runs, deleting conversations and workspaces, and ops test runs are platform work, never marked.
  for (const entry of [
    "workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
-   "workbench/api/observe/agent/sessions", "workbench/api/observe/agent/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs",
    "workbench/api/observe/agent/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
-   "workbench/api/observe/diagnoses", "workbench/api/observe/autotest/runs", "workbench/api/observe/autotest/runs/run-1/stop",
    "ontology/ontology/ai/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs/8f5df4a4-e30b-48cb-831a-33b759144f76/cancel",
- ]) expect(await marked(entry), entry).toBe('{"kind":"preview"}');
- expect(await marked("workbench/api/observe/autotest/runs/run-1", "DELETE")).toBe('{"kind":"preview"}');
- expect(await marked("workbench/api/observe/autotest/case-sets")).toBeNull();
+   "workbench/api/observe/autotest/runs", "workbench/api/observe/autotest/runs/run-1/stop", "workbench/api/observe/autotest/case-sets",
+ ]) expect(await marked(entry), entry).toBeNull();
+ for (const entry of ["workbench/api/observe/autotest/runs/run-1", "workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76",
+   "workbench/api/workspaces/8f5df4a4-e30b-48cb-831a-33b759144f76", "ontology/ontology/ai/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76"])
+   expect(await marked(entry, "DELETE"), entry).toBeNull();
  // A read, a definition write and a platform write travel as they do live: their owner judges the caller's permission.
  expect(await marked("ontology/writeFunctionOperation/query")).toBeNull();
  expect(await marked("ontology/ontology/query/execute-dsl")).toBeNull();

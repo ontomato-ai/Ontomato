@@ -420,9 +420,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     const ctx = scope(req), id = runtimeIdSchema.parse(req.params.sessionId);
     const { workspaceId, ownerId } = z.object({ workspaceId: runtimeIdSchema, ownerId: z.string().min(1) }).strict().parse(req.body);
     await runtime.workspaces.get(ctx.scope, ownerId, workspaceId);
-    // A workspace being deleted takes in no conversation.
-    const result = await runtime.store.pool.query(`UPDATE ${runtime.store.table("sessions")} SET workspace_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND (workspace_id IS NULL OR workspace_id=$4) AND active_run_id IS NULL
-      AND EXISTS(SELECT 1 FROM ${runtime.store.table("workspaces")} w WHERE w.host_id=$1 AND w.domain_id=$2 AND w.id=$4 AND NOT w.deleting) RETURNING id`, [ctx.scope.hostId,ctx.scope.domainId,id,workspaceId]);
+    const result = await runtime.store.pool.query(`UPDATE ${runtime.store.table("sessions")} SET workspace_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND (workspace_id IS NULL OR workspace_id=$4) AND active_run_id IS NULL RETURNING id`, [ctx.scope.hostId,ctx.scope.domainId,id,workspaceId]);
     if (!result.rowCount) throw new RuntimeError(409,"WORKSPACE_CHANGED","Session workspace cannot change");
     res.json({ accepted: true });
   }));
@@ -499,8 +497,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     route(async (req, res) => {
       const ctx = scope(req);
       const sessionId = runtimeIdSchema.parse(req.params.sessionId);
-      const { onlyPreviewRuns = false } = z.object({ onlyPreviewRuns: z.boolean().optional() }).strict().parse(req.body ?? {});
-      await runtime.deleteSession(ctx.scope, sessionId, onlyPreviewRuns);
+      await runtime.deleteSession(ctx.scope, sessionId);
       runtime.channel.releaseSession(ctx.scope, sessionId);
       res.status(204).end();
     }),

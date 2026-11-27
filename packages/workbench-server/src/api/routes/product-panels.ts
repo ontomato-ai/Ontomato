@@ -16,7 +16,7 @@ import {
 import {
   cancelHumanPanelOperation, cancelPendingAgentPageQuestion, claimPendingLocalConfirmation,
   dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
-  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, refusePreviewDeciding, registerPendingLocalConfirmation, stagePanelUpload,
+  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, registerPendingLocalConfirmation, stagePanelUpload,
 } from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
 import { Router, type RequestHandler } from "express";
@@ -355,16 +355,16 @@ panelOperationsRouter.post("/panel-operations/intents/:intentId/dispatch", wrap(
   res.set("Cache-Control", "no-store").json(panelHumanOperationDispatchResponseSchema.parse(await dispatchHumanPanelOperation(owner, credentials, intentId)));
 }));
 panelOperationsRouter.post("/panel-operations/intents/:intentId/cancel", wrap(async (req, res) => {
-  const { owner, credentials } = context(req);
+  const { owner } = context(req);
   const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
   const reason = cancelPanelOperationIntentRequestSchema.parse(req.body);
-  res.json(await cancelHumanPanelOperation(owner, credentials, intentId, reason));
+  res.json(await cancelHumanPanelOperation(owner, intentId, reason));
 }));
 panelOperationsRouter.post("/panel-operations/questions/:questionId/cancel-if-pending", wrap(async (req, res) => {
-  const { owner, credentials } = context(req);
+  const { owner } = context(req);
   const questionId = z.string().uuid().parse(req.params.questionId);
   const reason = cancelPanelOperationIntentRequestSchema.parse(req.body);
-  res.json(await cancelPendingAgentPageQuestion(owner, credentials, questionId, reason));
+  res.json(await cancelPendingAgentPageQuestion(owner, questionId, reason));
 }));
 panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
@@ -377,8 +377,6 @@ panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (
     throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
   }
   const preview = run.channel.authority.executionKind === "preview";
-  // Before a question is asked: a preview asks for confirmation only for a preview run's operation.
-  refusePreviewDeciding(credentials, preview);
   if (preview && (!isLivePresentationEligibleRun({
     host: "workbench", owner, runId: input.agentRun.runId, sessionId: run.sessionId, channel: run.channel,
   }) || !hasActivePresentationForRun("workbench", owner, input.agentRun.runId))) {
@@ -400,14 +398,14 @@ panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (
       source: { session: { providerId: run.channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
       ...questionPrompt,
     }, questionId);
-    registerPendingLocalConfirmation(owner, questionId, intentId, preview);
+    registerPendingLocalConfirmation(owner, questionId, intentId);
   }
   res.json({ intentId, questionId, autoMode, label: input.operationLabel });
 }));
 panelOperationsRouter.post("/panel-operations/local-confirmations/:questionId/claim", wrap(async (req, res) => {
-  const { owner, credentials } = context(req);
+  const { owner } = context(req);
   const questionId = z.string().uuid().parse(req.params.questionId);
-  res.json(claimPendingLocalConfirmation(owner, credentials, questionId));
+  res.json(claimPendingLocalConfirmation(owner, questionId));
 }));
 panelOperationsRouter.get("/panel-operation-settings/:providerId/:sessionId",wrap(async(req,res)=>{
   const c=context(req),root=agentSessionRefSchema.parse(req.params);

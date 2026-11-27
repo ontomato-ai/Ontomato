@@ -38,7 +38,6 @@ import {
   storedDataset,
 } from "@ontomato/contracts/data-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { requirePreviewMayStop } from "../agent-host/run-identity";
 import { withDomainSkills } from "../skills/operations";
 import {
   getPostgresPool,
@@ -442,7 +441,6 @@ export const assistantService = {
     credentials: AssistantCredentials,
   ) {
     await assistantStore.session(sessionId, owner);
-    await requirePreviewMayStop(owner, sessionId, id, credentials);
     const existing = (
       await db().query(
         `SELECT session_id FROM ${table("assistant_turns")} WHERE id=$1`,
@@ -485,9 +483,9 @@ export const assistantService = {
       `SELECT id,owner_id FROM ${table("assistant_sessions")} WHERE domain_id=$1 AND workspace_id=$2`,
       [domainId, workspaceId],
     );
-    for (const row of rows) await this.delete(row.id, { domainId, userId: row.owner_id }, {});
+    for (const row of rows) await this.delete(row.id, { domainId, userId: row.owner_id });
   },
-  async delete(sessionId: string, owner: AssistantOwner, credentials: AssistantCredentials) {
+  async delete(sessionId: string, owner: AssistantOwner) {
     await assistantStore.session(sessionId, owner);
     const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     let snapshot;
@@ -498,9 +496,7 @@ export const assistantService = {
     }
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
-    // The runtime, which admits the conversation's runs, refuses a preview's deletion while it holds a live one, before
-    // any retrieval or row of it is touched.
-    if (snapshot) await c.deleteSession(sessionId, credentials.executionKind === "preview");
+    if (snapshot) await c.deleteSession(sessionId);
     const scopes = (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1 AND retrieval_scope_id IS NOT NULL`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {

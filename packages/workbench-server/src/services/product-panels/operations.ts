@@ -481,8 +481,6 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     }
     const { run, channel, root } = await requireActivePageRun(owner, input.agentRun);
     const preview = channel.authority.executionKind === "preview";
-    // Before anything is stored or asked: a preview prepares only a preview run's operation.
-    refusePreviewDeciding(credentials, preview);
     if (preview && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
       throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
     const { use, framePanelId } = await requireAgentPanelUse(owner, credentials, input);
@@ -604,30 +602,15 @@ const pendingLocalConfirmations = new Map<string, {
   readonly domainId: string;
   readonly userId: string;
   readonly intentId: string;
-  /** Whether the run that asked for the confirmation is a preview's. */
-  readonly preview: boolean;
   readonly createdAt: number;
 }>();
 const MAX_PENDING_LOCAL_CONFIRMATIONS = 1000;
 
-/**
- * Preparing, dispatching, cancelling or claiming a pending operation decides whether it goes ahead, so a preview decides
- * only a preview's: judged by who prepared it (the agent run, or the person in a preview), before anything is stored,
- * asked, taken or changed.
- */
-export function refusePreviewDeciding(credentials: AssistantCredentials, preparedByPreview: boolean) {
-  if (credentials.executionKind === "preview" && !preparedByPreview) throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
-}
-function preparedByPreview(record: StoredPanelOperationIntent) {
-  return record.kind === "current" && record.intent.source.executionKind === "preview";
-}
-
-export function registerPendingLocalConfirmation(owner: AssistantOwner, questionId: string, intentId: string, preview: boolean): void {
+export function registerPendingLocalConfirmation(owner: AssistantOwner, questionId: string, intentId: string): void {
   pendingLocalConfirmations.set(questionId, {
     domainId: owner.domainId,
     userId: owner.userId,
     intentId,
-    preview,
     createdAt: Date.now(),
   });
   while (pendingLocalConfirmations.size > MAX_PENDING_LOCAL_CONFIRMATIONS) {
@@ -637,45 +620,31 @@ export function registerPendingLocalConfirmation(owner: AssistantOwner, question
   }
 }
 
-function ownLocalConfirmation(owner: AssistantOwner, questionId: string) {
-  const entry = pendingLocalConfirmations.get(questionId);
-  return entry && entry.domainId === owner.domainId && entry.userId === owner.userId ? entry : undefined;
-}
-
 export function claimPendingLocalConfirmation(
   owner: AssistantOwner,
-  credentials: AssistantCredentials,
   questionId: string,
 ): { readonly ok: true; readonly intentId: string } | { readonly ok: false; readonly message: string } {
-  const entry = ownLocalConfirmation(owner, questionId);
-  if (!entry) {
+  const entry = pendingLocalConfirmations.get(questionId);
+  if (!entry || entry.domainId !== owner.domainId || entry.userId !== owner.userId) {
     return {
       ok: false,
       message: "The local confirmation question was already consumed, cancelled, or expired.",
     };
   }
-  refusePreviewDeciding(credentials, entry.preview);
   pendingLocalConfirmations.delete(questionId);
   return { ok: true, intentId: entry.intentId };
 }
 
-export async function cancelHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, id: string, reason: { code: string; message: string }) {
-  if (credentials.executionKind === "preview") refusePreviewDeciding(credentials, preparedByPreview(await store.get(owner, id)));
+export async function cancelHumanPanelOperation(owner: AssistantOwner, id: string, reason: { code: string; message: string }) {
   const cancelled = await store.cancelIntent(owner, id, reason);
   return { intentId: id, cancelled };
 }
 
-export async function cancelPendingAgentPageQuestion(owner: AssistantOwner, credentials: AssistantCredentials, questionId: string, reason: { code: string; message: string }) {
-  if (credentials.executionKind === "preview") {
-    const prepared = await store.findAgentPageQuestion(owner, questionId);
-    if (prepared) refusePreviewDeciding(credentials, preparedByPreview(prepared));
-  }
+export async function cancelPendingAgentPageQuestion(owner: AssistantOwner, questionId: string, reason: { code: string; message: string }) {
   const cancelled = await store.cancelPendingAgentPageQuestion(owner, questionId, reason);
   if (cancelled) return { stale: true as const, intentId: cancelled.intentId };
-  // Read, judged and deleted in one synchronous step: the record removed is the one whose asking run was checked.
-  const local = ownLocalConfirmation(owner, questionId);
-  if (local) {
-    refusePreviewDeciding(credentials, local.preview);
+  const local = pendingLocalConfirmations.get(questionId);
+  if (local && local.domainId === owner.domainId && local.userId === owner.userId) {
     pendingLocalConfirmations.delete(questionId);
     return { stale: true as const, intentId: local.intentId };
   }
@@ -686,8 +655,6 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const record = await store.get(owner, id);
   if (record.kind !== "current")
     throw new HttpError(403, "This intent was not prepared for human dispatch", "FORBIDDEN");
-  // Before its secrets are taken or the intent is claimed, so a refused one stays for the person who prepared it.
-  refusePreviewDeciding(credentials, preparedByPreview(record));
   const { intent } = record;
   if (intent.dispatched || intent.invalidated) return replay(record, owner, credentials);
   const claimedIntent: PanelHumanOperationIntent =
@@ -710,7 +677,8 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   // An expired or missing file refuses before the intent is claimed, so nothing is spent.
   const staged = await withStagedFile(owner, ref, current.handler, prepared, credentials.locale);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
-  // An intent a preview prepared stays the preview's: the person confirming it does not lift the preview's refusal.
+  // An intent a preview prepared (a preview run, or a person in a preview) stays the preview's: the person confirming it
+  // does not lift the preview's refusal at the entry it reaches.
   const executor = intent.source.executionKind === "preview" ? { ...credentials, executionKind: "preview" as const } : credentials;
   const host = operationHost({ owner, credentials: executor }, view);
   const result = await claimAndExecutePanel(owner, host, claimedIntent, current.handler, staged.invocation);

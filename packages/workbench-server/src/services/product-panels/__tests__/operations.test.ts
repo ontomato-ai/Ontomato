@@ -65,7 +65,6 @@ import { productCatalogServerOperations } from "../catalog-operations";
 import { panelOperationStore } from "../operation-store";
 import { readAdmittedProjectionOperations } from "../direct-operations";
 import { requireDirectPanelMember } from "../current";
-import { panelSecretStore } from "../secret-store";
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
   packs: {
@@ -301,42 +300,26 @@ it("carries a preview run's identity into the business write its page operation 
  expect(ownerWrites()).toHaveLength(1);
 });
 
-it("refuses a preview dispatching a live run's operation before its secrets or the intent are touched, and leaves it to its person", async () => {
-  const objectType = "platform:Trigger";
-  const handlerRef = `${objectType}.save`;
-  const execute = vi.fn(async () => ({ kind: "success" as const, data: {} }));
-  mockRegisteredOperation({
-    handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
-    kind: "form.save", effect: "write", batch: false, targetType: objectType, create: true,
-    targetSchema: z.object({ kind: z.literal("draft") }).strict(),
-    inputSchema: z.object({ values: z.record(z.unknown()) }), resultSchema: z.object({}),
-    draftInput: input => input, execute,
-  });
-  mocks.panel.mockResolvedValue({ id: "P", manifest: { state: {}, members: { form: { target: { projectionId: "form" } } } } });
-  mocks.projection.mockResolvedValue({ id: "form", binding: { kind: "PlatformObjectType", id: objectType }, inputs: {} });
-  const prepared = await prepareLiveAction({
-    intentId: uuid(93), applicationId: "A", useId: "tasks", operationId: "form.save", secretFields: ["/settings/password"],
-    call: { target: { kind: "draft" }, input: { values: { title: "New task", settings: { password: "entered-secret" } } } },
-  });
-  const take = vi.spyOn(panelSecretStore, "take");
-  await expect(dispatchHumanPanelOperation(owner, { ...credentials, executionKind: "preview" }, prepared.intentId))
-    .rejects.toMatchObject({ status: 422, code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验" });
-  expect(take).not.toHaveBeenCalled();
-  expect(intents.get(prepared.intentId)).toMatchObject({ dispatched: false });
-  expect(intents.get(prepared.intentId)!.invalidated).toBeUndefined();
-  expect(execute).not.toHaveBeenCalled();
-  // The person on the live page confirms it as before, with the secret they entered.
-  expect(await dispatchHumanPanelOperation(owner, credentials, prepared.intentId)).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
-  expect(execute).toHaveBeenCalledWith(expect.anything(), { kind: "draft" },
-    { values: { title: "New task", settings: { password: "entered-secret" } } }, prepared.intentId);
-});
-
-it("refuses a preview preparing a live run's page operation before an intent is stored or a question asked", async () => {
-  await expect(prepareHumanPanelOperation(owner, { ...credentials, executionKind: "preview" }, {
-    ...action(), agentRun: { runId: current.id, sessionId: current.sessionId, toolCallId: "preview-of-live" },
-  }, "Alice")).rejects.toMatchObject({ status: 422, code: "PREVIEW_WRITE_FORBIDDEN" });
-  expect(intents.size).toBe(0);
-  expect(mocks.request).not.toHaveBeenCalled();
+it("carries a preview's identity into the business write when it confirms a live run's page operation",async()=>{
+ const { intentId } = await prepareLiveAction(action());
+ expect(intents.get(intentId)!.source).not.toHaveProperty("executionKind");
+ mocks.projection.mockImplementation(async(_o:unknown,_c:unknown,id:string)=>({id,name:"Run now",componentId:id,binding:{kind:"PlatformOperation",id:"triggers.runNow"},inputs:{task:{kind:"object",objectType:"platform:Trigger"}}}));
+ const owner422 = vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   const marked = new Headers(init.headers).get(EXECUTION_CONTEXT_HEADER);
+   if ((init.method ?? "GET") === "GET") {
+     expect(marked).toBeNull();
+     return Response.json({...task,title:"Inventory summary"});
+   }
+   expect(url).toMatch(/\/platform\/triggers\/[^/]+\/runs$/u);
+   expect(marked).toBe('{"kind":"preview"}');
+   return Response.json({error:{code:"PREVIEW_WRITE_FORBIDDEN",message:"预览里不执行写操作，动作的对错用动作试跑验"},correlationId:"test"},{status:422});
+ });
+ vi.stubGlobal("fetch",owner422);
+ // Confirming a pending operation is platform state; the write it executes is refused at its entry, never let through live.
+ expect(await dispatchHumanPanelOperation(owner, { ...credentials, executionKind: "preview" }, intentId)).toMatchObject({ kind: "dispatched", outcome: {
+   kind: "refusal", code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验",
+ } });
+ expect(ownerWrites()).toHaveLength(1);
 });
 
 it("rejects a declaration whose target type does not match its platform operation",async()=>{

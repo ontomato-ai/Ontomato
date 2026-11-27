@@ -1,6 +1,4 @@
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
-import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
-import { HttpError } from "../../../utils/errors";
 import { assertManagement, requireManagement } from "../../../identity/management";
 import type {
   TestCase,
@@ -285,19 +283,7 @@ router.put("/case-sets/:id", requireManagement(workbenchManagement.opsCaseSetsCh
  *
  * Body: { caseSetId: string, concurrency?: number, rounds?: number, caseTimeoutSeconds?: number }
  */
-/**
- * Starting, stopping or deleting a formal test run is running, not building: a preview is refused before anything about
- * the run is read or changed. Case sets are definitions and stay open to it.
- */
-function refusePreview(req: Request, res: Response, next: NextFunction) {
-  if (credentialsFromRequest(req as AuthenticatedRequest).executionKind === "preview") {
-    sendError(res, new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN));
-    return;
-  }
-  next();
-}
-
-router.post("/runs", refusePreview, requireManagement(workbenchManagement.opsRunsStart), async (req: Request, res: Response<HttpResponse<RunMeta>>) => {
+router.post("/runs", requireManagement(workbenchManagement.opsRunsStart), async (req: Request, res: Response<HttpResponse<RunMeta>>) => {
   try {
     if (isRunActive()) {
       res.status(409).json({
@@ -423,7 +409,7 @@ router.get("/runs/:id", readRun, requireOwnedRun, async (req: Request, res: Resp
 /**
  * DELETE /runs/:id - Delete a completed historical run and its artifacts.
  */
-router.delete("/runs/:id", refusePreview, requireManagement(workbenchManagement.opsRunsDelete), requireOwnedRun, async (req: Request, res: Response<HttpAcknowledgement>) => {
+router.delete("/runs/:id", requireManagement(workbenchManagement.opsRunsDelete), requireOwnedRun, async (req: Request, res: Response<HttpAcknowledgement>) => {
   try {
     const runId = req.params.id;
     const active = getActiveRun();
@@ -464,7 +450,7 @@ router.delete("/runs/:id", refusePreview, requireManagement(workbenchManagement.
 /**
  * POST /runs/:id/stop - Stop a running run.
  */
-router.post("/runs/:id/stop", refusePreview, requireManagement(workbenchManagement.opsRunsStop), requireOwnedRun, (req: Request, res: Response<HttpResponse<RunMeta>>) => {
+router.post("/runs/:id/stop", requireManagement(workbenchManagement.opsRunsStop), requireOwnedRun, (req: Request, res: Response<HttpResponse<RunMeta>>) => {
   try {
     const meta = stopRun(req.params.id);
     res.json({ success: true, data: meta } satisfies HttpResponse<RunMeta>);
