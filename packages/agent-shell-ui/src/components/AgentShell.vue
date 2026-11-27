@@ -101,6 +101,8 @@ const props = withDefaults(
      */
     agentPicker?: boolean;
     splitNavigation?: boolean;
+    inlineArtifacts?: boolean;
+    neutralAgentSelection?: boolean;
     /** The selected feature is an item in the history column and takes the place of the conversation. */
     historyPageSelected?: boolean;
     /** An editor shown over the conversation, with its own form actions. */
@@ -192,7 +194,18 @@ async function closeEditor() {
     closingEditor = false;
   }
 }
-const openArtifact = computed(() => (display.target.value?.kind === "artifact" ? display.target.value.open : null));
+const artifactTrail = display.artifacts;
+const openArtifact = computed(() => artifactTrail.value.at(-1) ?? null);
+const previewSelected = ref(false);
+const historyCollapsed = ref(false);
+watch([sessionId, () => props.historyPageSelected], ([id, featureSelected]) => {
+  if (id || featureSelected) historyCollapsed.value = true;
+}, { immediate: true });
+watch(openArtifact, (artifact) => { previewSelected.value = Boolean(artifact); });
+const inlinePreview = computed(() => Boolean(props.inlineArtifacts && openArtifact.value && previewSelected.value));
+function showArtifactLoad(key: string, load: Parameters<typeof display.loaded>[0]) {
+  if (openArtifact.value?.key === key) display.loaded(load);
+}
 /** The conversation in view has not started: no session yet, and no message on its way to make one. */
 const unstarted = computed(() => !conversation.sending.value && conversation.state.sessionId === null);
 
@@ -219,8 +232,11 @@ provide(shellContextKey, {
     taskRound.value = runId;
     tasksOpen.value = true;
   },
-  // The side holds one thing at a time: an expanded card replaces a page beside the conversation.
-  openArtifact: (open) => void display.openArtifact(open),
+  openArtifact: (open, parentKey) => {
+    void display.openArtifact(open, parentKey).then((opened) => {
+      if (opened) previewSelected.value = true;
+    });
+  },
   openArtifactKey: computed(() => openArtifact.value?.key ?? null),
   pageLink: (href) => displayLink(display, props.pageLinks)(href),
   continueConversation: async (message) => {
@@ -499,7 +515,16 @@ watch(
 function fill(text: string) {
   showEntry(text);
 }
-defineExpose({ reloadAgents: () => nav.loadAgents().catch(report), send, fill });
+async function requestArtifactAction(message: string) {
+  if (!canRequestArtifactAction.value) {
+    throw new Error(props.labels.working);
+  }
+  previewSelected.value = false;
+  await send(message);
+}
+const canRequestArtifactAction = computed(() => Boolean(sessionId.value && !conversation.busy.value && !conversation.sending.value));
+
+defineExpose({ reloadAgents: () => nav.loadAgents().catch(report), send, fill, requestArtifactAction, canRequestArtifactAction });
 
 onMounted(() => {
   // An address that names both a conversation and a paired page reopens them side by side.
@@ -508,7 +533,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="agent-shell" :class="{ 'panel-open': openArtifact, 'split-navigation': splitNavigation }" @keydown.esc="closeNav(true)">
+  <div class="agent-shell" :class="{ 'panel-open': openArtifact && !inlineArtifacts, 'split-navigation': splitNavigation, 'history-collapsed': historyCollapsed }" @keydown.esc="closeNav(true)">
     <div class="compact-nav">
       <button ref="navToggle" type="button" class="compact-nav-toggle" :aria-expanded="navOpen"
         :aria-controls="navId" @click="toggleNav">
@@ -530,7 +555,7 @@ onMounted(() => {
           :workbench="workbench"
           :title="title"
           :agents="nav.agents.value"
-          :agent-id="agentId"
+          :agent-id="neutralAgentSelection ? null : agentId"
           :current-agent="currentAgent"
           :sessions="nav.sessions.value"
           :sessions-state="nav.sessionsState.value"
@@ -566,8 +591,18 @@ onMounted(() => {
       </slot>
     </ShellColumn>
 
+    <button v-if="splitNavigation" type="button" class="mobile-history-toggle" :aria-expanded="!historyCollapsed" @click="historyCollapsed = !historyCollapsed">
+      <PanelLeft :size="16" aria-hidden="true" />
+      {{ labels.sessions }}
+    </button>
     <main v-show="!pageFull" class="shell-main">
-      <header v-if="splitNavigation && sessionId && !display.page.value" class="conversation-heading">
+      <nav v-if="inlineArtifacts && openArtifact" class="artifact-switcher" :aria-label="labels.fileTab">
+        <button type="button" :aria-pressed="!previewSelected" @click="previewSelected = false">{{ labels.conversationTab ?? labels.sessions }}</button>
+        <button type="button" :aria-pressed="previewSelected" @click="previewSelected = true">
+          {{ artifactTrail[0]?.artifact.path.startsWith('outputs/reports/') ? labels.reportTab : labels.fileTab }}
+        </button>
+      </nav>
+      <header v-if="splitNavigation && sessionId && !display.page.value" v-show="!inlinePreview" class="conversation-heading">
         <h1>{{ nav.currentSession.value?.title || currentAgent?.name || labels.newConversation }}</h1>
       </header>
       <button
@@ -591,8 +626,12 @@ onMounted(() => {
       <div v-if="display.page.value && !pairedPage && !editorTitle" class="feature-page">
         <slot name="feature" :feature-id="display.page.value.featureId" view="full" />
       </div>
+      <div v-else-if="slots['conversation-empty'] && unstarted" class="conversation-empty">
+        <slot name="conversation-empty" />
+      </div>
       <ShellConversation
         v-else
+        v-show="!inlinePreview"
         :items="conversation.items.value"
         :session-id="sessionId"
         :agent="currentAgent"
@@ -620,6 +659,18 @@ onMounted(() => {
           <slot name="composer-context" :page-open="pairedPage" :inline="false" :unstarted="unstarted" />
         </template>
       </ShellConversation>
+      <template v-if="inlineArtifacts">
+        <ShellSidePanel
+          v-for="(artifact, index) in artifactTrail"
+          v-show="inlinePreview && artifact.key === openArtifact?.key"
+          :key="artifact.key"
+          :open="artifact"
+          :back="index > 0"
+          inline
+          @close="display.closeArtifact(artifact.key)"
+          @loaded="showArtifactLoad(artifact.key, $event)"
+        />
+      </template>
     </main>
 
     <ElDrawer v-if="display.page.value && editorTitle" :model-value="true" class="shell-editor-drawer"
@@ -652,7 +703,17 @@ onMounted(() => {
       <slot name="feature" :feature-id="display.page.value.featureId" :view="display.view.value" />
     </ShellPagePane>
 
-    <ShellSidePanel v-if="openArtifact" :open="openArtifact" @close="display.close()" @loaded="display.loaded" />
+    <template v-if="!inlineArtifacts">
+      <ShellSidePanel
+        v-for="(artifact, index) in artifactTrail"
+        v-show="artifact.key === openArtifact?.key"
+        :key="artifact.key"
+        :open="artifact"
+        :back="index > 0"
+        @close="display.closeArtifact(artifact.key)"
+        @loaded="showArtifactLoad(artifact.key, $event)"
+      />
+    </template>
   </div>
 </template>
 
@@ -672,7 +733,29 @@ onMounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.shell-main:has(> .conversation-heading) > :deep(.conversation) { flex: 1; height: auto; }
+.mobile-history-toggle { display: none; }
+.conversation-empty { display: grid; flex: 1; place-items: center; text-align: center; padding: 16px; }
+.artifact-switcher {
+  display: flex;
+  flex: none;
+  gap: 16px;
+  padding-inline: 16px;
+  border-bottom: 1px solid var(--el-border-color);
+}
+.artifact-switcher button {
+  padding: 9px 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.artifact-switcher button[aria-pressed="true"] {
+  color: var(--el-color-primary);
+  border-bottom-color: currentColor;
+}
+.shell-main:has(> :is(.conversation-heading, .artifact-switcher)) > :deep(.conversation) { flex: 1; height: auto; }
 @container (min-width: 960px) {
   .split-navigation > :deep(.shell-column) {
     flex: 0 0 min(48%, 654px);

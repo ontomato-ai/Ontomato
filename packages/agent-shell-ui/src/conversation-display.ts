@@ -138,6 +138,7 @@ export interface ConversationDisplayHost {
 
 interface Shown {
   target: DisplayTarget | null;
+  artifactParents?: readonly OpenArtifact[];
   view: DisplayView;
   /** The reader navigated here, so the address carries it; an artifact is never in the address. */
   restorable: boolean;
@@ -610,6 +611,10 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
 
   return {
     target,
+    artifacts: computed(() => {
+      const { target, artifactParents = [] } = shown.value;
+      return target?.kind === "artifact" ? [...artifactParents, target.open] : [];
+    }),
     page,
     pageInstanceId: computed(() => effectivePageInstanceId()),
     feature,
@@ -640,12 +645,39 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     reopen: (next: DisplayPage) => open(next, { view: "side", history: "push" }),
 
     /** The reader opened a card. An artifact is not in the address: a page it replaces leaves the address too. */
-    openArtifact: (open: OpenArtifact) =>
+    openArtifact: (open: OpenArtifact, parentKey?: string) =>
       inOrder(async () => {
+        const current = shown.value.target;
+        if (parentKey && (current?.kind !== "artifact" || current.open.key !== parentKey)) return false;
+        if (parentKey === open.key) return true;
         const next: DisplayTarget = { kind: "artifact", open };
         if (!(await mayLeave(next))) return false;
         if (page.value && !(await write(null, shown.value.view, "replace"))) return false;
-        commit({ target: next, view: shown.value.view, restorable: false });
+        const trail = parentKey && current?.kind === "artifact"
+          ? [...(shown.value.artifactParents ?? []), current.open]
+          : [];
+        const ancestor = trail.findIndex((item) => item.key === open.key);
+        commit({
+          target: next,
+          artifactParents: ancestor < 0 ? trail : trail.slice(0, ancestor),
+          view: shown.value.view,
+          restorable: false,
+        });
+        return true;
+      }),
+
+    /** Close the current file and restore the preview it was opened from. */
+    closeArtifact: (key: string) =>
+      inOrder(async () => {
+        const current = shown.value.target;
+        if (current?.kind !== "artifact" || current.open.key !== key) return false;
+        const parents = shown.value.artifactParents ?? [];
+        const parent = parents.at(-1);
+        commit({
+          ...shown.value,
+          target: parent ? { kind: "artifact", open: parent } : null,
+          artifactParents: parents.slice(0, -1),
+        });
         return true;
       }),
 

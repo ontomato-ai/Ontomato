@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { CalendarClock, Check, ExternalLink, MessageSquarePlus, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellBottomEntry, ShellLabels, ShellWorkbenchDeclaration } from "../types";
+import { storedAgentAvatar } from "../avatar";
 import { featureIcon } from "../icons";
 import AgentPicker from "./AgentPicker.vue";
 import AgentAvatar from "./AgentAvatar.vue";
@@ -15,6 +16,16 @@ import AgentAvatar from "./AgentAvatar.vue";
  * Codex switches products) and the application's name when it runs on one. The column is drawn by the application inside
  * the area the platform gives it; this component owns no frame, no brand and no footer chrome.
  */
+const presetIcons: Record<string, string> = {
+  regular: storedAgentAvatar({ key: "BarChart3", color: "#F1EFFF" }),
+  "app-builder": storedAgentAvatar({ key: "Sparkles", color: "#EEF7FF" }),
+  "ops-diagnosis": storedAgentAvatar({ key: "Activity", color: "#EFFFF8" }),
+};
+
+function railIcon(agent: AgentHostAgent) {
+  return agent.icon ?? presetIcons[agent.kind ?? ""] ?? null;
+}
+
 const props = withDefaults(defineProps<{
   workbench: ShellWorkbenchDeclaration;
   /** The application's name, shown at the top when it runs on one agent. */
@@ -210,10 +221,10 @@ onBeforeUnmount(() => {
       <div class="agent-section-title">{{ labels.agent }}</div>
       <div class="legacy-agent-list">
       <button v-for="agent in agents" :key="agent.id" type="button" class="agent-row"
-        :disabled="!agent.enabled"
+        :disabled="!agent.enabled" :title="agent.name"
         :class="{ active: agent.id === agentId }" :aria-pressed="agent.id === agentId"
         @click="emit('selectAgent', agent.id)">
-        <AgentAvatar :icon="agent.icon" :size="38" :icon-size="20" />
+        <AgentAvatar :icon="railIcon(agent)" :size="38" :icon-size="20" />
         <span class="agent-row-label">
           <span class="nav-label">{{ agent.name }}</span>
           <span v-if="agent.description" class="agent-row-description" :title="agent.description">{{ agent.description }}</span>
@@ -288,7 +299,7 @@ onBeforeUnmount(() => {
       <slot name="session-list">
       <header v-if="splitNavigation" class="session-heading">
         <div v-if="currentAgent" class="session-agent">
-          <AgentAvatar :icon="currentAgent.icon" :size="36" />
+          <AgentAvatar :icon="railIcon(currentAgent)" :size="36" />
           <div class="agent-row-label">
             <strong class="nav-label">{{ currentAgent.name }}</strong>
             <span v-if="currentAgent.description" class="agent-row-description" :title="currentAgent.description">{{ currentAgent.description }}</span>
@@ -320,6 +331,7 @@ onBeforeUnmount(() => {
               type="button"
               class="session-open"
               :aria-current="session.id === sessionId ? 'page' : undefined"
+              :title="splitNavigation ? session.title : undefined"
               @click="emit('selectSession', session.id)"
             >
               <span v-if="!splitNavigation && (session.latestRun?.status === 'running' || session.latestRun?.delegatedRunning)" class="running" aria-hidden="true" />
