@@ -1,4 +1,4 @@
-import type { Component } from "vue";
+import { defineComponent, h, type Component } from "vue";
 import {
   Activity,
   AlarmClock,
@@ -108,6 +108,13 @@ import {
   XCircle,
 } from "lucide-vue-next";
 
+const StarFilled = defineComponent({
+  name: "StarFilled",
+  setup(_props, { attrs }) {
+    return () => h(Star, { ...attrs, fill: "currentColor" });
+  },
+});
+
 /** Applications name icons; the shell resolves a curated set so the rail does not pull in whole icon packs. */
 const appIcons: Record<string, Component> = {
   "app-window": AppWindow,
@@ -210,6 +217,7 @@ const appIcons: Record<string, Component> = {
   ban: Ban,
   "minus-circle": MinusCircle,
   star: Star,
+  "star-filled": StarFilled,
   flag: Flag,
   lock: Lock,
   unlock: Unlock,
