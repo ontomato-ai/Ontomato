@@ -89,10 +89,8 @@ watch(
           return;
         }
         // No candidates to open on: an entry that waited ends here, the page showing why.
-        const message = candidatesFailureReason(reason, props.labels.pageAgentUnavailable);
-        candidatesError.value = message;
+        candidatesError.value = candidatesFailureReason(reason, props.labels.pageAgentUnavailable);
         candidatesState.value = "error";
-        emit("error", message);
       });
   },
   { immediate: true },

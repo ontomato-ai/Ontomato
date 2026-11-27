@@ -222,6 +222,25 @@ describe("host content-box structure across full-page, beside-conversation, and 
     }
   });
 
+  it("shows a candidate read failure once in the page composer", async () => {
+    installPlatform(responder());
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path, component: { render: () => null } }] });
+    await router.push(path);
+    const failure = new Error("Candidate directory unavailable");
+    const { app, element } = mountPlatformPage(
+      () => h(PanelApplicationRoute, { applicationId: appId }),
+      router,
+      { ...pageCounter, pageAgents: async () => { throw failure; } },
+    );
+    try {
+      const composerAlert = ".panel-entry-unit-foot .page-ask [role='alert']";
+      await vi.waitFor(() => expect(element.querySelector(composerAlert)?.textContent).toBe(failure.message));
+      expect(element.querySelectorAll(".panel-entry-unit-foot [role='alert']")).toHaveLength(1);
+    } finally {
+      app.unmount();
+    }
+  });
+
   it("mounts the same content-box chain beside a conversation without a duplicate PageComposer", async () => {
     installPlatform(responder());
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/agents/chat", component: { render: () => null } }] });

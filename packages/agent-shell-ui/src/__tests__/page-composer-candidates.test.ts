@@ -147,7 +147,7 @@ it("names the page's configuration error in place with the service's reason, dis
   await new Promise((resolve) => setTimeout(resolve));
 
   const expected = `${labels.pageAgentUnavailable} The page's default agent is unavailable`;
-  expect(drawn.errors).toEqual([expected]);
+  expect(drawn.errors).toEqual([]);
   // The composer stays in place with the reason visible, disabled, and without substituting another agent.
   expect(drawn.root.querySelector(".page-ask")).not.toBeNull();
   expect(drawn.root.querySelector('.page-ask [role="alert"]')?.textContent).toBe(expected);
@@ -179,7 +179,7 @@ it("keeps the composer in place with the service error disabled when candidates 
   const drawn = draw({ pageAgents: async () => Promise.reject(new Error("Failed to fetch")) });
   await new Promise((resolve) => setTimeout(resolve));
 
-  expect(drawn.errors).toEqual(["Failed to fetch"]);
+  expect(drawn.errors).toEqual([]);
   expect(drawn.root.querySelector(".page-ask")).not.toBeNull();
   expect(drawn.root.querySelector('.page-ask [role="alert"]')?.textContent).toBe("Failed to fetch");
   expect(seen).toHaveLength(0);
@@ -382,7 +382,7 @@ it("drops an entry that waited and keeps the composer visible in an error disabl
   fail(new Error("Failed to fetch"));
   await settle();
   // The composer stays in place explaining the read failure; the waiting entry is neither filled nor sent.
-  expect(drawn.errors).toEqual(["Failed to fetch"]);
+  expect(drawn.errors).toEqual([]);
   expect(drawn.root.querySelector(".page-ask")).not.toBeNull();
   expect(drawn.root.querySelector('.page-ask [role="alert"]')?.textContent).toBe("Failed to fetch");
   expect(box(drawn.root)?.disabled).toBe(true);
