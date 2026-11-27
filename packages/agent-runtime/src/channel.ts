@@ -17,7 +17,7 @@ import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contra
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
 
 const CHANNEL_TOOL_DESCRIPTION =
-  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its result wakes you with a notification when finished. wait: taskId; waits for that direct child and returns when any new input reaches your run—the child result notification, a question, or another message. The input itself is delivered as the next message; do not poll with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, view, cursor, limit; inspects an execution, its delivered file references, or its messages, not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
+  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its completion, failure or cancellation wakes you with a status notification; read gives the final reply and delivered file references. wait: taskId; waits for that direct child and returns what input reached your run: its completion, failure or cancellation signal, its question, or user input. The signal only carries state; read the result explicitly. Do not poll with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, view, cursor, limit; inspects an execution, reads its final reply and delivered file references, or its messages; not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
 
 const CHANNEL_TOOL_PARAMETERS: RuntimeJsonObject = {
   type: "object",
@@ -91,6 +91,7 @@ export class AgentChannel {
   readonly facts: ChannelStore;
   /** PI returns the same queued object; preserve its receipt identity in the event sink. */
   private listeners = new Map<string, Set<Listener>>();
+  private handoffListeners = new Map<string, Set<Listener>>();
   private chains = new Map<string, { credential: AgentCredential; executions: Set<string>; presentationBinding?: PresentationBinding }>();
   private chainKey(channel: AgentRunContext) { return JSON.stringify([channel.actor.domainId,channel.root.session.providerId,channel.root.session.sessionId,channel.root.runId]); }
   remember(channel: AgentRunContext, credential: AgentCredential, presentationBinding?: PresentationBinding) {
@@ -164,6 +165,7 @@ export class AgentChannel {
     return action === "read" ? value : agentProviderAcknowledgementSchema.parse(value);
   }
   private emitChange(scope: Scope, sessionId: string) { for (const listener of this.listeners.get(JSON.stringify([scope,sessionId])) ?? []) listener(); }
+  inputHandedOff(scope: Scope, sessionId: string) { for (const listener of this.handoffListeners.get(JSON.stringify([scope,sessionId])) ?? []) listener(); }
   private async announce(intent: AgentRunIntent) {
     const domain=intent.channel.actor.domainId;
     const sessions=new Map<string,AgentSessionRef>();
@@ -182,6 +184,11 @@ export class AgentChannel {
     const id = JSON.stringify([scope,sessionId]), set = this.listeners.get(id) ?? new Set<Listener>();
     set.add(listener); this.listeners.set(id, set);
     return () => { set.delete(listener); if (!set.size) this.listeners.delete(id); };
+  }
+  subscribeInputHandoff(scope: Scope, sessionId: string, listener: Listener) {
+    const id = JSON.stringify([scope,sessionId]), set = this.handoffListeners.get(id) ?? new Set<Listener>();
+    set.add(listener); this.handoffListeners.set(id, set);
+    return () => { set.delete(listener); if (!set.size) this.handoffListeners.delete(id); };
   }
   async request(scope: Scope, sessionId: string, runId: string, channel: AgentRunContext, input: AgentInput, language: string, context: AgentRunIntent["context"] | undefined, credential: AgentCredential, inheritedExecutionUserId?:string|null, presentationBinding?: PresentationBinding) {
     if (scope.domainId !== channel.actor.domainId || this.provider(channel.agent.providerId).hostId !== scope.hostId)
@@ -511,6 +518,23 @@ export class AgentChannel {
       throw error;
     } finally { if (next) this.launch(next); }
   }
+  private async mapDeliveredFiles(scope: Scope, intent: AgentRunIntent, files: Array<{ id: string; name: string }>) {
+    const parent = intent.channel.requestedBy;
+    if (!parent) return files;
+    return files.length
+      ? await this.runtime.linkAgentFiles(this.scope(parent.session, scope.domainId), parent.session.sessionId, intent.channel.authority.executionKind, scope, intent.session.sessionId, intent.id, files)
+      : [];
+  }
+  private async deliveryResult(scope: Scope, intent: AgentRunIntent, delivery: { status: "starting" | "running" | "completed" | "failed" | "cancelled"; files: Array<{ id: string; name: string }> }) {
+    let content = intent.error ?? delivery.status;
+    if (delivery.status === "completed") {
+      const reply = await this.runtime.store.finalReply(scope, intent.id);
+      content = reply && reply.role === "assistant"
+        ? reply.content.filter(part => part.type === "text").map(part => part.text).join("\n")
+        : "";
+    }
+    return { content, files: await this.mapDeliveredFiles(scope, intent, delivery.files) };
+  }
   private async notify(scope: Scope, runId: string,preparedFailure=false) {
     const intent = await this.facts.intent(scope, runId);
     await this.announce(intent);
@@ -521,20 +545,11 @@ export class AgentChannel {
       : agentDeliverySchema.parse(await this.callback(intent, "read"));
     if (delivery.status === "running" || delivery.status === "starting" || !delivery.settled) return;
     if (parent && !(intent.cancelled && intent.cancelMode!=="model")) {
-      let content = intent.error ?? delivery.status;
-      if (delivery.status === "completed") {
-        const reply = await this.runtime.store.finalReply(scope, runId);
-        content = reply && reply.role === "assistant"
-          ? reply.content.filter(part => part.type === "text").map(part => part.text).join("\n")
-          : "";
-      }
-      const parentScope = this.scope(parent.session, scope.domainId);
-      const files = delivery.files.length
-        ? await this.runtime.linkAgentFiles(parentScope, parent.session.sessionId, intent.channel.authority.executionKind, scope, intent.session.sessionId, runId, delivery.files)
-        : [];
+      await this.mapDeliveredFiles(scope, intent, delivery.files);
+      const reason = delivery.status !== "completed" && intent.error ? ` (${intent.error})` : "";
       await this.deliver(parent.session, intent.channel.actor, {
         role: "notification", kind: "agent-result", source: { session: intent.session, runId },
-        outcome: delivery.status, content, files, timestamp: Date.now(),
+        outcome: delivery.status, content: `Task ${runId} ${delivery.status}${reason}. Read its result with the agent tool's read.`, timestamp: Date.now(),
       }, { resultRecipientRunId: parent.runId, senderAuthority: intent.channel.authority });
     }
     if (delivery.settled) this.release(intent);
@@ -568,18 +583,24 @@ export class AgentChannel {
     }
     const fact = midRound && message.kind === "agent-result" ? `\n${MID_ROUND_RESULT_NOTIFICATION_FACT}` : "";
     return { role:"user", timestamp:message.timestamp,
-      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome,files:message.files})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}${fact}` };
+      content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}${fact}` };
   }
   private async waitInterruption(scope: Scope, run: RuntimeRun) {
     const inputs = new Map<string, AgentInput>();
-    for (const row of await this.facts.pending(scope, run.sessionId, undefined, run.id)) inputs.set(row.id, row.message as AgentInput);
     const inFlight = this.runtime.inputInFlight(scope, run.id);
-    for (const input of inFlight.inputs) inputs.set(input.id, input.message as AgentInput);
+    const handedOff = new Set(inFlight.map(input => input.id));
+    for (const row of await this.facts.pending(scope, run.sessionId, undefined, run.id))
+      if (handedOff.has(row.id)) inputs.set(row.id, row.message as AgentInput);
+    for (const input of inFlight) inputs.set(input.id, input.message as AgentInput);
     for (const [id, message] of inputs) {
-      if (message.role === "notification" && message.kind === "agent-question")
-        return { reason: "question" as const, question: { requestId: id, message: message.content, defaultAssumption: message.defaultAssumption, ...(message.options ? { options: message.options } : {}) } };
+      if (message.role === "notification" && "session" in message.source) {
+        const taskId = message.source.runId;
+        if (message.kind === "agent-result") return { kind: "agent-result" as const, taskId, outcome: message.outcome! };
+        if (message.kind === "agent-question") return { kind: "agent-question" as const, taskId, requestId: id, message: message.content, defaultAssumption: message.defaultAssumption, ...(message.options ? { options: message.options } : {}) };
+      }
+      if (message.role === "user") return { kind: "user" as const };
     }
-    return inputs.size || inFlight.waiting ? { reason: "input" as const } : null;
+    return inputs.size ? { kind: "input" as const } : null;
   }
   private sameExecution(left: AgentExecutionRef, right: AgentExecutionRef) {
     return left.runId === right.runId && left.session.providerId === right.session.providerId && left.session.sessionId === right.session.sessionId;
@@ -590,6 +611,7 @@ export class AgentChannel {
     let wake: () => void = () => {};
     let changed = new Promise<void>(resolve => { wake = resolve; });
     const unsubscribe = this.subscribe(scope, run.sessionId, () => wake());
+    const unsubscribeHandoff = this.subscribeInputHandoff(scope, run.sessionId, () => wake());
     const aborted = new Promise<never>((_resolve, reject) => {
       if (signal?.aborted) reject(signal.reason);
       else signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -597,13 +619,14 @@ export class AgentChannel {
     try {
       for (;;) {
         signal?.throwIfAborted();
-        if (await this.waitInterruption(scope, run))
-          return { taskId: entry.intent.id, state: "input-available", message: "New input is available in this run." };
+        const input = await this.waitInterruption(scope, run);
+        if (input) return { taskId: entry.intent.id, state: "input-available", input };
         await Promise.race([changed, aborted]);
         changed = new Promise<void>(resolve => { wake = resolve; });
       }
     } finally {
       unsubscribe();
+      unsubscribeHandoff();
     }
   }
   tool(scope: Scope, run: RuntimeRun): PlatformTool {
@@ -696,7 +719,10 @@ export class AgentChannel {
     const intent = entry.intent;
     const questions=await this.facts.questions(entry.scope,{session:intent.session,runId:intent.id});
     if (intent.status === "starting" || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(entry.scope,intent.id))) return { taskId:intent.id,sessionRef:intent.session,status:intent.status,error:intent.error,questions,files:[] };
-    const result = agentDeliverySchema.parse(await this.callback(intent,"read",signal));
+    const delivery = agentDeliverySchema.parse(await this.callback(intent,"read",signal));
+    const result = delivery.settled && delivery.status !== "running" && delivery.status !== "starting"
+      ? { ...delivery, ...await this.deliveryResult(entry.scope, intent, delivery) }
+      : delivery;
     if (command.view !== "messages") return { taskId:intent.id,sessionRef:intent.session,...result,questions };
     const messages = (await this.runtime.store.messages(entry.scope, intent.session.sessionId)).filter(row => row.runId === intent.id && row.message.role !== "system" && row.messageSeq > (command.cursor ?? 0)).slice(0, command.limit ?? 50);
     return { taskId:intent.id,sessionRef:intent.session,...result,questions,messages,cursor: messages.at(-1)?.messageSeq ?? command.cursor ?? 0 };

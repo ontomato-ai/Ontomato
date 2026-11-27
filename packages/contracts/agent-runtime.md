@@ -106,7 +106,9 @@ type StartRun = {
 step bound. It counts the run's completed tool calls: more than `maxCalls`, or
 `maxSameShape` calls whose tool name and arguments match after removing digits
 and collapsing whitespace, stops the run as aborted with a runtime notice naming
-the limit. It is the same termination path as cancel, not another status.
+the limit. The event-driven `agent` wait operation is exempt from the repeated-shape
+count because each return means new input arrived; it still counts toward `maxCalls`.
+It is the same termination path as cancel, not another status.
 
 The runtime always exposes PI `read`, `write`, `edit`, `bash`. There is no Python
 switch, context entry or business tool registration. Python runs through bash.
@@ -378,11 +380,14 @@ history and UI; only the model boundary presents them as explicitly attributed c
 `start` is admission-only: it validates the target in the provider directory, records that directory
 entry's display name on the admission intent for task projection, returns `{taskId,sessionRef,status}`,
 and the child runs asynchronously. `wait` is the separate run-only operation for a direct child. It
-long-waits on session events, not polling, until any input reaches the waiting run: the child's
-`agent-result` notification, a question, or another message. It returns `{taskId,state:"input-available",
-message:"New input is available in this run."}`; the input itself is then delivered through the ordinary
-mid-round input path before the next model call. Only the run that started the child may wait for it.
-Results keep their single delivery path through `agent-result`; cancellation aborts the wait with the parent run.
+long-waits on session events, not polling, until any input reaches the waiting run and has been
+handed to the engine's steering queue: the child's `agent-result` status signal, a question, or user
+input. It peeks rather than consuming the input and
+returns `{taskId,state:"input-available",input}`; `input` identifies what arrived, including the child
+task and outcome for `agent-result`, the asking child task and question details for `agent-question`, or
+`{kind:"user"}` for user input. The input itself is then delivered through the ordinary mid-round input
+path before the next model call. Only the run that started the child may wait for it. Cancellation
+aborts the wait with the parent run.
 
 Provider `prepare` receives mode `run` or `steer`, the execution language and a typed input, including question kind and
 replyTo. Questions do not stop the sender. The runtime consumes ordinary queued notifications at the end-of-loop boundary and steering inputs through PI getSteeringMessages. The runtime reserves a preparing
@@ -396,11 +401,13 @@ calls every registered provider directly and merges their lists; Java answers on
 provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
 Prepare receives requestedBy (nullable) and the fixed root. Run mode returns a runtime start request; steer mode acknowledges the host's input recording and can return updated host context. The runtime retains typed input and its original receipt ID in both cases. Settle closes
 business eligibility; read returns the host's delivery projection with its status, process, results and
-formal file list. After the provider reports the execution settled, the runtime reads the child run's
-final assistant reply itself, maps the listed immutable artifacts as read-only links beneath the parent
-session's `outputs/agents/<taskId>/`, and notifies the parent with the reply and exact paths
-to cite. The parent session resolves those paths as artifact references
-without copying their bytes. Cancel closes eligibility
+formal file list. After the provider reports the execution settled, the runtime maps the listed
+immutable artifacts as read-only links beneath the parent session's `outputs/agents/<taskId>/`, then
+notifies the parent with a status-only `agent-result` signal. That signal carries completed, failed or
+cancelled (with the failure or cancellation reason where available) and the runtime-written instruction
+to read the result. `read` is the result payload path: it reads the child run's final assistant reply
+and returns it with the mapped exact paths to cite. The parent session resolves those paths as artifact
+references without copying their bytes. Cancel closes eligibility
 before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
 automatic wakeup from that cancellation. No platform task table or delegation budget is added.
 

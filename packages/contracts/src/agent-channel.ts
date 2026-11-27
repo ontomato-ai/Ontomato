@@ -41,8 +41,6 @@ export const agentNotificationSchema = z.object({
   answerId: id.optional(),
   defaultAssumption: z.string().optional(), options: agentQuestionOptionsSchema.optional(),
   outcome: z.enum(["completed", "failed", "cancelled"]).optional(),
-  /** Read-only files the runtime mapped into the recipient session workspace for this result. */
-  files: z.array(agentDeliveredFileSchema).optional(),
   content: z.string(), timestamp: z.number().int().nonnegative(),
 }).strict();
 export const agentInputSchema = z.discriminatedUnion("role", [
