@@ -40,9 +40,10 @@ to hand it over.
    answer. If the run fails or does not answer the question, leave the retriever running.
 3. Otherwise end this turn. The retriever's result arrives as a notification and wakes you; there is
    nothing to poll, read or wait for. One short line telling the user the retriever is on it is enough.
-4. On the notification, take the files with native `agent`, `op: "read"`, `files: true`.
-   delivered files are already mapped beneath `outputs/agents/<taskId>/`; cite those paths. Open a file
-   when the answer needs detailed rows or calculations.
+4. The notification carries the retriever's final reply and lists its delivered files, already mapped
+   read-only beneath `outputs/agents/<taskId>/`. The reply states the result, the scope it used and what
+   to keep in mind: answer from it, keep its scope as stated, and cite the listed paths. Open a file
+   only when the answer needs rows or calculations the reply does not give.
 
 A follow-up that needs new data is a new `start-retrieval`; one that can be answered from data already
 delivered reuses it.

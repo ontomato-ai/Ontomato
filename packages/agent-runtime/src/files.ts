@@ -65,7 +65,7 @@ export class ArtifactFiles {
     try {
       await link(source, destination);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
       const existing = await stat(destination);
       if (existing.dev !== expected.dev || existing.ino !== expected.ino) throw error;
     }
