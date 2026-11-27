@@ -6,7 +6,7 @@ import ProcessInput from "../ProcessInput.vue";
 import ShellProcess from "../ShellProcess.vue";
 import TaskMarkdown from "./TaskMarkdown.vue";
 
-/** The retriever's own thinking, notes and steps, live while it runs; its answer is its last note here. */
+/** A delegated task's own thinking, notes and steps, live while it runs; its answer is its last note here. */
 const props = defineProps<{ port: ShellTaskPort; sessionId: string; taskId: string; runId: string }>();
 const { response } = useTaskProcess(props.port, props.sessionId, props.taskId, props.runId);
 </script>

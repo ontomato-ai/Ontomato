@@ -36,6 +36,6 @@ Opening and continuing another host's conversation belongs to
 `/tasks/:taskId/process` and its `/events` read the task's own execution
 through the runtime's delegation authorization, under the normal public run projection.
 
-The product-external task snapshot/events expose the same provider delivery: status, summary,
-process, result references, retrieval extension, file references and questions.
+The product-external task snapshot/events expose the same provider delivery: status,
+process, result references, file references and questions.
 Questions carry their original receipt ID and answered flag. A question does not stop the sender.

@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/platform/agent-channel")
 public class AgentChannelController {
   private final OntologyAgentAccess access;
-  private final io.ontomato.dataengine.service.LangService language;
   private final AgentCaller callers;
   private final AgentDirectory directory;
   private final OntologyRetrievalService retrieval;
@@ -26,8 +25,7 @@ public class AgentChannelController {
   private final AgentRuntimeClient runtime;
   private final WorkbenchServiceAuthentication services;
   private final RuntimeCodeClient code;
-  public AgentChannelController(AgentCaller callers,AgentDirectory directory,OntologyAgentStore store,AgentRuntimeClient runtime,WorkbenchServiceAuthentication services,OntologyRetrievalService retrieval,RetrievalTasks retrievalTasks,ActionCreationService actions,OntologyGenerationService generation,OntologyAgentAccess access,io.ontomato.dataengine.service.LangService language,RuntimeCodeClient code) {
-    this.language=language;
+  public AgentChannelController(AgentCaller callers,AgentDirectory directory,OntologyAgentStore store,AgentRuntimeClient runtime,WorkbenchServiceAuthentication services,OntologyRetrievalService retrieval,RetrievalTasks retrievalTasks,ActionCreationService actions,OntologyGenerationService generation,OntologyAgentAccess access,RuntimeCodeClient code) {
     this.access=access;
     this.retrieval=retrieval;this.retrievalTasks=retrievalTasks;this.actions=actions;this.generation=generation;
     this.callers=callers; this.directory=directory; this.store=store; this.runtime=runtime; this.services=services; this.code=code;
@@ -255,26 +253,17 @@ public class AgentChannelController {
     if(OntologyAgentStore.RETRIEVER.equals(execution.agent())) {
       var projection=retrievalTasks.read(execution.session(),execution.run(),owner);
       var files=new ArrayList<JSONObject>();
-      long rows=0;
       for(var delivery:retrieval.deliveries(execution.session(),execution.run(),owner)) for(Object item:delivery.getJSONObject("data").getJSONArray("datasets")) {
-        var dataset=JSONObject.from(item);String id=dataset.getString("id");rows+=dataset.getLongValue("rowCount");
+        var dataset=JSONObject.from(item);String id=dataset.getString("id");
         files.add(JSONObject.of("id",id,"name",id+".dataset.json","mediaType","application/json","href","/platform/agent-channel/tasks/"+execution.run()+"/files/"+id));
       }
       var run=store.run(execution.session(),execution.run(),owner);
-      // The summary states what was delivered, never file names: a name is not a path the requester can cite or a sign the
-      // user has seen the file. The files themselves stay in files[] for the requester's own read.
-      String summary=java.text.MessageFormat.format(language.get(run.getString("language"),"AgentChannel.retrieval."+projection.getString("status")),files.size(),rows);
       boolean admitted=run.getBooleanValue("runtime_admitted");
       Object process=admitted?JSONObject.of("mode","inline","runtimeSessionId",execution.session(),"runtimeRunId",execution.run()):JSONObject.of("mode","none");
-      return JSONObject.of("settled",projection.getBooleanValue("settled"),"status",projection.getString("status"),"summary",summary,"process",process,"results",List.of(),"retrieval",projection.get("retrieval"),"files",files);
+      return JSONObject.of("settled",projection.getBooleanValue("settled"),"status",projection.getString("status"),"process",process,"results",List.of(),"files",files);
     }
     var status=runtime.status(owner.domainId(),execution.run());
     String state="running".equals(status.getString("status"))?"running":"aborted".equals(status.getString("stopReason"))?"cancelled":"stop".equals(status.getString("stopReason"))?"completed":"failed";
-    String summary=state;
-    if("completed".equals(state)) {
-      var reply=runtime.json(owner.domainId(),execution.run(),"/v1/runs/"+execution.run()+"/final-reply","GET",null,null);
-      if(reply!=null) {StringBuilder text=new StringBuilder();for(Object item:reply.getJSONArray("content")){var block=JSONObject.from(item);if("text".equals(block.getString("type")))text.append(block.getString("text"));}summary=text.toString();}
-    }
     Object process=JSONObject.of("mode","inline","runtimeSessionId",execution.session(),"runtimeRunId",execution.run());
     var results=new ArrayList<JSONObject>();
     var files=new ArrayList<JSONObject>();
@@ -282,6 +271,6 @@ public class AgentChannelController {
       var file=JSONObject.from(item);String path=file.getString("path");
       if(execution.run().equals(file.getString("runId")) && path.startsWith("outputs/")) files.add(JSONObject.of("id",file.getString("id"),"name",path.substring(path.lastIndexOf('/')+1),"mediaType",file.getString("mediaType"),"href","/platform/agent-channel/tasks/"+execution.run()+"/files/"+file.getString("id")));
     }
-    return JSONObject.of("settled",!"running".equals(state),"status",state,"summary",summary,"process",process,"results",results,"files",files);
+    return JSONObject.of("settled",!"running".equals(state),"status",state,"process",process,"results",results,"files",files);
   }
 }

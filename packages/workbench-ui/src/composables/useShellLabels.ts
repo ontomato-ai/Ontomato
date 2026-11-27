@@ -138,9 +138,8 @@ return computed<ShellLabels>(() => ({
   filterEmpty: t("assistant.datasetFilterEmpty"),
   elapsed: (time) => t("assistant.elapsed", { time }),
   worked: (time) => t("assistant.worked", { time }),
-  retrievalProgress: {
-    retrieving: t("assistant.progressRetrieving"),
-    datasetReady: t("assistant.progressDatasetReady"),
+  delegationProgress: {
+    delegating: t("assistant.progressDelegating"),
     answering: t("assistant.progressAnswering"),
   },
   questionsWaiting: (count) => t("assistant.questionsWaiting", { n: count }, count),
