@@ -51,19 +51,27 @@ describe("explicit frame execution bindings",()=>{
     await expect(host().request!(source, `${path}/extra`, { method: "GET" }, "/data-query")).rejects.toThrow("declared SDK capability");
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it('derives preview execution headers from the registered frame rather than trusting source headers',async()=>{
+  it('marks only the business-data write a preview frame sends, from the registered frame rather than the source headers',async()=>{
     const source=frame();const context=previewExecutionContextValue;registerBuildPreview(source,context);
     const request=vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({success:true,data:[]}));
-    await host().request!(source,'/metricView/execute',{method:'POST',headers:{[EXECUTION_CONTEXT_HEADER]:'forged',tk:'forged'},body:'{}'},'/data-query');
+    await host().request!(source,'/action/execute',{method:'POST',headers:{[EXECUTION_CONTEXT_HEADER]:'forged',tk:'forged'},body:'{}'},'/data-query');
     const headers=new Headers(request.mock.calls[0][1]?.headers);
     expect(headers.get(EXECUTION_CONTEXT_HEADER)).toBe(JSON.stringify({kind:'preview'}));
     expect(headers.has('tk')).toBe(false);
+    // A read and a definition write are the caller's own: no preview identity is claimed for them.
+    request.mockClear();
+    await host().request!(source,'/metricView/execute',{method:'POST',body:'{}'},'/data-query');
+    expect(new Headers(request.mock.calls[0][1]?.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
+    request.mockClear();
+    await host().request!(source,'/business-definitions',{method:'POST',body:'{}'},'');
+    expect(new Headers(request.mock.calls[0][1]?.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
   });
-  it('keeps a hosted build preview off Node: its product request is refused here, with the preview refusal code',async()=>{
+  it('does not refuse a definition or management write from a build preview here',async()=>{
     const source=frame();registerBuildPreview(source,previewExecutionContextValue);
-    const request=vi.spyOn(globalThis,'fetch');
-    await expect(host().request!(source,'/assistant/sessions',{method:'POST',body:'{}'},'')).rejects.toMatchObject({code:'PREVIEW_WRITE_FORBIDDEN'});
-    expect(request).not.toHaveBeenCalled();
+    const request=vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({success:true,data:[]}));
+    await expect(host().request!(source,'/assistant/sessions',{method:'POST',body:'{}'},'')).resolves.toBeInstanceOf(Response);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(new Headers(request.mock.calls[0][1]?.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
   });
   it("throws for unregistered frames instead of selecting live",()=>{
     const source=frame();

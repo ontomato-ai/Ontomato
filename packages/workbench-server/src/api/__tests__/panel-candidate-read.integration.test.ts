@@ -32,7 +32,7 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 const workspaceId = randomUUID();
 const projectionId = "candidate-action";
 const previousQueryUrl = config.dataQuery.baseUrl;
-const ownerContexts: unknown[] = [];
+let ownerReads = 0;
 let canUseProjection: boolean;
 let server: Server;
 let root: string;
@@ -95,7 +95,9 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("alice");
     expect(req.header("Accept-Language")).toBe("en");
     expect(req.body).toEqual({ id: "review" });
-    ownerContexts.push(JSON.parse(req.header(EXECUTION_CONTEXT_HEADER)!));
+    // A candidate's read is the reader's own live read: it carries no preview identity.
+    expect(req.header(EXECUTION_CONTEXT_HEADER)).toBeUndefined();
+    ownerReads += 1;
     res.json({ success: true, data: { id: "review", name: "Review candidate" } });
   });
   const authenticate: express.RequestHandler = (req, _res, next) => {
@@ -131,7 +133,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   canUseProjection = true;
-  ownerContexts.length = 0;
+  ownerReads = 0;
 });
 
 afterAll(async () => {
@@ -166,5 +168,5 @@ it("refuses a missing member, an off-workspace caller and a projection without u
   expect(await readCandidate("result", "bob")).toMatchObject({ status: "error", message: "Workspace not found" });
   canUseProjection = false;
   expect(await readCandidate()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
-  expect(ownerContexts).toEqual([]);
+  expect(ownerReads).toBe(0);
 });

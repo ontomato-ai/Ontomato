@@ -9,7 +9,7 @@ import {
 import { PANEL_UPLOAD_MAX_BYTES, PANEL_UPLOADS_PATH, panelUploadReceiptSchema } from "@ontomato/contracts/panel-upload";
 import { panelDownloadFileSchema } from "@ontomato/contracts/panel-download";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
-import { EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN } from "@ontomato/contracts/execution-context";
+import { PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN } from "@ontomato/contracts/execution-context";
 import {
   PANEL_MEMBER_RENDER_HEADER, PANEL_NESTED_READ_PATH, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema,
 } from "@ontomato/contracts/panel-host";
@@ -292,10 +292,7 @@ panelOperationsRouter.get("/panel-operations/descriptor", wrap(async (req, res) 
 panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const input = readPanelOperationRequestSchema.parse(req.body);
-  const preview = req.header(EXECUTION_CONTEXT_HEADER);
-  const reader = preview === undefined
-    ? credentials : { ...credentials, headers: { ...credentials.headers, [EXECUTION_CONTEXT_HEADER]: preview } };
-  const result = await readPanelOperation(owner, reader, input);
+  const result = await readPanelOperation(owner, credentials, input);
   if (result.kind !== "file") {
     res.json(readPanelOperationResponseSchema.parse(result));
     return;

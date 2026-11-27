@@ -285,6 +285,8 @@ const humanIntentFactsSchema = commonIntentFactsSchema.extend({
       autoMode: z.boolean(),
       questionId: runtimeIdSchema.nullable(),
       confirmedBy: runtimeKeySchema.nullable().optional(),
+      /** Present when a preview run prepared it: whoever dispatches it, its business-data write is refused. */
+      executionKind: z.literal("preview").optional(),
     }).strict(),
   ]),
   /** The host reads the frozen decision and names from Node for the same request. */

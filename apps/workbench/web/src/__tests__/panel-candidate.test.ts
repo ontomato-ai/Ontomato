@@ -3,6 +3,7 @@ import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
+import { PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import type { ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { appBuilderPages } from "../../../../../packages/platform-web/src/workbench-routes";
@@ -175,7 +176,7 @@ it("reads only through Node as the candidate, and runs no operation: a save is r
     await nextTick();
     const save = [...element.querySelectorAll<HTMLButtonElement>("[data-member='definition'] button")].find(button => button.textContent?.trim() === "Create")!;
     save.click();
-    await vi.waitFor(() => expect(element.querySelector("[data-member='definition']")?.textContent).toContain("A panel preview runs no operations"));
+    await vi.waitFor(() => expect(element.querySelector("[data-member='definition']")?.textContent).toContain(PREVIEW_WRITE_MESSAGE));
     // What the preview sent: the candidate, its projections and Node's read entry, as the reader; no owner was asked
     // directly, and nothing was written.
     expect(sent.every(request => request.credential === READER)).toBe(true);

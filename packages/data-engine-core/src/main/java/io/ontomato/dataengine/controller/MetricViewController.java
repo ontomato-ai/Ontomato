@@ -147,7 +147,6 @@ public class MetricViewController {
 		return values;
 	}
 
-    @PreviewAccess
 	@PostMapping("/metricView/save")
     @ResponseBody
     public JSONObject save(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -200,7 +199,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-    @PreviewAccess
 	@PostMapping("/metricView/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
@@ -239,7 +237,6 @@ public class MetricViewController {
 		return new WorkbenchPanelRead("platform:MetricView", "count", (subject, parameters) ->
 				Map.of("rows", List.of(), "total", metricViewService.count(null, null, null, null, subject)));
 	}
-    @PreviewAccess
 	@PostMapping("/metricView/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
@@ -266,7 +263,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-	@PreviewAccess
 	@GetMapping("/metricView/export")
 	public ResponseEntity<byte[]> exportMetricViews(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		try {
@@ -299,7 +295,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-	@PreviewAccess
 	@PostMapping("/metricView/form")
 	@ResponseBody
 	public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -460,7 +455,6 @@ public class MetricViewController {
 			default -> origin;
 		};
 	}
-    @PreviewAccess
 	@PostMapping("/metricView/find")
     @ResponseBody
     public JSONObject find(@RequestBody JSONObject param) {
@@ -499,7 +493,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-    @PreviewAccess
 	@PostMapping("/metricView/test")
     @ResponseBody
     public JSONObject test(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
@@ -531,7 +524,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-    @PreviewAccess
 	@PostMapping("/metricView/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
@@ -560,7 +552,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-    @PreviewAccess
 	@PostMapping("/metricView/testExecute")
     @ResponseBody
     public JSONObject testExecute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {

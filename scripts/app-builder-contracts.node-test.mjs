@@ -16,7 +16,7 @@ for (const [command, option] of [
         env: { ...process.env, ONTOMATO_URL: "http://127.0.0.1:1", ONTOMATO_API_KEY: "test-only" },
       });
       assert.notEqual(result.status, 0);
-      assert.ok(result.stderr.includes(command[0].startsWith("prod-") ? "PREVIEW_WRITE_FORBIDDEN" : `${option}: expected a finite number`), result.stderr);
+      assert.ok(result.stderr.includes(command[0].startsWith("prod-") ? `Unknown command: ${command[0]}` : `${option}: expected a finite number`), result.stderr);
       assert.ok(!result.stderr.includes("fetch failed"), result.stderr);
     });
   }

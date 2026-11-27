@@ -1,4 +1,4 @@
-import { EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE, previewExecutionContextHeader, type AppExecutionContext } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, entersBusinessDataWrite, previewExecutionContextHeader, type AppExecutionContext } from "@ontomato/contracts/execution-context";
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import { createActionsClient } from "./clients/actions";
@@ -235,9 +235,6 @@ export function createManagerRequest(
     };
 
     const execution=context.executionContext;
-    // A bridged request is admitted by its host and by the resource owner. Direct Manager requests stay on the Java boundary.
-    if(execution?.kind==="preview" && service!=="/data-query" && !context.transport)
-      throw Object.assign(new Error(PREVIEW_WRITE_MESSAGE),{code:PREVIEW_WRITE_FORBIDDEN});
     const requestInit:RequestInit = {
       ...init,
       headers: {
@@ -246,7 +243,7 @@ export function createManagerRequest(
         "Accept-Language": context.locale,
         "X-Requested-With": "XMLHttpRequest",
         ...credentialHeaders(credential),
-        ...(service === "/data-query" && execution?.kind === "preview"
+        ...(service === "/data-query" && execution?.kind === "preview" && entersBusinessDataWrite(init.method ?? "GET", path)
           ? { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } : {}),
       },
     };

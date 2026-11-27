@@ -287,7 +287,8 @@ async function execute(host: Host, resolved: ResolvedObjectAction, values: Recor
   body.set("id", resolved.actionId);
   body.set("param", JSON.stringify(form.parameters));
   const response = await host.request(`${DATA_QUERY_GATEWAY}/action/execute`, { method: "POST", body });
-  if (!response.ok && response.status !== 403)
+  // 403 and 422 (a preview's Action never runs) carry the owner's own refusal envelope, shown as it answered.
+  if (!response.ok && response.status !== 403 && response.status !== 422)
     throw new HttpError(response.status, "Owner request failed: /action/execute", "OWNER_UNAVAILABLE");
   const envelope = ownerEnvelopeSchema.parse(await response.json());
   if (!envelope.success) return ownerWriteFailure(envelope, "ACTION_EXECUTE_FAILED", "The owner could not execute the action");

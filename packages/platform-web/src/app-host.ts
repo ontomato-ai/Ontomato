@@ -1,5 +1,5 @@
 import type { AppExecutionContext } from "@ontomato/contracts/execution-context";
-import {EXECUTION_CONTEXT_HEADER,PREVIEW_WRITE_FORBIDDEN,PREVIEW_WRITE_MESSAGE,previewExecutionContextHeader} from '@ontomato/contracts/execution-context';
+import {EXECUTION_CONTEXT_HEADER,PREVIEW_WRITE_FORBIDDEN,PREVIEW_WRITE_MESSAGE,entersBusinessDataWrite,previewExecutionContextHeader} from '@ontomato/contracts/execution-context';
 import { watch,h,type App } from "vue";
 import { confirmDanger } from "@ontomato/platform-shell";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -393,9 +393,6 @@ export function installAppHost(options: {
         if(service===''&&!declared)throw new Error('Use a declared SDK product operation');
       }
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');
-      // A panel frame's requests are its declaration's, and in a candidate
-      // preview they go to their owners marked with its preview context: each owner admits or refuses them.
-      if(execution.kind==='preview'&&service!=='/data-query'&&!panel)throw Object.assign(new Error(PREVIEW_WRITE_MESSAGE),{code:PREVIEW_WRITE_FORBIDDEN});
       const headers=new Headers(init.headers);
       headers.delete(EXECUTION_CONTEXT_HEADER);headers.delete('tk');headers.delete('authorization');headers.delete('x-api-key');
       // A multipart body's Content-Type carries its boundary: only the browser that writes the body may state it.
@@ -403,7 +400,10 @@ export function installAppHost(options: {
       if(!options.credential)throw new Error('Platform credential unavailable');
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);
-      if(execution.kind==='preview')headers.set(EXECUTION_CONTEXT_HEADER,previewExecutionContextHeader);
+      // A preview marks the one request it sends straight to a DataRAG entry that writes business data: its owner then
+      // refuses it. Reads and the definition and platform writes this frame makes travel exactly as they do live.
+      if(execution.kind==='preview'&&service==='/data-query'&&entersBusinessDataWrite(method,path))
+        headers.set(EXECUTION_CONTEXT_HEADER,previewExecutionContextHeader);
       const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${path}`,{...init,headers,credentials:'omit',...(readsVectorResource ? {redirect:'error'} : {})});
       return panel?relayToPanel(panel,method,path,service,response):response;
     },

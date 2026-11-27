@@ -68,9 +68,46 @@ it("rejects a caller-supplied execution context that differs from the run author
  });
  expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"live"}' })).status).toBe(403);
  expect(upstream).not.toHaveBeenCalled();
- expect((await call("ontology/dsl/executeV1", { "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(200);
+ // A read carries no preview identity of its own, so a caller does not get to declare one on it either.
+ expect((await call("ontology/dsl/executeV1", { "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(403);
+ expect(upstream).not.toHaveBeenCalled();
+ expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(200);
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
    .toBe('{"kind":"preview"}');
+});
+
+it("marks a preview only where its request writes business data", async () => {
+ const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ success: true }));
+ vi.stubGlobal("fetch", upstream);
+ mocks.restore.mockResolvedValue({
+   run: { channel: { authority: { executionKind: "preview" } } },
+   credentials: { token: "initiator-token", locale: "en" },
+ });
+ const marked = async (path: string, method = "POST") => {
+   upstream.mockClear();
+   expect((await call(path, {}, method)).status).toBe(200);
+   return new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context");
+ };
+ expect(await marked("ontology/action/execute")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/writeFunctionOperation/insert")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/writeFunctionOperation/deleteVector")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/vectorResource/upload")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/vectorResource/delete")).toBe('{"kind":"preview"}');
+ expect(await marked("ontology/platform/triggers/trigger-1/runs")).toBe('{"kind":"preview"}');
+ // The workbench dispatch carries a prepared operation out as this run, so the Action it executes is refused too.
+ expect(await marked("workbench/api/panel-operations/intents/8f5df4a4-e30b-48cb-831a-33b759144f76/dispatch")).toBe('{"kind":"preview"}');
+ // A read, a definition write and a platform write travel as they do live: their owner judges the caller's permission.
+ expect(await marked("ontology/writeFunctionOperation/query")).toBeNull();
+ expect(await marked("ontology/ontology/query/execute-dsl")).toBeNull();
+ expect(await marked("ontology/function/save")).toBeNull();
+ expect(await marked("ontology/action/setStatus")).toBeNull();
+ expect(await marked("ontology/metricView/save")).toBeNull();
+ expect(await marked("ontology/function/delete")).toBeNull();
+ expect(await marked("ontology/platform/triggers")).toBeNull();
+ expect(await marked("ontology/action/trial")).toBeNull();
+ expect(await marked("workbench/api/assistant/agent-definitions")).toBeNull();
+ expect(await marked("workbench/api/product-panels/read")).toBeNull();
+ expect(await marked("workbench/api/panel-operations/intents")).toBeNull();
 });
 
 it('restores the initiator before resolving the executor and forwards only ordinary business authentication',async()=>{
@@ -327,21 +364,28 @@ it("forwards projection catalog list queries with componentId and objectType fil
   );
 });
 
-it("forwards the bound execution context and reuse-panel header", async () => {
+it("forwards the reuse-panel header", async () => {
+  const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ ok: true }));
+  vi.stubGlobal("fetch", upstream);
+  const response = await call("workbench/api/product-projections/proj-1", {
+    "X-Ontomato-Projection-Reuse-Panel": "panel-1",
+  }, "PUT");
+  expect(response.status).toBe(200);
+  expect(upstream.mock.calls[0]?.[1]?.headers).toMatchObject({
+    "X-Ontomato-Projection-Reuse-Panel": "panel-1",
+  });
+});
+
+it("carries a preview into the panel operation dispatch, which executes the Action at its owner", async () => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ ok: true }));
   vi.stubGlobal("fetch", upstream);
   mocks.restore.mockResolvedValue({
     run: { channel: { authority: { executionKind: "preview" } } },
     credentials: { token: "initiator-token", locale: "en" },
   });
-  const response = await call("workbench/api/product-projections/proj-1", {
-    "X-Ontomato-Execution-Context": '{"kind":"preview"}',
-    "X-Ontomato-Projection-Reuse-Panel": "panel-1",
-  }, "PUT");
-  expect(response.status).toBe(200);
+  expect((await call("workbench/api/panel-operations/intents/8f5df4a4-e30b-48cb-831a-33b759144f76/dispatch")).status).toBe(200);
   expect(upstream.mock.calls[0]?.[1]?.headers).toMatchObject({
     "X-Ontomato-Execution-Context": '{"kind":"preview"}',
-    "X-Ontomato-Projection-Reuse-Panel": "panel-1",
   });
 });
 

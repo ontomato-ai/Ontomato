@@ -5,6 +5,7 @@ import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owne
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.QueryAccessService;
+import io.ontomato.dataengine.service.PreviewExecution;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.util.WriteWhereValidator;
 import jakarta.servlet.http.HttpServletRequest;
@@ -73,6 +74,8 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/insert")
     @ResponseBody
     public JSONObject insert(@RequestBody JSONObject param) throws Exception {
+		var refused = previewRefusal();
+		if (refused != null) return refused;
 		JSONObject ret = new JSONObject();
 		try {
 			String className = requiredText(param, "className");
@@ -94,6 +97,8 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/update")
     @ResponseBody
     public JSONObject update(@RequestBody JSONObject param) throws Exception {
+		var refused = previewRefusal();
+		if (refused != null) return refused;
 		JSONObject ret = new JSONObject();
 		try {
 			String className = requiredText(param, "className");
@@ -117,6 +122,8 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/delete")
     @ResponseBody
     public JSONObject delete(@RequestBody JSONObject param) throws Exception {
+		var refused = previewRefusal();
+		if (refused != null) return refused;
 		JSONObject ret = new JSONObject();
 		try {
 			String className = requiredText(param, "className");
@@ -137,6 +144,8 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/createEdge")
     @ResponseBody
     public JSONObject createEdge(@RequestBody JSONObject param) throws Exception {
+		var refused = previewRefusal();
+		if (refused != null) return refused;
 		JSONObject ret = new JSONObject();
 		try {
 			String relationName = requiredText(param, "relationName");
@@ -160,6 +169,8 @@ public class WriteFunctionOperationController {
 	@PostMapping("/writeFunctionOperation/deleteEdge")
     @ResponseBody
     public JSONObject deleteEdge(@RequestBody JSONObject param) throws Exception {
+		var refused = previewRefusal();
+		if (refused != null) return refused;
 		JSONObject ret = new JSONObject();
 		try {
 			String relationName = requiredText(param, "relationName");
@@ -191,6 +202,8 @@ public class WriteFunctionOperationController {
 
     @PostMapping("/writeFunctionOperation/appendVector")
     public JSONObject appendVector(@RequestBody JSONObject body) throws Exception {
+		var refused = previewRefusal();
+		if (refused != null) return refused;
         byte[] bytes=vectorBytes(body);
         try(var input=new ByteArrayInputStream(bytes)) {
             checkClasses(requiredText(body, "className"));
@@ -200,6 +213,8 @@ public class WriteFunctionOperationController {
     }
     @PostMapping("/writeFunctionOperation/updateVector")
     public JSONObject updateVector(@RequestBody JSONObject body) throws Exception {
+		var refused = previewRefusal();
+		if (refused != null) return refused;
         byte[] bytes=vectorBytes(body);
         try(var input=new ByteArrayInputStream(bytes)) {
             checkClasses(requiredText(body, "className"));
@@ -223,14 +238,27 @@ public class WriteFunctionOperationController {
         }
     }
 
+    private static HttpServletRequest current() {
+        return ((ServletRequestAttributes)RequestContextHolder.currentRequestAttributes()).getRequest();
+    }
+
     private JSONObject grant() {
-        var request=((ServletRequestAttributes)RequestContextHolder.currentRequestAttributes()).getRequest();
-        return (JSONObject)request.getAttribute(QueryGrantService.ATTRIBUTE);
+        return (JSONObject)current().getAttribute(QueryGrantService.ATTRIBUTE);
+    }
+
+    /**
+     * A preview writes business data only inside an action-trial or generation sandbox, where writing and reading it
+     * back is the run's own verification; a live write is refused before parameters are read.
+     */
+    private JSONObject previewRefusal() {
+        return PreviewExecution.refuseLiveWrite(current(), () -> QueryGrantService.target(grant()));
     }
 
 	@PostMapping("/writeFunctionOperation/deleteVector")
     @ResponseBody
     public JSONObject deleteVector(@RequestBody JSONObject param) throws Exception {
+		var refused = previewRefusal();
+		if (refused != null) return refused;
 		JSONObject ret = new JSONObject();
 		try {
 			String className = requiredText(param, "className");

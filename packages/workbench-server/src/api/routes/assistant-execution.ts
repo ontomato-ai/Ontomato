@@ -8,7 +8,7 @@ import { readAssistantPanelMember } from "../../services/assistant/registered-pa
 import { readNestedPanel, resolvePanelMemberPath } from "../../services/product-panels/member-path";
 import { requirePanelUseEntry } from "../../services/product-panels/application-use";
 import { readCurrentPanelRecord } from "../../services/product-panels/current";
-import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, entersBusinessDataWrite, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { PROJECTION_REUSE_PANEL_HEADER } from "@ontomato/contracts/product-panels";
 import { Router, type Request } from "express";
 import { AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE, bindingKey, panelClientReads } from "@ontomato/contracts/panel-client-requests";
@@ -36,6 +36,18 @@ export const assistantExecutionMountPath = "/api/assistant/executions";
 export const assistantOwnerCallbackPath = "/:runId/:target(ontology|workbench)/*";
 
 const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u;
+
+/** The workbench entry that carries out a prepared panel operation as its caller, the only one that writes business data. */
+const panelOperationDispatch = /^\/api\/panel-operations\/intents\/[^/]+\/dispatch$/u;
+
+/**
+ * Whether a preview run's request reaches a business-data write entry: a DataRAG write of its own, or the workbench
+ * dispatch whose operation then writes as this run. Anywhere else (a read, a definition or a model, a platform object)
+ * the request travels exactly as a live one does.
+ */
+function entersPreviewWrite(target: "ontology" | "workbench", method: string, path: string): boolean {
+  return target === "ontology" ? entersBusinessDataWrite(method, path) : method === "POST" && panelOperationDispatch.test(path);
+}
 
 // These existing reads and personal operations belong to the initiator, including on runs
 // with a separate execution account. Every other route uses the run's execution identity.
@@ -208,7 +220,8 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
     credentials = resolved.credentials;
     retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
     const authority = resolved.run.channel?.authority;
-    if (authority?.executionKind === "preview") executionContext = previewExecutionContextHeader;
+    if (authority?.executionKind === "preview" && entersPreviewWrite(target, req.method, path))
+      executionContext = previewExecutionContextHeader;
   }
   if (requestedContext !== undefined && requestedContext !== executionContext)
     throw new HttpError(403, "Execution context differs from the run's bound target", "PREVIEW_EXECUTION_FORBIDDEN");

@@ -6,7 +6,6 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN } from "@ontomato/contracts/execution-context";
 import { candidatePanelSourceSchema } from "@ontomato/contracts/panel-host";
 import { WorkspaceGit } from "../../../../../agent-runtime/src/workspace-git";
 import { errorHandler } from "../../middleware";

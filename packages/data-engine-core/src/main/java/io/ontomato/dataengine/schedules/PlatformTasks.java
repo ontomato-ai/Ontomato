@@ -8,6 +8,7 @@ import io.ontomato.dataengine.bean.trigger.Trigger;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OntologyNeighborFacts.Name;
+import io.ontomato.dataengine.service.PreviewExecution;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
@@ -448,9 +449,15 @@ public class PlatformTasks {
     });
   }
 
-  public JsonNode manual(String id, UUID runId, String locale) {
+  /**
+   * Starts one run now as the caller. A preview caller is refused before anything is admitted when the target is an
+   * Action: that run writes business data as this request.
+   */
+  public JsonNode manual(String id, UUID runId, String locale, boolean preview) {
     var user = current();
     var task = accessible(id, user, Verb.USE, false);
+    if (preview && "action".equals(task.definition().targetKind()))
+      throw new ScheduleException(422, PreviewExecution.WRITE_CODE, PreviewExecution.WRITE_MESSAGE);
     var old = store.run(runId);
     if (old != null) return replayRun(id, old, user);
     prepare(task.definition(), user, user.getId(), locale, true);

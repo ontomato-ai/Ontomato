@@ -86,7 +86,6 @@ public final class WorkbenchPanelReadsController {
     }
 
     @Owned
-    @io.ontomato.dataengine.controller.PreviewAccess
     @PostMapping(PATH)
     public Object execute(HttpServletRequest servlet, @RequestBody Request request) {
         long start = System.nanoTime();

@@ -21,6 +21,7 @@ import {
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
+import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame, servePageComposer } from "./app-host";
@@ -738,7 +739,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
-        confirmOperation: () => Promise.reject(new Error("预览里不执行写操作，动作的对错用动作试跑验")),
+        confirmOperation: () => Promise.reject(Object.assign(new Error(PREVIEW_WRITE_MESSAGE), { code: PREVIEW_WRITE_FORBIDDEN })),
         expandPageComposer: expandDeclaredComposer,
         navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},
@@ -798,7 +799,7 @@ export function appCandidatePanelHost(
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "app-candidate", app: source.app }, ...request }),
-        confirmOperation: () => Promise.reject(new Error("预览里不执行写操作，动作的对错用动作试跑验")),
+        confirmOperation: () => Promise.reject(Object.assign(new Error(PREVIEW_WRITE_MESSAGE), { code: PREVIEW_WRITE_FORBIDDEN })),
         expandPageComposer: expandDeclaredComposer,
         navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},

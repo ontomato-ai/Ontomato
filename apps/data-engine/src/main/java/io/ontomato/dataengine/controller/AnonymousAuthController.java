@@ -14,7 +14,6 @@ public class AnonymousAuthController {
         this.identity = identity;
     }
 
-    @PreviewAccess
     @PostMapping("/sso/verify")
     public R<User> verify() {
         return R.of(identity.getCurrentUser());

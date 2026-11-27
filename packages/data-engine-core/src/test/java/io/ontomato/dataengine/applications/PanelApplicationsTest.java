@@ -385,9 +385,10 @@ class PanelApplicationsTest {
             .andExpect(status().isNoContent())
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                 .string("X-App-Proxy-Path", "/connector/config?view=one"));
+        // A preview's own request to a connected application is the caller's, as it is live.
         http.perform(get(proxy).header("X-App-Request-Uri", "/apps/app-connected/config")
-                .header("X-App-Credential", "verified-user").header(PreviewExecution.HEADER, "{}"))
-            .andExpect(status().isUnprocessableEntity());
+                .header("X-App-Credential", "verified-user").header(PreviewExecution.HEADER, "{\"kind\":\"preview\"}"))
+            .andExpect(status().isNoContent());
 
         String select = "?applicationId=app-panel-a&useId=use-denied";
         http.perform(get("/platform/applications/resolve-entry" + select))

@@ -186,9 +186,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     assertEquals("PENDING_REVIEW", created.path("status").asText());
     String id = key.toString();
     var runId = UUID.randomUUID();
-    var response = tasks.manual(id, runId, "en");
+    var response = tasks.manual(id, runId, "en", false);
     assertEquals("alice", response.at("/snapshot/executorId").asText());
-    assertEquals(response, tasks.manual(id, runId, "en"));
+    assertEquals(response, tasks.manual(id, runId, "en", false));
     var revision = actionInput().put("revision", 1);
     assertEquals("TASK_RUNNING", assertThrows(ScheduleException.class, () -> tasks.update(id, revision, "en")).code);
     when(provider.start(any(), any())).thenReturn(ScheduleForms.execution("completed").put("result", "done"));
@@ -235,7 +235,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     assertEquals("alice", store.get(id, false).notifyEmailSetBy());
 
     var runId = UUID.randomUUID();
-    var admission = tasks.manual(id, runId, "en");
+    var admission = tasks.manual(id, runId, "en", false);
     assertFalse(admission.path("snapshot").has("notifyEmailSetBy"));
     when(provider.start(any(), any())).thenReturn(ScheduleForms.execution("completed").put("result", "done"));
     scheduler.dispatch(runId);
@@ -293,7 +293,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     String id = UUID.randomUUID().toString();
     tasks.create(UUID.fromString(id), appInput(), "en", true);
     var manual = UUID.randomUUID();
-    tasks.manual(id, manual, "en");
+    tasks.manual(id, manual, "en", false);
     jdbc.update("UPDATE trigger_run SET dispatched_at=now(),deadline=now()+interval '1 hour' WHERE id=?", manual);
     var slot = Instant.now().minusSeconds(120).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
     jdbc.update("UPDATE trigger_def SET next_run_at=? WHERE id=?", TaskStore.timestamp(slot), id);
@@ -313,7 +313,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     when(subjects.managementEntitlement(PlatformTasks.CHANGE)).thenReturn(true);
     tasks.create(id, appInput().put("executorId", "bob"), "en", true);
     var runId = UUID.randomUUID();
-    tasks.manual(id.toString(), runId, "en");
+    tasks.manual(id.toString(), runId, "en", false);
     when(provider.start(any(), any())).thenThrow(new ScheduleException(401, "UNAUTHENTICATED", "Key rejected"));
     scheduler.dispatch(runId);
     assertEquals("credential_invalid", tasks.detail(id.toString(), runId).at("/error/code").asText());
@@ -328,7 +328,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     var runId = UUID.randomUUID();
     String id = key.toString();
     tasks.create(key, appInput(), "en", true);
-    tasks.manual(id, runId, "en");
+    tasks.manual(id, runId, "en", false);
     when(provider.start(any(), any())).thenReturn(ScheduleForms.execution("running"));
     scheduler.dispatch(runId);
     assertEquals("running", store.run(runId).status());
@@ -351,11 +351,30 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   }
 
   @Test
+  void previewManualRunOfAnActionIsRefusedBeforeAdmissionWhileOtherTargetsRunAsUsual() throws Exception {
+    var action = UUID.randomUUID();
+    tasks.create(action, actionInput(), "en", true);
+    http.perform(post("/platform/triggers/{id}/runs", action).header("Idempotency-Key", UUID.randomUUID())
+            .header(PreviewExecution.HEADER, "{\"kind\":\"preview\"}"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.error.code").value(PreviewExecution.WRITE_CODE))
+        .andExpect(jsonPath("$.error.message").value(PreviewExecution.WRITE_MESSAGE));
+    assertEquals(0, tasks.history(action.toString(), null, 20).path("runs").size());
+    verify(actions, never()).executeScheduled(any(), any(), any(), any(), any(), anyInt(), any());
+
+    var application = UUID.randomUUID();
+    tasks.create(application, appInput(), "en", true);
+    http.perform(post("/platform/triggers/{id}/runs", application).header("Idempotency-Key", UUID.randomUUID())
+            .header(PreviewExecution.HEADER, "{\"kind\":\"preview\"}"))
+        .andExpect(status().isAccepted());
+  }
+
+  @Test
   void actionAdmissionRefusesUngrantableTargetsAndPausesWhenTheGrantIsRevoked() throws Exception {
     var id = UUID.randomUUID();
     tasks.create(id, actionInput(), "en", true);
     var runId = UUID.randomUUID();
-    tasks.manual(id.toString(), runId, "en");
+    tasks.manual(id.toString(), runId, "en", false);
 
     var denied = new ActionAuthorization.Denied("ACTION_NOT_GRANTED", "No role grants this action");
     when(actionAccess.standalone(any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.DENIED);

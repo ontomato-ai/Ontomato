@@ -537,6 +537,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
         rootSession: root,
         autoMode,
         questionId,
+        ...(preview && { executionKind: "preview" as const }),
       },
       initiator: owner,
       use: { applicationId: input.applicationId, useId: input.useId },
@@ -676,7 +677,10 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   // An expired or missing file refuses before the intent is claimed, so nothing is spent.
   const staged = await withStagedFile(owner, ref, current.handler, prepared, credentials.locale);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
-  const host = operationHost({ owner, credentials }, view);
+  // An intent a preview run prepared stays that run's: the person confirming it does not lift the preview's refusal.
+  const executor = intent.source.kind === "agent-page" && intent.source.executionKind === "preview"
+    ? { ...credentials, executionKind: "preview" as const } : credentials;
+  const host = operationHost({ owner, credentials: executor }, view);
   const result = await claimAndExecutePanel(owner, host, claimedIntent, current.handler, staged.invocation);
   const outcome = result?.persistedOutcome;
   if (outcome?.kind === "success" && intent.source.kind === "agent-page" && intent.source.rootSession && "call" in staged.invocation) {

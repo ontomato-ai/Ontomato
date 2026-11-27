@@ -30,7 +30,6 @@ import io.ontomato.dataengine.logging.ServiceLogFilter;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.DataPermissionLookup;
 import io.ontomato.dataengine.service.DataSandboxService;
-import io.ontomato.dataengine.service.PreviewExecution;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.MetricParameterForms;
 import io.ontomato.dataengine.service.MetricViewService;
@@ -285,8 +284,6 @@ class WorkbenchPanelReadsTest {
             http.perform(request(batch).header(AgentExecutionScope.CALLER_HEADER, CALLER)).andExpect(status().isForbidden());
         http.perform(request(batch(relationshipRead())).header(AgentExecutionScope.CALLER_HEADER, CALLER)
                 .requestAttr(QueryGrantService.ATTRIBUTE, new JSONObject())).andExpect(status().isUnauthorized());
-        http.perform(request(batch(relationshipRead())).header(AgentExecutionScope.CALLER_HEADER, CALLER)
-                .header(PreviewExecution.HEADER, "{}")).andExpect(status().isUnauthorized());
         verifyNoInteractions(callers, relationship, handler, dataPermissions);
     }
 
@@ -712,7 +709,6 @@ class WorkbenchPanelReadsTest {
         http.perform(unauthenticated).andExpect(status().isForbidden());
         verifyNoInteractions(identity, authorization);
         http.perform(unauthenticated.header(WorkbenchServiceAuthentication.HEADER, "service")).andExpect(status().isUnauthorized());
-        http.perform(unauthenticated.header(PreviewExecution.HEADER, "sandbox")).andExpect(status().isUnauthorized());
         verify(identity).verifyWorkbenchPanelViewer();
         verifyNoInteractions(authorization, applications, handler);
     }

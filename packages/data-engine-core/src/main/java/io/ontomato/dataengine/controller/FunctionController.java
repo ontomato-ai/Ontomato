@@ -80,7 +80,6 @@ public class FunctionController {
 		return values;
 	}
 
-    @PreviewAccess
 	@PostMapping("/function/save")
     @ResponseBody
     public JSONObject save(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -104,7 +103,6 @@ public class FunctionController {
 		return ret;
 	}
 	
-    @PreviewAccess
 	@PostMapping("/function/delete")
     @ResponseBody
     public JSONObject delete(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -129,7 +127,6 @@ public class FunctionController {
 	 * Why deleting this domain's Function would be refused, in the reader's language ({@code reason}, null when it may be
 	 * deleted). It reads the delete's own rule; the delete still refuses for itself.
 	 */
-    @PreviewAccess
 	@PostMapping("/function/deleteRefusal")
     @ResponseBody
     public JSONObject deleteRefusal(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -151,7 +148,6 @@ public class FunctionController {
 		}
 		return ret;
 	}
-    @PreviewAccess
 	@PostMapping("/function/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -172,7 +168,6 @@ public class FunctionController {
 		}
 		return ret;
 	}
-    @PreviewAccess
 	@PostMapping("/function/form")
     @ResponseBody
     public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -204,7 +199,6 @@ public class FunctionController {
 		return new WorkbenchPanelRead("platform:Function", "count", (subject, parameters) ->
 				Map.of("rows", List.of(), "total", functionService.countVisible(subject)));
 	}
-    @PreviewAccess
 	@PostMapping("/function/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,

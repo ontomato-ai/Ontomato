@@ -8,7 +8,7 @@ import path from "node:path";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_MESSAGE, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { panelHumanOperationPreparationSchema } from "@ontomato/contracts/panel-agent";
 import { platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import scheduleExamples from "../../../../contracts/examples/platform-schedules.json";
@@ -59,6 +59,7 @@ let server: Server;
 let contentRoot: string;
 let ownerReads = 0;
 const ownerWrites: { credential: string | undefined; idempotencyKey: string | undefined }[] = [];
+const previewRuns: (string | undefined)[] = [];
 
 beforeAll(async () => {
   configureI18n({
@@ -91,6 +92,11 @@ beforeAll(async () => {
   });
   app.post("/platform/triggers/:taskId/runs", (req, res) => {
     if (req.params.taskId !== task.id || req.header("tk") !== "alice") { res.sendStatus(403); return; }
+    if (req.header(EXECUTION_CONTEXT_HEADER) !== undefined) {
+      previewRuns.push(req.header(EXECUTION_CONTEXT_HEADER));
+      res.status(422).json({ error: { code: "PREVIEW_WRITE_FORBIDDEN", message: PREVIEW_WRITE_MESSAGE }, correlationId: "fixture" });
+      return;
+    }
     ownerWrites.push({ credential: req.header("tk"), idempotencyKey: req.header("Idempotency-Key") });
     res.json(run);
   });
@@ -115,7 +121,7 @@ afterAll(async () => {
 
 function request(path: string, user: string, body?: object, preview = false) {
   return fetch(state.base + "/api" + path, {
-    headers: { tk: user, "Content-Type": "application/json", ...(preview && { [EXECUTION_CONTEXT_HEADER]: "preview" }) },
+    headers: { tk: user, "Content-Type": "application/json", ...(preview && { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader }) },
     ...(body && { method: "POST", body: JSON.stringify(body) }),
   });
 }
@@ -132,11 +138,9 @@ it("stores the host's exact confirmation and claims the registered owner once as
   expect(await (await request(read + use.useId, "alice")).json()).toEqual(confirmation);
   expect((await request(read + use.useId, "bob")).status).toBe(404);
   expect((await request(read + "another-use", "alice")).status).toBe(404);
-  expect((await request(read + use.useId, "alice", undefined, true)).status).toBe(422);
   const dispatch = `/panel-operations/intents/${intentId}/dispatch`;
   expect((await request(dispatch, "bob", {})).status).toBe(404);
   expect((await request(dispatch, "alice", { call })).status).toBe(400);
-  expect((await request(dispatch, "alice", {}, true)).status).toBe(422);
   expect(ownerWrites).toEqual([]);
 
   const results = await Promise.all([request(dispatch, "alice", {}), request(dispatch, "alice", {})]);
@@ -154,4 +158,18 @@ it("stores the host's exact confirmation and claims the registered owner once as
   expect(stored.rows).toMatchObject([{ question_id: null, intent: {
     source: { kind: "human" }, call, confirmation: { kind: "none" }, dispatched: true, outcome: result.outcome,
   } }]);
+});
+
+it("carries a preview caller's dispatch into the trigger's run as a preview and shows the owner's refusal", async () => {
+  const prepared = panelHumanOperationPreparationSchema.parse(
+    await (await request("/panel-operations/intents", "alice", { ...use, call })).json());
+  const read = `/panel-operation-intents/${prepared.intentId}?applicationId=${use.applicationId}&useId=${use.useId}`;
+  // Reading the intent is the caller's own read, the same as live.
+  expect(await (await request(read, "alice", undefined, true)).json()).toEqual(prepared);
+  const dispatched = await request(`/panel-operations/intents/${prepared.intentId}/dispatch`, "alice", {}, true);
+  expect(dispatched.status).toBe(200);
+  expect(await dispatched.json()).toMatchObject({ kind: "dispatched", intentId: prepared.intentId, outcome: {
+    kind: "refusal", code: "PREVIEW_WRITE_FORBIDDEN", message: PREVIEW_WRITE_MESSAGE,
+  } });
+  expect(previewRuns).toEqual([previewExecutionContextHeader]);
 });

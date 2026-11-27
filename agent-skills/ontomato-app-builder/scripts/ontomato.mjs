@@ -694,7 +694,7 @@ async function main() {
     await assetCommand(api, "action", argv.slice(1));
     return;
   }
-  die(`PREVIEW_WRITE_FORBIDDEN: command not supported: ${cmd}`);
+  die(`Unknown command: ${cmd}`);
 }
 
 main().catch(error => { console.error(error.message);process.exitCode=1; });

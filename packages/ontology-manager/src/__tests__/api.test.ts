@@ -498,18 +498,22 @@ describe("requests used by data browsing and visual modeling", () => {
   });
 });
 
-it("marks preview requests with the preview execution identity and leaves live requests unchanged", async () => {
+it("marks only a business-data write with the preview execution identity", async () => {
   const {context,client}=setup({type:"anonymous"});
   context.executionContext={kind:"preview"};
   await client.loadOntology();
-  expect(JSON.parse(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]!)).toEqual({kind:"preview"});
-  context.executionContext={kind:"live"};await client.loadOntology();
-  expect(requests[1]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
+  expect(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
+  const request=createManagerRequest(context,()=>{});
+  await request.request("/action/execute",{method:"POST",body:"{}"},"/data-query");
+  expect(JSON.parse(requests[1]!.headers[EXECUTION_CONTEXT_HEADER]!)).toEqual({kind:"preview"});
+  context.executionContext={kind:"live"};await request.request("/action/execute",{method:"POST",body:"{}"},"/data-query");
+  expect(requests[2]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
 });
 
-it("rejects unwired SDK operations instead of starting a live assistant from a preview",async()=>{
+it("leaves the definition and management writes of a preview unmarked and unrefused",async()=>{
   const {context}=setup({type:"anonymous"});context.executionContext={kind:"preview"};
   const request=createManagerRequest(context,()=>{});
-  await expect(request.request("/assistant/sessions",{method:"POST"},"")).rejects.toMatchObject({code:"PREVIEW_WRITE_FORBIDDEN"});
-  expect(requests).toHaveLength(0);
+  await request.request("/assistant/sessions",{method:"POST",body:"{}"},"");
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
 });
