@@ -75,7 +75,8 @@ runtime host. A check that cannot be admitted does not change the finished reply
 
 ## Formal files and external skills
 
-Provider `ontology` publishes analyst and data-retrieval. New delivery uses
+Provider `ontology` publishes analyst and data-retrieval. The retriever mounts
+only data-retrieval, whose package also carries the query commands. New delivery uses
 `node skills/data-retrieval/scripts/dataset.mjs deliver @work/q.json --meta @work/delivery.json`.
 [Query packages](query-package.md) owns the file manifest, parameter bindings and
 Python computation fragment. A plain DSL JSON is the one-file shorthand.

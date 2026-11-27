@@ -207,8 +207,8 @@ def execute_dsl(dsl):
 
     Args:
         dsl: a single ontology DSL object. It is the query plan itself, not a
-            class name. Use the `ontomato-analyst` `dsl-reference` command for
-            the current class-specific syntax.
+            class name. Use the available `dsl-reference` command for the
+            current class-specific syntax.
 
     Returns:
         A list of result rows.
@@ -242,8 +242,8 @@ def query(dsl):
 
     Args:
         dsl: a single ontology DSL object. It is the query plan itself, not a
-            class name. Use the `ontomato-analyst` `dsl-reference` command for
-            the current class-specific syntax.
+            class name. Use the available `dsl-reference` command for the
+            current class-specific syntax.
 
     Returns:
         A list of result rows.

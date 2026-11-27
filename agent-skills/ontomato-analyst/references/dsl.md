@@ -15,8 +15,8 @@ The runtime tool equivalents are `ontology_schema`, `ontology_dsl_reference` and
 accepts either `dsl` or a workspace JSON `path`. Its Java endpoint receives one
 DSL object, never a runtime path or user/domain override.
 
-The generated `exampleMarkdown` contains a one-item array as an illustration.
-Submit its single DSL object, not the outer example array or Markdown. Use only
+The generated `exampleMarkdown` contains one DSL object as an illustration.
+Submit that object itself, not the Markdown fence. Use only
 the returned class/attribute/relationship names and supported read operations.
 Do not invent SQL or write actions. Re-fetch rules after changing class scope.
 
