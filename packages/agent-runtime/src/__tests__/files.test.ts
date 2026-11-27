@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -25,4 +25,32 @@ it("links delivered artifacts without copying bytes and keeps them out of ordina
   await writeFile(path.join(workspace, "outputs", "ordinary.txt"), "ordinary");
   const scanned = await files.scan(workspace);
   expect(scanned.map((file) => file.path)).toEqual(["outputs/ordinary.txt"]);
+});
+
+it("returns no files when the outputs directory is missing", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "artifact-files-missing-"));
+  directories.push(root);
+  const files = new ArtifactFiles(root);
+  const workspace = path.join(root, "session", "workspace");
+  await mkdir(workspace, { recursive: true });
+
+  await expect(files.scan(workspace)).resolves.toEqual([]);
+});
+
+it("rethrows non-ENOENT errors when scanning outputs", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "artifact-files-error-"));
+  directories.push(root);
+  const files = new ArtifactFiles(root);
+
+  const fileWorkspace = path.join(root, "file-session", "workspace");
+  await mkdir(fileWorkspace, { recursive: true });
+  await writeFile(path.join(fileWorkspace, "outputs"), "not-a-directory");
+  await expect(files.scan(fileWorkspace)).rejects.toMatchObject({ code: "ENOTDIR" });
+
+  const symlinkWorkspace = path.join(root, "symlink-session", "workspace");
+  const targetDir = path.join(root, "target");
+  await mkdir(symlinkWorkspace, { recursive: true });
+  await mkdir(targetDir, { recursive: true });
+  await symlink(targetDir, path.join(symlinkWorkspace, "outputs"));
+  await expect(files.scan(symlinkWorkspace)).rejects.toThrow();
 });
