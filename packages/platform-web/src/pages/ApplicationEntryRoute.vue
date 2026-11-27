@@ -12,7 +12,7 @@ watch(
   [() => props.applicationId, () => props.panelPath],
   ([id, panelPath]) => {
     if (!panelPath && !applicationById(id)) {
-      void ensureApplication(id).catch(() => undefined);
+      void ensureApplication(id).catch(error => console.error(error));
     }
   },
   { immediate: true },

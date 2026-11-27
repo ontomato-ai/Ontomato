@@ -18,6 +18,7 @@ import { localizedApplicationText } from "@ontomato/contracts/application-metada
 import { applicationFrameContextOf, isApplicationPanelUse, isFrameConversationEntry, isNativeApplicationEntry, type ApplicationOpenResponse, type ApplicationPanelUse, type BundledPanelProjection, type ProductPanel } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, pagePaneElementKey, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
+import { ApiRequestError } from "@ontomato/workbench-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import { APPLICATION, FAVORITE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
@@ -346,10 +347,15 @@ async function requestEntryResolution(
     resolution.value = { ...answer, use: answer.use };
     outerFrame?.reportOpenedEntry(path, answer);
     deniedPath.value = null;
+    failure.value = "";
     verifying.value = false;
-  } catch {
+  } catch (error) {
     if (unmounted || epoch !== resolveEpoch || props.applicationId !== applicationId || entryPath.value !== path) return;
     revokeEntry(path);
+    if (!(error instanceof ApiRequestError) || (error.status !== 403 && error.status !== 404)) {
+      failure.value = error instanceof Error ? error.message : String(error);
+      emit("display-loaded", panelUnavailable(error));
+    }
   }
 }
 
@@ -387,6 +393,7 @@ watch(() => props.applicationId, (_next, previous) => {
 watch([() => props.applicationId, entryPath], ([applicationId, path]) => {
   const epoch = ++resolveEpoch;
   deniedPath.value = null;
+  failure.value = "";
   if (!path) {
     verifying.value = false;
     resolution.value = null;

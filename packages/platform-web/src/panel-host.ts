@@ -1019,7 +1019,8 @@ async function mountNested(
  * the panel takes the reader's saved values under what the address or the entry gives it (those win), above its
  * declared defaults; as the reader changes them, they are saved, a moment after the last change and once more when the
  * panel goes — or the whole page does (a reload or a closed tab unmounts nothing), then as a request that outlives the
- * page. A panel that keeps none reads and writes nothing; a read that fails opens the panel at its defaults.
+ * page. A panel that keeps none reads and writes nothing. A read that fails stops the mount and is reported by the
+ * panel host; defaults are never written back in place of the unread saved state.
  */
 const PERSONAL_STATE_DELAY = 400;
 
@@ -1034,8 +1035,7 @@ function personalFieldKey(fields: string[]) {
 }
 
 function readPersonalState(scope: { source: PanelReadSource; memberPath: PanelMemberPath }, fields: string[]) {
-  return json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) })
-    .catch(() => ({ values: {} }));
+  return json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) });
 }
 
 type PersonalStateRead = { fieldKey: string; response: ReturnType<typeof readPersonalState> };

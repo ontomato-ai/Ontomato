@@ -218,7 +218,7 @@ watch(
     if (!applicationId || matchingPanelEntry.value || matchingOpenedEntry.value) return;
     const app = catalog.applicationById(applicationId);
     if (app && app.panelUses === undefined) {
-      void catalog.ensureApplication(applicationId).catch(() => undefined);
+      void catalog.ensureApplication(applicationId).catch(error => console.error(error));
     }
   },
   { immediate: true },
@@ -349,7 +349,6 @@ const frameSurfaceReady = ref(true);
 const lastFrame = ref<{
   key: string;
   framePanelId: string;
-  addressState: FrameState;
   liveState: FrameState;
 } | null>(null);
 const frameManifest = shallowRef<{
@@ -391,15 +390,23 @@ const frameState = computed((): FrameState => {
   let hasSegment: boolean;
   try {
     hasSegment = hasFrameParams(route.fullPath);
-    named = parseApplicationPanelAddress(
+    const raw = parseApplicationPanelAddress(route.fullPath);
+    const parsed = parseApplicationPanelAddress(
       route.fullPath,
       activeFrameManifest.value ? { frameManifest: activeFrameManifest.value } : undefined,
-    ).frame;
-  } catch {
-    return {};
+    );
+    for (const name of Object.keys(raw.frame)) {
+      if (activeFrameManifest.value?.state[name]?.deepLink && !(name in parsed.frame)) {
+        console.error(new Error(`Malformed frame state parameter frame.${name} in ${route.fullPath}`));
+      }
+    }
+    named = parsed.frame;
+  } catch (error) {
+    console.error(error);
+    return deepLinkDefaultsOf(activeFrameManifest.value);
   }
   const defaults = deepLinkDefaultsOf(activeFrameManifest.value);
-  const live = lastFrame.value?.key === frameKey.value ? lastFrame.value.liveState : undefined;
+  const live = hasSegment && lastFrame.value?.key === frameKey.value ? lastFrame.value.liveState : undefined;
   const base = live ? { ...defaults, ...live } : defaults;
   if (hasSegment) return { ...base, ...named };
   return Object.keys(base).length ? base : named;
@@ -416,7 +423,7 @@ function reportFrameState(state: FrameState) {
     if (cached) frameManifest.value = { key, framePanelId: frame.framePanelId, manifest: cached };
   }
   const prev = lastFrame.value?.key === key ? lastFrame.value : null;
-  lastFrame.value = { key, framePanelId: frame.framePanelId, addressState: prev?.addressState ?? {}, liveState: state };
+  lastFrame.value = { key, framePanelId: frame.framePanelId, liveState: state };
 }
 
 function reportFrameAddress(input: DisplayPageAddressInput) {
@@ -429,26 +436,12 @@ function reportFrameAddress(input: DisplayPageAddressInput) {
       if (cached) frameManifest.value = { key, framePanelId: frame.framePanelId, manifest: cached };
     }
     const prev = lastFrame.value?.key === key ? lastFrame.value : null;
-    lastFrame.value = { key, framePanelId: frame.framePanelId, addressState: reported, liveState: prev?.liveState ?? reported };
+    lastFrame.value = { key, framePanelId: frame.framePanelId, liveState: prev?.liveState ?? reported };
   }
   const { path, state, query } = parseApplicationPanelAddress(route.fullPath);
   const next = applicationPanelAddress(path, { frame: reported, state, query });
   if (next !== route.fullPath) void router.replace(next);
 }
-
-/** An entry opened without `frame.*` params while the same frame stands restores the frame's non-default state in URL. */
-watch([() => route.fullPath, frameKey], () => {
-  const keptFrame = lastFrame.value;
-  const key = frameKey.value;
-  if (keptFrame && keptFrame.key !== key) {
-    lastFrame.value = null;
-    return;
-  }
-  if (!effectiveFrame.value || !keptFrame || !Object.keys(keptFrame.addressState).length) return;
-  if (hasFrameParams(route.fullPath)) return;
-  const { path, state, query } = parseApplicationPanelAddress(route.fullPath);
-  void router.replace(applicationPanelAddress(path, { frame: keptFrame.addressState, state, query }));
-});
 
 const entryMenu = computed<ApplicationEntryMenu>(() => {
   if (matchingPanelEntry.value?.menu) return matchingPanelEntry.value.menu;

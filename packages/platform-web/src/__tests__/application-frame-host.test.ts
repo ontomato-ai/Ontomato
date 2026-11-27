@@ -573,6 +573,43 @@ describe("ApplicationFrameHost single persistent outer frame", () => {
     wrapper.unmount();
   });
 
+
+  it("does not restore the previous frame state onto a later address without frame parameters", async () => {
+    resolveApplicationEntryMock.mockImplementation(async () =>
+      resolutionOf("ontology", objectsUse, [playgroundUse, objectsUse], ontologyFrameId),
+    );
+    const { router, wrapper } = await mountPlatformShell("/ontology/objects?frame.term=B");
+    await flushPromises();
+    expect(wrapper.get('[data-content-use="use-ontology-objects"]').attributes("data-frame-state")).toBe(JSON.stringify({ term: "B" }));
+
+    await router.push("/ontology/objects");
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe("/ontology/objects");
+    expect(wrapper.get('[data-content-use="use-ontology-objects"]').attributes("data-frame-state")).toBe(JSON.stringify({}));
+    wrapper.unmount();
+  });
+
+  it("reports malformed frame address state and falls back to frame defaults", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const manifest = {
+      state: {
+        page: { type: { kind: "scalar", type: "number" }, personal: false, deepLink: true, external: true, default: 1 },
+      },
+      members: {},
+    };
+    resolveApplicationEntryMock.mockImplementation(async () => ({
+      ...resolutionOf("ontology", objectsUse, [playgroundUse, objectsUse], ontologyFrameId),
+      frame: { panel: { id: ontologyFrameId, manifest } } as never,
+    }));
+    const { wrapper } = await mountPlatformShell("/ontology/objects?frame.page=not-a-number");
+    await flushPromises();
+
+    expect(errorSpy).toHaveBeenCalled();
+    expect(wrapper.get('[data-content-use="use-ontology-objects"]').attributes("data-frame-state")).toBe(JSON.stringify({ page: 1 }));
+    wrapper.unmount();
+  });
+
   it("resets frame state on cross-application switch and cleanly restores the page slot when entering an unframed route", async () => {
     resolveApplicationEntryMock.mockImplementation(async ({ path }) => {
       if (path === objectsUse.path) return resolutionOf("ontology", objectsUse, [playgroundUse, objectsUse], ontologyFrameId);
