@@ -288,11 +288,12 @@ class ActionTrialPostgresIntegrationTest {
    }
  }
 
- /** Opens and prepares a sandbox exactly the way ActionTrialService does for a trial run. */
+ /** Opens and prepares a sandbox exactly the way ActionTrialService does for a trial run: the sample is validated first. */
  private static String openTrial(DataSandboxService sandboxes, JSONObject sample, List<String> sampleClasses, long expiresAt) {
+   JSONObject validated = sandboxes.validateSample(sample, Map.of(), "contract");
    String id = sandboxes.open("contract", "builder", "action-trial:" + UUID.randomUUID(), expiresAt, sampleClasses);
    if (!sampleClasses.isEmpty()) {
-     sandboxes.replaceClasses(id, sampleClasses, sample, "contract");
+     sandboxes.replaceClasses(id, sampleClasses, validated, "contract");
      sandboxes.reset(id, "contract");
    }
    return id;
