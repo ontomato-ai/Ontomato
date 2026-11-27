@@ -1296,7 +1296,7 @@ it("keeps four skill library reads and describes fixed and row deletion from the
     remove: { ...remove, target: { literal: { className: SKILL, primaryKey: "knowledge-governance" } } },
     export: { ...exportOperation, target: { literal: { className: SKILL, primaryKey: "knowledge-governance" } } },
   } };
-  const queryProjection = { inputs: {}, data: {}, operations: {
+  const queryProjection = { inputs: {}, data: { rows: { source: { type: { kind: "PlatformObjectType", id: SKILL } }, read: "query" } }, operations: {
     remove: { ...remove, target: { row: true } },
     export: { ...exportOperation, target: { row: true } },
   } };
@@ -1322,18 +1322,19 @@ it("keeps four skill library reads and describes fixed and row deletion from the
     mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: method === "query" ? queryProjection : {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: method === "query" ? "panelRecordQuery" : method === "files" ? "panelRecordList" : "panelRecord" },
-      params: method === "file" ? { path: "SKILL.md" } : {}, selection: { typeId: SKILL, method, primaryKey: "local" },
+      params: method === "file" ? { path: "SKILL.md" } : {}, inputs: {}, selection: { typeId: SKILL, method, primaryKey: "local" },
     });
   }
   for (let index = 0; index < 2; index++)
     mocks.resolve.mockResolvedValueOnce({ inputs: {}, member: {}, projection: fixedProjection });
   mocks.skills.mockResolvedValue(catalogue);
+  // Each library read passes the library gate; delete's change decision joins the batch once per page.
   mocks.read.mockResolvedValueOnce({ viewer, results: [
-    { status: "ready", payload: { allowed: true } },
+    { status: "ready", payload: true }, { status: "ready", payload: { allowed: true } },
     { status: "ready", payload: true },
     { status: "ready", payload: true },
     { status: "ready", payload: true },
-    { status: "ready", payload: revoked },
+    { status: "ready", payload: true }, { status: "ready", payload: revoked },
     { status: "ready", payload: { allowed: true } },
     { status: "ready", payload: revoked },
   ] });
@@ -1366,9 +1367,10 @@ it("keeps four skill library reads and describes fixed and row deletion from the
       { status: "ready", value: { remove: { unavailable: { reason: "CHANGE required" } } } },
     ]);
     expect(mocks.read.mock.lastCall?.[1].map(({ call }: JavaPanelRead) => call?.name)).toEqual([
-      "queryWithDeleteAccess", "count", "count", "count", "queryWithDeleteAccess", "deleteAccess", "deleteAccess",
+      "count", "deleteAccess", "count", "count", "count", "count", "deleteAccess", "deleteAccess", "deleteAccess",
     ]);
-    expect(mocks.skills).toHaveBeenCalledTimes(6);
+    // The library view is read for presenting and, when the change is allowed, for each delete's write restriction.
+    expect(mocks.skills).toHaveBeenCalledTimes(7);
   } finally {
     mocks.skills.mockReset();
   }
@@ -1407,7 +1409,7 @@ it("reads personal dashboards only after each placement passes and isolates miss
   for (const { selection, result } of cases) {
     mocks.resolve.mockImplementationOnce(async (_owner, _credentials, _request, _cache, collectUse) => {
       collectUse("panel", { id: entry.use.panelId, domainId: viewer.domainId, ownerId: "author" });
-      return { inputs: {} };
+      return { inputs: {}, projection: {} };
     });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params: {}, selection });
   }
@@ -1543,7 +1545,7 @@ it("presents registered model settings from masked owner facts while keeping dra
   for (const { selection, result, values } of inputs) {
     mocks.resolve.mockImplementationOnce(async (_owner, _credentials, _request, _cache, collectUse) => {
       collectUse("panel", { id: entry.use.panelId, domainId: viewer.domainId, ownerId: "author" });
-      return { inputs: {} };
+      return { inputs: {}, projection: {} };
     });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, selection, params: values ? { values } : {} });
   }
@@ -1613,7 +1615,7 @@ it("presents model usages and the usage draft from both authorized settings fact
   for (const { selection, result, params } of inputs) {
     mocks.resolve.mockImplementationOnce(async (_owner, _credentials, _request, _cache, collectUse) => {
       collectUse("panel", { id: entry.use.panelId, domainId: viewer.domainId, ownerId: "author" });
-      return { inputs: {} };
+      return { inputs: {}, projection: {} };
     });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, selection, params: params ?? {} });
   }
@@ -2093,7 +2095,7 @@ it("describes registered ops evidence buttons from the read gate and local evide
       });
     }
     mocks.resolve.mockResolvedValueOnce({
-      inputs: {}, projection: { operations: {
+      inputs: {}, projection: { data: { rows: { source: { type: binding(TURN_EVIDENCE) }, read: "list" } }, operations: {
         keep: { operation: binding(KEEP_TURN_EVIDENCE), target: { row: true } },
         unkeep: { operation: binding(UNKEEP_TURN_EVIDENCE), target: { row: true } },
       } },
@@ -2102,8 +2104,11 @@ it("describes registered ops evidence buttons from the read gate and local evide
       declaration: { result: "panelRecordList" }, params: {}, inputs: {},
       selection: { typeId: TURN_EVIDENCE, method: "list" },
     });
+    // Every operation of a button reads its own management gate; the batch reader sends identical items once.
+    const gates = cases.map(({ placement }) => Object.keys(placement.projection.operations).length);
     mocks.read.mockResolvedValueOnce({ viewer, results: [
-      ...cases.map(({ reply }) => reply), approval(workbenchManagement.opsTurnEvidenceRead),
+      ...cases.flatMap(({ reply }, index) => Array(gates[index]).fill(reply)),
+      ...Array(3).fill(approval(workbenchManagement.opsTurnEvidenceRead)),
     ] });
     const prepared = await prepareRegisteredDataReads(credentials, [...cases.map(() => opRequest), request]);
     const results = await runPreparedDataReads(credentials, prepared);
@@ -2143,10 +2148,11 @@ it("describes registered ops evidence buttons from the read gate and local evide
     expect(readFileSync(join(runtimeRoot, runFile(busyRun)), "utf-8")).toBe(busyBefore);
     const reads = mocks.read.mock.lastCall?.[1];
     expect(reads.map(({ call }: { call: unknown }) => call)).toEqual([
-      ...cases.map(({ placement }) => ({
+      ...cases.flatMap(({ placement }, index) => Array(gates[index]).fill({
         type: placement.inputs.selected.className, name: "record", parameters: {},
       })),
       { type: TURN_EVIDENCE, name: "list", parameters: {} },
+      ...Array(2).fill({ type: TURN_EVIDENCE, name: "record", parameters: {} }),
     ]);
     expect(reads[0].uses).toMatchObject([{ target: { kind: "PROJECTION", id: "evidence-button" } }]);
     expect(fetch).not.toHaveBeenCalled();
@@ -2183,14 +2189,18 @@ it("presents registered autotest list operations only for admitted rows, includi
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
     const requests = [request, request];
     for (const _ of requests) {
-      mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: { operations } });
+      mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {
+        data: { rows: { source: { type: { kind: "PlatformObjectType", id: AUTOTEST_RUN } }, read: "list" } }, operations,
+      } });
       mocks.prepare.mockResolvedValueOnce({
         declaration: { result: "panelRecordList" }, params: {}, inputs: {},
         selection: { typeId: AUTOTEST_RUN, method: "list" },
       });
     }
     const prepared = await prepareRegisteredDataReads(credentials, requests);
-    mocks.read.mockResolvedValueOnce({ viewer, results: [approval, denied] });
+    // Each list read, then each row operation's run management gate in the same batch.
+    const batch = [approval, approval, approval, approval, denied, denied, denied, denied];
+    mocks.read.mockResolvedValueOnce({ viewer, results: batch });
     expect(await runPreparedDataReads(credentials, prepared)).toEqual([
       { status: "empty" }, { status: "forbidden", reason: denied.error },
     ]);
@@ -2203,7 +2213,7 @@ it("presents registered autotest list operations only for admitted rows, includi
       version: 1, kept: ["run-kept", "run-foreign"].map(artifactId => ({ artifactId, artifactType: "autotest-run" })),
     }));
     mocks.getActiveRun.mockReturnValue({ runId: "run-active" });
-    mocks.read.mockResolvedValueOnce({ viewer, results: [approval, denied] });
+    mocks.read.mockResolvedValueOnce({ viewer, results: batch });
     const [list, refused] = await withRunArtifactWrite("run-writing", () => runPreparedDataReads(credentials, prepared));
     const unavailable = (messageKey: string) => ({
       available: false, unavailable: { reason: tForLocale(credentials.locale, messageKey) },
@@ -2224,9 +2234,8 @@ it("presents registered autotest list operations only for admitted rows, includi
       [`${AUTOTEST_RUN}:run-writing`]: { keep: available, unkeep: unavailable("panels.ops.notKept"), delete: busy },
     });
     expect(refused).toEqual({ status: "forbidden", reason: denied.error });
-    expect(mocks.read.mock.lastCall?.[1].map(({ call }: { call: unknown }) => call)).toEqual([
-      { type: AUTOTEST_RUN, name: "list", parameters: {} }, { type: AUTOTEST_RUN, name: "list", parameters: {} },
-    ]);
+    const listRead = [{ type: AUTOTEST_RUN, name: "list", parameters: {} }, ...Array(3).fill({ type: AUTOTEST_RUN, name: "record", parameters: {} })];
+    expect(mocks.read.mock.lastCall?.[1].map(({ call }: { call: unknown }) => call)).toEqual([...listRead, ...listRead]);
     expect(fetch).not.toHaveBeenCalled();
   } finally {
     mocks.getActiveRun.mockReset();
@@ -3116,7 +3125,9 @@ it("describes all role assignment operations with the selected role's owner refu
       inputs: {},
     });
   }
-  mocks.read.mockResolvedValueOnce({ viewer, results: selections.map(({ result }) => result) });
+  // Each assignment operation names the same refusal read; the batch reader sends it once per role.
+  mocks.read.mockImplementationOnce(async (_viewer, reads: JavaPanelRead[]) => ({ viewer, results: reads.map(({ call }) =>
+    selections.find(({ primaryKey }) => primaryKey === call!.parameters.primaryKey)!.result) }));
 
   const prepared = await prepareRegisteredDataReads(credentials, selections.map(() => ({
     source, memberPath: [{ member: "roleAssignments" }], operations: true, inputs: {},
@@ -3129,8 +3140,8 @@ it("describes all role assignment operations with the selected role's owner refu
     expect(reserved).toHaveProperty(`value.${name}.unavailable.reason`, "Managed by domain membership");
   }
   expect(missing).toEqual({ status: "error", code: "ROLE_NOT_FOUND", message: "Role not found" });
-  expect((mocks.read.mock.lastCall![1] as JavaPanelRead[]).map(({ call }) => call))
-    .toEqual(selections.map(({ primaryKey }) => ({ type: ROLE, name: "assignRefusal", parameters: { primaryKey } })));
+  expect((mocks.read.mock.lastCall![1] as JavaPanelRead[]).map(({ call }) => call)).toEqual(selections.flatMap(({ primaryKey }) =>
+    Object.keys(bindings).map(() => ({ type: ROLE, name: "assignRefusal", parameters: { primaryKey } }))));
 });
 
 it("keeps application entries and a masked missing application as separate batch items", async () => {
@@ -3275,7 +3286,9 @@ it("admits the builder create form and merges only batch-maintainable projects w
   };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { method, result, params } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: { inputs: {}, operations } });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {
+      inputs: {}, data: { rows: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: method } }, operations,
+    } });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, inputs: {}, selection: { typeId: APPLICATION, method } });
   }
   mocks.read.mockImplementationOnce(async () => {
@@ -3372,7 +3385,9 @@ it("keeps selected builder reads on their original draft or published authority 
         type: APPLICATION, name: "builderProjectMetadata", parameters: { primaryKey },
       })),
     ]);
-    expect(lookup.mock.calls).toEqual(cases.map(({ primaryKey }) => [viewer.domainId, primaryKey]));
+    // The placements are planned concurrently; each looks its project up once.
+    expect(lookup.mock.calls.map(([, appId]) => appId).sort()).toEqual(cases.map(({ primaryKey }) => primaryKey).sort());
+    expect(lookup.mock.calls.every(([domainId]) => domainId === viewer.domainId)).toBe(true);
     expect(sessions.mock.calls).toEqual([[viewer, { workspaceId, cursor: undefined, limit: 6 }]]);
     expect(workspace.mock.calls).toEqual([["/v1/workspaces/" + workspaceId]]);
     expect(insert).not.toHaveBeenCalled();
@@ -3479,6 +3494,7 @@ it("presents Java model records and member row operations from the same register
     revoke: REVOKE_USER_API_KEY,
     reset: RESET_USER_PASSWORD,
   }).map(([name, id]) => [name, { operation: { kind: "PlatformOperation", id }, target: { row: true } }]));
+  // A fixed target is described with the member's operations, not per row.
   const operations = {
     ...rowOperations,
     removeFixed: { operation: { kind: "PlatformOperation", id: REMOVE_USER }, target: { literal: { className: USER, primaryKey: "u2" } } },
@@ -3513,12 +3529,12 @@ it("presents Java model records and member row operations from the same register
       deleteMember: { available: false, unavailable: { reason: "Built-in administrator" } },
       issue: { available: false, unavailable: { reason: "Key exists" } },
       resend: { available: true }, revoke: { available: true }, reset: { available: true },
-      removeFixed: { available: false, unavailable: { reason: "Protected external member" } },
     } } },
   ]);
   expect(mocks.read.mock.lastCall?.[1][1]).toMatchObject({
-    call: { type: USER, name: "query", parameters: { page: { number: 1, size: 20 }, inspectApiKeyRows: true, fixedRowTargets: ["u2"] } },
+    call: { type: USER, name: "query", parameters: { page: { number: 1, size: 20 }, inspectApiKeyRows: true } },
   });
+  expect(mocks.read.mock.lastCall?.[1][1].call.parameters).not.toHaveProperty("fixedRowTargets");
 });
 
 it("presents removals for the four governance lists from the same owner batch", async () => {
@@ -3542,9 +3558,11 @@ it("presents removals for the four governance lists from the same owner batch", 
     const params = query ? { search: "filtered", page: { number: 2, size: 5 } } : {};
     const primaryKey = query ? {} : { primaryKey: "selected-unit" };
     const operations = { [button]: { operation: { kind: "PlatformOperation", id }, target: { row: true } } };
+    // The list carries its rows' removal refusal only when the page binds the removal to rows.
     for (const bound of [true, false]) {
       mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {
-        operations, config: { rowActions: { items: bound ? [{ kind: "operation", operation: button }] : [] } },
+        data: { rows: { source: { type: { kind: "PlatformObjectType", id: rowType } }, read: method } },
+        operations: bound ? operations : {},
       } });
       mocks.prepare.mockResolvedValueOnce({
         declaration: { result: query ? "panelRecordQuery" : "panelRecordList", ...(!query && { rowType }) },
@@ -3683,7 +3701,8 @@ it("plans operation descriptions with registered data, preserving siblings of ma
   mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelRecordQuery" }, params: {}, selection: { typeId: OBJECT_TYPE, method: "count" } });
   mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelRecordQuery" }, params: {}, selection: { typeId: OBJECT_TYPE, method: "count" } });
   mocks.read.mockResolvedValueOnce({ viewer, results: [
-    { status: "ready", payload: { remove: ["Protected member"], removeChecked: ["Protected member", null] } },
+    { status: "ready", payload: { [REMOVE_USER]: ["Protected member"] } },
+    { status: "ready", payload: { [REMOVE_USER]: ["Protected member", null] } },
     { status: "ready" },
     { status: "ready", payload: { rows: 1 } },
     { status: "ready", payload: { rows: [], total: 1 } },
@@ -3700,15 +3719,11 @@ it("plans operation descriptions with registered data, preserving siblings of ma
     { status: "error", code: "PANEL_READ_OWNER_RESPONSE_INVALID" },
     { status: "ready", value: { rows: [], total: 1 } },
   ]);
-  expect(mocks.read.mock.lastCall?.[1][0]).toMatchObject({
+  // Each binding reads its own targets' refusals; the selection's is decided by the all-refused rule.
+  expect(mocks.read.mock.lastCall?.[1].slice(0, 2)).toMatchObject([["fixed-member"], ["fixed-member", "ordinary-member"]].map(ids => ({
     uses: [{ target: { kind: "PROJECTION", id: "member-buttons", domainId: viewer.domainId } }],
-    call: { type: USER, name: "operationRefusals", parameters: {
-      inspections: [
-        { name: "remove", operation: REMOVE_USER, ids: ["fixed-member"] },
-        { name: "removeChecked", operation: REMOVE_USER, ids: ["fixed-member", "ordinary-member"] },
-      ],
-    } },
-  });
+    call: { type: USER, name: "operationRefusals", parameters: { inspections: [{ name: REMOVE_USER, operation: REMOVE_USER, ids }] } },
+  })));
 });
 
 it("does not accept identity or registration claims in the browser's request", () => {
@@ -3769,7 +3784,7 @@ it("joins mixed operation facts in one read batch and keeps binding skips separa
     ready(execution), ready({ ...execution, target: null, id: "create", name: "Create" }),
     { status: "forbidden", code: "ACTION_TARGET_OUT_OF_SCOPE", error: "Row is outside the scope" },
     ready(form), ready({ reason: "System action" }), ready({ reason: "Referenced function" }), ready({ reason: null }),
-    ready({ removeMember: ["Protected member"] }),
+    ready({ [REMOVE_USER]: ["Protected member"] }),
     ready({ reason: 42 }),
     { status: "forbidden", code: "OBJECT_FORBIDDEN", error: "Placement denied" },
     ready({ rows: [], total: 2 }),
@@ -3786,7 +3801,7 @@ it("joins mixed operation facts in one read batch and keeps binding skips separa
     { type: ACTION, name: "deleteRefusal", parameters: { primaryKey: "draft-action" } },
     { type: FUNCTION, name: "deleteRefusal", parameters: { primaryKey: "function-1" } },
     { type: METRIC_VIEW, name: "deleteRefusal", parameters: { primaryKey: "metric-1" } },
-    { type: USER, name: "operationRefusals", parameters: { inspections: [{ name: "removeMember", operation: REMOVE_USER, ids: ["user-1"] }] } },
+    { type: USER, name: "operationRefusals", parameters: { inspections: [{ name: REMOVE_USER, operation: REMOVE_USER, ids: ["user-1"] }] } },
     { type: METRIC_VIEW, name: "deleteRefusal", parameters: { primaryKey: "metric-1" } },
     { type: ACTION, name: "executionDefinition", parameters: { primaryKey: "approve", object: order } },
     { type: OBJECT_TYPE, name: "count", parameters: {} },
@@ -3826,7 +3841,9 @@ it("uses workflow status once for fixed and selected buttons and reuses list row
   };
   const port = { kind: "object", objectType: WORKFLOW };
   const panel = { manifest: { state: { selected: { type: port } }, members: {} } };
-  const catalogue = { panel, member: {}, projection: { inputs: {}, operations: rowBindings }, inputs: {} };
+  const catalogue = { panel, member: {}, projection: {
+    inputs: {}, data: { rows: { source: { type: action(WORKFLOW) }, read: "query" } }, operations: rowBindings,
+  }, inputs: {} };
   const selected = {
     panel,
     member: { inputs: { selected: { state: "selected" } } },
@@ -3856,11 +3873,12 @@ it("uses workflow status once for fixed and selected buttons and reuses list row
     selection: { typeId: WORKFLOW, method: "query" },
   });
   const denied = { status: "forbidden", code: "OBJECT_FORBIDDEN", error: "Placement denied" };
+  // Each selected button reads its workflow's state; the batch reader sends a repeated state once.
+  const revisable = { status: "ready", payload: { id: "revisable", status: "ACTIVE", hasDraft: true } };
   mocks.read.mockResolvedValueOnce({ viewer, results: [
     { status: "ready" },
-    { status: "ready", payload: { id: "revisable", status: "ACTIVE", hasDraft: true } },
-    { status: "error", code: "WORKFLOW_NOT_FOUND", error: "Workflow not found" },
-    denied, denied,
+    revisable, revisable, revisable, { status: "error", code: "WORKFLOW_NOT_FOUND", error: "Workflow not found" },
+    denied, denied, denied, denied,
     { status: "ready", payload: { workflows, subjects: [], actions: [], grants: [] } },
   ] });
   const fetch = vi.fn();
@@ -3871,7 +3889,7 @@ it("uses workflow status once for fixed and selected buttons and reuses list row
   const state = (primaryKey: string) => ({ type: WORKFLOW, name: "lifecycleState", parameters: { primaryKey } });
   const reads = mocks.read.mock.lastCall![1];
   expect(reads.map((item: { call?: unknown }) => item.call)).toEqual([
-    undefined, state("revisable"), state("missing"), state("revisable"), state("missing"),
+    undefined, ...[1, 2].flatMap(() => [state("revisable"), state("revisable"), state("revisable"), state("missing")]),
     { type: WORKFLOW, name: "query", parameters: {} },
   ]);
   expect(reads).toMatchObject(reads.map(() => ({ uses: [{ target: { kind: "PROJECTION", id: "workflows" } }] })));
@@ -3906,7 +3924,9 @@ it("shares attribute facts for fixed buttons and keeps inner list-row refusals i
   const fixed = (id: string, field: string) => ({
     operation: call(id), target: { literal: { className: ATTRIBUTE, primaryKey: key(field) } },
   });
-  const placement = (operations: object) => ({ inputs: {}, member: {}, projection: { inputs: {}, operations } });
+  const placement = (operations: object) => ({ inputs: {}, member: {}, projection: {
+    inputs: {}, data: { rows: { source: { type: call(ATTRIBUTE) }, read: "list" } }, operations,
+  } });
   const ordinary = { className: "Device", name: "note", showName: "Note", type: "varchar",
     attrDesc: "", enable: true, businessKey: false, primaryKey: false };
   const attributes = { fieldLabels: {}, classLabels: { Device: "Device" }, views: [
@@ -3931,23 +3951,21 @@ it("shares attribute facts for fixed buttons and keeps inner list-row refusals i
     selection: { typeId: ATTRIBUTE, method: "list" },
   });
   const ready = (payload: unknown) => ({ status: "ready", payload });
+  // Delete reads the attribute list with its delete facts and set-primary-key without; the batch reader sends repeats once.
+  const withUses = { ...attributes, relationshipFacts: relationships };
   mocks.read.mockResolvedValueOnce({ viewer, results: [
-    ready(attributes), ready(relationships),
+    ready(withUses), ready(withUses), ready(attributes), ready(attributes),
     ready(attributes),
-    ready({ ...attributes, relationshipFacts: relationships }),
+    ready(withUses),
     ready({ ...attributes, relationshipFacts: { error: "Relationship read denied" } }),
-    ready(attributes), { status: "forbidden", error: "Model read denied" },
+    { status: "forbidden", code: "OBJECT_FORBIDDEN", error: "Model read denied" },
   ] });
   const prepared = await prepareRegisteredDataReads(credentials, [operationsRequest, operationsRequest, request, request, operationsRequest]);
   const results = await runPreparedDataReads(credentials, prepared);
+  const list = { type: ATTRIBUTE, name: "list", parameters: { className: "Device" } };
+  const listWithUses = { type: ATTRIBUTE, name: "list", parameters: { className: "Device", includeDeleteFacts: true } };
   expect(mocks.read.mock.lastCall?.[1].map((item: { call: unknown }) => item.call)).toEqual([
-    { type: ATTRIBUTE, name: "list", parameters: { className: "Device" } },
-    { type: RELATIONSHIP, name: "list", parameters: { className: "Device" } },
-    { type: ATTRIBUTE, name: "list", parameters: { className: "Device" } },
-    { type: ATTRIBUTE, name: "list", parameters: { className: "Device", includeDeleteFacts: true } },
-    { type: ATTRIBUTE, name: "list", parameters: { className: "Device", includeDeleteFacts: true } },
-    { type: ATTRIBUTE, name: "list", parameters: { className: "Device" } },
-    { type: RELATIONSHIP, name: "list", parameters: { className: "Device" } },
+    listWithUses, listWithUses, list, list, list, listWithUses, listWithUses, listWithUses,
   ]);
   const inUse = { reason: "This attribute is used by these relationships: owns." };
   const keyProtected = { reason: "A primary key attribute cannot be deleted." };
@@ -4504,7 +4522,7 @@ it("pages registered Function.query over the authorized function list", async ()
   for (const params of cases) {
     mocks.resolve.mockImplementationOnce(async (_owner, _credentials, _request, _cache, collectUse) => {
       collectUse("projection", { id: "function-query", domainId: viewer.domainId, ownerId: "author" });
-      return { inputs: {} };
+      return { inputs: {}, projection: {} };
     });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelRecordQuery" }, params, selection: { typeId: FUNCTION, method: "query" },
@@ -4535,10 +4553,10 @@ it("shares model type facts across option and resolve placements without sharing
     attributeCount: 2, businessKeyCount: 0, relationshipCount: 0, primaryKey: { status: "configured", count: 1 },
   };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
-  mocks.resolve.mockResolvedValueOnce({ inputs: {} }).mockResolvedValueOnce({ inputs: {} });
+  mocks.resolve.mockResolvedValueOnce({ inputs: {} }).mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.resolve.mockImplementationOnce(async (_owner, _viewer, _request, _cache, collectUse) => {
     collectUse("projection", { id: "private-type-options", domainId: viewer.domainId, ownerId: "author" });
-    return { inputs: {} };
+    return { inputs: {}, projection: {} };
   });
   for (const method of ["options", "resolve", "resolve"]) {
     mocks.prepare.mockResolvedValueOnce({
@@ -5070,8 +5088,8 @@ it("reads only the verified viewer's pinned objects in one batch and keeps unava
   });
   mocks.resolve.mockImplementationOnce(async (_owner, _credentials, _request, _cache, collectUse) => {
     collectUse("projection", { id: "pinned-objects", domainId: viewer.domainId, ownerId: "author" });
-    return { inputs: {} };
-  }).mockResolvedValueOnce({ inputs: {} });
+    return { inputs: {}, projection: {} };
+  }).mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.prepare.mockResolvedValueOnce({
     declaration: { result: "panelRecordList" }, selection: { typeId: FAVORITE, method: "list" },
     params: { targetGroup: "objects", className: "Spoofed", primaryKey: "not-a-favorite" },
@@ -5207,7 +5225,7 @@ it("starts the platform graph with the directory's own member label or the secon
   for (const member of ["member-label", "directory-denied", "no-member", "missing-fact", "placement-denied"]) {
     mocks.resolve.mockImplementationOnce(async (_owner, _credentials, _request, _cache, collectUse) => {
       collectUse("projection", { id: member, domainId: viewer.domainId, ownerId: "author" });
-      return { inputs: {} };
+      return { inputs: {}, projection: {} };
     });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelGraphStart" }, selection: { typeId: ONTOLOGY_TYPE, method: "start" }, params: {},
@@ -5264,7 +5282,7 @@ it("uses the built-in graph search class picker declaration and shares the owner
   } as unknown as ReturnType<typeof postgres.getPostgresPool>);
   try {
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
-    mocks.resolve.mockResolvedValueOnce({ inputs: {}, member, projection }).mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, member, projection }).mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockImplementationOnce(prepareProjectionDataRead).mockResolvedValueOnce({
       declaration: { result: "panelGraphStart" }, selection: { kind: "platform", typeId: ONTOLOGY_TYPE, method: "start" }, params: {},
     });
@@ -5439,7 +5457,7 @@ it("renders the admitted business product graph with scoped edges and preserves 
   for (const member of ["with-edges", "failed-edges"]) {
     mocks.resolve.mockImplementationOnce(async (_viewer, _credentials, _request, _cache, collectUse) => {
       collectUse("projection", { id: member, domainId: viewer.domainId, ownerId: "author" });
-      return { inputs: {} };
+      return { inputs: {}, projection: {} };
     });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelRecord" },
       selection: { typeId: OBJECT_TYPE, method: "productGraph" }, params: {},
@@ -5651,7 +5669,7 @@ it("describes builder history row actions from the admitted workspace, drift and
     return {
       inputs: { app: object }, member: { inputs: { app: { state: "app" } } },
       panel: { manifest: { state: { app: { type: port } }, members: {} } },
-      projection: { inputs: { app: port }, operations: {
+      projection: { inputs: { app: port }, data: { rows: { source: { object: { input: "app" } }, read: method } }, operations: {
         [commit ? "restore" : "rollback"]: {
           operation: { kind: "PlatformOperation", id: operation }, target: { input: "app" },
           params: { [key]: { rowField: commit ? "id" : "releaseId" } },
@@ -5674,11 +5692,12 @@ it("describes builder history row actions from the admitted workspace, drift and
     ...draftMeta, id, source: "domain", canMaintain: true, canEditEntries: true, allowStandalone: true,
     entryCount: 0, entry: { path: "/applications/" + id, renderer: "panels" }, groups: [], panelUses: [],
   });
+  // A history list reads its project's metadata; the fixed application's facts for each row's rollback join the batch.
   mocks.read.mockResolvedValueOnce({ viewer, results: [
     ready(), ready(),
-    ready(), record("app-clean"),
-    ready(), record("app-drift"),
-    ready(), { status: "forbidden", error: "No query admission" },
+    ready(), ready(draftMeta), record("app-clean"),
+    ready(), ready(draftMeta), record("app-drift"),
+    ready(), { status: "forbidden", error: "No query admission" }, record("app-denied"),
     ready(), ready(),
   ] });
   const operations: RegisteredDataRead = { source, memberPath: request.memberPath, inputs: {}, operations: true };
@@ -5710,11 +5729,14 @@ it("describes builder history row actions from the admitted workspace, drift and
       { status: "ready", value: { rollback: { effect: "write" } } },
     ]);
     const calls = mocks.read.mock.lastCall![1].map(({ call }: JavaPanelRead) => call);
-    expect(calls.filter(Boolean)).toEqual(["app-clean", "app-drift", "app-denied"].map(primaryKey =>
-      ({ type: APPLICATION, name: "record", parameters: { primaryKey } })
-    ));
-    expect(runtime.mock.calls.filter(([path]) => !path.includes("/commits?"))).toHaveLength(4);
-    expect(releases).toHaveBeenCalledTimes(2);
+    expect(calls.filter(Boolean)).toEqual(["app-clean", "app-drift", "app-denied"].flatMap(primaryKey => [
+      { type: APPLICATION, name: "builderProjectMetadata", parameters: { primaryKey } },
+      { type: APPLICATION, name: "record", parameters: { primaryKey } },
+    ]));
+    // The commit pages' workspaces, then each fixed application's workspace for its restore or rollback rule.
+    expect(runtime.mock.calls.filter(([path]) => !path.includes("/commits?"))).toHaveLength(6);
+    // The release list for each history page, and again for each rollback's current release.
+    expect(releases).toHaveBeenCalledTimes(4);
     expect(mocks.read).toHaveBeenCalledTimes(1);
     expect(java).not.toHaveBeenCalled();
   } finally {
