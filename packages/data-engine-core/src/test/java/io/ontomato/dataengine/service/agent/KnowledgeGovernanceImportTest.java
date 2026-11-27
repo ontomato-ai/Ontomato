@@ -42,7 +42,7 @@ class KnowledgeGovernanceImportTest {
     var authorization = new AuthorizationService(subjects, policies, operations,
         mock(CapabilityGrantLookup.class), mock(DataPermissionLookup.class));
     service = new KnowledgeGovernanceService(store, mock(AgentRuntimeClient.class), mock(GovernanceRuntimeClient.class),
-        definitions, mock(QueryGrantService.class), knowledge, mock(AdminService.class), executions,
+        definitions, mock(QueryGrantService.class), knowledge, new PendingKnowledgeService(knowledge, store), mock(AdminService.class), executions,
         identities, mock(LangService.class), authorization);
     service.initialize();
     when(store.transaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
@@ -53,6 +53,8 @@ class KnowledgeGovernanceImportTest {
     when(store.one(contains("SELECT work"), any())).thenReturn(
         JSONObject.of("work", JSONObject.of("sources", JSONArray.of(JSONObject.of("id", "source")))));
     when(knowledge.getBussinessKnowledge("domain")).thenReturn(Map.of());
+    when(knowledge.addBussinessKnowledge(any(), any(), any(), anyInt(), anyList(), any()))
+        .thenAnswer(call -> call.getArgument(0));
     when(identities.creator("domain", "user")).thenReturn(new QueryAccessService.GrantUser("user", "domain"));
     when(executions.require("domain", "executor")).thenReturn(new QueryAccessService.GrantUser("executor", "domain"));
   }

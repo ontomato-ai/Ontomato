@@ -26,6 +26,7 @@ import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.agent.PendingKnowledgeService;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 
 /**
@@ -36,6 +37,7 @@ class AdminControllerKnowledgeTest {
 
 	private final AdminController controller = new AdminController();
 	private final KnowledgeService knowledgeService = mock(KnowledgeService.class);
+	private final PendingKnowledgeService submissions = mock(PendingKnowledgeService.class);
 	private final User user = mock(User.class);
 
 	@BeforeEach
@@ -51,6 +53,8 @@ class AdminControllerKnowledgeTest {
 		when(langService.get(any(), anyString())).thenAnswer(call -> call.getArgument(0) + ":" + call.getArgument(1));
 		ReflectionTestUtils.setField(controller, "knowledgeService", knowledgeService);
 		ReflectionTestUtils.setField(controller, "langService", langService);
+		when(submissions.submissions("domain-a")).thenReturn(Map.of());
+		ReflectionTestUtils.setField(controller, "pendingKnowledgeService", submissions);
 
 		when(user.getDomainId()).thenReturn("domain-a");
 		var stored = new KnowledgeEntity();
@@ -113,6 +117,22 @@ class AdminControllerKnowledgeTest {
 		assertRefused("Admin.knowledge.idRequired",
 				controller.delBussinessKnowledge("zh-CN", new JSONObject().fluentPut("knowledgeID", "")));
 		verifyNoInteractions(knowledgeService);
+	}
+
+	@Test
+	void entriesCarryTheirFirstSubmissionSourceForTheKnowledgePage() {
+		when(submissions.submissions("domain-a")).thenReturn(Map.of("k1", JSONObject.of(
+				"session_id", "11111111-1111-4111-8111-111111111111",
+				"run_id", "22222222-2222-4222-8222-222222222222",
+				"quote", "学院算到学校这一级")));
+
+		JSONObject ret = controller.getBussinessKnowledge(new JSONObject());
+
+		assertTrue(ret.getBooleanValue("success"), ret.toString());
+		var submission = ret.getJSONObject("data").getJSONObject("k1").getJSONObject("submission");
+		assertEquals("11111111-1111-4111-8111-111111111111", submission.getString("sessionId"));
+		assertEquals("22222222-2222-4222-8222-222222222222", submission.getString("runId"));
+		assertEquals("学院算到学校这一级", submission.getString("quote"));
 	}
 
 	@Test

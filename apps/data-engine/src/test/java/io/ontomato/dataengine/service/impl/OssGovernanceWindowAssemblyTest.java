@@ -56,7 +56,9 @@ class OssGovernanceWindowAssemblyTest {
     beans.registerSingleton("agentRuntimeClient",mock(AgentRuntimeClient.class));
     beans.registerSingleton("governanceRuntimeClient",mock(GovernanceRuntimeClient.class));
     beans.registerSingleton("ontologyAgentDefinitions",definitions);
-    beans.registerSingleton("knowledgeService",mock(KnowledgeService.class));
+    var knowledge=mock(KnowledgeService.class);
+    beans.registerSingleton("knowledgeService",knowledge);
+    beans.registerSingleton("pendingKnowledgeService",new PendingKnowledgeService(knowledge,store));
     beans.registerSingleton("adminService",mock(AdminService.class));
     beans.registerSingleton("langService",mock(LangService.class));
     beans.registerSingleton("agentExecutionAccess",mock(AgentExecutionAccess.class));

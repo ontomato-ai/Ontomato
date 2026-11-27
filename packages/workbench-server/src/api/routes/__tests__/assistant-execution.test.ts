@@ -35,6 +35,17 @@ function credential(path: string) {return callbackCredential({scope:{purpose:"ex
 async function call(path:string,extra:Record<string,string>={},method='POST',token=credential(path)) {
  return nativeFetch(base+`/api/assistant/executions/${run}/`+path,{method,headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':token,'X-Ontomato-Run-Id':run,...extra},...(method==='GET'||method==='HEAD'?{}:{body:'{}'})});
 }
+it("forwards a knowledge submission as the run's execution user with its conversation source", async () => {
+ const upstream=vi.fn(async(_url:string,_init?:Parameters<typeof fetch>[1])=>Response.json({id:"knowledge_1",status:0,created:true}));
+ vi.stubGlobal("fetch",upstream);
+ mocks.restore.mockResolvedValue({run:{sessionId:other},executionUserId:"V",retrievalScopeId:null,credentials:{token:"execution-token",locale:"en"}});
+ const response=await nativeFetch(base+`/api/assistant/executions/${run}/knowledge-submit`,{method:"POST",headers:{"content-type":"application/json","X-Ontomato-Callback-Credential":credential("knowledge-submit"),"X-Ontomato-Run-Id":run},body:JSON.stringify({title:"Title",text:"Text",quote:"原话"})});
+ expect(response.status).toBe(200);
+ expect(upstream.mock.calls[0]?.[0]).toBe("http://ontology.test/ontology/knowledge-submissions");
+ expect(JSON.parse(String(upstream.mock.calls[0]?.[1]?.body))).toEqual({title:"Title",text:"Text",quote:"原话",source:{sessionId:other,runId:run}});
+ expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("tk")).toBe("execution-token");
+});
+
 it("resolves the workspace only for the active App Builder session", async () => {
  const path = "workbench/api/app-builder/workspace";
  mocks.run.mockResolvedValue({status:"running",sessionId:other});

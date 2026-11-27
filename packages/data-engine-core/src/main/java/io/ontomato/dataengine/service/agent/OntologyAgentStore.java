@@ -76,6 +76,11 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_outputs (
 CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
   artifact_id uuid PRIMARY KEY, output_id uuid NOT NULL REFERENCES ontology_retrieval_outputs(id),
   run_id uuid NOT NULL REFERENCES ontology_agent_runs(id), path text NOT NULL);
+CREATE TABLE IF NOT EXISTS ontology_knowledge_submissions (
+  id uuid PRIMARY KEY, knowledge_id text NOT NULL, user_id text NOT NULL, domain_id text NOT NULL,
+  session_id uuid NOT NULL, run_id uuid NOT NULL, quote text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS ontology_knowledge_submissions_knowledge ON ontology_knowledge_submissions(domain_id,knowledge_id);
 """);
     jdbc.execute("UPDATE ontology_agent_runs r SET request=r.request || jsonb_build_object('userQuotes',v.input->'userQuotes') FROM ontology_retrievals v WHERE r.session_id=v.id AND NOT r.request ? 'userQuotes'");
     // A database created before this column existed is never altered by CREATE TABLE IF NOT EXISTS, and
@@ -93,6 +98,20 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_quality_reply ON ontology_agent_runs((quality_adoption->>'replyRunId')) WHERE quality_adoption IS NOT NULL");
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_caller ON ontology_agent_runs(caller_id) WHERE input_hash<>''");
     jdbc.execute("CREATE INDEX IF NOT EXISTS ontology_agent_runs_channel_root ON ontology_agent_runs((request->>'rootRunId')) WHERE input_hash<>''");
+  }
+
+  public void recordKnowledgeSubmission(String knowledgeId, io.ontomato.dataengine.core.bean.User creator,
+      String sessionId, String runId, String quote) {
+    jdbc.update("INSERT INTO ontology_knowledge_submissions (id,knowledge_id,user_id,domain_id,session_id,run_id,quote) VALUES (?,?,?,?,?,?,?)",
+        UUID.randomUUID(), knowledgeId, creator.getId(), creator.getDomainId(), uuid(sessionId), uuid(runId), quote);
+  }
+
+  /** First submission fact by knowledge entry; later duplicates are evidence, not the entry's origin. */
+  public Map<String, JSONObject> knowledgeSubmissions(String domainId) {
+    var submissions = new LinkedHashMap<String, JSONObject>();
+    for (var row : rows("SELECT knowledge_id,user_id,session_id,run_id,quote,created_at FROM ontology_knowledge_submissions WHERE domain_id=? ORDER BY created_at ASC,id ASC", domainId))
+      submissions.putIfAbsent(row.getString("knowledge_id"), row);
+    return submissions;
   }
 
   public <T> T transaction(Supplier<T> operation) {

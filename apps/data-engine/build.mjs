@@ -53,6 +53,7 @@ export const app = {
         ".mvn",
         "packages/data-engine-core/pom.xml",
         "agent-skills/ontology-query",
+        "agent-skills/knowledge-submit",
         "agent-skills/ontomato-analyst-assistant",
         "agent-skills/data-retrieval",
         "agent-skills/ontology-generation",

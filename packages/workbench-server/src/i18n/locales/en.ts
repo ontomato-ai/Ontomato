@@ -444,6 +444,8 @@ export const en = {
   "panels.ontologyModel.unavailable.primaryKeyInvalid": "Only enabled text (varchar) attributes can become primary keys.",
   "panels.ontologyModel.unavailable.cannotDeletePrimaryKey": "A primary key attribute cannot be deleted.",
   "panels.ontologyModel.unavailable.attributeInUse": "This attribute is used by these relationships: {relationships}.",
+  "panels.knowledge.submissionConversation": "Conversation",
+  "panels.knowledge.submissionQuote": "User wording",
   "panels.knowledge.statusAll": "All",
   "panels.feedback.all": "All",
   "panels.feedback.export": "Export CSV",

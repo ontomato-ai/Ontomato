@@ -20,6 +20,7 @@ public class RuntimeCodeClient {
           "ontology-query",
               List.of("SKILL.md", "scripts/ontomato.mjs", "application.yml", "references/dsl.md"),
           "ontomato-analyst-assistant", List.of("SKILL.md"),
+          "knowledge-submit", List.of("SKILL.md", "scripts/submit.mjs"),
           "knowledge-governance",
               List.of(
                   "SKILL.md",
