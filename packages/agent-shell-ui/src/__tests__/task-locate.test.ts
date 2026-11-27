@@ -3,7 +3,6 @@ import { expect, it, vi } from "vitest";
 import type { ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
 import type { ShellTaskPort } from "../host";
-import TaskDrawer from "../components/tasks/TaskDrawer.vue";
 import TaskCard from "../components/tasks/TaskCard.vue";
 import ShellResponse from "../components/ShellResponse.vue";
 import { shellContextKey, type ShellContext } from "../context";
@@ -36,7 +35,7 @@ it("retains a delegated task's loaded content and subscription across collapse a
   const root = document.createElement("div"); document.body.append(root);
   const current = ref<ChannelAgentTask>({ ...running, status: "starting" });
   const app = createApp({ render: () => h(TaskCard, { task: current.value, sessionId: task.root.sessionId }) });
-  app.provide(shellContextKey, { labels: ref({ tasks: { retriever: "Retriever", status: { starting: "Starting", running: "Running", completed: "Done" } } }), tasks: port } as unknown as ShellContext);
+  app.provide(shellContextKey, { labels: ref({ tasks: { status: { starting: "Starting", running: "Running", completed: "Done" } } }), tasks: port } as unknown as ShellContext);
   app.mount(root);
   try {
     const summary = root.querySelector<HTMLButtonElement>(".task-summary")!;
@@ -60,62 +59,7 @@ it("retains a delegated task's loaded content and subscription across collapse a
   expect(detach).toHaveBeenCalledOnce();
 });
 
-it("opens a finished reply's folded process when the reader picks one of its tasks from the list", async () => {
-  const root = document.createElement("div");
-  document.body.append(root);
-  const taskFocus = ref<{ taskId: string; at: number } | null>(null);
-  const opened: string[] = [];
-  const app = createApp({ render: () => h(ShellResponse, { item, sessionId: task.root.sessionId }) });
-  app.provide(shellContextKey, {
-    labels: ref({
-      worked: (time: string) => time, working: "Working", elapsed: (time: string) => time,
-      tasks: { count: (n: number) => `${n} tasks`, retriever: "Retriever", status: { completed: "Done" } },
-    }),
-    slots: {}, taskFocus, openTasks: (runId: string) => opened.push(runId),
-  } as unknown as ShellContext);
-  app.mount(root);
-  try {
-    expect(root.querySelector(`#agent-task-${task.id}`)).toBeNull();
-    root.querySelector<HTMLButtonElement>(".tasks-entry")!.click();
-    expect(opened).toEqual(["run"]);
-    taskFocus.value = { taskId: task.id, at: 1 };
-    await nextTick();
-    await nextTick();
-    expect(root.querySelector(`#agent-task-${task.id}`)).not.toBeNull();
-  } finally {
-    app.unmount();
-    root.remove();
-  }
-});
-
-it("opens a deeper task's read-only process through the existing proxy and links page-backed work", async () => {
-  const child: ChannelAgentTask = { ...task, id:"99999999-9999-4999-8999-999999999999", title:"Nested review", parentTaskId:task.id, status:"running",
-    process:{mode:"inline",runtimeSessionId:task.sessionRef.sessionId,runtimeRunId:task.runId} };
-  const page: ChannelAgentTask = { ...task,id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",title:"Governance",parentTaskId:child.id,process:{mode:"page",href:"/governance/reports/record-1"} };
-  const snapshot: AgentHostRunSnapshot = { pendingQuestions: [],
-    run:{id:child.runId,sessionId:child.sessionRef.sessionId,status:"running",stopReason:null,errorMessage:null,answerMessageId:null,workspaceCommit:null,createdAt:new Date(0).toISOString(),finishedAt:null,resolvedSkills:[]},
-    cursor:{runId:child.runId,seq:1,streamId:child.id},messages:[],toolExecutions:[],artifacts:[],
-    pendingMessages:[{id:page.id,message:{role:"assistant",content:[{type:"text",text:"Inspecting nested records"}],api:null,provider:null,model:null,usage:null,stopReason:"pending",timestamp:1}}],
-  };
-  const detach=vi.fn(),port:ShellTaskPort={subscribe:vi.fn(),readProcess:vi.fn().mockResolvedValue(snapshot),subscribeProcess:vi.fn().mockReturnValue(detach)};
-  const locate=vi.fn(),root=document.createElement("div");document.body.append(root);
-  const app=createApp({render:()=>h(TaskDrawer,{snapshot:{sessionId:task.root.sessionId,tasks:[task,child,page],qualityResults:[]},rounds:[task.root.runId],runId:task.root.runId,onLocate:locate})});
-  app.provide(shellContextKey,{labels:ref({close:"Close",tasks:{listTitle:"Tasks",previousRound:"Previous",nextRound:"Next",round:()=>"1/1",retriever:"Retriever",status:{completed:"Done",running:"Running"}}}),tasks:port} as unknown as ShellContext);
-  app.mount(root);
-  try {
-    expect(port.readProcess).not.toHaveBeenCalled();
-    const row=Array.from(root.querySelectorAll<HTMLButtonElement>("button.task-row")).find(button=>button.textContent!.includes(child.title))!;
-    row.click();await nextTick();await Promise.resolve();await nextTick();
-    expect(port.readProcess).toHaveBeenCalledWith(task.root.sessionId,child.id);
-    expect(port.subscribeProcess).toHaveBeenCalledWith(task.root.sessionId,child.id,expect.objectContaining({seq:1,streamId:child.id}),expect.any(Object));
-    await vi.waitFor(() => expect(root.textContent).toContain("Inspecting nested records"));
-    expect(root.querySelector("textarea")).toBeNull();expect(locate).not.toHaveBeenCalled();
-    expect(root.querySelector("a.task-row")?.getAttribute("href")).toBe("/governance/reports/record-1");
-    row.click();await nextTick();expect(detach).toHaveBeenCalledOnce();
-  } finally {app.unmount();root.remove();}
-});
-
-it("labels delegated tasks with the provider display name", async () => {
+it("labels delegated tasks with the provider display name without showing a collaboration counter", async () => {
   const genericTask: ChannelAgentTask = {
     ...task,
     id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -135,7 +79,6 @@ it("labels delegated tasks with the provider display name", async () => {
       working: "Working",
       elapsed: (time: string) => time,
       tasks: {
-        count: (n: number) => `${n} tasks`,
         status: { starting: "Starting", running: "Running", completed: "Done", failed: "Failed", cancelled: "Cancelled" },
         errors: {},
       },
@@ -144,6 +87,7 @@ it("labels delegated tasks with the provider display name", async () => {
   } as unknown as ShellContext);
   app.mount(root);
   try {
+    expect(root.querySelector(".tasks-entry")).toBeNull();
     const toggle = root.querySelector<HTMLButtonElement>(".process-toggle")!;
     toggle.click();
     await nextTick();

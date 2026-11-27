@@ -163,12 +163,6 @@ return computed<ShellLabels>(() => ({
     conclusion: t("assistant.reviewConclusion"),
     fittedQuestion: t("assistant.reviewFittedQuestion"),
     checked: t("assistant.reviewChecked"),
-    count: (count) => t("assistant.taskCount", { n: count }, count),
-    listTitle: t("assistant.taskListTitle"),
-    round: (index, count) => t("assistant.taskRound", { index, count }),
-    previousRound: t("assistant.taskPreviousRound"),
-    nextRound: t("assistant.taskNextRound"),
-    quality: t("assistant.taskQuality"),
     errors: {
       QUERY_JOB_FAILED: t("assistant.reviewFailed"),
       LENGTH_LIMIT: t("assistant.taskErrorLengthLimit"),

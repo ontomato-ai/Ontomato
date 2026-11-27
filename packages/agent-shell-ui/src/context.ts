@@ -18,10 +18,6 @@ export interface ShellContext {
   workspaceId?: string | null;
   /** The host's task routes, when its conversations delegate work. */
   tasks?: ShellTaskPort;
-  /** The task the reader asked to see (from the task list); its card or review opens and scrolls into view. */
-  taskFocus?: Ref<{ taskId: string; at: number } | null>;
-  /** Opens the task list at one reply's delegated work. */
-  openTasks?: (runId: string) => void;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
   /** Host slots for business actions: `artifact-actions` ({artifact, title, caption?}) and `message-actions`. */

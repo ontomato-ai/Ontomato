@@ -480,7 +480,12 @@ describe("token usage display", () => {
 
     const root = mountResponse(item);
     await nextTick();
-    const toggle = root.querySelector<HTMLButtonElement>(".usage-entry")!;
+    expect(root.querySelector(".process-region .usage-entry")).toBeNull();
+    expect(root.querySelector(".response-footer .actions")).not.toBeNull();
+    const timestamp = root.querySelector<HTMLElement>(".response-footer .response-timestamp");
+    expect(timestamp?.getAttribute("datetime")).toBeTruthy();
+    expect(timestamp?.textContent?.trim()).toBeTruthy();
+    const toggle = root.querySelector<HTMLButtonElement>(".response-footer .usage-entry")!;
     expect(toggle.textContent).toContain("460 tokens");
     expect(root.querySelector(".usage-breakdown")).toBeNull();
 
@@ -492,6 +497,40 @@ describe("token usage display", () => {
     expect(breakdown).toContain("Cache read 20");
     expect(breakdown).toContain("Reasoning 10");
     expect(breakdown).toContain("Last call 310");
+  });
+
+  it("shows completion timestamp and expandable tokens in the footer for a stopped run without an answer", async () => {
+    const state = emptyConversation(sessionId);
+    const zeroCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+    applyRunSnapshot(state, makeSnapshot({
+      run: makeRun({ status: "stopped", stopReason: "aborted", answerMessageId: null, finishedAt: new Date(5000).toISOString() }),
+      messages: [
+        { id: userId, runId, messageSeq: 0, contextSeq: 0, message: { role: "user", content: "Hi", timestamp: 1 } },
+        {
+          id: replyId, runId, messageSeq: 1, contextSeq: 1,
+          message: {
+            role: "assistant",
+            content: [{ type: "thinking", thinking: "Working" }],
+            api: null, provider: null, model: null,
+            usage: { input: 120, output: 30, cacheRead: 0, cacheWrite: 0, totalTokens: 150, cost: zeroCost },
+            stopReason: "aborted", timestamp: 4000,
+          },
+        },
+      ],
+    }));
+
+    const item = conversationItems(state).find((entry): entry is ResponseItem => entry.kind === "response")!;
+    const root = mountResponse(item);
+    await nextTick();
+
+    expect(root.querySelector(".process-region .usage-entry")).toBeNull();
+    expect(root.querySelector(".response-footer .actions")).toBeNull();
+    expect(root.querySelector(".response-footer .response-timestamp")?.getAttribute("datetime")).toBe(new Date(5000).toISOString());
+    const toggle = root.querySelector<HTMLButtonElement>(".response-footer .usage-entry")!;
+    expect(toggle.textContent).toContain("150 tokens");
+    toggle.click();
+    await nextTick();
+    expect(root.querySelector(".usage-breakdown")?.textContent).toContain("Input 120");
   });
 
   it("sums settled assistant.usage across steps of a run in history replay", () => {
