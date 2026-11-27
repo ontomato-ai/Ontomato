@@ -19,6 +19,7 @@ import { readPanelComponentCatalogue, readProjectionComponent } from "./componen
 import { boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
 import { panelServerOperationLabel } from "./server-operations";
 import { requireCurrentProduct } from "./current";
+import { inputLinkDescriptions, operationInputSuffix } from "./page-description-format";
 import type { AssistantOwner } from "../assistant/store";
 
 type ComponentCatalogue = ReadonlyMap<string, ComponentDeclaration>;
@@ -183,8 +184,9 @@ function describePanel(
     const boundOps = boundProjectionOperations(projection);
     const customerForms = customerFormSaveModes(projection, actions);
     const detail = projection.description.trim();
+    const inputLinks = inputLinkDescriptions(declaration.inputs);
     return [{
-      text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}.${detail ? ` ${detail}` : ""} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
+      text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}.${detail ? ` ${detail}` : ""}${inputLinks.length ? ` Input links: ${inputLinks.join(", ")}.` : ""}`,
       reads: Object.entries(data).map(([dataName, { read, result }]) => ({ member, dataName, read, result })),
       operations: boundOps.flatMap(bound => {
         if (!bound.owner && bound.binding.operation.kind === "PlatformOperation") {
@@ -325,7 +327,7 @@ function describeOperation({ id, label, binding, owner, rowScoped, customerForm 
     return `${summary} Takes a file the reader uploads on the page (input \`${declaration.upload.input}\`). Agents cannot upload files directly yet: ask the reader to use the page's upload control.`;
   }
   if (handler.kind !== "form.save") {
-    return `${summary} Input ${JSON.stringify(declaration.inputSchema)}.${declaration.batch ? " Batch-capable." : ""}`;
+    return `${summary}${operationInputSuffix(declaration.inputSchema)}${declaration.batch ? " Batch-capable." : ""}`;
   }
   return `${summary} Fill the mounted form, then invoke \`page_action({ operation: "${id}" })\` to save it.`;
 }

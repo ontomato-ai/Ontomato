@@ -19,12 +19,13 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
-  packs: { en: { ...enLocaleMeta, messages: en } },
+  packs: { en: { ...enLocaleMeta, messages: en }, "zh-CN": { ...enLocaleMeta, messages: en } },
 });
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-reads-"));
 const publicSkillsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-public-"));
-installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot });
+const skillTranslationsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-translations-"));
+installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot, publicSkillTranslationsRoot: skillTranslationsRoot });
 const { createSkillReadAdapter } = await import("../panel-reads");
 const { countAssistantSkills } = await import("../../assistant/skills");
 
@@ -48,6 +49,7 @@ async function installDomainSkill(name: string, description: string) {
 afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true });
   await fs.rm(publicSkillsRoot, { recursive: true, force: true });
+  await fs.rm(skillTranslationsRoot, { recursive: true, force: true });
 });
 beforeEach(() => {
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "test-service-token");
@@ -83,8 +85,11 @@ it("answers the reader's visible catalogue as panel options in the owner's order
   expect(catalogue.options.map(({ label }) => label)).toContain("Analysis report");
   for (const name of systemOnlySkillNames) {
     const restricted = catalogue.options.find(option => skillName(option.value) === name);
-    expect(restricted?.unavailable).toEqual({ reason: "This skill is not available to you." });
+    expect(restricted?.unavailable).toEqual({ reason: "This skill is reserved for a system agent and cannot be selected for another agent." });
   }
+  const firstRestricted = catalogue.options.findIndex(option => option.unavailable);
+  expect(firstRestricted).toBeGreaterThan(-1);
+  expect(catalogue.options.slice(firstRestricted).every(option => option.unavailable)).toBe(true);
   expect(catalogue.options.find(option => skillName(option.value) === "ontomato-page-operator")?.unavailable).toBeUndefined();
   const helper = catalogue.options.find(option => option.primaryKey === runtimeSkillKey(domainSkill));
   expect(helper).toEqual({
@@ -312,4 +317,19 @@ it("shows built-in skill explanations, reads file-backed instructions, and lists
     status: 404,
     code: "SKILL_FILE_NOT_FOUND",
   });
+});
+
+it("keeps one frontmatter header when a translated overlay is a complete SKILL.md", async () => {
+  const translated = path.join(skillTranslationsRoot, "zh-CN", "runtime-skills", "ontomato-page-operator", "SKILL.md");
+  await fs.mkdir(path.dirname(translated), { recursive: true });
+  await fs.writeFile(translated, "---\nname: ontomato-page-operator\ndescription: 中文说明\n---\n中文正文\n");
+
+  const adapter = createSkillReadAdapter(owner, { ...credentials, locale: "zh-CN" });
+  const file = panelRecordSchema.parse(await adapter.file("ontomato-page-operator", { path: "SKILL.md" }));
+  const content = String(file.fields.content);
+  expect(content).toContain("中文正文");
+  expect(content).not.toContain("中文说明");
+  expect(content.match(/^---\nname: ontomato-page-operator\ndescription: Discover applications and pages/)).not.toBeNull();
+  expect(content.indexOf("中文正文")).toBeGreaterThan(content.indexOf("---\nname:"));
+  expect(content.slice(content.indexOf("中文正文"))).not.toContain("name: ontomato-page-operator");
 });

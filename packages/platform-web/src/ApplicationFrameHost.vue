@@ -39,8 +39,7 @@ import { usePanelSessionRuns } from "./panel-session-runs";
 import { useApplicationCatalog } from "./catalog";
 import {
   applicationFrameHostKey,
-  deepLinkDefaultsOf,
-  hasFrameParams,
+  frameAddressState,
   type FrameState,
   type PanelFrameRegistration,
 } from "./application-frame-context";
@@ -218,7 +217,7 @@ watch(
     if (!applicationId || matchingPanelEntry.value || matchingOpenedEntry.value) return;
     const app = catalog.applicationById(applicationId);
     if (app && app.panelUses === undefined) {
-      void catalog.ensureApplication(applicationId).catch(() => undefined);
+      void catalog.ensureApplication(applicationId).catch(error => console.error(error));
     }
   },
   { immediate: true },
@@ -349,7 +348,6 @@ const frameSurfaceReady = ref(true);
 const lastFrame = ref<{
   key: string;
   framePanelId: string;
-  addressState: FrameState;
   liveState: FrameState;
 } | null>(null);
 const frameManifest = shallowRef<{
@@ -387,19 +385,11 @@ const activeFrameManifest = computed(() => {
 
 const frameState = computed((): FrameState => {
   if (!effectiveFrame.value) return {};
-  let named: FrameState;
-  let hasSegment: boolean;
-  try {
-    hasSegment = hasFrameParams(route.fullPath);
-    named = parseApplicationPanelAddress(
-      route.fullPath,
-      activeFrameManifest.value ? { frameManifest: activeFrameManifest.value } : undefined,
-    ).frame;
-  } catch {
-    return {};
-  }
-  const defaults = deepLinkDefaultsOf(activeFrameManifest.value);
-  const live = lastFrame.value?.key === frameKey.value ? lastFrame.value.liveState : undefined;
+  const parsed = frameAddressState(route.fullPath, activeFrameManifest.value);
+  const named = parsed.named;
+  const hasSegment = parsed.hasSegment;
+  const defaults = parsed.defaults;
+  const live = hasSegment && lastFrame.value?.key === frameKey.value ? lastFrame.value.liveState : undefined;
   const base = live ? { ...defaults, ...live } : defaults;
   if (hasSegment) return { ...base, ...named };
   return Object.keys(base).length ? base : named;
@@ -415,8 +405,7 @@ function reportFrameState(state: FrameState) {
     const cached = cachedApplicationFrameManifest(frame.applicationId, frame.framePanelId);
     if (cached) frameManifest.value = { key, framePanelId: frame.framePanelId, manifest: cached };
   }
-  const prev = lastFrame.value?.key === key ? lastFrame.value : null;
-  lastFrame.value = { key, framePanelId: frame.framePanelId, addressState: prev?.addressState ?? {}, liveState: state };
+  lastFrame.value = { key, framePanelId: frame.framePanelId, liveState: state };
 }
 
 function reportFrameAddress(input: DisplayPageAddressInput) {
@@ -429,26 +418,12 @@ function reportFrameAddress(input: DisplayPageAddressInput) {
       if (cached) frameManifest.value = { key, framePanelId: frame.framePanelId, manifest: cached };
     }
     const prev = lastFrame.value?.key === key ? lastFrame.value : null;
-    lastFrame.value = { key, framePanelId: frame.framePanelId, addressState: reported, liveState: prev?.liveState ?? reported };
+    lastFrame.value = { key, framePanelId: frame.framePanelId, liveState: prev?.liveState ?? reported };
   }
   const { path, state, query } = parseApplicationPanelAddress(route.fullPath);
   const next = applicationPanelAddress(path, { frame: reported, state, query });
   if (next !== route.fullPath) void router.replace(next);
 }
-
-/** An entry opened without `frame.*` params while the same frame stands restores the frame's non-default state in URL. */
-watch([() => route.fullPath, frameKey], () => {
-  const keptFrame = lastFrame.value;
-  const key = frameKey.value;
-  if (keptFrame && keptFrame.key !== key) {
-    lastFrame.value = null;
-    return;
-  }
-  if (!effectiveFrame.value || !keptFrame || !Object.keys(keptFrame.addressState).length) return;
-  if (hasFrameParams(route.fullPath)) return;
-  const { path, state, query } = parseApplicationPanelAddress(route.fullPath);
-  void router.replace(applicationPanelAddress(path, { frame: keptFrame.addressState, state, query }));
-});
 
 const entryMenu = computed<ApplicationEntryMenu>(() => {
   if (matchingPanelEntry.value?.menu) return matchingPanelEntry.value.menu;

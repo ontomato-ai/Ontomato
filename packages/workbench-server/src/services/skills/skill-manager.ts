@@ -240,7 +240,9 @@ class SkillManager {
       ? path.join(translations, resolveLocale(locale), translationRelative, relative) : null;
     if (!translated || !fs.existsSync(translated)) return source;
     const frontmatter = source.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0] ?? "";
-    return frontmatter + fs.readFileSync(translated, "utf8");
+    const overlay = fs.readFileSync(translated, "utf8");
+    const translatedBody = overlay.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)([\s\S]*)$/)?.[1] ?? overlay;
+    return frontmatter + translatedBody;
   }
   async exportSkill(domainId: string, id: string, credentials: AssistantCredentials): Promise<Buffer> {
     const skill = await this.requireReadableSkill(domainId, id, credentials);

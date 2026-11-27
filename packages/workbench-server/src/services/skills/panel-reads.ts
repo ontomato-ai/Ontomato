@@ -102,8 +102,9 @@ export function createSkillReadAdapter(
     async options() {
       const { skills, diagnostics } = await assistantSkillCatalog(owner.domainId, viewer);
       const messages = diagnosticText(diagnostics);
+      const ordered = [...skills].sort((a, b) => Number(Boolean(a.unavailable)) - Number(Boolean(b.unavailable)));
       return {
-        options: skills.map(({ skill, title, description, unavailable }): PanelOption => ({
+        options: ordered.map(({ skill, title, description, unavailable }): PanelOption => ({
           primaryKey: runtimeSkillKey(skill),
           value: skill,
           label: title,

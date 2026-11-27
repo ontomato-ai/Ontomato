@@ -466,6 +466,7 @@ describe("controlled personal state fields", () => {
     reads: { memberPath: unknown[]; fields: string[] }[];
     writes: { memberPath: unknown[]; values: Record<string, unknown> }[];
     beforeSnapshot?: () => Promise<void>;
+    failRead?: boolean;
   }) {
     const controlledForPath = (memberPath: { member: string }[]) => {
       if (!memberPath.length) {
@@ -489,6 +490,9 @@ describe("controlled personal state fields", () => {
         const memberPath = body.memberPath ?? [];
         const fields = body.fields ?? [];
         options.reads.push({ memberPath, fields });
+        if (options.failRead) {
+          return Response.json({ error: { message: "Personal state unavailable" } }, { status: 500 });
+        }
         const controlled = controlledForPath(memberPath);
         const offending = fields.find(field => controlled.has(field));
         if (offending) {
@@ -795,6 +799,39 @@ describe("controlled personal state fields", () => {
     } finally {
       scope.stop();
       vi.useRealTimers();
+    }
+  });
+
+
+  it("reports a personal-state read failure in the panel error path and never writes defaults back", async () => {
+    const storage: Record<string, unknown> = { term: "summer", density: "comfortable" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: unwiredUse,
+      panels: { [unwiredUse.panelId]: panelRecord(unwiredUse.panelId, "Personal External", termAndDensityManifest) },
+      storage,
+      reads,
+      writes,
+      failRead: true,
+    });
+    const scope = effectScope();
+    try {
+      const view = scope.run(() => usePanelInstance(platformPanelHost("app-a", unwiredUse, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => unwiredUse.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      expect(view.error.value).toContain("Personal state unavailable");
+      expect(view.direct.value).toBeNull();
+      expect(reads).toEqual([{ memberPath: [], fields: ["term", "density"] }]);
+      expect(writes).toEqual([]);
+      expect(storage).toEqual({ term: "summer", density: "comfortable" });
+    } finally {
+      scope.stop();
     }
   });
 

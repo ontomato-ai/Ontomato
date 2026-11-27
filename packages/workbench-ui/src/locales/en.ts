@@ -221,6 +221,7 @@ export default {
     "settings": "System settings",
     "dataGovernance": "Data governance platform",
     "panelNotInApplication": "{path} is not a panel of this application",
+    "entryReadFailed": "The entry for this address could not be read",
     "pageAccessDenied": "You do not have permission to open this page",
     "panelCandidateLabel": "Panel preview ({ref})",
     "panelNotStarted": "The panel has not started yet",

@@ -47,7 +47,7 @@ export function prepareGovernanceListRows(
         (handler, _binding, targets) => {
           const reasons = new Map<string, { reason: string }>();
           if (handler.handlerRef !== removal) {
-            if (handler.unavailable || handler.unavailableBatch || handler.unavailableForInput)
+            if (handler.unavailable || (handler.effect === "write" && (handler.unavailableBatch || handler.unavailableForInput)))
               throw new HttpError(422, `Operation '${handler.handlerRef}' needs owner row facts`, "PANEL_OPERATION_READ_UNAVAILABLE");
             return reasons;
           }

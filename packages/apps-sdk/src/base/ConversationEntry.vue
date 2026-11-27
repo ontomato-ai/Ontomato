@@ -155,11 +155,19 @@ const expandInline: PageComposerExpand = async (request) => {
     pendingExpand = request;
     return;
   }
-  const named = entryAgent(request.target, agents.value, null, undefined);
-  newSession = named !== null && request.newSession === true;
-  if (named) chosen.value = named;
+  const resolved = entryAgent(request.target, agents.value, null, undefined);
+  if (!resolved.ok) {
+    const err = new Error(t("assistant.pageAgentUnavailable"));
+    failure.value = err;
+    emit("error", err);
+    return;
+  }
+  failure.value = null;
+  const named = resolved.agentId;
+  newSession = request.newSession === true;
+  chosen.value = named;
   const text = request.prefill?.trim();
-  if (named && request.submit && text) {
+  if (request.submit && text) {
     await sendInline(text, true);
     return;
   }
@@ -190,7 +198,7 @@ watch(
         readingAgents.value = false;
         const waiting = pendingExpand;
         pendingExpand = null;
-        if (waiting && agents.value.length) void nextTick(() => expandInline(waiting));
+        if (waiting) void nextTick(() => expandInline(waiting));
       })
       .catch((reason: unknown) => {
         if (seq !== loadSeq) return;

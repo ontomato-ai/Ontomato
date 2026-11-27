@@ -720,6 +720,7 @@ export const en = {
   "panels.skill.importExists": "A skill named {skill} already exists.",
   "panels.skill.invalidPackage": "This file is not a valid skill package: {reason}",
   "panels.skill.export": "Export",
+  "panels.skill.generatedExportUnavailable": "Generated skills have no package files to export",
   "skills.diagnostics.record_missing": "The source record is missing.",
   "skills.diagnostics.invalid_definition": "The stored definition is invalid.",
   "skills.diagnostics.component_missing": "The component is missing from the current SDK.",
@@ -1413,6 +1414,7 @@ export const en = {
   "assistant.skills.pageOperator.description": "Discover applications and pages, read page data, fill forms, and invoke declared page operations.",
   "assistant.skills.unavailable.name": "Unavailable skill",
   "assistant.skills.unavailable.reason": "This skill is not available to you.",
+  "assistant.skills.systemRestricted.reason": "This skill is reserved for a system agent and cannot be selected for another agent.",
   "mcp.catalog.analysisTitle": "Agent Platform Agents MCP",
   "mcp.catalog.opsTitle": "Agent Platform Ops Agent MCP",
 
