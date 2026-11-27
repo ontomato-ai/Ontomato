@@ -110,9 +110,12 @@ function resolveObjectTypeOptions(views: readonly ObjectTypeView[], values: read
 export function withModelingPath(record: PanelRecord, focus: "object" | "relation", id: string): PanelRecord {
   return {
     ...record,
-    outputs: { modelingPath: panelAddress("/ontology/visual-modeling", focus === "relation"
-      ? { selectedEdge: id, back: "playground" }
-      : { selectedNode: id, back: "playground" }) },
+    outputs: {
+      ...record.outputs,
+      modelingPath: panelAddress("/ontology/visual-modeling", focus === "relation"
+        ? { selectedEdge: id, back: "playground" }
+        : { selectedNode: id, back: "playground" }),
+    },
   };
 }
 
