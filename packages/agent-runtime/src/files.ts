@@ -86,10 +86,18 @@ export class ArtifactFiles {
     const output = path.join(workspace, "outputs"),
       result: OutputFile[] = [];
     const visit = async (directory: string, prefix: string) => {
-      const handle = await open(
-        directory,
-        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-      );
+      let handle: Awaited<ReturnType<typeof open>>;
+      try {
+        handle = await open(
+          directory,
+          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        );
+      } catch (error) {
+        // The sandboxed model can remove workspace/outputs/ during a run; treat its absence as no outputs.
+        if (directory === output && (error as { code?: string }).code === "ENOENT")
+          return;
+        throw error;
+      }
       // Linux production walks pinned directory descriptors, including parent components.
       const pinned =
         process.platform === "linux" ? `/proc/self/fd/${handle.fd}` : directory;
