@@ -1520,7 +1520,7 @@ export default {
           "systemPrompt": "The instructions supplied to the agent as its system prompt.",
           "engine": "The execution engine selected for new sessions.",
           "modelSelection": "The selected model, with a null model ID using the domain default.",
-          "skills": "The skill references selected for the agent.",
+          "skills": "The skill references selected for the agent, including use-specific preload markers.",
           "classNames": "The ontology class names in the agent's configured data scope.",
           "enabledMcpServiceIds": "The IDs of MCP services enabled for the agent.",
           "executionUserId": "Default execution user ID for automated/unattended runs, or null. Interactive runs with a logged-in user inherit that user's permissions.",
