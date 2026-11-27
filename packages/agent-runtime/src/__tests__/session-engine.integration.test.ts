@@ -136,7 +136,7 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     await runtime.initialize();
     await runtime.store.createSession(scope, sessionId);
     const first = await run("First user message");
-    const binding = await runtime.store.sessionEngine(scope, sessionId, "live");
+    const binding = await runtime.store.sessionEngine(scope, sessionId);
     expect(binding).toMatchObject({ engine: "pi", engineRef: expect.any(String) });
     const tool = first.toolExecutions.find(call => call.toolName === "bash");
     expect(tool).toMatchObject({ status: "completed", result: { details: { artifactIds: [first.artifacts[0].id] } } });
@@ -159,16 +159,12 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     runtime = createRuntime();
     await runtime.initialize();
     await run("After restart", "uninstalled");
-    expect(await runtime.store.sessionEngine(scope, sessionId, "live")).toEqual(binding);
+    expect(await runtime.store.sessionEngine(scope, sessionId)).toEqual(binding);
     expect(launches).toHaveLength(2);
     expect(launches[1].credential).not.toBe(launched.credential);
     expect(modelRequests.at(-1)).toContain("Second user message");
     const history = runtimeSessionHistorySchema.parse(await runtime.history(scope, sessionId, {}));
     expect(history.messages.filter(message => message.message.role === "user")).toHaveLength(3);
-    // Every stored turn is read back with the identity of the run that consumed it: these runs had no channel, so live.
-    expect(new Set((await runtime.store.contextMessages(scope, sessionId)).map(row => row.lane))).toEqual(new Set(["live"]));
-    expect(new Set((await runtime.store.sessionRunLanes(scope, sessionId)).map(row => row.lane))).toEqual(new Set(["live"]));
-    expect(await runtime.store.sessionEngine(scope, sessionId, "preview")).toEqual({ engine: "pi", engineRef: null });
     await runtime.deleteSession(scope, sessionId);
     expect(leases.size).toBe(0);
     await expect(readFile(path.join(launched.workspace, "outputs", "probe.txt"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -207,7 +203,7 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     );
     expect(stored.rows[0].compaction).toEqual(oldCompaction);
     await run("Continue the legacy thread", "uninstalled", legacySession);
-    expect(await runtime.store.sessionEngine(scope, legacySession, "live")).toMatchObject({ engine: "pi", engineRef: expect.any(String) });
+    expect(await runtime.store.sessionEngine(scope, legacySession)).toMatchObject({ engine: "pi", engineRef: expect.any(String) });
     expect(modelRequests.at(-1)).toContain("Previously summarized context");
 
     const recoverySession = randomUUID(), recoveryRun = randomUUID();

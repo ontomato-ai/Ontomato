@@ -56,14 +56,12 @@ percent-decoding (a malformed encoding is read as spelled), with repeated or a t
   turns it back into the header only on a server-side operation's request to a DataRAG entry above.
   The Praxis route passes it on only for the Praxis entries above. A page operation a preview run prepared keeps
   the marker in its intent, so it is refused whoever confirms and dispatches it.
-- A conversation opened with the identity is stored as the preview's (`assistant_sessions.preview`,
-  `ops_sessions.preview` for legacy diagnosis); a replayed create naming the other identity is
-  refused (409), and a provider preparing a run in a stored conversation keeps its stored identity:
-  every run in it runs with preview authority, wherever it is later sent from, and so does a run a
-  preview sends into any conversation. Its callbacks then carry the identity as above. An input
-  joins a running or waiting run only with the same identity, taken from trusted facts (the caller's
-  channel, the delegating run, or the run it answers or reports to); a preview's message, answer or
-  agent result never joins a live run, and a live one never a preview's — it queues as its own run.
+- A conversation has one execution identity, fixed by its first run after provider prepare; later runs inherit it.
+  A preview opening a new conversation therefore makes it preview, and a replayed create names only the conversation,
+  not another identity. A preview request into an existing live conversation is refused before receipt with
+  `PREVIEW_WRITE_FORBIDDEN` and “这是正式对话，预览里不能接着聊，请新开一个对话”; a live request into a preview
+  conversation runs as preview. Agent results, messages and answers are ordinary inputs of the conversation they are
+  sent to and do not start a separate identity's run.
 - A preview run delegates as itself: the agent channel starts the agent it asks for with the same
   preview authority and class scope, and each provider (Node, DataRAG's ontology agents) prepares the
   delegated run keeping it. A run's own agent commands go only through its runtime session command
@@ -79,11 +77,8 @@ percent-decoding (a malformed encoding is read as spelled), with repeated or a t
   `POST /ontology/ai/sessions/{id}/runs`). A run messages and starts agents only through its own agent
   channel. This is a permission boundary, not a preview refusal: a person in a preview frame is not a
   run, and uses conversations there as before.
-- Runs of the two identities in one conversation never share model context. Each identity has its
-  own native engine, process space and resume reference in the runtime; an engine opened afresh is
-  told only what runs of its identity consumed, and only a live run reads the stored compaction
-  summary. A Node analyst run continues the retrievals and quotes the user messages of its own
-  identity's runs only.
+- All runs of one conversation share model context, native engine, process space and resume reference. A Node analyst
+  run continues the retrievals and quotes the user messages of that same conversation.
 - A preview's conversation entry (a panel candidate's, or a preview frame's) reaches the page's
   composer marked as the preview's: whichever composer takes it opens a new conversation of the
   preview's own, never the reader's open one.

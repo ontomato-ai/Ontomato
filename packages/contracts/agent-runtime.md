@@ -438,22 +438,8 @@ DataRAG's external entry (`/platform/agent-channel/commands`) and the routes tha
 top-level conversation refuse such a request (403 `FORBIDDEN`), so a run cannot start agents as its
 user outside its classes and delegation. Stopping a run (`cancel`) is not a business write: any
 caller in its delegation tree stops it, a preview included.
-An input runs with its sender's identity (a web input's channel, otherwise the sending run's, the
-external caller's, the answering human's or the reporting child's settled authority), never its
-recipient's; an answer to a preview's question is that preview's input. It joins a running or
-waiting run only with the same identity, otherwise it queues as a run of its own; a preview's
-answer to a live run's question is refused before anything is written. The authority a provider
-settles at prepare is stored with the intent, so queueing and delegation read it.
-Results and answers are addressed by contract and continue the run they report or answer to. Any
-other input runs with its sender's identity; a run it starts takes the sender's authority, root and
-human recipient (within a preview also its execution account, and it joins a preview run only when
-that run reaches no further than the sender).
-A run's identity is also its lane in the session: runs of one identity share a native engine,
-process space (`sessions/<digest>` for live, `sessions/<digest>-preview` for preview) and resume
-reference (`sessions.engine_ref`, `sessions.preview_engine_ref`); an engine opened afresh is given
-only what runs of its identity consumed, and only live runs read stored compaction summaries.
-`GET /v1/channel/sessions/:sessionId/run-identities` returns each run's identity, so a host
-continues and quotes only what runs of the same identity did.
+A conversation has one execution identity. Its first run settles it after provider prepare; every later run inherits the identity recorded on the conversation's latest run intent. Answers, results and messages are ordinary inputs of their conversation: an open or queued run consumes them, and an input does not start a separate run because its sender has another identity. The only cross-identity refusal is a preview web request or external caller writing into a conversation whose latest run is live: it fails before receipt with 422 `PREVIEW_WRITE_FORBIDDEN` and “这是正式对话，预览里不能接着聊，请新开一个对话”. A live caller writing into a preview conversation runs as preview. The authority a provider settles at prepare is stored with the intent; once a conversation has runs, a provider cannot return a different execution identity.
+Runs of a conversation share one native engine, process space (`sessions/<digest>`), model context, resume reference (`sessions.engine_ref`) and compaction summaries.
 A preview's run, delegated or continued, is bound to the execution account it inherits (the one its
 intent holds, else the delegating run's; `null` for the initiator's own): `/prepare` receives it as
 `executionActor` and the runtime refuses to start the run with 403 `EXECUTION_ACCOUNT_CHANGED` if the
@@ -461,8 +447,7 @@ provider returns any other. A live run is not bound: its provider is offered the
 before and chooses (DataRAG's agents run delegated work as it; Workbench's assistant and legacy
 `observe` agents choose from their current configuration), and the run records what it chose. A live
 run's new conversation input continues that conversation's own account; a preview's continues its
-sender's. Within a preview, an ordinary input joins a running or waiting run only when that run
-reaches no further than its sender; live inputs of the same identity join as they always have. Workbench's providers run a bound preview run as that account and
+sender's. Workbench's providers run a bound preview run as that account and
 return it; the legacy diagnosis evidence callback carries that account's credential.
 See `execution-context.md`.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.

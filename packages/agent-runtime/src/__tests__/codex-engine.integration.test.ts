@@ -175,7 +175,7 @@ it("uses the runtime session owner, Responses lease and MCP tool binding across 
     });
     await runtime.store.createSession(scope, sessionId);
     await run("First Codex input", "codex");
-    const binding = await runtime.store.sessionEngine(scope, sessionId, "live");
+    const binding = await runtime.store.sessionEngine(scope, sessionId);
     expect(binding).toEqual({ engine: "codex", engineRef: expect.any(String) });
     await runtime.close();
     const revoked = await fetch(dataUrl + "/v1/responses", {
@@ -186,7 +186,7 @@ it("uses the runtime session owner, Responses lease and MCP tool binding across 
     runtime = createRuntime();
     await runtime.initialize();
     await run("Codex input after restart", "pi");
-    expect(await runtime.store.sessionEngine(scope, sessionId, "live")).toEqual(binding);
+    expect(await runtime.store.sessionEngine(scope, sessionId)).toEqual(binding);
     expect(modelRequests).toHaveLength(4);
     expect(modelRequests.every(request => request.model === "gpt-5.5")).toBe(true);
     expect(upstreamAuthorization).toEqual(Array.from({ length: 4 }, () => "Bearer host-only-upstream-key"));
