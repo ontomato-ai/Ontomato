@@ -38,7 +38,7 @@ export function executionBusinessCallbacks(
   _owner: AssistantOwner,
   initiatorCredentials: AssistantCredentials,
   runId: string,
-  options: { scope?: "full" | "app-builder" | "authoring-only"; expiresAt?: number; pageControl?: boolean; retrieval?: boolean } = {},
+  options: { scope?: "full" | "app-builder" | "authoring-only"; expiresAt?: number; pageControl?: boolean; retrieval?: boolean; knowledgeSubmit?: boolean } = {},
 ): RuntimeBusinessCallbacks {
   const scope = options.scope ?? "full";
   const expiresAt = options.expiresAt ?? Date.now() + getQueryTimeoutMs();
@@ -58,6 +58,9 @@ export function executionBusinessCallbacks(
     authoring,
     ...(options.retrieval ? {
       retrieval: sealedCallback(`${base}/retrieval`, { purpose: "execution", capability: "retrieval" }, runId, expiresAt, initiatorCredentials),
+    } : {}),
+    ...(options.knowledgeSubmit ? {
+      knowledgeSubmit: sealedCallback(`${base}/knowledge-submit`, { purpose: "execution", capability: "knowledge-submit" }, runId, expiresAt, initiatorCredentials),
     } : {}),
   };
 }

@@ -28,19 +28,20 @@ class RuntimeSkillPublicationTest {
               return new AgentRuntimeClient.SkillVersion(call.getArgument(1), digest);
             });
 
-    for (String name : List.of("ontology-query", "ontomato-analyst-assistant", "knowledge-governance"))
+    for (String name : List.of("ontology-query", "ontomato-analyst-assistant", "knowledge-submit", "knowledge-governance"))
       assertEquals(digest, code.registerSkill(name).digest());
 
     assertEquals(
-        List.of("ontology-query", "ontomato-analyst-assistant", "knowledge-governance"),
+        List.of("ontology-query", "ontomato-analyst-assistant", "knowledge-submit", "knowledge-governance"),
         publications.stream().map(skill -> skill.get("name")).toList());
     assertEquals(
         List.of("SKILL.md", "scripts/ontomato.mjs", "application.yml", "references/dsl.md"),
         files.get(0).stream().map(file -> file.get("path")).toList());
     assertEquals(List.of("SKILL.md"), files.get(1).stream().map(file -> file.get("path")).toList());
+    assertEquals(List.of("SKILL.md", "scripts/submit.mjs"), files.get(2).stream().map(file -> file.get("path")).toList());
     assertEquals(
         List.of("SKILL.md", "scripts/governance.mjs", "references/commands.md", "references/extraction.md"),
-        files.get(2).stream().map(file -> file.get("path")).toList());
+        files.get(3).stream().map(file -> file.get("path")).toList());
     assertThrows(AgentHttpException.class, () -> code.registerSkill("unknown-skill"));
   }
 }

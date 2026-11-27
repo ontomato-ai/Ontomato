@@ -30,6 +30,7 @@ export function businessCallbackEnvironment(sessionUrl: string, token: string) {
     ONTOMATO_GENERATION_URL: base + "/generation",
     ONTOMATO_RETRIEVAL_CALLBACK_URL: base + "/retrieval",
     ONTOMATO_GOVERNANCE_WINDOW_URL: base + "/governance",
+    ONTOMATO_KNOWLEDGE_SUBMIT_URL: base + "/knowledgeSubmit",
     // Published skills use this name for their callback header. It carries the session credential.
     ONTOMATO_TK: token,
     ONTOMATO_EXECUTION_CALLBACK: token,

@@ -44,6 +44,7 @@ export function builtinSkillEntries(): SkillEntry[] {
     fileBackedSkill("ontomato-page-operator", "Discover applications and pages, read the current page, fill forms, and invoke declared page operations."),
     generatedSkill("ontomato-analyst-assistant", "Answer business data questions: delegate them to the data retriever, reuse a published metric when one fits, and explain the dataset the answer relies on."),
     generatedSkill("ontology-query", "Query ontology structure, DSL syntax, stored values, business knowledge and published metrics through Ontomato."),
+    generatedSkill("knowledge-submit", "Submit a business scope the user confirmed as pending business knowledge for administrator review."),
     fileBackedSkill("ontomato-app-builder", "Compose and check panel application source with the Ontomato SDK. Use when building a panel or moving an existing page into the product layer.", true),
     fileBackedSkill("ops-diagnosis", "Diagnose an Ontomato question or service fault using authorized read-only evidence: service logs, runtime sessions and artifacts, configuration, health, metadata, DSL queries and operations knowledge.", true),
     generatedSkill("data-retrieval", "Deliver a query logic package as a dataset by rerunning it through Ontomato under the user's authorization.", true),

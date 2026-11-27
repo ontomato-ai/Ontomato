@@ -40,6 +40,11 @@ export const knowledgeEntrySchema = z.object({
   knowledgeText: z.string(),
   knowledgeTags: z.array(z.string()).nullish(),
   status: z.number(),
+  submission: z.object({
+    sessionId: z.string(),
+    runId: z.string(),
+    quote: z.string(),
+  }).passthrough().optional(),
 }).passthrough();
 type KnowledgeEntry = z.infer<typeof knowledgeEntrySchema>;
 

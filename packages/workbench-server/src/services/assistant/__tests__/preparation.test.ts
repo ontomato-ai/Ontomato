@@ -6,7 +6,7 @@ vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://o
 vi.mock('../prompts',()=>({effectiveSystemPrompt:()=> 'Instructions'}));
 vi.mock('../../../i18n',()=>({resolveLocale:(locale:string)=>locale}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({callbackUrl:'http://workbench.test'})}}));
-vi.mock('../skills',()=>({needsRetrievalScope:(skills:unknown[])=>skills.length>0,hasGovernanceSkill:()=>false,prepareAssistantSkills:mocks.skills}));
+vi.mock('../skills',()=>({needsRetrievalScope:(skills:unknown[])=>skills.length>0,needsKnowledgeSubmit:(skills:{name:string}[])=>skills.some(skill=>skill.name==="knowledge-submit"),hasGovernanceSkill:()=>false,prepareAssistantSkills:mocks.skills}));
 vi.mock('../context',()=>({assistantOntologyContext:mocks.overview}));
 vi.mock('../store',()=>({assistantStore:{turns:mocks.turns,recordRetrievalScope:mocks.record}}));
 vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=mocks.session;request=mocks.identities;}}));
@@ -87,6 +87,16 @@ it('states the configured class scope only when the agent has one',async()=>{
  const input=request();input.turn={...input.turn,class_names:[]};
  const unscoped=await prepareAnalystRun(input);
  expect(unscoped.definition.systemPrompt).not.toContain('Configured data scope for this run');
+});
+
+it('adds the knowledge submission callback only when that skill is selected',async()=>{
+ const input=request();const submit={name:'knowledge-submit',namespace:{kind:'provider' as const,provider:'ontology'}};
+ mocks.skills.mockResolvedValue({skills:[{skill:submit,digest}],pageControl:false});
+ const run=await prepareAnalystRun(input);
+ expect(run.businessCallbacks?.knowledgeSubmit?.baseUrl).toBe('http://workbench.test/api/assistant/executions/run/knowledge-submit');
+ input.a.skills=[analyst];mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:false});
+ const without=await prepareAnalystRun(input);
+ expect(without.businessCallbacks).not.toHaveProperty('knowledgeSubmit');
 });
 
 it('withholds page tools and panel callbacks when the assistant does not carry the page operator',async()=>{

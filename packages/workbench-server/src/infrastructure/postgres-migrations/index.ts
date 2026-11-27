@@ -23,6 +23,7 @@ import { ASSISTANT_CHART_SKILLS_NAME, ASSISTANT_CHART_SKILLS_VERSION, migrateAss
 import { PAGE_OPERATOR_SKILL_NAME, PAGE_OPERATOR_SKILL_VERSION, migratePageOperatorSkill } from "./20261127-page-operator-skill-backfill/migration";
 import { SKILL_PRELOAD_NAME, SKILL_PRELOAD_VERSION, migrateSkillPreload } from "./20261127-skill-preload-backfill/migration";
 import { ONTOLOGY_QUERY_SKILL_NAME, ONTOLOGY_QUERY_SKILL_VERSION, migrateOntologyQuerySkill } from "./20261127-ontology-query-skill-backfill/migration";
+import { KNOWLEDGE_SUBMIT_SKILL_NAME, KNOWLEDGE_SUBMIT_SKILL_VERSION, migrateKnowledgeSubmitSkill } from "./20261127-knowledge-submit-skill-backfill/migration";
 import { GOVERNANCE_REPORT_SKILL_NAME, GOVERNANCE_REPORT_SKILL_VERSION, migrateGovernanceReportSkill } from "./20261121-governance-report-skill/migration";
 import {
   ASSISTANT_DEFAULT_PROMPTS_NAME,
@@ -182,6 +183,23 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
           return migrated;
         });
         logger.info("Ontology query skill backfill migrated", { version: migration.version, ...result });
+      },
+    },
+  },
+  {
+    directory: "20261127-knowledge-submit-skill-backfill",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: KNOWLEDGE_SUBMIT_SKILL_VERSION,
+      name: KNOWLEDGE_SUBMIT_SKILL_NAME,
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        const result = await inMigrationTransaction(client, async () => {
+          const migrated = await migrateKnowledgeSubmitSkill(client);
+          await recordMigration(client, migration.version, migration.name);
+          return migrated;
+        });
+        logger.info("Knowledge submit skill backfill migrated", { version: migration.version, ...result });
       },
     },
   },

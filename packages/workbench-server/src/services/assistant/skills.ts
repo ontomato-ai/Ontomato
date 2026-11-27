@@ -17,12 +17,18 @@ import { isApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { AssistantOwner } from "./store";
 
 const RETRIEVAL_SKILLS = new Set(["ontology-query"]);
+const KNOWLEDGE_SUBMIT_SKILL = "knowledge-submit";
 const STARTUP_PLATFORM_SKILL_NAMES = ["ontomato-app-builder", "assistant-report", "application-design", "ontomato-agent-builder", "ontomato-page-operator"];
 
 /** Skills whose ontology query commands need the run-scoped retrieval caller and callback. */
 export function needsRetrievalScope(skills: readonly RuntimeSkillRef[]) {
   return skills.some(skill => skill.namespace.kind === "provider" && skill.namespace.provider === "ontology"
     && RETRIEVAL_SKILLS.has(skill.name));
+}
+
+export function needsKnowledgeSubmit(skills: readonly RuntimeSkillRef[]) {
+  return skills.some(skill => skill.namespace.kind === "provider" && skill.namespace.provider === "ontology"
+    && skill.name === KNOWLEDGE_SUBMIT_SKILL);
 }
 
 export function hasGovernanceSkill(skills: readonly RuntimeSkillRef[]) {

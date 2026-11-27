@@ -37,6 +37,7 @@ public class KnowledgeGovernanceService {
   private final OntologyAgentDefinitions definitions;
   private final QueryGrantService grants;
   private final KnowledgeService knowledge;
+  private final PendingKnowledgeService pendingKnowledge;
   private final AdminService admin;
   private final AgentExecutionAccess executions;
   private final ScheduleIdentity identities;
@@ -91,10 +92,10 @@ public class KnowledgeGovernanceService {
 
   public KnowledgeGovernanceService(OntologyAgentStore store, AgentRuntimeClient runtime,
       GovernanceRuntimeClient platform, OntologyAgentDefinitions definitions, QueryGrantService grants,
-      KnowledgeService knowledge, AdminService admin, AgentExecutionAccess executions, ScheduleIdentity identities,
+      KnowledgeService knowledge, PendingKnowledgeService pendingKnowledge, AdminService admin, AgentExecutionAccess executions, ScheduleIdentity identities,
       LangService language, AuthorizationService authorization) {
     this.store=store; this.runtime=runtime; this.platform=platform; this.definitions=definitions;
-    this.grants=grants; this.knowledge=knowledge; this.admin=admin;this.executions=executions;this.identities=identities;
+    this.grants=grants; this.knowledge=knowledge; this.pendingKnowledge=pendingKnowledge; this.admin=admin;this.executions=executions;this.identities=identities;
     this.language=language; this.authorization=authorization;
   }
 
@@ -458,14 +459,10 @@ public class KnowledgeGovernanceService {
     var imported = new ArrayList<String>();
     var skipped = new ArrayList<String>();
     for (var item : records) {
-      var itemId = item.getString("id");
-      if (existing.containsKey(itemId)) {
-        skipped.add(itemId);
-      } else {
-        knowledge.addBussinessKnowledge(itemId, item.getString("title"), item.getString("text"), 0,
-            item.containsKey("tags") ? item.getList("tags", String.class) : List.of(), identity);
-        imported.add(itemId);
-      }
+      var result = pendingKnowledge.save(item.getString("id"), item.getString("title"), item.getString("text"),
+          item.containsKey("tags") ? item.getList("tags", String.class) : List.of(), identity);
+      if (result.created()) imported.add(result.knowledgeId());
+      else skipped.add(result.knowledgeId());
     }
     var receipt = JSONObject.of("imported", imported, "skipped", skipped);
     if (!imported.isEmpty()) receipt.put("status", "pending");
