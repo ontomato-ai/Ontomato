@@ -406,8 +406,8 @@ immutable artifacts as read-only links beneath the parent session's `outputs/age
 notifies the parent with a status-only `agent-result` signal. That signal carries completed, failed or
 cancelled (with the failure or cancellation reason where available) and the runtime-written instruction
 to read the result. `read` is the result payload path: it reads the child run's final assistant reply
-and returns it with the mapped exact paths to cite. The parent session resolves those paths as artifact
-references without copying their bytes. Cancel closes eligibility
+and returns it with the exact paths registered during that settlement mapping; it does not repeat the
+mapping. The parent session resolves those paths as artifact references without copying their bytes. Cancel closes eligibility
 before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
 automatic wakeup from that cancellation. No platform task table or delegation budget is added.
 

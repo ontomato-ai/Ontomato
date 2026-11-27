@@ -525,6 +525,18 @@ export class AgentChannel {
       ? await this.runtime.linkAgentFiles(this.scope(parent.session, scope.domainId), parent.session.sessionId, intent.channel.authority.executionKind, scope, intent.session.sessionId, intent.id, files)
       : [];
   }
+  private async deliveredFiles(scope: Scope, intent: AgentRunIntent, files: Array<{ id: string; name: string }>) {
+    const parent = intent.channel.requestedBy;
+    if (!parent) return files;
+    if (!files.length) return [];
+    const references = await this.runtime.store.artifactReferences(this.scope(parent.session, scope.domainId), parent.session.sessionId, intent.id);
+    const bySource = new Map(references.map((reference) => [reference.sourceArtifactId, reference]));
+    return files.map((file) => {
+      const reference = bySource.get(file.id)!;
+      return { id: reference.id, name: file.name, path: reference.path };
+    });
+  }
+
   private async deliveryResult(scope: Scope, intent: AgentRunIntent, delivery: { status: "starting" | "running" | "completed" | "failed" | "cancelled"; files: Array<{ id: string; name: string }> }) {
     let content = intent.error ?? delivery.status;
     if (delivery.status === "completed") {
@@ -533,7 +545,7 @@ export class AgentChannel {
         ? reply.content.filter(part => part.type === "text").map(part => part.text).join("\n")
         : "";
     }
-    return { content, files: await this.mapDeliveredFiles(scope, intent, delivery.files) };
+    return { content, files: await this.deliveredFiles(scope, intent, delivery.files) };
   }
   private async notify(scope: Scope, runId: string,preparedFailure=false) {
     const intent = await this.facts.intent(scope, runId);

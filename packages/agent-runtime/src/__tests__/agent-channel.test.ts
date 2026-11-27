@@ -24,7 +24,7 @@ const notification: AgentNotification = { role: "notification", kind: "agent-ans
 afterEach(() => { vi.unstubAllGlobals(); });
 function channel() {
   let locked = false;
-  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined), finalReply: vi.fn(async () => ({ role: "assistant", content: [{ type: "text", text: "Saved final reply" }], timestamp: 1 })) },
+  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined), finalReply: vi.fn(async () => ({ role: "assistant", content: [{ type: "text", text: "Saved final reply" }], timestamp: 1 })), artifactReferences: vi.fn(async () => [{ id: inputId, sourceArtifactId: inputId, path: `outputs/agents/${inputId}/${inputId}-delivered.dataset.json` }]) },
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
     publishSessionRun: vi.fn(),
@@ -474,6 +474,8 @@ it("message reads expose conversation progress without transferring the child's 
   expect(result.messages.map(message => message.id)).toEqual([inputId]);
   expect(result).toMatchObject({ content: "Saved final reply" });
   expect(result.files).toEqual([{id:inputId,name:"delivered.dataset.json",path:`outputs/agents/${inputId}/${inputId}-delivered.dataset.json`}]);
+  expect(runtime.linkAgentFiles).not.toHaveBeenCalled();
+  expect(runtime.store.artifactReferences).toHaveBeenCalledWith(scope, sessionId, inputId);
 });
 
 it("does not prepare a child intent cancelled concurrently with its admission", async () => {
