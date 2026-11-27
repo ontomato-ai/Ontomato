@@ -4,11 +4,11 @@ This topic covers a business data question from the assistant's retrieval reques
 
 ## How a Question Becomes a Dataset
 
-1. The assistant sends the complete question once using `start-retrieval`. The command starts the ontology-owned data retriever and recalls published metrics concurrently. The assistant can execute a published metric when its definition and parameters fit the question.
+1. The assistant starts the ontology-owned data retriever once through the native agent channel and recalls published metrics with `ontology-query`'s `recall-metrics`. The assistant can execute a published metric when its definition and parameters fit the question.
 2. The data retriever explores the ontology and data, then submits its recipe and source metadata to ontology. Ontology executes the recipe under the applicable user permissions and issues a receipt. Published metric execution uses the same formal dataset delivery boundary.
 3. Ontology accepts dataset artifacts that match their execution receipts. The retriever notifies the assistant when its result is ready. The assistant reads the delivered files and uses the dataset's scope, assumptions and limitations in its reply.
 
-Implementation entry points include `agent-skills/ontomato-analyst-assistant/SKILL.md`, `agent-skills/ontomato-analyst/assistant.mjs` and the data engine's `OntologyRetrievalController` and `OntologyRetrievalService`.
+Implementation entry points include `agent-skills/ontomato-analyst-assistant/SKILL.md`, `agent-skills/ontology-query/scripts/ontomato.mjs` and the data engine's `OntologyRetrievalController` and `OntologyRetrievalService`.
 
 ## Where to Look
 

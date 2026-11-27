@@ -28,7 +28,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
+import { ontologyQueryCommand } from "../agent-skills/ontomato-analyst/client.mjs";
 import { panelRegistrationClient } from "../agent-skills/ontomato-app-builder/scripts/panel-registration.mjs";
 
 test("deletes a panel by ID without loading its obsolete definition", async () => {
@@ -52,7 +52,7 @@ test("deletes a panel by ID without loading its obsolete definition", async () =
 
 test("shared analyst numeric options reject invalid values before HTTP", async () => {
   for (const command of [["distinct-values", "person", "id"], ["metrics", "question"], ["knowledge", "question"]])
-    await assert.rejects(analystCommand({ envUrl: "http://127.0.0.1:1" }, [...command, "--limit", "NaN"]), /--limit: expected a finite number/);
+    await assert.rejects(ontologyQueryCommand({ envUrl: "http://127.0.0.1:1" }, [...command, "--limit", "NaN"]), /--limit: expected a finite number/);
 });
 
 test("skill Action execution preserves complete explicit parameters and owner errors", async () => {

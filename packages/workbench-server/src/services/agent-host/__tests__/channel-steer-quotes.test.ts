@@ -47,7 +47,7 @@ it("excludes queued unclaimed unattended messages when updating retrieval user q
     workspaceCommit: null,
     createdAt: "2026-11-24T05:00:00.000Z",
     finishedAt: null,
-    resolvedSkills: [{ skill: { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" }, digest: "d1", description: "Ontology retrieval" }],
+    resolvedSkills: [{ skill: { namespace: { kind: "provider", provider: "ontology" }, name: "ontology-query" }, digest: "d1", description: "Ontology retrieval" }],
   });
   vi.spyOn(RuntimeClient.prototype, "session").mockResolvedValue({
     session: {

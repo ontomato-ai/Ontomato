@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   requirePanelEntry: vi.fn(),
   publishSkill: vi.fn(),
   publishSkillPackage: vi.fn(),
-  publishOntologyAssistantSkill: vi.fn(),
   publishGovernanceSkill: vi.fn(),
 }));
 
@@ -21,7 +20,6 @@ vi.mock("../../agent-runtime/skills", async original => ({
   ...await original<typeof import("../../agent-runtime/skills")>(),
   publishSkill: mocks.publishSkill,
   publishSkillPackage: mocks.publishSkillPackage,
-  publishOntologyAssistantSkill: mocks.publishOntologyAssistantSkill,
 }));
 
 configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { ...enLocaleMeta, messages: en } } });

@@ -59,8 +59,10 @@ packages: {}
     join(dir, "apps/workbench/package.json"),
     `${JSON.stringify({ name: appName })}\n`,
   );
-  mkdirSync(join(dir, "agent-skills/ontomato-app-builder"), { recursive: true });
-  writeFileSync(join(dir, "agent-skills/ontomato-app-builder/SKILL.md"), appName);
+  for (const skill of ["ontomato-app-builder", "ontomato-analyst-assistant", "ontology-query"]) {
+    mkdirSync(join(dir, "agent-skills", skill), { recursive: true });
+    writeFileSync(join(dir, "agent-skills", skill, "SKILL.md"), appName);
+  }
   git(["add", "."]);
   git(["-c", "user.name=wb", "-c", "user.email=wb@t", "commit", "-m", "init"]);
   return dir;

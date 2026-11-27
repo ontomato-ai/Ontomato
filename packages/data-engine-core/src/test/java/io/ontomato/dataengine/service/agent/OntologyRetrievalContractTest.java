@@ -220,7 +220,7 @@ class OntologyRetrievalContractTest {
     var grantFilter = new QueryGrantFilter(grants, executions, identity);
     var channelController = new AgentChannelController(callers, mock(AgentDirectory.class), store, runtime,
         new WorkbenchServiceAuthentication("fixture-service"), retrieval, tasks, mock(ActionCreationService.class),
-        mock(OntologyGenerationService.class), authorization, mock(LangService.class), new RuntimeCodeClient(runtime));
+        mock(OntologyGenerationService.class), authorization, mock(LangService.class));
     http =
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),
@@ -257,7 +257,7 @@ class OntologyRetrievalContractTest {
                         "namespace",
                         Map.of("kind", "provider", "provider", "ontology"),
                         "name",
-                        "ontomato-analyst"),
+                        "ontology-query"),
                     "digest",
                     skillDigest,
                     "description",

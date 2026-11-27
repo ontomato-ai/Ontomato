@@ -82,7 +82,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
       : "",
   ].filter(Boolean).join("\n\n");
   const businessCallbacks = {
-    ...executionBusinessCallbacks(owner, credentials, id, { pageControl }),
+    ...executionBusinessCallbacks(owner, credentials, id, { pageControl, retrieval }),
     ...(governance && {
       governance: governanceBusinessCallback(
         session.id,

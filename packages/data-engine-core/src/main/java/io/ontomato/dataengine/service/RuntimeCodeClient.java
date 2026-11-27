@@ -4,7 +4,6 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient.SkillVersion;
-import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,14 +18,7 @@ public class RuntimeCodeClient {
           "namespace",
           Map.of("kind", "provider", "provider", "ontology"),
           "name",
-          "ontomato-analyst");
-  /** The assistant-scoped analyst package reuses the complete skill's client files. */
-  public static final Map<String, Object> ASSISTANT_SKILL =
-      Map.of(
-          "namespace",
-          Map.of("kind", "provider", "provider", "ontology"),
-          "name",
-          "ontomato-analyst-assistant");
+          "ontology-query");
   private final AgentRuntimeClient runtime;
 
   public RuntimeCodeClient(AgentRuntimeClient runtime) {
@@ -44,7 +36,6 @@ public class RuntimeCodeClient {
               for (int attempt = 0; attempt < 30; attempt++) {
                 try {
                   registerSkill();
-                  registerAssistantSkill();
                   return;
                 } catch (Exception error) {
                   if (attempt == 29)
@@ -90,40 +81,12 @@ public class RuntimeCodeClient {
     for (String file :
         List.of(
             "SKILL.md",
-            "ontomato.mjs",
-            "client.mjs",
+            "scripts/ontomato.mjs",
             "application.yml",
             "references/dsl.md"))
       files.add(
-          Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));
+          Map.of("path", file, "content", skillResource("ontology-skills/ontology-query/" + file)));
     return runtime.publishSkill("ontology-skill-registration", SKILL, files);
-  }
-
-  /** Publish the restricted entry point with the complete package's shared client files. */
-  public SkillVersion registerAssistantSkill() throws Exception {
-    List<Map<String, String>> files = new ArrayList<>();
-    files.add(
-        Map.of(
-            "path",
-            "SKILL.md",
-            "content",
-            skillResource("ontology-skills/ontomato-analyst-assistant/SKILL.md")));
-    files.add(
-        Map.of(
-            "path",
-            "ontomato.mjs",
-            "content",
-            skillResource("ontology-skills/ontomato-analyst/assistant.mjs")));
-    for (String file : List.of("client.mjs", "application.yml"))
-      files.add(
-          Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));
-    files.add(
-        Map.of(
-            "path",
-            "retriever-ref.json",
-            "content",
-            OntologyAgentStore.retrieverRef().toJSONString()));
-    return runtime.publishSkill("ontology-assistant-skill-registration", ASSISTANT_SKILL, files);
   }
 
   public JSONObject execution(String domain, String id) throws Exception {

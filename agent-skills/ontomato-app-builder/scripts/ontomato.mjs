@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import { analystCommand } from "./client.mjs";
+import { agentChannelCommand, ontologyQueryCommand } from "./client.mjs";
 import { authenticate } from "./identity.mjs";
 import { domainApplicationIconChoices, panelRegistrationClient } from "./panel-registration.mjs";
 import { currentSdkClient, installedPanelSdk, readLocalComponentPackages } from "./current-sdk.mjs";
@@ -674,7 +674,7 @@ async function main() {
     }));
   }
   if (cmd === "agent" && process.env.ONTOMATO_SKILL_SCENARIO === "platform") {
-    return analystCommand({}, argv);
+    return agentChannelCommand({}, argv.slice(1));
   }
   const platformAuthoring = ((cmd === "metric-view" && ["context", "generate"].includes(argv[1]))
     || (cmd === "action" && argv[1] === "context"))
@@ -741,8 +741,10 @@ async function main() {
     await vectorDelete(api, argv.slice(1));
     return;
   }
-  if (cmd === "distinct-values" || cmd === "execute-dsl" || cmd === "agent")
-    return analystCommand(api,argv,async()=>{await bindTestTarget(api,workspaceId);return headers(api);});
+  if (cmd === "distinct-values" || cmd === "execute-dsl")
+    return ontologyQueryCommand(api,argv,async()=>{await bindTestTarget(api,workspaceId);return headers(api);});
+  if (cmd === "agent")
+    return agentChannelCommand(api,argv.slice(1),async()=>{await bindTestTarget(api,workspaceId);return headers(api);});
   if (cmd === "action" && argv[1] === "re-explain") {
     const rest = argv.slice(2);
     const missing = takeFlag(rest, "--missing");

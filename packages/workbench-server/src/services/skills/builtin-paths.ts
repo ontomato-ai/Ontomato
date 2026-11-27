@@ -5,7 +5,7 @@ import { workbenchServerResourceRoot } from "../../content/resources";
 
 /** Locate a file-backed platform skill without reading its package. */
 export function workbenchBuiltinSkillRoot(skill: RuntimeSkillRef): string {
-  if (skill.name === "ontomato-app-builder") {
+  if (["ontomato-app-builder", "ontomato-analyst-assistant", "ontology-query"].includes(skill.name)) {
     return path.resolve(workbenchServerResourceRoot, "../../agent-skills", skill.name);
   }
   if (skill.name === "dashboard-pages") {

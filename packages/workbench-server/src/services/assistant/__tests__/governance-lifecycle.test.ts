@@ -106,14 +106,14 @@ it.each(["interactive", "automation", "older automation"] as const)("uses the ex
 });
 
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
-  const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
+  const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontology-query"};
   const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageControl:false});
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
   expect(prepared).not.toHaveProperty("environment");
   expect(mocks.overview).toHaveBeenCalled();expect(mocks.scope).toHaveBeenCalledWith(runId,owner,runId);
 });
 it("a failed scope opening never records an opened scope",async()=>{
-  const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
+  const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontology-query"};
   mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageControl:false});mocks.open.mockRejectedValue(new Error("admission failed"));
   await expect(assistantService.prepare(preparation(),owner,{token:"user"})).rejects.toThrow("admission failed");
   expect(mocks.scope).not.toHaveBeenCalled();

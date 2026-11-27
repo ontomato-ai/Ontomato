@@ -58,21 +58,21 @@ describe("default assistant prompts", () => {
     expect(getPromptTemplate("assistant.regular.system")).toMatch(/only when the user requests them/i);
   });
 
-  it("the product analyst skill starts retrieval and metric recall concurrently, reuses a fitting metric and rests while the retriever works", () => {
+  it("the product analyst skill delegates through the native agent tool and uses ontology-query for metrics and definitions", () => {
     const skill=readFileSync(path.resolve("../../agent-skills/ontomato-analyst-assistant/SKILL.md"),"utf8");
-    expect(skill).toContain('op: "read"');expect(skill).toContain('op: "send"');
-    expect(skill).toContain("notification");
+    expect(skill).toContain('op: "start"');
+    expect(skill).toContain('op: "read"');
+    expect(skill).toContain('op: "send"');
+    expect(skill).toContain("dd3b91b9-9214-4aa6-9937-fb07fd37b232");
     for(const command of ["dataset-desc","classes","schema <class>...","relationships <class>...","knowledge <question>",
-      "start-retrieval \"<question>\"","run-metric <id> --revision"])
+      "recall-metrics","run-metric <id> --revision"])
       expect(skill).toContain(command);
-    expect(skill).not.toMatch(/`metrics <question>|recall-metrics|op: "list"|op: "start"/);
-    expect(skill).toMatch(/Run `start-retrieval[^`]*` once\.[\s\S]*starts the\s+retriever and recalls published metrics at the same time/);
+    expect(skill).not.toMatch(/start-retrieval|retriever-ref|assistant\.mjs/);
     expect(skill).toMatch(/end\s+this turn\.[\s\S]*there is\s+nothing to poll, read or wait for/);
-    expect(skill).not.toMatch(/progress check|binding result|Both branches/i);
     expect(skill).toMatch(/Cite each dataset the answer relies\s+on/);
     expect(skill).toContain("The host supplies the ontology URL");
     expect(skill).toContain('op: "cancel"');
-    expect(skill).not.toMatch(/node[^\r\n`]*\bagent\b|--follow|--files|--reply-to|retriever-cancel/);
+    expect(skill).not.toMatch(/--follow|--reply-to|retriever-cancel/);
   });
 
   it("stores NULL when a built-in agent still equals the current template", () => {

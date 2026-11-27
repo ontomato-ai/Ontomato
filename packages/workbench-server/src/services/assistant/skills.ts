@@ -10,18 +10,17 @@ import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
 import { readSkillView, type SkillView } from "../skills/view";
 import { builtinSkillEntries } from "../skills/builtin-catalog";
-import { publishOntologyAssistantSkill, publishSkill, publishSkillPackage } from "../agent-runtime/skills";
+import { publishSkill, publishSkillPackage } from "../agent-runtime/skills";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { requirePanelEntry } from "../product-panels/application-use";
 import { isApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { AssistantOwner } from "./store";
 
-const RETRIEVAL_SKILLS = new Set(["ontomato-analyst-assistant"]);
-const ANALYST_SKILL: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" };
+const RETRIEVAL_SKILLS = new Set(["ontology-query"]);
 const STARTUP_PLATFORM_SKILL_NAMES = ["ontomato-app-builder", "assistant-report", "application-design", "ontomato-agent-builder", "ontomato-page-operator"];
 
-/** The selectable ontology query skill is the only assistant skill that needs a retrieval caller. */
+/** Skills whose ontology query commands need the run-scoped retrieval caller and callback. */
 export function needsRetrievalScope(skills: readonly RuntimeSkillRef[]) {
   return skills.some(skill => skill.namespace.kind === "provider" && skill.namespace.provider === "ontology"
     && RETRIEVAL_SKILLS.has(skill.name));
@@ -123,7 +122,6 @@ export function loadedSkillVersion(ref: RuntimeSkillRef, loaded: readonly Runtim
 async function publishSelectedSkill(domainId: string, ref: RuntimeSkillRef, view: AssistantSkillView): Promise<RuntimeSkillVersion> {
   const key = runtimeSkillKey(ref);
   if (key === runtimeSkillKey(GOVERNANCE_SKILL)) return publishGovernanceSkill(domainId);
-  if (key === runtimeSkillKey(ANALYST_SKILL)) return publishOntologyAssistantSkill(domainId);
 
   const entry = view.registry.getSkillByRef(ref);
   if (!entry || entry.selectionRestricted || entry.source.kind === "generated")
