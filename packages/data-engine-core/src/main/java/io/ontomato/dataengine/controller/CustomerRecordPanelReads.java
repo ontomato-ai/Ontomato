@@ -236,8 +236,8 @@ class CustomerRecordPanelReads {
     }
 
     private WorkbenchPanelRead instanceGraph(String read, String operation) {
-        return WorkbenchPanelRead.liveData(OBJECT_TYPE, read, (subject, parameters) ->
-            data.queryInstanceGraph(operation, new JSONObject(parameters), subject.liveDataPermission(), subject.identity().domainId()));
+        return WorkbenchPanelRead.callerScopedLiveData(OBJECT_TYPE, read, (subject, parameters, target) ->
+            data.queryInstanceGraph(operation, new JSONObject(parameters), subject.liveDataPermission(), subject.identity().domainId(), target));
     }
 
     private Facts query(SubjectContext subject, Map<String, Object> parameters, ExecutionTarget target) {

@@ -761,6 +761,7 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
     requireActiveWorkflowStep(action, path, target);
     var admission = authorization.requireExecution(authorization.subject(user), action, path, target);
     Function function = MetricViewBindings.executionWriteFunction(action.getFunction(), param);
+    preconditions.requireCallerClasses(action, user.getDomainId(), target);
     checkExecutionTarget(action, param, lang, user, permission, target, admission, path);
     var grant = ActionRuntimeGrant.capture(action, user, param, path);
     List<String> affectedTypes = ActionDefinitionProjector.project(action).getList("affects", String.class);
@@ -845,7 +846,8 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
     requireExecutable(action, lang, user, target);
     var path = new Standalone();
     var admission = authorization.requireExecution(authorization.subject(user), action, path, target);
-    return describeExecutionForm(action, bound, submitted, readOnly, lang, user, permission, target, admission, path, false);
+    preconditions.requireCallerClasses(action, user.getDomainId(), target);
+    return describeExecutionForm(action, bound, submitted, readOnly, lang, user, permission, target, admission, path);
   }
 
   @Override
@@ -855,15 +857,14 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
     String userId = target == ExecutionTarget.LIVE ? identity.userId() : subject.javaUserId();
     var user = new SimpleUser(userId, null, null, true, identity.domainId());
     requireExecutable(action, lang, user, target);
-    if (action.getTarget() != null)
-      ActionPreconditionService.requireDescriptionClasses(target, List.of(action.getTarget().className()));
+    preconditions.requireCallerClasses(action, identity.domainId(), target);
     var permission = dataPermissions.getDataPermission(userId, identity.domainId());
-    describeExecutionForm(action, bound, null, readOnly, lang, user, permission, target, admission, new Standalone(), true);
+    describeExecutionForm(action, bound, null, readOnly, lang, user, permission, target, admission, new Standalone());
   }
 
   private JSONObject describeExecutionForm(Action action, JSONObject bound, JSONObject submitted, List<String> readOnly,
       String lang, User user, UserDataPermission permission, ExecutionTarget target,
-      CapabilityGrantLookup.Admission admission, Standalone path, boolean description) {
+      CapabilityGrantLookup.Admission admission, Standalone path) {
     List<Parameter> parameters = action.getFunction().getParameters();
     var names = new HashSet<String>();
     for (Parameter parameter : parameters) {
@@ -897,8 +898,7 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
       if (criteria != null && criteria.getJSONArray("conditions") != null
           && criteria.getJSONArray("conditions").toJavaList(JSONObject.class).stream()
               .allMatch(condition -> bound.get(condition.getString("objectParameter")) != null)) {
-        if (description) requirePreconditions(preconditions.evaluateDescription(action, bound, user, permission, target), lang);
-        else checkPreconditions(action, bound, lang, user, permission, target);
+        checkPreconditions(action, bound, lang, user, permission, target);
       }
       form.put("errors", ScheduleJson.array());
       form.put("parameters", null);

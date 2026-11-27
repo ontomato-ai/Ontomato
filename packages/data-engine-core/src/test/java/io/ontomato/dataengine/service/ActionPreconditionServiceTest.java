@@ -148,8 +148,8 @@ class ActionPreconditionServiceTest {
     var action = action(criteria(first, excluded));
     var scope = new ExecutionTarget(null, null, List.of(REPORT), Long.MAX_VALUE);
     var refusal = org.junit.jupiter.api.Assertions.assertThrows(
-        ActionPreconditionService.DescriptionScopeDenied.class,
-        () -> service.evaluateDescription(action, JSONObject.of("report_id", "R1"), alice, permission, scope));
+        ActionPreconditionService.CallerScopeDenied.class,
+        () -> service.requireCallerClasses(action, DOMAIN, scope));
     assertEquals("ACTION_TARGET_OUT_OF_SCOPE", refusal.code());
     assertEquals("超出本轮数据范围", refusal.getMessage());
     org.mockito.Mockito.verifyNoInteractions(queries, scopedQueries);
@@ -159,11 +159,12 @@ class ActionPreconditionServiceTest {
   void buttonDescriptionInsideScopeUsesTheOriginalConditionOutcome() {
     var action = action(criteria(condition("status", "=", "open", "must be open")));
     var scope = new ExecutionTarget(null, null, List.of(REPORT), Long.MAX_VALUE);
+    service.requireCallerClasses(action, DOMAIN, scope);
     state("R1", "status", "closed");
-    assertEquals(List.of("must be open"), service.evaluateDescription(
+    assertEquals(List.of("must be open"), service.evaluate(
         action, JSONObject.of("report_id", "R1"), alice, permission, scope).violations());
     state("R1", "status", "open");
-    assertTrue(service.evaluateDescription(action, JSONObject.of("report_id", "R1"), alice, permission, scope).satisfied());
+    assertTrue(service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, scope).satisfied());
   }
 
   private void state(String reportId, String field, Object value) {

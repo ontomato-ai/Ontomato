@@ -19,7 +19,7 @@ import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
-import io.ontomato.dataengine.service.ActionPreconditionService.DescriptionScopeDenied;
+import io.ontomato.dataengine.service.ActionPreconditionService.CallerScopeDenied;
 import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.ExecutionTarget;
@@ -91,7 +91,7 @@ class ActionPanelEndpointTest {
     when(actionService.queryById("precondition")).thenReturn(precondition);
     var grant = io.ontomato.dataengine.service.CapabilityGrantLookup.Admission.ALL;
     when(authorization.requireExecution(same(executor), any(), any(), same(scope))).thenReturn(grant);
-    doThrow(new DescriptionScopeDenied())
+    doThrow(new CallerScopeDenied())
         .when(actionService).requireExecutionForm(same(denied), any(), any(), anyString(), same(executor), same(grant), same(scope));
     doThrow(new ActionAuthorization.Denied("ACTION_TARGET_OUT_OF_SCOPE", "Outside action permission"))
         .when(actionService).requireExecutionForm(same(hidden), any(), any(), anyString(), same(executor), same(grant), same(scope));

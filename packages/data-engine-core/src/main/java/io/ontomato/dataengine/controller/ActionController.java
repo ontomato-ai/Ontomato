@@ -46,7 +46,7 @@ import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionForm;
-import io.ontomato.dataengine.service.ActionPreconditionService.DescriptionScopeDenied;
+import io.ontomato.dataengine.service.ActionPreconditionService.CallerScopeDenied;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.ActionTrialService;
 import io.ontomato.dataengine.service.ActionTrialStore;
@@ -498,7 +498,7 @@ public class ActionController {
 		}
 		try {
 			actionService.requireExecutionForm(action, bound, readOnly, lang, subject, admission, scope);
-		} catch (DescriptionScopeDenied refusal) {
+		} catch (CallerScopeDenied refusal) {
 			if (!item) throw refusal;
 			// The definition and binding were admitted. Only send the fields used to render the disabled button.
 			var parametersForDisplay = action.getFunction().getParameters().stream()

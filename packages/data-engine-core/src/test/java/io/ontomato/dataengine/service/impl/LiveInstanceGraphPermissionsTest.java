@@ -12,6 +12,7 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
@@ -26,6 +27,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /** Exercises public graph responses against an in-memory datasource, without services or databases. */
@@ -56,7 +58,8 @@ class LiveInstanceGraphPermissionsTest {
         var user = mock(User.class); when(user.getDomainId()).thenReturn("test");
         try (var currentUser = mockStatic(SystemUtils.class)) {
             currentUser.when(SystemUtils::getCurUser).thenReturn(user);
-            var summary = data(controller.instanceGraphSummary());
+            var request = new MockHttpServletRequest();
+            var summary = data(controller.instanceGraphSummary(request));
             assertEquals(3, summary.getIntValue("nodeCount"));
             assertEquals(Set.of("Person:p1", "Person:p3", "Department:d1"), ids(summary, "overviewNodes"));
             assertEquals(1, summary.getJSONArray("overviewEdges").size());
@@ -64,12 +67,12 @@ class LiveInstanceGraphPermissionsTest {
             assertEquals(2, summary.getJSONArray("classes").size());
             assertFalse(summary.toJSONString().contains("Hidden name"));
             assertFalse(summary.toJSONString().contains("Secret"));
-            assertEquals(3, data(controller.instanceGraphStatistics()).getIntValue("nodeCount"));
+            assertEquals(3, data(controller.instanceGraphStatistics(request)).getIntValue("nodeCount"));
 
-            var search = data(controller.instanceGraphSearch(JSONObject.of("term", "Hidden name")));
+            var search = data(controller.instanceGraphSearch(JSONObject.of("term", "Hidden name"), request));
             assertTrue(search.getJSONArray("nodes").isEmpty());
             assertFalse(search.getBooleanValue("hasMore"));
-            search = data(controller.instanceGraphSearch(JSONObject.of("term", "p1")));
+            search = data(controller.instanceGraphSearch(JSONObject.of("term", "p1"), request));
             assertEquals(Set.of("Person:p1"), ids(search, "nodes"));
             assertEquals(1, search.getIntValue("total"));
             var node = search.getJSONArray("nodes").getJSONObject(0);
@@ -78,16 +81,26 @@ class LiveInstanceGraphPermissionsTest {
 
             var neighbors = data(controller.instanceGraphNeighborhood(JSONObject.of(
                     "node", Map.of("className", "Department", "primaryKey", "d1"),
-                    "direction", "incoming", "relationKinds", List.of("worksIn"), "limit", 1)));
+                    "direction", "incoming", "relationKinds", List.of("worksIn"), "limit", 1), request));
             assertEquals(Set.of("Department:d1", "Person:p1"), ids(neighbors, "nodes"));
             assertEquals(1, neighbors.getIntValue("total"));
             assertNull(neighbors.get("nextOffset"));
             assertFalse(neighbors.toJSONString().contains("Hidden name"));
-            var outgoing = data(controller.instanceGraphNeighborhood(JSONObject.of("id", "Person:p3", "direction", "outgoing")));
+            var outgoing = data(controller.instanceGraphNeighborhood(JSONObject.of("id", "Person:p3", "direction", "outgoing"), request));
             assertEquals(Set.of("Person:p3"), ids(outgoing, "nodes"));
             assertEquals(0, outgoing.getIntValue("total"));
-            assertFalse(controller.instanceGraphNeighborhood(JSONObject.of("id", "Person:p2")).getBooleanValue("success"));
-            assertFalse(controller.instanceGraphNeighborhood(JSONObject.of("id", "Secret:s1")).getBooleanValue("success"));
+            assertFalse(controller.instanceGraphNeighborhood(JSONObject.of("id", "Person:p2"), request).getBooleanValue("success"));
+            assertFalse(controller.instanceGraphNeighborhood(JSONObject.of("id", "Secret:s1"), request).getBooleanValue("success"));
+
+            // The unrestricted graph is already cached for the same row and column permissions.
+            var scope = new ExecutionTarget(null, null, List.of("Person"), Long.MAX_VALUE);
+            var scopedSummary = data(fixture.service.query("summary", new JSONObject(), permission, "test", scope));
+            assertEquals(Set.of("Person:p1", "Person:p3"), ids(scopedSummary, "overviewNodes"));
+            assertTrue(scopedSummary.getJSONArray("overviewEdges").isEmpty());
+            var scopedNeighbors = data(fixture.service.query("neighborhood", JSONObject.of("id", "Person:p1"),
+                    permission, "test", scope));
+            assertEquals(Set.of("Person:p1"), ids(scopedNeighbors, "nodes"));
+            assertEquals(0, scopedNeighbors.getIntValue("total"));
         }
     }
 
@@ -192,7 +205,7 @@ class LiveInstanceGraphPermissionsTest {
         assertFalse(summary.toJSONString().contains("secret1"));
         assertEquals(1, fixture.query("statistics", new JSONObject(), permission).getIntValue("nodeCount"));
         assertTrue(fixture.query("search", new JSONObject(), permission).getJSONArray("nodes").isEmpty());
-        assertFalse(fixture.service.query("neighborhood", JSONObject.of("id", "CountOnly:secret1"), permission, "test").getBooleanValue("success"));
+        assertFalse(fixture.service.query("neighborhood", JSONObject.of("id", "CountOnly:secret1"), permission, "test", ExecutionTarget.LIVE).getBooleanValue("success"));
     }
 
     @Test
@@ -211,7 +224,7 @@ class LiveInstanceGraphPermissionsTest {
         assertFalse(summary.toJSONString().contains("hidden"));
         assertFalse(summary.toJSONString().contains("Hidden label"));
         assertEquals(7, fixture.query("statistics", new JSONObject(), permission).getIntValue("nodeCount"));
-        var stale = fixture.service.query("search", JSONObject.of("version", "stale"), permission, "test");
+        var stale = fixture.service.query("search", JSONObject.of("version", "stale"), permission, "test", ExecutionTarget.LIVE);
         assertEquals("GRAPH_VERSION_CHANGED", stale.getString("code"));
     }
 
@@ -276,7 +289,7 @@ class LiveInstanceGraphPermissionsTest {
         }
 
         JSONObject query(String operation, JSONObject request, UserDataPermission permission) {
-            return data(service.query(operation, request, permission, "test"));
+            return data(service.query(operation, request, permission, "test", ExecutionTarget.LIVE));
         }
 
         String execute(String input) {
