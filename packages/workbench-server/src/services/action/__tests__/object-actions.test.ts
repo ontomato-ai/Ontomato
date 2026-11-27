@@ -84,7 +84,10 @@ describe("resolving an action on a customer object", () => {
       "/api/data-query/action/form": ok(openedForm),
     });
 
-    expect(await resolveObjectAction(host, { actionId: "approve-order", object: order })).toEqual(resolved);
+    expect(await resolveObjectAction(host, { actionId: "approve-order", object: order })).toEqual({
+      ...resolved,
+      declaration: objectActionDeclaration(stored, new Map([["note", "Note"], ["amount", "Amount"]])),
+    });
     expect(sent.map(request => request.path)).toEqual(["/api/data-query/action/queryById", "/api/data-query/action/form"]);
     expect(JSON.parse(String(sent[1]?.init.body))).toEqual({
       id: "approve-order", parameters: { order_id: "00123" }, readOnlyParameters: ["order_id"],

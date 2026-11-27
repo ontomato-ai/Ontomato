@@ -30,7 +30,7 @@ export interface ShellContext {
   /** Changes whenever a run registers new artifacts, so unresolved references retry. */
   artifactRevision: Ref<number>;
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
-  openArtifact(open: OpenArtifact): void;
+  openArtifact(open: OpenArtifact, parentKey?: string): void;
   openArtifactKey: Ref<string | null>;
   /** Opens an in-app page link beside the conversation, or null when the host does not recognise the address. */
   pageLink(href: string): (() => void) | null;

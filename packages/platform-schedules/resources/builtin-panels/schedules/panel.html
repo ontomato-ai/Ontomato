@@ -86,6 +86,22 @@
     margin: 0 0 var(--spacing-md);
     font-size: var(--text-base);
   }
+  .schedules-task-details {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--sdk-border-color);
+    border-radius: var(--radius-sm);
+  }
+  .schedules-task-details > summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .schedules-task-details[open] > summary {
+    margin-bottom: var(--spacing-md);
+  }
+  .schedules-section-title {
+    margin: var(--spacing-md) 0 0;
+    font-size: var(--text-base);
+  }
   .schedules-dialog-body {
     display: flex;
     flex-direction: column;
@@ -287,13 +303,22 @@
     @update:model-value="onFormDialogToggle"
     @closed="restoreFocusAfterForm"
   >
-    <h2 v-if="inline">{{ mode === 'create' ? t('form.newTitle') : t('form.editTitle') }}</h2>
+    <h2 v-if="inline">{{ mode === 'create' ? t('form.newScheduleTitle') : t('form.editScheduleTitle') }}</h2>
     <div class="schedules-dialog-body">
-      <p v-if="mode === 'create'" class="schedules-dialog-sub">{{ t("form.subtitle") }}</p>
-      <p class="schedules-note">{{ t("form.identity") }}</p>
+      <p v-if="!inline && mode === 'create'" class="schedules-dialog-sub">{{ t("form.subtitle") }}</p>
+      <p v-if="!inline" class="schedules-note">{{ t("form.identity") }}</p>
 
       <div v-if="mode === 'create'" data-form="create">
         <projection slot="newForm" @saved="created" @cancel="closeFormDialog">
+          <template v-if="inline" #default>
+            <object-form-fields :fields="['/task/title', '/agentId', '/instruction', '/task/frequency', '/task/enabled']"></object-form-fields>
+            <details class="schedules-task-details">
+              <summary>{{ t("form.advanced") }}</summary>
+              <object-form-fields :fields="['/task/description', '/task/executorId', '/task/coauthorIds', '/task/timeZone', '/task/notifyEmail']"></object-form-fields>
+              <p class="schedules-note">{{ t("form.identity") }}</p>
+            </details>
+          </template>
+
           <template #field-task.appId="{ field, value, disabled, set }">
             <sdk-select
               :model-value="value ?? ''"
@@ -401,6 +426,15 @@
       <div v-else-if="mode === 'edit' && selected" data-form="edit">
         <!-- Do not close the dialog on @discarded so reloading after FORM_CHANGED / REVISION_CONFLICT keeps the user in the editor. -->
         <projection slot="editForm" @saved="saved" @cancel="closeFormDialog">
+          <template v-if="inline" #default>
+            <object-form-fields :fields="['/task/title', '/agentId', '/instruction', '/task/frequency']"></object-form-fields>
+            <details class="schedules-task-details">
+              <summary>{{ t("form.advanced") }}</summary>
+              <object-form-fields :fields="['/task/description', '/task/executorId', '/task/coauthorIds', '/task/timeZone', '/task/notifyEmail']"></object-form-fields>
+              <p class="schedules-note">{{ t("form.identity") }}</p>
+            </details>
+          </template>
+
           <template #field-task.appId="{ field, value, disabled, set }">
             <sdk-select
               :model-value="value ?? ''"
@@ -531,7 +565,7 @@
     }"
     @update:model-value="onRunsDrawerToggle"
   >
-    <h2 v-if="inline">{{ runsDrawerTitle }}</h2>
+
     <div v-if="selected" class="schedules-drawer-body">
       <projection slot="detailPause">
         <template #actions>
@@ -546,7 +580,12 @@
         </template>
       </projection>
 
-      <projection slot="detailSummary"></projection>
+      <details v-if="inline" class="schedules-task-details">
+        <summary>{{ t("runs.taskSettings") }}</summary>
+        <projection slot="detailSummary"></projection>
+      </details>
+      <projection v-else slot="detailSummary"></projection>
+      <h2 v-if="inline" class="schedules-section-title">{{ t("runs.title") }}</h2>
 
       <p v-if="isRunning" class="schedules-drawer-sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
 

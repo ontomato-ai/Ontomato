@@ -37,7 +37,9 @@ count. Never silently drop rows or omit the dataset's truncation warning.
 node skills/assistant-report/scripts/render.cjs work/slides.json
 ```
 
-This writes `outputs/reports/<name>/report.pptx`, next to the report. Intermediate
+Use the existing report path, including reports named differently from `report.md`;
+do not rename it or create symbolic links. Output snapshots require regular files.
+This writes a `.pptx` with the report's basename, next to the report. Intermediate
 plans stay in `work/`; the installed skill directory is read-only. Return a link
 to the actual PPTX in the final reply body. The helper uses bundled ECharts SVG
 SSR with animation disabled, then resvg WASM to render PNG for PptxGenJS. It does

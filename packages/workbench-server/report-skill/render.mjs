@@ -19,7 +19,7 @@ const textStyle = (text) => ({ fontFace: arabic.test(text) ? ARABIC_FONT : FONT_
 const workspacePath = z.string().regex(/^outputs\//).refine(value => !value.split("/").includes(".."));
 const heading = { title: z.string().min(1), takeaway: z.string().optional() };
 const planSchema = z.object({
-  report: workspacePath.refine(value => /^outputs\/reports\/[^/]+\/report\.md$/.test(value)),
+  report: workspacePath.refine(value => /^outputs\/reports\/(?:[^/]+\/)*[^/]+\.md$/.test(value)),
   title: z.string().min(1),
   slides: z.array(z.discriminatedUnion("layout", [
     z.object({ ...heading, layout: z.literal("text"), bullets: z.array(z.string()).min(1) }).strict(),
@@ -134,7 +134,7 @@ async function main() {
       }
     }
   }
-  const output = path.join(path.dirname(plan.report), "report.pptx");
+  const output = plan.report.replace(/\.md$/, ".pptx");
   await deck.writeFile({ fileName: output });
   console.log(output);
 }
