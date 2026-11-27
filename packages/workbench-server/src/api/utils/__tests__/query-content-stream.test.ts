@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import { applyAbcContent, type AbcContentEvent } from "@ontomato/contracts/chat";
 
 import { RunStreamStore } from "../run-stream";
-import { configureI18n, getConclusionPrefix } from "../../../i18n";
+import { configureI18n } from "../../../i18n";
 import { appTextEn } from "../../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { installWorkbenchProduct } from "../../../product/installed";
@@ -103,14 +103,8 @@ describe("live ABC query body on the wire", () => {
     // Query modules read app text while loading, so they are imported once i18n is configured.
     const { executeBaseQuery } = await import("../../../services/data-query/base-query-executor");
     const { convertEventForFrontend } = await import("../../../services/chat/event-projection");
-    // The model splits the conclusion label mid-word, so plain label text is already on the wire
-    // when the full label arrives and the producer rewrites it into its styled form.
-    const prefix = getConclusionPrefix(undefined);
-    const cut = prefix.length - 4;
-    modelStreams.push(
-      ["Group revenue ", "by region."],
-      [prefix.slice(0, cut), prefix.slice(cut), "east leads", "."]
-    );
+    // Only the result description comes from the model; the conclusion is deterministic.
+    modelStreams.push(["Group revenue ", "by region."]);
     const store = new RunStreamStore();
     store.startRun({ runId: "run-1", key: "k", userId: "user-1", domainId: "domain-1" });
     // A subscriber connected from the start loses its connection after the third body frame.
@@ -133,23 +127,23 @@ describe("live ABC query body on the wire", () => {
 
     const finalContent = execution.output!.content;
     expect(finalContent).toContain(`| region-${ROWS.length - 1} |`);
-    expect(finalContent).toContain("east leads.");
+    expect(finalContent).toContain(en["query.conclusion.resultsAvailable"]);
 
     const allFrames = subscribeFrom(store, "run-1", 0);
     const contentFrames = allFrames.filter(
       (frame) => (frame as { type: string }).type === "abc_content"
     ) as AbcContentEvent[];
 
-    // Reasoning-only chunks produce no frames: only real text, structural steps and one rewrite.
+    // Reasoning-only chunks produce no frames: only real text and structural steps go out.
     expect(contentFrames.length).toBeLessThan(20);
-    // The large table goes out once as text, not once per conclusion chunk.
+    // The large table goes out once as text, not once per body update.
     const wireBytes = contentFrames.reduce(
       (sum, frame) => sum + (frame.mode === "append" ? frame.delta.length : frame.content.length),
       0
     );
     expect(wireBytes).toBeLessThan(finalContent.length * 3);
-    // The live body is the final content up to the closing newline, which only the final result carries.
-    const liveBody = finalContent.slice(0, -1);
+    // The live body is the same final body, without loss or duplication.
+    const liveBody = finalContent;
     expect(liveBody).toContain('<strong class="ai-conclusion">');
     expect(bodyOf(allFrames)).toBe(liveBody);
 

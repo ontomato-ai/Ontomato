@@ -47,6 +47,7 @@ describe("open-source application defaults", () => {
     expect(getSystemModelConfig("oss-domain")).toEqual({
       abcQuestionMode: "harness",
       queryTimeoutSeconds: 600,
+      nodeModelStreamingEnabled: true,
     });
   });
 
