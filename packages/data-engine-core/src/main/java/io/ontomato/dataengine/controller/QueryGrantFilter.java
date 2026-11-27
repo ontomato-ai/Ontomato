@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.QueryGrantOperation;
 import io.ontomato.dataengine.service.IdentityService;
-import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.agent.AgentExecutionAccess;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.agent.KnowledgeGovernanceService;

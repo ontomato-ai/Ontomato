@@ -14,7 +14,6 @@ import {
   RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_USER, RESET_USER_PASSWORD, REVOKE_USER_API_KEY, ROLE, SDK_COMPONENT, SET_ACTION_STATUS,
   SET_PRIMARY_KEY, SKILL, TRIGGER, TURN_EVIDENCE, UNKEEP_AUTOTEST_RUN, UNKEEP_TURN_EVIDENCE, USER, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
-import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
 import { panelAddress, productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
 import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";

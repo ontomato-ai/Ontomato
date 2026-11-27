@@ -58,7 +58,7 @@ export class PanelReadBatchCache {
   private readonly grants = new Map<string, Promise<void>>();
   private readonly products = new Map<string, Promise<CurrentProductRow | undefined>>();
   private readonly reads = new Map<string, Promise<unknown>>();
-  private readonly scheduledApplications = new Map<string | undefined, Promise<ScheduledApplicationsStatus>>();
+  private scheduledApplications?: Promise<ScheduledApplicationsStatus>;
   private readonly domainId: string;
 
   private readonly registeredEntry: (source: PanelUseRef) => Promise<PanelEntry>;
@@ -85,7 +85,7 @@ export class PanelReadBatchCache {
   }
 
   scheduleApplications(load: () => Promise<ScheduledApplicationsStatus>) {
-    return memoize(this.scheduledApplications, "scheduled-applications", load);
+    return (this.scheduledApplications ??= load());
   }
 
   async prefetch(targets: readonly Target[]) {

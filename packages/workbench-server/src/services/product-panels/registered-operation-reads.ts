@@ -127,14 +127,12 @@ export async function prepareRegisteredOperationRead(
   let skillDeleteRead: number | undefined;
   let detailPanelAccess: number | undefined;
   const operationDescriptions = prepareOperationDescriptions(placement, inputs, locale);
-  const builderOptions = new Map<string, { live: boolean; status: boolean }>();
+  const builderOptions = new Map<string, { live: boolean }>();
   for (const description of operationDescriptions) {
     const id = builderTarget(description);
     if (id === undefined || description.kind !== "platform") continue;
-    const opts = builderOptions.get(id) ?? { live: false, status: false };
-    const operation = description.handler.handlerRef;
-    opts.live ||= operation === APPLICATION_PUBLISH_BUILDER_SOURCE;
-    opts.status ||= operation === APPLICATION_PUBLISH_BUILDER_SOURCE;
+    const opts = builderOptions.get(id) ?? { live: false };
+    opts.live ||= description.handler.handlerRef === APPLICATION_PUBLISH_BUILDER_SOURCE;
     builderOptions.set(id, opts);
   }
   const builderProjects = new Map((await Promise.all([...builderOptions].map(async ([id, options]) =>
@@ -256,7 +254,7 @@ export async function prepareRegisteredOperationRead(
         if (result.status === "forbidden") return { status: "forbidden", reason: result.error };
         return { status: "error", message: result.error, ...(result.code && { code: result.code }) };
       }
-      const builderReasons = new Map<string, { sync?: string; restart?: string; publish?: string }>();
+      const builderReasons = new Map<string, { sync?: string; publish?: string }>();
       try {
         for (const [id, { options, project, indexes }] of builderProjects) {
           const facts = indexes.map(read => results[read]);

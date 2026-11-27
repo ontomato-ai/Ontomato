@@ -279,6 +279,8 @@ public class DataSandboxService {
     if (!"action-trial".equals(record.getString("purpose")))
       throw error(HttpStatus.NOT_FOUND, "SANDBOX_NOT_FOUND");
     var active = active(record, domain);
+    if (!"READY".equals(active.getString("state")))
+      throw error(HttpStatus.CONFLICT, "SANDBOX_NOT_READY");
     return ExecutionTarget.actionTrial(id, active.getJSONObject("data").getList("classNames", String.class),
         active.getLongValue("expires_at"));
   }

@@ -24,7 +24,7 @@ public class SandboxExecutionFilter extends OncePerRequestFilter {
   public SandboxExecutionFilter(DataSandboxService sandboxes) { this.sandboxes = sandboxes; }
   @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
     var grant = (JSONObject) request.getAttribute(QueryGrantService.ATTRIBUTE);
-    String id = grant == null ? null : grant.getString("contextId");
+    String id = grant == null ? null : grant.getString("sandboxId");
     if (id == null) { chain.doFilter(request, response); return; }
     var lock = sandboxes.lock(id).readLock();
     lock.lock();

@@ -83,6 +83,11 @@ class DataSandboxServiceLifecycleTest {
         verify(writes).insert("item", rows, trial, "domain");
 
         String emptyTrial = service.open("domain", "user", "empty-run", System.currentTimeMillis() + 60_000, List.of());
+        jdbc.rows.get(emptyTrial).put("state", "PREPARING");
+        var preparingError = assertThrows(SandboxException.class, () -> service.requireActionTrial(emptyTrial, "user", "domain"));
+        assertEquals("SANDBOX_NOT_READY", preparingError.getReason());
+        assertTrue(service.resolveTarget(emptyTrial, "domain").classTables().isEmpty());
+        jdbc.rows.get(emptyTrial).put("state", "READY");
         var emptyTarget = service.requireActionTrial(emptyTrial, "user", "domain");
         assertTrue(emptyTarget.actionTrial());
         assertEquals(emptyTrial, emptyTarget.sandboxId());
@@ -91,6 +96,8 @@ class DataSandboxServiceLifecycleTest {
         assertTrue(service.resolveTarget(emptyTrial, "domain").classTables().isEmpty());
         service.close(emptyTrial, "domain");
         assertEquals("CLOSED", jdbc.rows.get(emptyTrial).getString("state"));
+        var closedError = assertThrows(SandboxException.class, () -> service.requireActionTrial(emptyTrial, "user", "domain"));
+        assertEquals("SANDBOX_NOT_READY", closedError.getReason());
 
         service.close(trial, "domain");
         service.close(second, "domain");
