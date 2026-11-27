@@ -1,4 +1,4 @@
-import { RouterView, type RouteComponent, type RouteRecordRaw } from "vue-router";
+import { RouterView, type RouteComponent, type RouteRecordRaw, type Router } from "vue-router";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { startPage } from "./shell";
 
@@ -31,4 +31,12 @@ export function platformLayoutRoute(children: RouteRecordRaw[], component: Route
       ...children,
     ],
   };
+}
+
+/** Keep the edition's catch-all address inside the same shell as the pages it serves. */
+export function registerPlatformRoutes(router: Router, routes: RouteRecordRaw[]): void {
+  for (const route of routes) {
+    if (route.name === platformRoutes.unknown.name) router.addRoute(platformRoutes.layout.name, route);
+    else router.addRoute(route);
+  }
 }

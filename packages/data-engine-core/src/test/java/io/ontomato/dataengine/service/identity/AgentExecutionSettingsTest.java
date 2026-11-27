@@ -9,6 +9,11 @@ import io.ontomato.dataengine.controller.AgentExecutionController;
 import io.ontomato.dataengine.controller.OntologyAgentErrors;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
+import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.RoleResolution;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import io.ontomato.dataengine.service.sys.bean.UserDetail;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +26,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class AgentExecutionSettingsTest extends PostgresTestDatabase {
   private AgentExecutionIdentity identity;
+  private AuthorizationSubjects subjects;
   private UserCredentialIdentity keys;
   private UserCredentials credentials;
   private AgentExecutionSettings settings;
@@ -37,7 +43,9 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
       new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource),
       new org.springframework.transaction.annotation.AnnotationTransactionAttributeSource()));
     credentials = (UserCredentials)proxy.getProxy();
-    settings = new AgentExecutionSettings(identity, credentials);
+    subjects = mock(AuthorizationSubjects.class);
+    settings = new AgentExecutionSettings(identity, credentials, subjects);
+    operatorAdministrator(false);
     operator = new AgentExecutionIdentity.Actor("operator", "domain");
     when(identity.operator(any())).thenReturn(operator);
     target = new UserDetail(); target.setId("target"); target.setDomainId("domain"); target.setEnable(true);
@@ -46,6 +54,10 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
     when(keys.accepts("shared-key", "domain", "target")).thenReturn(true);
     http = MockMvcBuilders.standaloneSetup(new AgentExecutionController(new WorkbenchServiceAuthentication("service"), settings))
       .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+  }
+  private void operatorAdministrator(boolean administrator) {
+    when(subjects.resolveRoles("domain", "operator")).thenReturn(
+        new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), administrator));
   }
   private int count() { return jdbc.queryForObject("SELECT count(*) FROM platform_task_credential", Integer.class); }
   private String setting(String old, String next) {
@@ -77,7 +89,7 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
     assertEquals(before, jdbc.queryForMap("SELECT * FROM platform_task_credential"));
     verifyNoInteractions(keys);
     // An administrator's explicit save still validates the unchanged target before preparing it.
-    when(identity.administrator(operator)).thenReturn(true);
+    operatorAdministrator(true);
     http.perform(post("/internal/agent-execution/prepare-setting").header(WorkbenchServiceAuthentication.HEADER,"service")
       .contentType(MediaType.APPLICATION_JSON).content(setting("\"target\"","\"target\"")))
       .andExpect(status().isForbidden());
@@ -87,7 +99,7 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
   @Test void administratorSaveReplacesARejectedKeyInOnePreparation() throws Exception {
     credentials.prepareForExecutionSetting(target);
     clearInvocations(keys);
-    when(identity.administrator(operator)).thenReturn(true);
+    operatorAdministrator(true);
     when(keys.accepts("shared-key", "domain", "target")).thenReturn(false);
     when(keys.issueKey(target)).thenReturn("replacement-key");
     when(keys.accepts("replacement-key", "domain", "target")).thenReturn(true);
@@ -99,7 +111,7 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
     verify(keys, times(1)).issueKey(target);
   }
   @Test void validationHasNoKeySideEffectsAndEveryInternalEntryRequiresTheServiceCredential() throws Exception {
-    when(identity.administrator(operator)).thenReturn(true);
+    operatorAdministrator(true);
     http.perform(post("/internal/agent-execution/validate-setting").header(WorkbenchServiceAuthentication.HEADER,"service")
       .contentType(MediaType.APPLICATION_JSON).content(setting("null","\"target\""))).andExpect(status().isNoContent());
     assertEquals(0,count()); verifyNoInteractions(keys);
@@ -114,7 +126,7 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
     // Trigger dispatch and agent execution share the key for a domain member.
     credentials.prepareForSetup(target);
     String before = jdbc.queryForObject("SELECT sealed_key FROM platform_task_credential", String.class);
-    when(identity.administrator(operator)).thenReturn(true);
+    operatorAdministrator(true);
     var selected = new AgentExecutionSettings.Setting("domain","operator",null,"target");
     settings.prepare(selected,new MockHttpServletRequest());
     settings.prepare(selected,new MockHttpServletRequest());
@@ -134,13 +146,13 @@ class AgentExecutionSettingsTest extends PostgresTestDatabase {
     assertThrows(UserCredentials.Invalid.class,()->settings.resolve(new AgentExecutionSettings.Resolution("domain","agent","target","operator")));
     verify(keys,never()).issueKey(any());
     jdbc.update("UPDATE platform_task_credential SET valid=true,sealed_key='not-a-cipher'");
-    when(identity.administrator(operator)).thenReturn(true);
+    operatorAdministrator(true);
     assertThrows(UserCredentials.Invalid.class,()->settings.prepare(new AgentExecutionSettings.Setting("domain","operator","target","target"),new MockHttpServletRequest()));
     verify(keys,never()).issueKey(any());
     assertFalse(jdbc.queryForObject("SELECT valid FROM platform_task_credential",Boolean.class));
   }
   @Test void invalidMemberAndInvalidInitiatorNeverObtainAKey() {
-    when(identity.administrator(operator)).thenReturn(true);
+    operatorAdministrator(true);
     when(identity.requireTarget("domain","target")).thenThrow(new AgentHttpException(403,"EXECUTION_USER_INVALID","Invalid member"));
     assertThrows(AgentHttpException.class,()->settings.prepare(new AgentExecutionSettings.Setting("domain","operator",null,"target"),new MockHttpServletRequest()));
     assertThrows(AgentHttpException.class,()->settings.resolve(new AgentExecutionSettings.Resolution("domain","agent","target","operator")));

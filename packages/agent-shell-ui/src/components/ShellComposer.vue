@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue";
-import { ArrowUp, LoaderCircle, MessageSquare, Minus, Send, Square } from "lucide-vue-next";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { ArrowUp, GripHorizontal, LoaderCircle, MessageSquare, Minus, Send, Square } from "lucide-vue-next";
 import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
 import type { ShellLabels } from "../types";
 import type { ComposerEntry } from "../page-composer-entry";
 import { useComposerCollapsed } from "../composer-collapsed";
 import {
-  clampComposerFabPosition,
-  composerFabArea,
-  currentComposerFabPosition,
-  draggedComposerFabPosition,
+  clampComposerFloatPosition,
+  composerFloatArea,
+  currentComposerFloatPosition,
+  draggedComposerFloatPosition,
   readComposerFabPosition,
+  readComposerPosition,
   writeComposerFabPosition,
-  type ComposerFabPosition,
-} from "../composer-fab-position";
+  writeComposerPosition,
+  type ComposerFloatPosition,
+} from "../composer-float-position";
 
 /**
  * The one message box of the platform: the conversation shell's, the platform home's question box and the composer at
@@ -23,10 +25,12 @@ import {
  * message carries on the left, send or stop on the right. Two lines are not a limit: the block grows upward with the
  * message to eight lines and scrolls inside after that.
  *
- * Floating over a page (`floating`) it takes as little of the page as it can. Its upper layer holds its fold button and
- * the agent the message goes to (`agent`); its lower layer is one line of input and send, growing upward to six lines and
- * scrolling after that. Folded, the whole box becomes a round button at the page's lower right; opened again, what was
- * being written is still there. The fold is the reader's own choice and this browser remembers it.
+ * Floating over a page (`floating`) it takes as little of the page as it can. Its upper layer holds its drag grip at
+ * the left, the agent the message goes to (`agent`) in the middle and its fold button at the right; its lower layer is
+ * one line of input and send, growing upward to six lines and scrolling after that. The grip drags the box inside the
+ * page area, and this browser remembers that place separately from the round button's. Folded, the whole box becomes a
+ * round button at the page's lower right; opened again, what was being written is still there. The fold is the reader's
+ * own choice and this browser remembers it.
  *
  * A host may put more controls beside the agent (`tools`, the home's own choices). A narrow width gives way in the input,
  * never in the send button.
@@ -54,7 +58,6 @@ const props = defineProps<{
   entry?: ComposerEntry | null;
 }>();
 const emit = defineEmits<{ send: [text: string]; stop: [] }>();
-const slots = useSlots();
 const text = ref("");
 const input = ref<HTMLTextAreaElement | null>(null);
 const composing = ref(false);
@@ -73,7 +76,7 @@ const folded = computed(() => props.floating && collapsed.value && !opened.value
  * The stylesheet's corner remains the default until the reader drags it.
  */
 const fab = ref<HTMLButtonElement | null>(null);
-const fabPosition = ref<ComposerFabPosition | null>(null);
+const fabPosition = ref<ComposerFloatPosition | null>(null);
 const fabDragging = ref(false);
 let rememberedFabPosition = readComposerFabPosition();
 let fabArea: HTMLElement | null = null;
@@ -81,7 +84,7 @@ let fabDrag: {
   pointerId: number;
   x: number;
   y: number;
-  start: ComposerFabPosition;
+  start: ComposerFloatPosition;
   moved: boolean;
   target: HTMLElement;
 } | null = null;
@@ -95,16 +98,16 @@ const fabAreaSize = () => ({
   width: fabArea?.clientWidth ?? window.innerWidth,
   height: fabArea?.clientHeight ?? window.innerHeight,
 });
-const clampFabPosition = (position: ComposerFabPosition) => clampComposerFabPosition(position, fabAreaSize(), fabSize());
+const clampFabPosition = (position: ComposerFloatPosition) => clampComposerFloatPosition(position, fabAreaSize(), fabSize());
 
 /** Draws the remembered or default place clamped to the area as it is now; a remembered place is kept clamped too. */
 function syncFabPosition() {
   const element = fab.value;
   if (!element || !folded.value) return;
-  fabArea ??= composerFabArea(element);
+  fabArea ??= composerFloatArea(element);
   // Another visible page may have been dragged since this instance was drawn; storage is their shared place.
   rememberedFabPosition = readComposerFabPosition() ?? rememberedFabPosition;
-  const current = rememberedFabPosition ?? fabPosition.value ?? currentComposerFabPosition(element, fabArea);
+  const current = rememberedFabPosition ?? fabPosition.value ?? currentComposerFloatPosition(element, fabArea);
   const next = clampFabPosition(current);
   fabPosition.value = next;
   if (rememberedFabPosition) {
@@ -116,7 +119,7 @@ function syncFabPosition() {
 const fabAreaSizer = new ResizeObserver(() => syncFabPosition());
 watch(fab, (element) => {
   fabAreaSizer.disconnect();
-  fabArea = element ? composerFabArea(element) : null;
+  fabArea = element ? composerFloatArea(element) : null;
   if (fabArea) fabAreaSizer.observe(fabArea);
   if (element) syncFabPosition();
 }, { flush: "post" });
@@ -125,7 +128,7 @@ function moveFabDrag(event: PointerEvent) {
   if (!fabDrag || event.pointerId !== fabDrag.pointerId) return;
   const dx = event.clientX - fabDrag.x;
   const dy = event.clientY - fabDrag.y;
-  fabPosition.value = draggedComposerFabPosition(fabDrag.start, dx, dy, fabAreaSize(), fabSize());
+  fabPosition.value = draggedComposerFloatPosition(fabDrag.start, dx, dy, fabAreaSize(), fabSize());
   if (Math.hypot(dx, dy) >= 4) {
     fabDrag.moved = true;
     fabDragging.value = true;
@@ -151,9 +154,9 @@ function finishFabDrag(event?: PointerEvent) {
 function startFabDrag(event: PointerEvent) {
   if (event.pointerType === "mouse" && event.button !== 0) return;
   const target = event.currentTarget as HTMLElement;
-  fabArea = composerFabArea(target);
+  fabArea = composerFloatArea(target);
   syncFabPosition();
-  const start = fabPosition.value ?? currentComposerFabPosition(target, fabArea);
+  const start = fabPosition.value ?? currentComposerFloatPosition(target, fabArea);
   fabDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start, moved: false, target };
   target.setPointerCapture(event.pointerId);
   target.addEventListener("pointermove", moveFabDrag);
@@ -165,6 +168,166 @@ function startFabDrag(event: PointerEvent) {
 function activateFab() {
   if (performance.now() < suppressFabClickUntil) return;
   unfold();
+}
+
+/**
+ * The expanded floating box has its own remembered place, separate from the round button's. Its placement element is
+ * the positioning reference and, while the box's bottom is on the page's bottom line, also the room the page leaves for
+ * it. Dragged upward that element is zero high, so the measured dock leaves no room; dragged back down it is the box's
+ * height again. There is no docked or floating mode to synchronize: the height follows the bottom distance directly.
+ */
+const placement = ref<HTMLElement | null>(null);
+const box = ref<HTMLFormElement | null>(null);
+const composerPosition = ref<ComposerFloatPosition | null>(null);
+const composerHeight = ref(0);
+const composerDragging = ref(false);
+let rememberedComposerPosition = composerPosition.value;
+let composerDrag: {
+  pointerId: number;
+  x: number;
+  y: number;
+  start: ComposerFloatPosition;
+  moved: boolean;
+  target: HTMLElement;
+} | null = null;
+
+const composerAtBottom = computed(() => (composerPosition.value?.bottom ?? 0) === 0);
+const composerFootGap = ref(0);
+const placementStyle = computed(() => {
+  if (!props.floating) return undefined;
+  return { height: composerAtBottom.value ? `${composerHeight.value}px` : "0px" };
+});
+// The stored bottom counts upward from the box's resting bottom line. Off that line the foot's bottom padding is gone,
+// so the rendered CSS distance is shifted by the measured padding and the box does not jump as the room appears or disappears.
+const composerStyle = computed(() => {
+  if (!props.floating || !composerPosition.value) return undefined;
+  const bottom = composerPosition.value.bottom + (composerAtBottom.value ? 0 : composerFootGap.value);
+  return { right: `${composerPosition.value.right}px`, bottom: `${bottom}px` };
+});
+
+/**
+ * The box's horizontal room is its placement element (the page's content width). Its vertical room reaches from the
+ * page area's top to that element's bottom, so a remembered place is pulled back when the window shrinks.
+ */
+function composerBoundary(): HTMLElement {
+  let node = placement.value?.parentElement ?? null;
+  while (node) {
+    if (getComputedStyle(node).position === "relative") return node;
+    node = node.parentElement;
+  }
+  return document.documentElement;
+}
+
+function readComposerFootGap() {
+  const parent = placement.value?.parentElement;
+  if (!parent) return composerFootGap.value;
+  const value = Number.parseFloat(getComputedStyle(parent).paddingBottom);
+  // The first measure happens before a remembered upward place is applied, so the foot's padding is still its baseline.
+  return Number.isFinite(value) && value > 0 ? value : composerFootGap.value;
+}
+
+const composerAreaSize = () => {
+  const root = placement.value;
+  if (!root) return { width: window.innerWidth, height: window.innerHeight };
+  const boundary = composerBoundary();
+  const parent = root.parentElement;
+  const gap = readComposerFootGap();
+  const presentGap = parent ? Number.parseFloat(getComputedStyle(parent).paddingBottom) || 0 : gap;
+  const restingBottom = root.getBoundingClientRect().bottom - Math.max(0, gap - presentGap);
+  const vertical = restingBottom - boundary.getBoundingClientRect().top;
+  return { width: root.clientWidth, height: Math.max(0, vertical) };
+};
+const composerSize = () => ({
+  width: box.value?.offsetWidth ?? 0,
+  height: box.value?.offsetHeight ?? composerHeight.value,
+});
+const clampComposerPosition = (position: ComposerFloatPosition) => {
+  const area = composerAreaSize();
+  const part = composerSize();
+  // Before the page has a layout (or while it is hidden) there is no real bound to clamp to; wait for the resize.
+  if (area.width <= 0 || area.height <= 0 || part.width <= 0 || part.height <= 0) return position;
+  return clampComposerFloatPosition(position, area, part);
+};
+
+/** Measures and draws the remembered place clamped to the page area as it is now. */
+function syncComposerPosition() {
+  const element = box.value;
+  if (!element || !placement.value || !props.floating || folded.value) return;
+  composerHeight.value = Math.ceil(element.offsetHeight);
+  composerFootGap.value = readComposerFootGap();
+  // Another visible page may have been dragged since this instance was drawn; storage is their shared place.
+  rememberedComposerPosition = readComposerPosition() ?? rememberedComposerPosition;
+  const current = rememberedComposerPosition ?? composerPosition.value;
+  if (!current) return;
+  const next = clampComposerPosition(current);
+  composerPosition.value = next;
+  if (rememberedComposerPosition) {
+    rememberedComposerPosition = next;
+    writeComposerPosition(next);
+  }
+}
+
+const composerPlacementSizer = new ResizeObserver(() => syncComposerPosition());
+watch(placement, (element) => {
+  composerPlacementSizer.disconnect();
+  if (!element) return;
+  composerPlacementSizer.observe(element);
+  composerPlacementSizer.observe(composerBoundary());
+  syncComposerPosition();
+}, { flush: "post" });
+const composerBoxSizer = new ResizeObserver(() => syncComposerPosition());
+watch(box, (element, previous) => {
+  if (previous) composerBoxSizer.unobserve(previous);
+  if (element) composerBoxSizer.observe(element);
+  if (element) syncComposerPosition();
+}, { flush: "post" });
+
+function moveComposerDrag(event: PointerEvent) {
+  if (!composerDrag || event.pointerId !== composerDrag.pointerId) return;
+  const dx = event.clientX - composerDrag.x;
+  const dy = event.clientY - composerDrag.y;
+  composerPosition.value = draggedComposerFloatPosition(composerDrag.start, dx, dy, composerAreaSize(), composerSize());
+  if (dx !== 0 || dy !== 0) {
+    composerDrag.moved = true;
+    composerDragging.value = true;
+  }
+}
+
+function finishComposerDrag(event?: PointerEvent) {
+  if (!composerDrag || (event && event.pointerId !== composerDrag.pointerId)) return;
+  const { target, moved } = composerDrag;
+  target.removeEventListener("pointermove", moveComposerDrag);
+  target.removeEventListener("pointerup", finishComposerDrag);
+  target.removeEventListener("pointercancel", finishComposerDrag);
+  target.removeEventListener("lostpointercapture", finishComposerDrag);
+  composerDrag = null;
+  composerDragging.value = false;
+  if (!moved || !composerPosition.value) return;
+  rememberedComposerPosition = clampComposerPosition(composerPosition.value);
+  composerPosition.value = rememberedComposerPosition;
+  writeComposerPosition(rememberedComposerPosition);
+}
+
+function startComposerDrag(event: PointerEvent) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  const element = box.value;
+  const root = placement.value;
+  if (!element || !root) return;
+  event.preventDefault();
+  const target = event.currentTarget as HTMLElement;
+  syncComposerPosition();
+  const start = composerPosition.value ?? currentComposerFloatPosition(element, root);
+  composerDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start, moved: false, target };
+  target.setPointerCapture(event.pointerId);
+  target.addEventListener("pointermove", moveComposerDrag);
+  target.addEventListener("pointerup", finishComposerDrag);
+  target.addEventListener("pointercancel", finishComposerDrag);
+  target.addEventListener("lostpointercapture", finishComposerDrag);
+}
+
+function syncFloatingPositions() {
+  syncFabPosition();
+  syncComposerPosition();
 }
 
 /** The lines the input shows before it grows, and the lines it grows to before it scrolls. */
@@ -194,12 +357,15 @@ watch(input, (el, previous) => {
   if (el) sizer.observe(el);
 });
 onMounted(resize);
-onMounted(() => window.addEventListener("resize", syncFabPosition));
+onMounted(() => window.addEventListener("resize", syncFloatingPositions));
 onBeforeUnmount(() => {
   sizer.disconnect();
   fabAreaSizer.disconnect();
   finishFabDrag();
-  window.removeEventListener("resize", syncFabPosition);
+  composerPlacementSizer.disconnect();
+  composerBoxSizer.disconnect();
+  finishComposerDrag();
+  window.removeEventListener("resize", syncFloatingPositions);
 });
 
 function submit() {
@@ -251,14 +417,30 @@ defineExpose({ focus: () => input.value?.focus() });
   >
     <MessageSquare :size="20" :stroke-width="2.1" aria-hidden="true" />
   </button>
-  <form v-else class="composer" :class="{ disabled, floating }" @submit.prevent="submit">
-    <!-- A floating box's upper layer: its fold, then the agent the message goes to and the host's own choices. -->
+  <div
+    v-else
+    ref="placement"
+    class="composer-placement"
+    :class="{ floating, 'off-bottom': floating && !composerAtBottom }"
+    :style="placementStyle"
+  >
+  <form
+    ref="box"
+    class="composer"
+    :class="{ disabled, floating, placed: floating && composerPosition !== null, dragging: composerDragging }"
+    :style="composerStyle"
+    @submit.prevent="submit"
+  >
+    <!-- A floating box's upper layer: its drag grip at the left, the agent and host choices in the middle, its fold at the right. -->
     <div v-if="floating" class="composer-bar">
+      <span class="composer-drag" @pointerdown="startComposerDrag">
+        <GripHorizontal :size="16" aria-hidden="true" />
+      </span>
+      <div v-if="$slots.agent" class="composer-agent"><slot name="agent" /></div>
+      <div v-if="$slots.tools" class="composer-tools"><slot name="tools" /></div>
       <button type="button" class="composer-fold" :title="labels.collapseComposer" :aria-label="labels.collapseComposer" @click="fold">
         <Minus :size="16" />
       </button>
-      <div v-if="$slots.agent" class="composer-agent"><slot name="agent" /></div>
-      <div v-if="$slots.tools" class="composer-tools"><slot name="tools" /></div>
     </div>
     <div class="composer-body">
       <textarea
@@ -309,6 +491,7 @@ defineExpose({ focus: () => input.value?.focus() });
       </div>
     </div>
   </form>
+  </div>
 </template>
 
 <style scoped>
@@ -317,10 +500,36 @@ defineExpose({ focus: () => input.value?.focus() });
 @keyframes composer-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .sending-spinner { animation: none; } }
 /*
+ * The placement element is invisible room. Floating, it is the box's positioning reference across the page's content
+ * width; while the box is on the bottom line its height is the room the page leaves, and away from the bottom it is zero.
+ * It never takes the pointer itself: only the box does.
+ */
+.composer-placement {
+  min-width: 0;
+}
+.composer-placement.floating {
+  position: relative;
+  flex: none;
+  width: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.composer-placement.floating .composer.floating {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(760px, 100%);
+  transform: translateX(-50%);
+}
+.composer-placement.floating .composer.floating.placed {
+  left: auto;
+  transform: none;
+}
+/*
  * One block. Under a conversation: the input across the whole width, two lines high to start, and the controls on the
  * line under it — what the message carries on the left, send on the right. Floating over a page: an upper layer with the
- * fold and the agent, and a lower layer where the input and send share one line. The conversation shell raises it through
- * --shell-composer-shadow; embedded chats keep it flat.
+ * drag grip and the agent, and a lower layer where the input and send share one line. The conversation shell raises it
+ * through --shell-composer-shadow; embedded chats keep it flat.
  */
 .composer {
   container: shell-composer / inline-size;
@@ -333,6 +542,7 @@ defineExpose({ focus: () => input.value?.focus() });
   background: var(--el-bg-color);
   box-shadow: var(--shell-composer-shadow, none);
   overflow: hidden;
+  pointer-events: auto;
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
@@ -375,6 +585,7 @@ defineExpose({ focus: () => input.value?.focus() });
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-light);
 }
+.composer-drag,
 .composer-fold,
 .composer-unfold {
   display: grid;
@@ -384,12 +595,30 @@ defineExpose({ focus: () => input.value?.focus() });
   color: var(--el-text-color-secondary);
   cursor: pointer;
 }
+.composer-drag,
 .composer-fold {
   width: var(--control-height-sm);
   height: var(--control-height-sm);
   border-radius: var(--radius-md);
   background: transparent;
 }
+.composer-drag {
+  touch-action: none;
+  user-select: none;
+}
+.composer-drag,
+.composer-drag:hover {
+  cursor: grab;
+}
+.composer.dragging .composer-drag,
+.composer.dragging .composer-drag:hover {
+  cursor: grabbing;
+  background: var(--el-fill-color);
+}
+.composer-fold {
+  margin-inline-start: auto;
+}
+.composer-drag:hover,
 .composer-fold:hover {
   background: var(--el-fill-color);
 }

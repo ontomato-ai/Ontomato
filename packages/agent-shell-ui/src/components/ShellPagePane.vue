@@ -235,10 +235,16 @@ const paneStyle = computed(() => ({
 .pane-dock > * {
   pointer-events: auto;
 }
-.pane-dock > :deep(.composer),
+.pane-dock > :deep(.composer-placement) {
+  pointer-events: none;
+}
 .pane-dock > .shell-questions {
   width: min(760px, 100%);
   margin-inline: auto;
+}
+/* Dragged away from the bottom, the composer's placement is zero high and the dock no longer leaves even its bottom room. */
+.pane-dock:has(> .composer-placement.off-bottom) {
+  padding-bottom: 0;
 }
 /* Folded with no pending questions, the dock leaves the page its whole height and pins the button to the corner. */
 .pane-dock:has(> .composer-unfold:only-child) {

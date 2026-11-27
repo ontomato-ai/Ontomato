@@ -38,7 +38,7 @@ class WorkbenchManagementControllerTest {
         var mapper = new ObjectMapper();
         var operations = new ManagementOperations(List.of(new WorkbenchManagementOperations(mapper)));
         when(subjects.resolveRoles("domain-a", "canonical-user-a")).thenReturn(
-            new RoleResolution(Set.of("reader"), Set.of("reader"), List.of(), Set.of(), Map.of(), false, false));
+            new RoleResolution(Set.of("reader"), Set.of("reader"), List.of(), Set.of(), Map.of(), false));
         when(policies.policies("domain-a", Set.of("reader"))).thenReturn(
             List.of(new PolicyRef("reader", "mcp-reader", PolicyKind.MANAGEMENT)));
         when(policies.managementOperations("domain-a", Set.of("mcp-reader"))).thenReturn(Set.of("mcp.services.read"));

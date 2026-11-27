@@ -203,7 +203,7 @@ beforeAll(async () => {
       expect(req.query.useId).toBe("main");
       res.json({ success: true, data: {
         applicationId: "app-nested", menu: { singleEntry: true, groups: [], panelUses: [] },
-        use: { id: "main", pageKey: "main", path: "/applications/app-nested/main",
+        use: { id: "main", names: { en: "main" }, pageKey: "main", path: "/applications/app-nested/main",
           panelId: nestedRootId },
       } });
       return;
@@ -211,7 +211,7 @@ beforeAll(async () => {
     expect(req.query).toEqual({ applicationId: "app-personal", useId: "main" });
     res.json({ success: true, data: {
       applicationId: "app-personal", menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: "main", pageKey: "main", path: "/applications/app-personal/main",
+      use: { id: "main", names: { en: "main" }, pageKey: "main", path: "/applications/app-personal/main",
         panelId: personalPanelId },
     } });
   });

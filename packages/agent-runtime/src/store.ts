@@ -465,8 +465,10 @@ export class RuntimeStore {
           fingerprint,
           run.sessionId,
         )
-      ))
-        return { run: (await this.run(scope, run.id, c)).run, replayed: true };
+      )) {
+        const state = await this.run(scope, run.id, c);
+        return { run: state.run, replayed: true, seq: state.seq, streamId: state.streamId };
+      }
       const binding = await this.session(scope, run.sessionId, c);
       if (binding.workspaceId) {
         const claimed = await c.query(`UPDATE ${this.table("workspaces")} SET active_run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id IS NULL RETURNING id`, [...values(scope), binding.workspaceId, run.id]);
@@ -522,7 +524,7 @@ export class RuntimeStore {
             },
           ],
         );
-      return { run, replayed: false, inputId: messageId };
+      return { run, replayed: false, inputId: messageId, seq: events.length, streamId };
     });
   }
   /** The session's engine, and the native reference its runs of one identity resume: each identity has its own. */
@@ -859,6 +861,7 @@ export class RuntimeStore {
     runId: string,
     toolCallId: string | null,
     file: import("./files").OutputFile,
+    sequence: number,
   ) {
     const { run } = await this.run(scope, runId);
     const artifact: RuntimeArtifact = {
@@ -870,9 +873,9 @@ export class RuntimeStore {
       createdAt: new Date().toISOString(),
       seq: 0,
     };
-    return this.append(scope, runId, { type: "artifact_registered", artifact });
+    return this.append(scope, runId, { type: "artifact_registered", artifact }, false, sequence);
   }
-  async append(scope: Scope, runId: string, event: RuntimeAgentEvent, consumedInput = false) {
+  async append(scope: Scope, runId: string, event: RuntimeAgentEvent, consumedInput = false, sequence?: number) {
     return this.transaction(async (c) => {
       const row = (
         await c.query(
@@ -884,7 +887,7 @@ export class RuntimeStore {
       const run = row.run as RuntimeRun;
       if (run.status !== "running")
         throw new RuntimeError(409, "RUN_CLOSED", "Run is no longer active");
-      const seq = Number(row.seq) + 1;
+      const seq = sequence ?? Number(row.seq) + 1;
       if (event.type === "message_end") {
         const received = (await c.query(`SELECT seq,context_seq,run_id FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND session_id=$4`, [...values(scope), event.messageId, run.sessionId])).rows[0];
         if (consumedInput) {
@@ -956,14 +959,10 @@ export class RuntimeStore {
         timestamp: new Date().toISOString(),
         event,
       };
-      if (
-        event.type !== "message_update" &&
-        event.type !== "tool_execution_update"
-      )
-        await c.query(
-          `INSERT INTO ${this.table("events")} VALUES($1,$2,$3,$4,$5)`,
-          [...values(scope), runId, seq, envelope],
-        );
+      await c.query(
+        `INSERT INTO ${this.table("events")} VALUES($1,$2,$3,$4,$5)`,
+        [...values(scope), runId, seq, envelope],
+      );
       if (event.type === "agent_end") {
         run.status = event.status;
         run.finishedAt = envelope.timestamp;
@@ -1012,7 +1011,10 @@ export class RuntimeStore {
     reason?: RuntimeStopReason,
     errorMessage?: string | null,
     workspaceCommit?: string | null,
+    nextSequence?: () => number,
   ) {
+    const append = (event: RuntimeAgentEvent) =>
+      this.append(scope, id, event, false, nextSequence?.());
     const { run } = await this.run(scope, id);
     const unsaved = new Map<string, Extract<RuntimeAgentEvent, { type: "tool_execution_start" | "tool_execution_end" }>>();
     for (const { event } of await this.toolEvents(scope, id, true)) {
@@ -1027,8 +1029,8 @@ export class RuntimeStore {
         toolCallId, toolName, isError: true, outcome: "unknown" as const,
         result: { content: [{ type: "text" as const, text: unknownToolMessage }], details: { artifactIds: [] } },
       };
-      if (event.type === "tool_execution_start") await this.append(scope, id, result);
-      await this.append(scope, id, {
+      if (event.type === "tool_execution_start") await append(result);
+      await append({
         type: "message_end", messageId: randomUUID(), messageSeq: 0, contextSeq: null,
         message: {
           role: "toolResult", toolCallId, toolName, isError: result.isError,
@@ -1051,7 +1053,7 @@ export class RuntimeStore {
         last.stopReason !== reason ||
         last.errorMessage !== (errorMessage ?? undefined))
     ) {
-      await this.append(scope, id, {
+      await append({
         type: "message_end",
         messageId: randomUUID(),
         messageSeq: 0, contextSeq: null,
@@ -1081,7 +1083,7 @@ export class RuntimeStore {
       errorMessage ??
       (final?.role === "assistant" ? final.errorMessage : null) ??
       null;
-    const envelope = await this.append(scope, id, {
+    const envelope = await append({
       type: "agent_end",
       messages,
       status: "stopped",

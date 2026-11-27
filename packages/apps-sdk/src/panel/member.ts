@@ -1,4 +1,4 @@
-import { computed, inject, onBeforeUnmount, onScopeDispose, shallowRef, watch, type ComputedRef, type InjectionKey } from "vue";
+import { computed, getCurrentInstance, inject, onBeforeUnmount, onScopeDispose, shallowRef, watch, type ComputedRef, type InjectionKey, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
@@ -32,6 +32,36 @@ export interface PanelMemberContext {
 
 /** The member a projection is drawn as, once its projection is loaded. */
 export const panelMemberKey: InjectionKey<() => PanelMemberContext> = Symbol("panel-member");
+
+/**
+ * Internal setter provided by `DirectProjection` so `PanelMember` can forward its component's hidden state to the
+ * `.sdk-panel-member` host container.
+ */
+export const panelMemberHostHiddenKey: InjectionKey<(hidden: boolean) => void> = Symbol("panel-member-host-hidden");
+
+/**
+ * Internal host hook provided by `PanelMember` / `Projection` so a member component that renders nothing can hide its
+ * `.sdk-panel-member` host out of parent flex/grid layout. `owner` matches the direct member host instance so a
+ * standalone component inside another member's slot never hides the outer member's host.
+ */
+export interface PanelMemberHostVisibility {
+  readonly owner: object;
+  setHidden(hidden: boolean): void;
+}
+export const panelMemberHostVisibilityKey: InjectionKey<PanelMemberHostVisibility> = Symbol("panel-member-host-visibility");
+
+/** Synchronizes a member component's hidden state with its direct member host container. */
+export function useMemberHostHidden(hidden: Readonly<Ref<boolean>>): void {
+  const host = inject(panelMemberHostVisibilityKey, null);
+  const instance = getCurrentInstance();
+  if (!host || !instance || instance.parent !== host.owner) return;
+  watch(hidden, (value) => {
+    host.setHidden(value);
+  }, { immediate: true });
+  onBeforeUnmount(() => {
+    host.setHidden(false);
+  });
+}
 
 /** The member this component is drawn as, in a panel's frame or in the platform's document. */
 export function useMember(): PanelMemberContext {

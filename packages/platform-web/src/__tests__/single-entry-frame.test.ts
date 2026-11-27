@@ -176,7 +176,7 @@ describe("singleEntry application frame behavior", () => {
       },
     ];
 
-    useApplicationCatalog().applications.value = [];
+    useApplicationCatalog().applications.value = catalogFixture().filter((app) => ["operations", "dashboards"].includes(app.id));
 
     await router.push("/ops/feedback");
     await router.isReady();

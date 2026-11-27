@@ -25,6 +25,7 @@ vi.mock("../../product-panels/application-use", () => ({
     applicationId: "ontology",
     use: {
       id: "use-bk",
+      names: { en: "use-bk" },
       panelId: "panel-bk",
       pageKey: "business-knowledge",
       path: "/ontology/knowledge",

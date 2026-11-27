@@ -22,6 +22,7 @@ import { installPanelBackPopStateListener } from "@ontomato/platform-shell";
 import { resetApplicationCatalog } from "./catalog";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "./detail-selection";
 import { addressLandingGuard, panelEntryGuard } from "./panel-entries";
+import { registerPlatformRoutes } from "./layout-route";
 import { installCatalogueEntryGuard } from "./entry-access";
 import { legacyAgentSettingsTab } from "./workbench-routes";
 
@@ -85,7 +86,7 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   app.use(i18n);
   app.use(ElementPlus);
   app.use(pinia);
-  for (const route of options.routes(app, router, i18n)) router.addRoute(route);
+  registerPlatformRoutes(router, options.routes(app, router, i18n));
   app.use(router);
   options.beforeMount?.();
   installProductEmbedding(app);

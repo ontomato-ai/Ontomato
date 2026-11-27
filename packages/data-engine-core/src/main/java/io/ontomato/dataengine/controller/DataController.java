@@ -43,41 +43,42 @@ public class DataController {
     private DataService dataService;
 	
 	@GetMapping("/data/instanceGraph/summary")
-	public JSONObject instanceGraphSummary() {
-		return dataService.queryInstanceGraph("summary", new JSONObject(),
-				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
+	public JSONObject instanceGraphSummary(HttpServletRequest request) {
+		return instanceGraph("summary", new JSONObject(), request);
 	}
 
 	@GetMapping("/data/instanceGraph/statistics")
-	public JSONObject instanceGraphStatistics() {
-		return dataService.queryInstanceGraph("statistics", new JSONObject(),
-				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
+	public JSONObject instanceGraphStatistics(HttpServletRequest request) {
+		return instanceGraph("statistics", new JSONObject(), request);
 	}
 
 	@GetMapping("/data/instanceGraph/nodes")
-	public JSONObject instanceGraphNodes() {
-		return dataService.queryInstanceGraph("nodes", new JSONObject(),
-				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
+	public JSONObject instanceGraphNodes(HttpServletRequest request) {
+		return instanceGraph("nodes", new JSONObject(), request);
 	}
 
 	@PostMapping("/data/instanceGraph/connections")
-	public JSONObject instanceGraphConnections(@RequestBody JSONObject param) {
-		return dataService.queryInstanceGraph("connections", param,
-				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
+	public JSONObject instanceGraphConnections(@RequestBody JSONObject param, HttpServletRequest request) {
+		return instanceGraph("connections", param, request);
 	}
 
 	@PostMapping("/data/instanceGraph/search")
-	public JSONObject instanceGraphSearch(@RequestBody JSONObject param) {
-		return dataService.queryInstanceGraph("search", param,
-				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
+	public JSONObject instanceGraphSearch(@RequestBody JSONObject param, HttpServletRequest request) {
+		return instanceGraph("search", param, request);
 	}
 
 	@PostMapping("/data/instanceGraph/neighborhood")
-	public JSONObject instanceGraphNeighborhood(@RequestBody JSONObject param) {
-		return dataService.queryInstanceGraph("neighborhood", param,
-				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
+	public JSONObject instanceGraphNeighborhood(@RequestBody JSONObject param, HttpServletRequest request) {
+		return instanceGraph("neighborhood", param, request);
 	}
 	
+	private JSONObject instanceGraph(String operation, JSONObject parameters, HttpServletRequest request) {
+		var user = SystemUtils.getCurUser();
+		var permission = identityService.getCurrentUserDataPermission();
+		return dataService.queryInstanceGraph(operation, parameters, permission, user.getDomainId(),
+				executionTarget(request, user, permission));
+	}
+
 	@PostMapping("/data/queryInfoByNode")
     @ResponseBody
     public JSONObject queryInfoByNode(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, HttpServletRequest executionRequest) {

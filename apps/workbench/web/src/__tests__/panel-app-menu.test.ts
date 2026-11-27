@@ -70,6 +70,8 @@ describe("official SDK AppMenu component", () => {
           },
           {
             id: "hidden",
+            names: { en: "Hidden" },
+            inMenu: false,
             pageKey: "demo-hidden",
             panelId: "panel-hidden",
             path: "/applications/app-demo/hidden",

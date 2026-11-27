@@ -6,7 +6,6 @@ import { TablePreview, jsonTable, parseCsv, type TableArrangeLabels, type TableD
 import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
-import { queryCoverageSchema, queryIntentSchema } from "@ontomato/contracts/query-intent";
 import { useArtifactText } from "./useArtifactBlob";
 import SubgraphView from "./SubgraphView.vue";
 import AttachmentCell from "./AttachmentCell.vue";
@@ -36,28 +35,22 @@ type Parsed = {
   graph: QuerySubgraph | null;
   /** The row limit a partial dataset was cut at, from the file's own truncation marker. */
   rowLimit: number | null;
-  uncheckedConditions: string[];
   dataset: boolean;
 };
 const parsed = computed<Parsed>(() => {
-  const none = { graph: null, rowLimit: null, uncheckedConditions: [], dataset: false };
+  const none = { graph: null, rowLimit: null, dataset: false };
   if (text.value === null) return { table: null, raw: null, invalid: false, ...none };
   if (props.artifact.path.toLowerCase().endsWith(".csv"))
     return { table: parseCsv(text.value), raw: null, invalid: false, ...none };
   try {
     const value: unknown = JSON.parse(text.value);
     const table = jsonTable(value);
-    const dataset = value as { schema?: string; sourceAnalysis?: QuerySubgraph; truncation?: { rowLimit: number } | null;
-      queryIntent?: unknown; queryCoverage?: unknown } | null;
+    const dataset = value as { schema?: string; sourceAnalysis?: QuerySubgraph; truncation?: { rowLimit: number } | null } | null;
     const graph = table && dataset?.sourceAnalysis?.schema === "ontomato.query-subgraph.v1" ? dataset.sourceAnalysis : null;
     const formal = table && (dataset?.schema === "workbench.dataset.v1" || dataset?.schema === "workbench.dataset.v2");
-    const intent = queryIntentSchema.safeParse(formal ? dataset.queryIntent : undefined);
-    const coverage = queryCoverageSchema.safeParse(formal ? dataset.queryCoverage : undefined);
-    const checked = new Map(coverage.data?.conditions.map(({ id, status }) => [id, status]));
     return {
       table, raw: table ? null : JSON.stringify(value, null, 2), invalid: false, graph,
       rowLimit: table ? dataset?.truncation?.rowLimit ?? null : null,
-      uncheckedConditions: intent.data?.conditions.filter(({ id }) => checked.get(id) !== "present").map(({ quote }) => quote) ?? [],
       dataset: formal || /\.dataset\.json$/i.test(props.artifact.path),
     };
   } catch {
@@ -91,9 +84,6 @@ watch(() => props.artifact.id, () => {
     <div v-if="error" class="state error">{{ error }}</div>
     <div v-else-if="text === null" class="state">{{ labels.loading }}</div>
     <template v-else-if="table">
-      <p v-if="parsed.uncheckedConditions.length && labels.datasetUncheckedConditions" class="partial" role="note">
-        {{ labels.datasetUncheckedConditions(parsed.uncheckedConditions) }}
-      </p>
       <p v-if="parsed.rowLimit !== null" class="partial" role="note">{{ labels.truncatedRows(parsed.rowLimit) }}</p>
       <TablePreview
         :table="table"

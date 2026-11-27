@@ -117,4 +117,4 @@ describes live editing, pending import through a governance window in a platform
 page tools, and external import. The ontology declaration maps the governance
 report page to the knowledge-governance preset; business-knowledge keeps the ordinary default.
 New and existing domains lazily receive their own stable governance preset.
-Full-stack/model/browser acceptance belongs to the controller on 128.
+Full-stack/model/browser acceptance belongs to the controller in the integration environment.

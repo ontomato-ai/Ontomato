@@ -1,6 +1,6 @@
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductPanelReadRequest, ProductPanelReadResponse, ProductPanelReadSource } from "@ontomato/contracts/panel-host";
-import type { PanelFormValues, PanelRecord, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormValues, PanelRecord, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import {
   ACTION, APPLICATION, APPLICATION_DELETE_DRAFT, ATTRIBUTE, AUDIT_LOG, AUTOTEST_RUN, BUSINESS_KNOWLEDGE, DATA_ADAPTER_CONFIG, DSL_QUERY, EXTERNAL_MCP_SERVICE,
   FUNCTION, GENERAL_SETTINGS, METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, PERMISSION_POLICY, RELATIONSHIP, ROLE, TRIGGER, TURN_EVIDENCE, USER, WORKFLOW,
@@ -20,6 +20,7 @@ import { prepareBuilderSourceFacts } from "../app-builder/registered-source-read
 import { prepareBuilderPanelFacts, prepareBuilderPanelRead } from "../app-builder/application-panel-reads";
 import { createBusinessKnowledgePanelReadPresenter } from "../business-knowledge/panel-reads";
 import { preparePanelMetricRead } from "../dashboard/panel-chart-read-plan";
+import { withPolicyFormEntryUsage } from "../governance/panel-reads";
 import { effectiveAccessNeedsWorkbenchCatalog, loadPolicyWorkbenchCatalog } from "../governance/policy-catalog";
 import type { McpRequestLocation } from "../mcp/catalog";
 import { preparePublishedMcpRead } from "../mcp/panel-reads";
@@ -225,7 +226,7 @@ export async function prepareRegisteredDataReads(
 
 type PreparedRead = Extract<Awaited<ReturnType<typeof prepareRegisteredDataReads>>["plans"][number], { prepared: unknown }>;
 type PresentOwnerResult = (
-  plan: PreparedRead, result: Extract<JavaPanelReadResult, { status: "ready" }>, locale?: string,
+  plan: PreparedRead, result: Extract<JavaPanelReadResult, { status: "ready" }>, credentials: AssistantCredentials, domainId: string,
 ) => Promise<ProductPanelReadResponse>;
 
 function presentReadOutcome(declaration: PlatformReadDeclaration, payload: unknown, render?: (value: unknown) => unknown) {
@@ -251,8 +252,9 @@ const ownerPresenterFactories = new Map<string, (locale?: string) => Record<stri
   [WORKFLOW, createWorkflowPanelReadPresenter],
 ]);
 
-const presentRegisteredOwnerResult: PresentOwnerResult = async ({ prepared, placement, governanceRows }, { payload }, locale) => {
+const presentRegisteredOwnerResult: PresentOwnerResult = async ({ prepared, placement, governanceRows }, { payload }, credentials, domainId) => {
   const { selection: { typeId, method, primaryKey }, declaration, inputs, params } = prepared;
+  const { locale } = credentials;
   if (governanceRows) {
     const { value, rowRefusals } = governanceRows.unpack(payload);
     const answer = presentReadOutcome(declaration, value);
@@ -277,6 +279,12 @@ const presentRegisteredOwnerResult: PresentOwnerResult = async ({ prepared, plac
         ? withModelingPath(value as PanelRecord, typeId === OBJECT_TYPE ? "object" : "relation", primaryKey!)
         : value;
     });
+  }
+  if (typeId === PERMISSION_POLICY && method === "form") {
+    const answer = presentReadOutcome(declaration, payload);
+    if (answer.status !== "ready") return answer;
+    const value = await withPolicyFormEntryUsage(answer.value as PanelFormDescription, credentials, domainId, primaryKey!);
+    return { ...answer, value };
   }
   const presenters = ownerPresenterFactories.get(typeId)?.(locale);
   if (presenters && Object.hasOwn(presenters, method)) {
@@ -355,7 +363,7 @@ export async function runPreparedDataReads(
           const host = operationHost({ owner: viewer, credentials });
           const rowOperations = await presentRowOperationsForRows(
             { ...projection, operations }, plan.prepared.inputs, answer.value as PanelRecord[], APPLICATION,
-            (handler, _binding, targets) => handler.unavailableBatch!(host, targets),
+            (handler, _binding, targets) => handler.effect === "write" ? handler.unavailableBatch!(host, targets) : new Map(),
           );
           return { ...answer, ...(rowOperations && { rowOperations }) };
         }
@@ -371,7 +379,7 @@ export async function runPreparedDataReads(
         return answer;
       }
       if (!plan.local) {
-        const answer = await present(plan, result, credentials.locale);
+        const answer = await present(plan, result, credentials, viewer.domainId);
         if (answer.status === "ready" && plan.attributeDelete) {
           const rowOperations = await presentAttributeDeleteRows(
             { ...plan.placement.projection, operations: plan.attributeDelete }, result.payload,

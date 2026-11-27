@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AdmZip from "adm-zip";
-import { AGENT_DEFINITION, DELETE_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
@@ -46,7 +46,7 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-ops-"));
 const publicSkillsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-ops-pub-"));
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot });
 
-const { skillServerOperations } = await import("../panel-operations");
+const { skillServerOperations, skillExportOperation } = await import("../panel-operations");
 const deleteOp = skillServerOperations.find((op): op is Extract<typeof op, { targetInput: string }> => op.handlerRef === DELETE_SKILL)!;
 if (deleteOp.kind !== "action") throw new Error("Expected action operation");
 const importOp = skillServerOperations.find((op): op is Extract<typeof op, { upload: object }> => op.handlerRef === IMPORT_SKILL)!;
@@ -211,28 +211,21 @@ describe("skill panel server operations", () => {
     expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" })).toEqual({
       reason: "内置技能随产品提供，不能删除",
     });
-    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" })).toEqual({
+    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "knowledge-governance" })).toEqual({
       reason: "内置技能随产品提供，不能删除",
     });
     expect(await deleteOp.unavailable!(host, { kind: "object", objectType: SKILL, primaryKey: "missing-skill" })).toBeUndefined();
 
-    expect(await deleteOp.execute(
-      zhHost,
-      { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" },
-    )).toEqual({
-      kind: "refusal",
-      code: "PUBLIC_SKILL_READ_ONLY",
-      message: "内置技能随产品提供，不能删除",
-    });
-
-    expect(await deleteOp.execute(
-      zhHost,
-      { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" },
-    )).toEqual({
-      kind: "refusal",
-      code: "PUBLIC_SKILL_READ_ONLY",
-      message: "内置技能随产品提供，不能删除",
-    });
+    for (const primaryKey of ["builtin-skill", "knowledge-governance", "ops-diagnosis"]) {
+      expect(await deleteOp.execute(
+        zhHost,
+        { kind: "object", objectType: SKILL, primaryKey },
+      )).toEqual({
+        kind: "refusal",
+        code: "PUBLIC_SKILL_READ_ONLY",
+        message: "内置技能随产品提供，不能删除",
+      });
+    }
 
     expect(await deleteOp.execute(
       host,
@@ -290,6 +283,17 @@ describe("skill panel server operations", () => {
       await expect(fs.stat(path.join(path.dirname(installed), "references", "old.md"))).rejects.toMatchObject({ code: "ENOENT" });
     });
 
+    it("refuses to overwrite generated and file-backed platform skills with a same-named upload", async () => {
+      for (const name of ["knowledge-governance", "ontomato-page-operator"]) {
+        const uploaded = zip(name, "Replacement");
+        expect(await importOp.execute(host, null, call(uploaded, true))).toEqual({
+          kind: "refusal",
+          code: "PUBLIC_SKILL_READ_ONLY",
+          message: "Built-in skills come with the product and cannot be deleted",
+        });
+      }
+    });
+
     it("refuses an unreadable package and an import without permission", async () => {
       const broken = { name: "broken.zip", mime: "application/zip", size: 3, bytes: Buffer.from("zip") };
       expect(await importOp.inspectImpact!.inspect(host, [{ target: null, input: { file: broken, overwrite: true } }])).toBeNull();
@@ -306,5 +310,20 @@ describe("skill panel server operations", () => {
         kind: "refusal", code: "PERMISSION_DENIED", message: "Skill operation denied",
       });
     });
+
+  it("marks generated skills unavailable for export and refuses direct export calls", async () => {
+    const target = { kind: "object" as const, objectType: SKILL, primaryKey: "knowledge-governance" };
+    expect(skillExportOperation.handlerRef).toBe(EXPORT_SKILL);
+    await expect(skillExportOperation.unavailable!(host, target)).resolves.toEqual({
+      reason: "Generated skills have no package files to export",
+    });
+    await expect(skillExportOperation.execute(host, { target, input: {} })).rejects.toMatchObject({
+      status: 422,
+      code: "SKILL_EXPORT_UNAVAILABLE",
+    });
+
+    const fileBacked = { ...target, primaryKey: "ontomato-page-operator" };
+    await expect(skillExportOperation.unavailable!(host, fileBacked)).resolves.toBeUndefined();
+  });
   });
 });

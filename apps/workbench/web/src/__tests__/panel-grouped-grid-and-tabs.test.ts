@@ -9,7 +9,8 @@ import { dashboardChartFileSchema } from "@ontomato/contracts/dashboard";
 import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { DASHBOARD, DASHBOARD_CARD } from "@ontomato/contracts/platform-object-types";
+import { DASHBOARD, DASHBOARD_CARD, TRIGGER } from "@ontomato/contracts/platform-object-types";
+import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
 import { createDirectPanelInstance, type MemberDataState, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { projectionKey } from "../../../../../packages/apps-sdk/src/panel/context";
 import { panelMemberKey, type PanelMemberContext } from "../../../../../packages/apps-sdk/src/panel/member";
@@ -360,6 +361,73 @@ it("GroupedGrid renders groups (preserving empty groups), sections, slots, selec
   const resized = secondPayload.groups.flatMap((g) => g.items).find((i) => i.primaryKey === "b1:c1")!;
   expect(resized.colSpan).toBeGreaterThan(6);
   expect(resized.rowSpan).toBeGreaterThan(2);
+});
+
+it("GroupedGrid keeps hideWhenUnavailable row actions disabled with the failure when the operations read fails, and still hides an owner's refusal", async () => {
+  const manifest = definePanel({ state: {}, members: { grid: { target: { projectionId: "proj-ops-grid" } } } });
+  const projections: Record<string, DirectProjection> = {
+    "proj-ops-grid": {
+      ...meta,
+      id: "proj-ops-grid",
+      name: "Grid with row operations",
+      componentId: "@ontomato/sdk:GroupedGrid",
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: TRIGGER } }, read: "list", params: {} } },
+      config: {
+        rowActions: {
+          maxVisible: 2,
+          items: [
+            { kind: "operation", operation: "runNow", label: "Run now", hideWhenUnavailable: true },
+            { kind: "operation", operation: "remove", label: "Delete", hideWhenUnavailable: true },
+          ],
+        },
+      },
+      inputs: {},
+      outputs: {},
+      operations: {
+        runNow: { operation: { kind: "PlatformOperation", id: "triggers.runNow" }, target: { row: true } },
+        remove: { operation: { kind: "PlatformOperation", id: "triggers.delete" }, target: { row: true } },
+      },
+    },
+  };
+  const rows = [
+    { primaryKey: "t1", className: TRIGGER, label: "Nightly", fields: { groupId: "g1", order: 0, colSpan: 6, rowSpan: 1 } },
+    { primaryKey: "t2", className: TRIGGER, label: "Hourly", fields: { groupId: "g1", order: 1, colSpan: 6, rowSpan: 1 } },
+  ];
+  // The owner answers row t1's availability with the list: it may run, but explicitly refuses deletion.
+  const rowOperations = {
+    [panelRowOperationKey(rows[0]!)]: {
+      runNow: { available: true },
+      remove: { available: false, unavailable: { reason: "System task cannot be removed" } },
+    },
+  };
+
+  const { container } = mountDirect(
+    manifest,
+    projections,
+    (request) => (request.operations
+      ? { status: "error", message: "Operation availability read failed" }
+      : { status: "ready", value: rows as never, rowOperations }),
+    (inst) => h(PanelMember, { instance: inst, member: "grid" }),
+  );
+
+  const actionsOf = (primaryKey: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>(`[data-primary-key="${primaryKey}"] .sdk-object-list-row-actions button`)];
+  await vi.waitFor(() => expect(actionsOf("t2")).toHaveLength(2));
+
+  // No row answer: both actions stay, disabled, and say the read failed rather than vanishing.
+  for (const button of actionsOf("t2")) {
+    expect(button.disabled).toBe(true);
+    const trigger = button.closest<HTMLElement>(".sdk-unavailable-trigger")!;
+    expect(trigger.getAttribute("tabindex")).toBe("0");
+    expect(trigger.getAttribute("aria-label")).toBe(`${button.textContent?.trim()}: Operation availability read failed`);
+  }
+
+  // The owner's explicit refusal is still hidden; the action the owner admits cannot run without its descriptor, so it
+  // stays disabled with the read failure.
+  const t1 = actionsOf("t1");
+  expect(t1.map((button) => button.textContent?.trim())).toEqual(["Run now"]);
+  expect(t1[0]!.disabled).toBe(true);
+  expect(t1[0]!.closest(".sdk-unavailable-trigger")?.getAttribute("aria-label")).toBe("Run now: Operation availability read failed");
 });
 
 it("GroupedGrid fixed-member mode mounts without data.rows, reads/writes typed layout state on drag/resize/hide, and reacts to external state updates", async () => {

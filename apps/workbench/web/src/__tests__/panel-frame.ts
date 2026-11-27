@@ -10,7 +10,14 @@ import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-a
 import { formFieldPointer } from "@ontomato/contracts/form-fields";
 import type { PanelFormDescription, PanelFormSaveInput, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { TRIGGER } from "@ontomato/contracts/platform-object-types";
-import { panelUsePath, type PanelHostMessage } from "@ontomato/contracts/panel-host";
+import {
+  PANEL_PERSONAL_STATE_PATH,
+  PANEL_PERSONAL_STATE_READ_PATH,
+  panelUsePath,
+  type PanelHostMessage,
+  type PanelPersonalStateReadRequest,
+  type PanelPersonalStateWriteRequest,
+} from "@ontomato/contracts/panel-host";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { appsSdkCurrentSchema, type AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
 import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscriptions";
@@ -285,7 +292,7 @@ await mountPanel({
 /** A use relation of one of the trial's applications, as Java declares it. */
 export function panelUse(id: string, pageKey: string, panelId: string, path: string): ApplicationPanelUse {
   return {
-    id,
+    id,     names: { en: String(id) },
     pageKey,
     panelId,
     path,
@@ -412,6 +419,9 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
     onAuthFailure: vi.fn(),
   });
   installProductEmbedding(createApp({}));
+  const personalStates = new Map<string, Record<string, unknown>>();
+  const personalScope = (body: PanelPersonalStateReadRequest | PanelPersonalStateWriteRequest) =>
+    JSON.stringify([body.source, body.memberPath]);
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(String(input), window.location.href);
     const request: Sent = {
@@ -427,6 +437,23 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
     if (request.path === APPLICATION_ENTRY_PATH) {
       const response = await answer(request);
       return response.status === 404 ? resolveEntryFrom(answer, request) : response;
+    }
+    if (request.method === "POST" && request.path === `/api${PANEL_PERSONAL_STATE_READ_PATH}`) {
+      const response = await answer(request);
+      if (response.status !== 404) return response;
+      const body = request.body as PanelPersonalStateReadRequest;
+      const saved = personalStates.get(personalScope(body)) ?? {};
+      return Response.json({
+        values: Object.fromEntries(body.fields.flatMap((field) => (field in saved ? [[field, saved[field]]] : []))),
+      });
+    }
+    if (request.method === "PUT" && request.path === `/api${PANEL_PERSONAL_STATE_PATH}`) {
+      const response = await answer(request);
+      if (response.status !== 404) return response;
+      const body = request.body as PanelPersonalStateWriteRequest;
+      const scope = personalScope(body);
+      personalStates.set(scope, { ...(personalStates.get(scope) ?? {}), ...body.values });
+      return Response.json({ values: body.values });
     }
     if (request.method === "POST" && request.path === panelReadBatchPath) {
       const response = await answer(request);

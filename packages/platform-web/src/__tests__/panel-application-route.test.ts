@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { pagePaneElementKey } from "@ontomato/agent-shell-ui";
+import { ApiRequestError } from "@ontomato/workbench-ui";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import elementEn from "element-plus/es/locale/lang/en";
@@ -20,8 +21,8 @@ import elementEn from "element-plus/es/locale/lang/en";
  */
 
 const uses: ApplicationPanelUse[] = [
-  { id: "use-tasks", panelId: "panel-tasks", path: "/applications/app-a/tasks", pageKey: "panels-trial-a-tasks", },
-  { id: "use-summary", panelId: "panel-summary", path: "/applications/app-a/summary", pageKey: "panels-trial-a-summary", },
+  { id: "use-tasks", names: { en: "use-tasks" }, panelId: "panel-tasks", path: "/applications/app-a/tasks", pageKey: "panels-trial-a-tasks", },
+  { id: "use-summary", names: { en: "use-summary" }, panelId: "panel-summary", path: "/applications/app-a/summary", pageKey: "panels-trial-a-summary", },
 ];
 
 /** Every panel instance the route mounted, and the address each last reported. */
@@ -40,7 +41,7 @@ vi.mock("../panel-host", () => ({
   // Single opening response, answered from the test's use relations with bundled frame/content fields.
   resolveApplicationEntry: async ({ path }: { path: string }) => {
     const use = uses.find((candidate) => candidate.path.replace(/^#/, "") === path || candidate.path === path);
-    if (!use) throw new Error(`No entry at ${path}`);
+    if (!use) throw new ApiRequestError(`No entry at ${path}`, 404);
     const frame = frameResponses.length ? frameResponses.shift()! : null;
     return {
       applicationId: path.split("/")[2], use, framePanelId,
@@ -210,6 +211,20 @@ describe("a panel application's page", () => {
     await router.push("/applications/app-a/summary");
     await flushPromises();
     expect(wrapper.get('[data-use="use-summary"]').attributes("data-term")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("reports malformed frame state beside a conversation and falls back to the frame default", async () => {
+    framePanelId = "term-frame";
+    frameResponses = [
+      { panel: { id: "term-frame", manifest: { state: { term: { type: { kind: "scalar", type: "number" }, deepLink: true, default: 1 } }, members: {} } } },
+    ];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { wrapper } = await mountAt("/applications/app-a/tasks?frame.term=not-a-number", { navigate: vi.fn() });
+
+    expect(errorSpy).toHaveBeenCalled();
+    expect(wrapper.get('[data-use="use-tasks"]').attributes("data-term")).toBe("1");
     wrapper.unmount();
   });
 

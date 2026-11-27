@@ -7,6 +7,7 @@ import { useMember, useMemberData, useMemberOutput } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { readConfigString, resolveLocalizedText } from "./localized-text";
 import type { ObjectCountItem } from "./object-count-types";
+import UnavailableTooltip from "./UnavailableTooltip.vue";
 
 type CountViewKind = "loading" | "empty" | "ready" | "forbidden" | "error" | "awaiting";
 
@@ -26,7 +27,8 @@ interface NormalizedCountItem {
  * `panelRecordQuery`) datum. For complete unpaged lists (`panelRecordList`),
  * displays the list length (`0` when empty); for paged/query reads (`panelRecordQuery`),
  * displays strictly the owner-returned `total` (showing `—` when the owner omits `total` or returns an empty response
- * without `total`, never falling back to the current page's row count or inventing `0`).
+ * without `total`, never falling back to the current page's row count or inventing `0`). A badge whose read failed
+ * shows a warning mark in its place, with the failure in a hover/focus tooltip, instead of disappearing.
  * Publishes `total` as a read-only member output (`number | null`).
  */
 const props = withDefaults(
@@ -39,12 +41,14 @@ const props = withDefaults(
     items?: readonly ObjectCountItem[];
     /**
      * Visual presentation: `"default"` renders the inline count strip with labels and status placeholders (`…` / `—`),
-     * while `"badge"` renders only a compact tabular numeral and omits the node whenever no finite count is available.
+     * while `"badge"` renders only a compact tabular numeral and omits the node whenever no finite count is available,
+     * except a failed read, which draws a warning mark explaining the failure.
      */
     appearance?: "default" | "badge";
     /**
      * Omit rendering any DOM node while the count is unavailable (loading, awaiting, forbidden, error, or omitted by
-     * the owner). Defaults to `true` when `appearance` is `"badge"` and `false` for `"default"`.
+     * the owner); a badge still marks a failed read. Defaults to `true` when `appearance` is `"badge"` and `false` for
+     * `"default"`.
      */
     omitWhenUnavailable?: boolean;
   }>(),
@@ -139,6 +143,11 @@ const parsedData = computed<ParsedCountData>(() => {
 
 useMemberOutput("total", () => parsedData.value.total);
 
+// A failed read is not "no count": the badge marks the failure in its place rather than vanishing or showing a dash.
+const badgeReadFailed = computed(() => resolvedAppearance.value === "badge" && parsedData.value.kind === "error");
+
+const badgeFailureLabel = computed(() => renderedItems.value.map((item) => item.label).filter(Boolean).join(", ") || undefined);
+
 const visible = computed(() => !resolvedOmitWhenUnavailable.value || parsedData.value.total !== null);
 
 const displayValue = computed(() => {
@@ -181,8 +190,25 @@ const badgeAccessibleLabel = computed<string | undefined>(() => {
 </script>
 
 <template>
+  <UnavailableTooltip
+    v-if="badgeReadFailed"
+    :reason="parsedData.notice"
+    :label="badgeFailureLabel"
+  >
+    <span
+      class="sdk-object-count sdk-object-count-badge"
+      data-appearance="badge"
+      data-state="error"
+    >
+      <svg class="sdk-object-count-failure" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+        <path d="M12 9v4" />
+        <path d="M12 17h.01" />
+      </svg>
+    </span>
+  </UnavailableTooltip>
   <span
-    v-if="visible && resolvedAppearance === 'badge'"
+    v-else-if="visible && resolvedAppearance === 'badge'"
     class="sdk-object-count sdk-object-count-badge"
     data-appearance="badge"
     :data-state="parsedData.kind"
@@ -249,5 +275,9 @@ const badgeAccessibleLabel = computed<string | undefined>(() => {
   font-weight: inherit;
   gap: 0;
   line-height: var(--leading-xs);
+}
+.sdk-object-count-failure {
+  color: var(--el-color-warning);
+  flex-shrink: 0;
 }
 </style>

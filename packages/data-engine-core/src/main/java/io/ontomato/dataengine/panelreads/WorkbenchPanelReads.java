@@ -43,6 +43,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpStatus;
@@ -52,6 +53,7 @@ import org.springframework.transaction.TransactionTimedOutException;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
+@Slf4j
 final class WorkbenchPanelReads {
     private static final long DEFAULT_TIMEOUT_MS = 600_000;
     private static final Set<Kind> CATALOGUE_KINDS = Set.of(Kind.PANEL, Kind.PROJECTION, Kind.COMPONENT, Kind.AGENT);
@@ -347,6 +349,7 @@ final class WorkbenchPanelReads {
                 ? failed(failure.status() == 403 ? Status.FORBIDDEN : Status.ERROR, failure.code(), failure.getMessage())
                 : rejected(failure.status(), failure.code(), failure.getMessage());
         if (cause instanceof Error fatal) throw fatal;
+        log.error("The owner read failed", cause);
         return failed(Status.ERROR, "PANEL_READ_ERROR", "The owner read failed");
     }
 

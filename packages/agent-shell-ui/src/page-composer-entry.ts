@@ -26,21 +26,35 @@ export type ServePageComposer = (expand: PageComposerExpand) => () => void;
 export const servePageComposerKey: InjectionKey<ServePageComposer> = Symbol("serve-page-composer");
 
 /**
- * The agent an entry's target names among the page's current candidates, or null when it names none of them: then the
- * composer only opens and keeps its agent. `page-default` is the page's registered default; `id` must be offered; a
- * `preset` is the candidate the server's answer says is that preset in this domain.
+ * The outcome of resolving a conversation entry's target agent against the current candidates: either the enabled
+ * candidate ID to use, or an explicit unavailable result so callers never silently fall back to the current agent.
+ */
+export type EntryAgentResolution =
+  | { readonly ok: true; readonly agentId: string }
+  | { readonly ok: false; readonly reason: "unavailable"; readonly target: PanelConversationEntry["target"] };
+
+/**
+ * Resolves the agent an entry's target names among the page's current candidates. `page-default` is the page's
+ * registered default; `id` must be offered; a `preset` is the candidate the server's answer says is that preset in this
+ * domain. When the target is absent or disabled, returns an explicit unavailable result instead of guessing or falling
+ * back to another agent.
  */
 export function entryAgent(
   target: PanelConversationEntry["target"],
   candidates: readonly { id: string; enabled: boolean }[],
   pageDefault: string | null | undefined,
   presetAgentIds: Readonly<Record<string, string>> | undefined,
-): string | null {
+): EntryAgentResolution {
   const offered = (id: string | null | undefined) => candidates.some((agent) => agent.enabled && agent.id === id);
-  if (target.kind === "page-default") return offered(pageDefault) ? pageDefault! : null;
-  if (target.kind === "id") return offered(target.id) ? target.id : null;
-  const preset = presetAgentIds?.[target.agentKind];
-  return offered(preset) ? preset! : null;
+  const candidate =
+    target.kind === "page-default"
+      ? pageDefault
+      : target.kind === "id"
+        ? target.id
+        : presetAgentIds?.[target.agentKind];
+  return offered(candidate)
+    ? { ok: true, agentId: candidate! }
+    : { ok: false, reason: "unavailable", target };
 }
 
 /** What a composer is asked to show by an entry: opened, with this text when the entry fills one. */

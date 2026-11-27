@@ -61,14 +61,18 @@ public class OntologyAgentDefinitions {
   }
 
   public List<SkillVersion> publish() throws Exception {
-    var analyst = code.registerSkill();
     var files = new ArrayList<Map<String, String>>();
-    for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "scripts/query-package.mjs", "scripts/probe.mjs", "references/dataset.md"))
+    // The retriever reads its own guide to Python packages; the developer contract stays with the generators.
+    for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "scripts/query-package.mjs", "references/dataset.md",
+        "references/query-package.md"))
       files.add(
           Map.of("path", path, "content", resource("ontology-skills/data-retrieval/" + path)));
-    sourceContract(files);
+    files.add(
+        Map.of("path", "scripts/ontomato.mjs", "content", resource("ontology-skills/ontomato-analyst/ontomato.mjs")));
+    files.add(
+        Map.of("path", "scripts/client.mjs", "content", resource("ontology-skills/ontomato-analyst/client.mjs")));
     var dataset = runtime.publishSkill("ontology-retrieval-skills", DATASET_SKILL, files);
-    return List.of(analyst, dataset);
+    return List.of(dataset);
   }
 
   public static final Map<String, Object> GENERATION_SKILL =
@@ -87,7 +91,9 @@ public class OntologyAgentDefinitions {
   }
 
   private List<SkillVersion> publishGenerationSkills(Map<String, Object> generator) throws Exception {
-    var skills = new ArrayList<>(publish());
+    var skills = new ArrayList<SkillVersion>();
+    skills.add(code.registerSkill());
+    skills.addAll(publish());
     skills.add(publishGenerator(generator));
     return skills;
   }

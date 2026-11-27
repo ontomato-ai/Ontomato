@@ -235,7 +235,7 @@ describe("the panel host's addresses", () => {
 
   it("sends each read to the address its owner serves", async () => {
     const { candidatePanelHost, panelAuthorDefinitions, platformPanelHost, resolveApplicationEntry } = await import("../panel-host");
-    const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", };
+    const use = { id: "use-a", names: { en: "use-a" }, pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", };
     const port = platformPanelHost("app-a", use, () => {});
     // Java resolves the entry an address opens; what it answers is the stand-in's business here.
     await resolveApplicationEntry({ path: "/applications/app-a/tasks" }).catch(() => {});
@@ -267,7 +267,7 @@ describe("the panel host's addresses", () => {
 });
 
 it("consumes bundled frame and content definitions from the opening response without extra panel or snapshot fetches", async () => {
-  const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks" };
+  const use = { id: "use-a", names: { en: "use-a" }, pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks" };
   const framePanelId = "term-frame";
   const frameManifest = definePanel({
     state: { term: { type: { kind: "scalar", type: "string" }, external: true, deepLink: true, default: "fall" } },
@@ -304,7 +304,7 @@ it("consumes bundled frame and content definitions from the opening response wit
   expect(contentSource.panel.id).toBe("panel-a");
   expect(contentPort.sourceReconciled?.()).toBe(true);
 
-  const builtinPort = builtinFramePanelHost("settings", framePanelId, undefined, undefined, () => ({ panel: framePanel }));
+  const builtinPort = builtinFramePanelHost("settings", framePanelId, "Settings", undefined, undefined, () => ({ panel: framePanel }));
   const builtinSource = await builtinPort.source();
   expect(builtinSource.panel.id).toBe(framePanelId);
   expect(builtinPort.sourceReconciled?.()).toBe(true);
@@ -394,6 +394,7 @@ describe("controlled personal state fields", () => {
   };
   const wiredUse = {
     id: "use-personal-ext-wired",
+    names: { en: "use-personal-ext-wired" },
     pageKey: "personal-ext-wired",
     panelId: "panel-personal-ext",
     path: "/applications/app-a/personal-ext-wired",
@@ -401,6 +402,7 @@ describe("controlled personal state fields", () => {
   };
   const unwiredUse = {
     id: "use-personal-ext-unwired",
+    names: { en: "use-personal-ext-unwired" },
     pageKey: "personal-ext-unwired",
     panelId: "panel-personal-ext",
     path: "/applications/app-a/personal-ext-unwired",
@@ -466,6 +468,7 @@ describe("controlled personal state fields", () => {
     reads: { memberPath: unknown[]; fields: string[] }[];
     writes: { memberPath: unknown[]; values: Record<string, unknown> }[];
     beforeSnapshot?: () => Promise<void>;
+    failRead?: boolean;
   }) {
     const controlledForPath = (memberPath: { member: string }[]) => {
       if (!memberPath.length) {
@@ -489,6 +492,9 @@ describe("controlled personal state fields", () => {
         const memberPath = body.memberPath ?? [];
         const fields = body.fields ?? [];
         options.reads.push({ memberPath, fields });
+        if (options.failRead) {
+          return Response.json({ error: { message: "Personal state unavailable" } }, { status: 500 });
+        }
         const controlled = controlledForPath(memberPath);
         const offending = fields.find(field => controlled.has(field));
         if (offending) {
@@ -798,9 +804,43 @@ describe("controlled personal state fields", () => {
     }
   });
 
+
+  it("reports a personal-state read failure in the panel error path and never writes defaults back", async () => {
+    const storage: Record<string, unknown> = { term: "summer", density: "comfortable" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: unwiredUse,
+      panels: { [unwiredUse.panelId]: panelRecord(unwiredUse.panelId, "Personal External", termAndDensityManifest) },
+      storage,
+      reads,
+      writes,
+      failRead: true,
+    });
+    const scope = effectScope();
+    try {
+      const view = scope.run(() => usePanelInstance(platformPanelHost("app-a", unwiredUse, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => unwiredUse.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      expect(view.error.value).toContain("Personal state unavailable");
+      expect(view.direct.value).toBeNull();
+      expect(reads).toEqual([{ memberPath: [], fields: ["term", "density"] }]);
+      expect(writes).toEqual([]);
+      expect(storage).toEqual({ term: "summer", density: "comfortable" });
+    } finally {
+      scope.stop();
+    }
+  });
+
   it("excludes parent member inputs from personal reads/writes on a nested panel while preserving its other personal fields", async () => {
     const nestedUse = {
       id: "use-nested-outer",
+      names: { en: "use-nested-outer" },
       pageKey: "nested-outer",
       panelId: "panel-nested-outer",
       path: "/applications/app-a/nested-outer",
@@ -898,6 +938,7 @@ describe("controlled personal state fields", () => {
   it("puts only changed personal fields across concurrent sessions so two tabs editing different fields do not overwrite each other", async () => {
     const prefsUse = {
       id: "use-personal-prefs",
+      names: { en: "use-personal-prefs" },
       pageKey: "personal-prefs",
       panelId: "panel-personal-prefs",
       path: "/applications/app-a/personal-prefs",
@@ -961,6 +1002,7 @@ describe("controlled personal state fields", () => {
   it("issues zero PUT requests when a personal field is changed and reverted to its stored value within the debounce window", async () => {
     const prefsUse = {
       id: "use-personal-revert",
+      names: { en: "use-personal-revert" },
       pageKey: "personal-revert",
       panelId: "panel-personal-revert",
       path: "/applications/app-a/personal-revert",
@@ -1081,7 +1123,7 @@ describe("dynamic and nested member projection access verification", () => {
       inputs: { target: { kind: "object", objectType: DASHBOARD_CARD } },
       data: { result: { source: { object: { input: "target" } }, read: "result", params: {} } },
     } satisfies ProductProjection;
-    const use = { id: "home", pageKey: "home", panelId: "panel-favorite-cards", path: "/home" };
+    const use = { id: "home", names: { en: "home" }, pageKey: "home", panelId: "panel-favorite-cards", path: "/home" };
     const listSlot = "favoriteDashboardCards";
     const cardSlot = "previewMetricCard";
     const panel = makeCodedPanel(use.panelId, definePanel({
@@ -1157,6 +1199,7 @@ describe("dynamic and nested member projection access verification", () => {
   it("verifies server use grant for a cached projection selected by a fromState dynamic member and clears cache on 403", async () => {
     const use = {
       id: "use-proj-catalog",
+      names: { en: "use-proj-catalog" },
       pageKey: "proj-catalog",
       panelId: "panel-proj-catalog",
       path: "/applications/app-a/proj-catalog",
@@ -1219,6 +1262,7 @@ describe("dynamic and nested member projection access verification", () => {
   it("re-verifies a dynamic projection after revoking and switching away and back while the panel stays open", async () => {
     const use = {
       id: "use-proj-switch",
+      names: { en: "use-proj-switch" },
       pageKey: "proj-switch",
       panelId: "panel-proj-switch",
       path: "/applications/app-a/proj-switch",
@@ -1299,6 +1343,7 @@ describe("dynamic and nested member projection access verification", () => {
   it("verifies server use grant for projections inside a nested panel preview even when the projection was cached", async () => {
     const use = {
       id: "use-panel-catalog",
+      names: { en: "use-panel-catalog" },
       pageKey: "panel-catalog",
       panelId: "panel-catalog-outer",
       path: "/applications/app-a/panel-catalog",
@@ -1373,6 +1418,7 @@ describe("dynamic and nested member projection access verification", () => {
   it("keeps the fast cache path for fixed projection members verified via includeProjections or snapshot", async () => {
     const use = {
       id: "use-fixed-fast",
+      names: { en: "use-fixed-fast" },
       pageKey: "fixed-fast",
       panelId: "panel-fixed-fast",
       path: "/applications/app-a/fixed-fast",
@@ -1453,6 +1499,7 @@ describe("dynamic and nested member projection access verification", () => {
   it("reconciles cold loads from includeProjections=1 with 0 /snapshot calls and still checks /snapshot on cache hit for all three hosts", async () => {
     const use = {
       id: "use-cold-reconcile",
+      names: { en: "use-cold-reconcile" },
       pageKey: "cold-reconcile",
       panelId: "panel-cold-page",
       path: "/applications/app-a/cold-reconcile",
@@ -1474,7 +1521,7 @@ describe("dynamic and nested member projection access verification", () => {
         name: "builtinFramePanelHost",
         panelId: "panel-cold-builtin-frame",
         projId: "proj-cold-builtin-frame",
-        createPort: () => builtinFramePanelHost("settings", "panel-cold-builtin-frame"),
+        createPort: () => builtinFramePanelHost("settings", "panel-cold-builtin-frame", "Settings"),
       },
     ] as const;
 
@@ -1563,6 +1610,57 @@ describe("dynamic and nested member projection access verification", () => {
     }
   });
 
+  it("reports a native frame's local panel-data refusal instead of swallowing it", async () => {
+    const framePanelId = "panel-native-frame";
+    const projection = makeProjection("proj-native-count", "No rows");
+    const panel = makeCodedPanel(framePanelId, definePanel({
+      state: {},
+      members: { count: { target: { projectionId: projection.id } } },
+    }), "count");
+    panel.content.html = '<div id="app"></div>';
+    const panelDataRequests: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === panelHostPaths.panel(framePanelId)) {
+        return Response.json({
+          panel,
+          projections: { [projection.id]: { status: "ready", projection } },
+        });
+      }
+      if (url.pathname === panelHostPaths.read || url.pathname === panelHostPaths.readBatch) {
+        panelDataRequests.push(url.pathname);
+      }
+      return Response.json({});
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const scope = effectScope();
+    try {
+      const port = builtinFramePanelHost("settings", framePanelId, "Settings");
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Settings",
+        address: () => "/settings",
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+      const instance = (view.direct.value!.mount as DirectPanelMount).instance;
+      const context = await instance.memberContext("count");
+      const datum = scope.run(() => context.data.use("rows"))!;
+
+      await vi.waitFor(() => expect(datum.value.status).toBe("forbidden"));
+      expect(panelDataRequests).toEqual([]);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      const reported = consoleError.mock.calls[0]![0];
+      expect(reported).toBeInstanceOf(Error);
+      expect((reported as Error).message).toBe("Native frame does not read panel data");
+      expect(view.error.value).toBe("Native frame does not read panel data");
+      expect(view.displayLoad.value.status).toBe("error");
+    } finally {
+      scope.stop();
+    }
+  });
+
   it.each([403, 404])("keeps the HTTP %s on a refused panel read and a refused opening", async status => {
     vi.stubGlobal("fetch", async () => Response.json({ error: { message: "Refused" } }, { status }));
     await expect(readPanelData({
@@ -1571,7 +1669,7 @@ describe("dynamic and nested member projection access verification", () => {
     })).rejects.toMatchObject({ status });
     clearPanelDefinitionCache();
     const deniedUse: ApplicationPanelUse = {
-      id: "use-denied", pageKey: "denied-page", panelId: "panel-denied",
+      id: "use-denied", names: { en: "use-denied" }, pageKey: "denied-page", panelId: "panel-denied",
       path: "/applications/app-a/denied",
     };
     const port = platformPanelHost("app-a", deniedUse, () => {});
@@ -1585,6 +1683,7 @@ describe("dynamic and nested member projection access verification", () => {
     clearPanelDefinitionCache();
     const use: ApplicationPanelUse = {
       id: "use-preload",
+      names: { en: "use-preload" },
       pageKey: "preload-page",
       panelId: "panel-preload",
       path: "/applications/app-a/preload",

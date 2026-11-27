@@ -201,7 +201,7 @@ class AuthorizationAccessInspectorTest {
     }
 
     private static RoleResolution roles(Set<String> ids, boolean admin) {
-        return new RoleResolution(ids, ids, List.of(), Set.of(), Map.of(), admin, false);
+        return new RoleResolution(ids, ids, List.of(), Set.of(), Map.of(), admin);
     }
 
     private static ObjectGrant grant(ObjectTarget target, Verb verb, GrantScope scope) {

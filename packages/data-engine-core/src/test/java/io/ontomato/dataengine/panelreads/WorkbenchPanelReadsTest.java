@@ -85,8 +85,9 @@ class WorkbenchPanelReadsTest {
         {"target":{"domainId":"d","kind":"PANEL","id":"panel"},"ownerFacts":{"state":"PUBLISHED"}}
         """;
     private static final PanelReadRegistration REGISTRATION = new PanelReadRegistration("app-a",
-        new ApplicationPanelUse("use", "page", "panel", "/applications/app-a", null, null,
-            Map.of("selected", Map.of("literal", Map.of("key", "registered", "number", new BigDecimal("1.00")))), null),
+        new ApplicationPanelUse("use", "page", "panel", "/applications/app-a", null, Map.of("en", "Page"), null,
+            Map.of("selected", Map.of("literal", Map.of("key", "registered", "number", new BigDecimal("1.00")))),
+            null, null, null, null, false),
         "frame");
     private final ApplicationCatalog applications = mock(ApplicationCatalog.class);
     private final AuthorizationService authorization = mock(AuthorizationService.class);
@@ -130,7 +131,7 @@ class WorkbenchPanelReadsTest {
         var logging = new ServiceLogFilter(identity);
         var registry = new LoggingInterceptors();
         logging.addInterceptors(registry);
-        var execution = new AgentExecutionController(null, new AgentExecutionSettings(executionIdentity, null));
+        var execution = new AgentExecutionController(null, new AgentExecutionSettings(executionIdentity, null, null));
         WorkbenchPanelRead userOptions = ReflectionTestUtils.invokeMethod(execution, "executionUserOptions");
         WorkbenchPanelRead userResolve = ReflectionTestUtils.invokeMethod(execution, "executionUserResolve");
         var reads = new WorkbenchPanelReads(applications, authorization, executor,
@@ -638,9 +639,9 @@ class WorkbenchPanelReadsTest {
         registration();
         when(authorization.decide(any(), any())).thenReturn(new Decision(true, null, null));
         var effectiveAdmin = new SubjectContext(subject.identity(),
-            new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), true, false), Map.of(), Set.of(), Set.of());
+            new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), true), Map.of(), Set.of(), Set.of());
         var ordinary = new SubjectContext(subject.identity(),
-            new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false), Map.of(), Set.of(), Set.of());
+            new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false), Map.of(), Set.of(), Set.of());
         when(authorization.resolveSubject(subject.identity())).thenReturn(effectiveAdmin, ordinary);
         var id = "11111111-1111-4111-8111-111111111111";
         when(executionIdentity.options("d", "ali", 2, 10)).thenReturn(List.of(new AgentExecutionIdentity.Option(id, "Alice")));

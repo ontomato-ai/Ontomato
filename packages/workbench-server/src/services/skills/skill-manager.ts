@@ -10,13 +10,15 @@ import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { skillWriteRestriction, type SkillEntry } from "../../core/skills/types";
 import { readSkillPackage } from "../../core/skills/package";
 import { InvalidSkillPackageError, normalizeSkillPackagePath, parseSkillMarkdown, readSkillLabels } from "../../core/skills/manifest";
-import { publicSkillLabelsPath, publicSkillTranslationsRoot, publicSkillsRoot } from "../../content/layout";
+import { publicSkillLabelsPath, publicSkillTranslationsRoot } from "../../content/layout";
 import { resolveLocale } from "../../i18n";
 import { assertManagement } from "../../identity/management";
 import { createLogger } from "../../logging/logger";
 import { HttpError } from "../../utils/errors";
 import { withDomainSkills } from "./operations";
 import { readSkillView, type SkillView } from "./view";
+import { builtinSkillDisplay } from "./builtin-catalog";
+import { translatedSkillRelativePath } from "./builtin-paths";
 import { listAnalysisAgentSkillReferences, removeAnalysisAgentSkillReferences } from "../assistant/skill-references";
 
 const logger = createLogger("skill-manager");
@@ -62,19 +64,28 @@ function openSkillZip(bytes: Buffer) {
   const id = parsed.manifest.name;
   return { id, manifest: parsed.manifest, entries, prefix };
 }
+function publicSkillLabels(locale?: string) {
+  const labelPath = publicSkillLabelsPath();
+  return labelPath && resolveLocale(locale).toLowerCase().startsWith("zh") ? readSkillLabels(labelPath) : undefined;
+}
+
 class SkillManager {
-  describeSkill(skill: SkillEntry, locale?: string): SkillInfo {
-    const labelPath = publicSkillLabelsPath();
-    const isPublic = skill.source.kind === "public";
-    const labels = isPublic && labelPath && resolveLocale(locale).toLowerCase().startsWith("zh")
-      ? readSkillLabels(labelPath)[skill.skill.name] : undefined;
+  private describeSkillWithLabels(skill: SkillEntry, locale: string | undefined, labels: ReturnType<typeof publicSkillLabels>): SkillInfo {
+    const isPublic = skillWriteRestriction(skill)?.kind === "public";
+    const label = isPublic ? labels?.[skill.skill.name] : undefined;
+    const builtin = builtinSkillDisplay(skill.skill, locale);
     return { id: skill.skill.name, skill: skill.skill, isPublic,
-      path: skill.source.path,
+      ...(skill.source.kind === "generated" ? {} : { path: skill.source.path }),
       writeRestriction: skillWriteRestriction(skill),
-      title: labels?.title ?? skill.displayTitle ?? skill.skill.name, description: labels?.description ?? skill.manifest.description };
+      title: builtin?.title ?? label?.title ?? skill.displayTitle ?? skill.skill.name,
+      description: builtin?.description ?? label?.description ?? skill.manifest.description };
+  }
+  describeSkill(skill: SkillEntry, locale?: string): SkillInfo {
+    return this.describeSkillWithLabels(skill, locale, publicSkillLabels(locale));
   }
   describeSkills(entries: readonly SkillEntry[], locale?: string): SkillInfo[] {
-    return entries.map((entry) => this.describeSkill(entry, locale));
+    const labels = publicSkillLabels(locale);
+    return entries.map((entry) => this.describeSkillWithLabels(entry, locale, labels));
   }
   async getAllSkills(domainId: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
     await assertManagement(workbenchManagement.skillLibraryRead, { domainId }, credentials);
@@ -205,6 +216,7 @@ class SkillManager {
     return this.listFilesFromEntry(await this.requireReadableSkill(domainId, id, credentials));
   }
   async listFilesFromEntry(skill: SkillEntry): Promise<SkillFile[]> {
+    if (skill.source.kind === "generated") return [];
     return (await skill.provide()).files.map((file) => ({ path: file.path, size: Buffer.byteLength(file.content, "utf8") }))
       .sort((a, b) => (a.path < b.path ? -1 : 1));
   }
@@ -219,14 +231,18 @@ class SkillManager {
   async readFileFromEntry(skill: SkillEntry, requestedPath: string, locale?: string): Promise<string> {
     const relative = normalizeSkillPackagePath(requestedPath);
     if (!relative) throw new HttpError(400, `Invalid skill file path: ${requestedPath}`, "INVALID_SKILL_FILE_PATH");
+    if (skill.source.kind === "generated") throw new HttpError(404, `Skill file not found: ${relative}`, "SKILL_FILE_NOT_FOUND");
     const source = (await skill.provide()).files.find((file) => file.path === relative)?.content;
     if (source === undefined) throw new HttpError(404, `Skill file not found: ${relative}`, "SKILL_FILE_NOT_FOUND");
     const translations = publicSkillTranslationsRoot();
-    const translated = skill.source.kind === "public" && translations
-      ? path.join(translations, resolveLocale(locale), path.relative(publicSkillsRoot(), skill.source.path), relative) : null;
+    const translationRelative = skill.source.kind === "public" ? translatedSkillRelativePath(skill.source.path) : null;
+    const translated = skill.source.kind === "public" && translations && translationRelative
+      ? path.join(translations, resolveLocale(locale), translationRelative, relative) : null;
     if (!translated || !fs.existsSync(translated)) return source;
     const frontmatter = source.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0] ?? "";
-    return frontmatter + fs.readFileSync(translated, "utf8");
+    const overlay = fs.readFileSync(translated, "utf8");
+    const translatedBody = overlay.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)([\s\S]*)$/)?.[1] ?? overlay;
+    return frontmatter + translatedBody;
   }
   async exportSkill(domainId: string, id: string, credentials: AssistantCredentials): Promise<Buffer> {
     const skill = await this.requireReadableSkill(domainId, id, credentials);

@@ -17,7 +17,7 @@ export function triggerCatalogueParams(params: Record<string, unknown>): Trigger
   return {
     scope: panelReadParameterSchemas.keyword.optional().parse(params.scope),
     search: panelReadParameterSchemas.keyword.optional().parse(params.search),
-    status: platformTaskStatusSchema.optional().parse(params.status),
+    status: platformTaskStatusSchema.optional().parse(params.status === "" ? undefined : params.status),
     taskId,
     agentId: workspace && !taskId ? panelReadParameterSchemas.keyword.optional().parse(params.workspaceAgent) : undefined,
   };

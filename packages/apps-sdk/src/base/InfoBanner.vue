@@ -5,7 +5,7 @@ import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import type { PanelFieldTone, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
 import { appIcon, hasAppIcon } from "@ontomato/platform-shell";
 import { panelContextKey } from "../panel/context";
-import { panelMemberKey } from "../panel/member";
+import { panelMemberKey, useMemberHostHidden } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import {
   asTone,
@@ -61,7 +61,10 @@ const props = withDefaults(
     compact?: boolean;
     /** Omit the leading status icon. Defaults to `false`. */
     hideIcon?: boolean;
-    /** Also hide an empty banner without an explicit record field driving its visibility. Defaults to `false`. */
+    /**
+     * Also hide an empty banner without an explicit record field driving its visibility; a bound read that failed still
+     * shows its failure. Defaults to `false`.
+     */
     hideWhenEmpty?: boolean;
   }>(),
   {
@@ -286,11 +289,15 @@ const isHidden = computed(() => {
   }
   if (!props.hideWhenEmpty) return false;
   if (state === "empty") return true;
+  // A failed read is not "nothing to say": the banner stays and says why its content could not be read.
+  if (state === "error") return false;
   if (hasTemplate.value) {
     return Boolean(boundDatum && state !== "ready");
   }
   return !resolvedTitle.value && !bodyText.value;
 });
+
+useMemberHostHidden(isHidden);
 
 const ariaRole = computed(() => (effectiveTone.value === "warning" || effectiveTone.value === "danger" ? "alert" : "status"));
 </script>

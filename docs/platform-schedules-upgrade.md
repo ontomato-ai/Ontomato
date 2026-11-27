@@ -25,7 +25,7 @@ Only then start the new stack, keeping the old images and backups through accept
 
 ## Development cutover and release handoff
 
-On 128, the main controller coordinates both the enterprise and public stack: suspend automatic replacement for the cutover, take the old images and database baseline, perform the preceding sequence once for each Compose project with its matching edition, and resume automatic updates only after verifying the new combination. Do not run these service or data commands on a developer workstation.
+The operator coordinates the affected deployment: suspend automatic replacement for the cutover, take the old images and database baseline, perform the preceding sequence once for each Compose project with its matching edition, and resume automatic updates only after verifying the new combination. Do not run these service or data commands on a developer workstation.
 
 For same-major enterprise offline updates, the target package's `update.sh` runs `apply` with the target DataRAG image before `compose up`. Preparation, backup and draining are prerequisites of that command. Online deployments use the explicit Compose procedure: Watchtower cannot perform this conversion. The separate cross-major release migration must run the predecessor conversion and invoke this tool before starting new services; ordinary `update.sh` is not a cross-major entry point.
 

@@ -34,6 +34,8 @@ const labels = {
   selectionContext: (selection: string) => `Selected: ${selection}`,
   fileContext: (file: { label: string; path: string }) => `Current file: ${file.label} (${file.path})`,
   pageContextClosed: "Current page: closed",
+  filterColumn: (column: string) => `Filter ${column}`,
+  filterSearch: "Search", filterAll: "All", filterEmpty: "Empty",
 } as unknown as ShellLabels;
 
 const page: PageContext = {
@@ -75,6 +77,7 @@ function render(
   history?: { agentId: string; messages: { id: string; content: string }[] },
   beside: PageContext = page,
   bindStream = false,
+  inlineArtifacts = false,
 ) {
   const sent: string[] = [];
   const send = vi.fn(async (_sessionId: string, input: AgentHostSendRequest) => {
@@ -90,6 +93,9 @@ function render(
     listAgents: vi.fn().mockResolvedValue([]),
     listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
     createSession,
+    resolveArtifact: vi.fn(async (_sessionId, _runId, path) => ({ id: path, runId, path })),
+    readArtifact: vi.fn(async (artifact) => new Blob([artifact.path.endsWith("report.md")
+      ? "# Report\n\n[Source data](outputs/sample.csv)" : "name,value\nExample,1"])),
     send,
     subscribe: () => () => {},
     sessionRuns: { read: vi.fn().mockResolvedValue({ sessions: [] }), subscribe: () => () => {} },
@@ -104,7 +110,7 @@ function render(
     }),
   } as unknown as AgentHostClient;
   const sessionId = ref<string | null>(history ? createdSessionId : null);
-  const shell = ref<{ send(text: string): Promise<void> } | null>(null);
+  const shell = ref<{ send(text: string): Promise<void>; requestArtifactAction(text: string): Promise<void> } | null>(null);
   const shownAgent = ref<string | null>(agentId);
   // The page the display shows beside the conversation, named and selected as `beside` says.
   const display = testDisplay(workbench, {
@@ -121,7 +127,7 @@ function render(
       return () => h(AgentShell, {
         ref: shell, workbench, client, labels, nav, agentId: shownAgent.value,
         "onUpdate:agentId": (id: string | null) => (shownAgent.value = id),
-        display,
+        display, inlineArtifacts,
         sessionId: sessionId.value, "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
       });
     },
@@ -130,7 +136,7 @@ function render(
   document.body.appendChild(root);
   app = createApp(Host);
   app.mount(root);
-  return { sent, send, createSession, sessionId, shell, shownAgent, display };
+  return { root, client, sent, send, createSession, sessionId, shell, shownAgent, display };
 }
 
 it("sends the page snapshot captured before session creation and omits it for files or empty display", async () => {
@@ -370,4 +376,39 @@ it("does not say again that the page is closed in a conversation that already sa
   await shell.value!.send("nothing beside");
   await settle();
   expect(sent[0]).toBe("nothing beside");
+});
+
+it("keeps a report mounted while its linked file is previewed, and restores it on close", async () => {
+  const { root, display, client } = render({ agentId, messages: [] }, page, false, true);
+  await settle();
+  const report = { id: "report", runId, path: "outputs/reports/test/report.md" };
+  await display.openArtifact({ key: "report", artifact: report as never, title: "Report" });
+  await settle();
+  const reportBody = root.querySelector<HTMLElement>(".side-panel .panel-body")!;
+  reportBody.scrollTop = 120;
+  const data = [...root.querySelectorAll<HTMLButtonElement>(".side-panel .artifact-card")]
+    .find(button => button.textContent?.includes("Source data"))!;
+  expect(data).toBeDefined();
+  data.click();
+  await settle();
+  expect(display.artifacts.value.map(item => item.artifact.path)).toEqual([report.path, "outputs/sample.csv"]);
+  expect(root.querySelectorAll(".side-panel")).toHaveLength(2);
+  const child = [...root.querySelectorAll<HTMLElement>(".side-panel")].find(panel => panel.style.display !== "none")!;
+  child.querySelector<HTMLButtonElement>(".panel-header > button:last-child")!.click();
+  await settle();
+  expect(root.querySelector(".side-panel .panel-body")).toBe(reportBody);
+  expect(reportBody.scrollTop).toBe(120);
+  expect(display.target.value).toMatchObject({ kind: "artifact", open: { key: "report" } });
+  expect(vi.mocked(client.readArtifact).mock.calls.filter(([file]) => file.id === "report")).toHaveLength(1);
+});
+
+it("continues the existing conversation from a report action with its file context", async () => {
+  const { sent, shell, display, createSession } = render({ agentId, messages: [] }, page, false, true);
+  await settle();
+  await display.openArtifact({
+    key: "report", artifact: { id: "report", runId, path: "outputs/reports/test/report.md" } as never, title: "Report",
+  });
+  await shell.value!.requestArtifactAction("Generate PPT");
+  expect(createSession).not.toHaveBeenCalled();
+  expect(sent).toEqual(["Generate PPT\n\nCurrent file: Report (outputs/reports/test/report.md)"]);
 });

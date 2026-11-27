@@ -45,7 +45,7 @@ class PanelApplicationsTest {
         return use("app-panel-a", page, permission);
     }
     private static ApplicationPanelUse use(String application, String page, String permission) {
-        return new ApplicationPanelUse("use-" + page, page, "panel-p", "/applications/" + application + "/" + page, null, null);
+        return new ApplicationPanelUse("use-" + page, page, "panel-p", "/applications/" + application + "/" + page, null, Map.of("en", page));
     }
     private static ApplicationCatalog.Declaration metadata() {
         return new ApplicationCatalog.Declaration(Map.of("en", "Example"), Map.of(), "calendar", List.of(), List.of());
@@ -64,7 +64,7 @@ class PanelApplicationsTest {
     }
 
     private static ApplicationPanelUse at(String page, String path) {
-        return new ApplicationPanelUse("use-" + page, page, "panel-p", path, null, null);
+        return new ApplicationPanelUse("use-" + page, page, "panel-p", path, null, Map.of("en", page));
     }
 
     private static ApplicationCatalog.Builtin builtin(String id, String path, ApplicationPanelUse use) {
@@ -279,6 +279,13 @@ class PanelApplicationsTest {
         verify(access, never()).initialOpenEntries(any(), anySet());
     }
 
+    @Test void rejectsAnUnnamedEntryAndIdentifiesIt() {
+        var unnamed = new ApplicationPanelUse("unnamed-entry", "unnamed", "panel-p",
+            "/applications/app-panel-a/unnamed", null, null);
+        var error = assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(unnamed)));
+        assertTrue(error.getReason().contains("unnamed-entry names"));
+    }
+
     @Test void validatesUseLocators() {
         var first = use("schedules-a", null); var second = use("schedules-b", null);
         assertDoesNotThrow(() -> ApplicationPanelUse.validate(List.of(first, second)));
@@ -295,9 +302,10 @@ class PanelApplicationsTest {
     @Test void navigationCatalogReturnsSummaryWithoutPanelUsesWhileSingleApplicationViewKeepsAdmittedPanelUses() throws Exception {
         var named = new ApplicationPanelUse("use-named", "named", "panel-p", "/applications/app-panel-a/named", null, Map.of("en", "Tasks", "zh-CN", "任务"));
         var denied = new ApplicationPanelUse("use-denied", "denied", "panel-q", "/applications/app-panel-a/denied", null, Map.of("en", "Hidden"));
-        var detail = use("detail", null);
+        var detail = new ApplicationPanelUse("use-detail", "detail", "panel-p", "/applications/app-panel-a/detail",
+            null, Map.of("en", "detail"), null, null, null, null, null, null, false);
         var objectRestricted = new ApplicationPanelUse("restricted", "restricted", "panel-restricted",
-            "/applications/app-panel-a/restricted", null, null);
+            "/applications/app-panel-a/restricted", null, Map.of("en", "Restricted"), null, null, null, null, null, null, false);
         var declared = List.of(named, denied, detail, objectRestricted);
 
         var application = app("app-panel-a", "panels", declared);
@@ -325,7 +333,7 @@ class PanelApplicationsTest {
             .andExpect(jsonPath("$.data.panelUses.length()").value(3))
             .andExpect(jsonPath("$.data.panelUses[0].names['zh-CN']").value("任务"))
             .andExpect(jsonPath("$.data.panelUses[1].path").value("/applications/app-panel-a/detail"))
-            .andExpect(jsonPath("$.data.panelUses[1].names").doesNotExist());
+            .andExpect(jsonPath("$.data.panelUses[1].names.en").value("detail"));
         mvc.perform(get("/platform/applications/app-panel-a/panel-uses"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(3))
@@ -351,7 +359,8 @@ class PanelApplicationsTest {
 
     @Test void entryResolutionDoesNotReadPanelDefinitions() {
         var allowed = use("first", null);
-        var denied = new ApplicationPanelUse("use-second", "second", "panel-other", "/applications/app-panel-a/second", null, null);
+        var denied = new ApplicationPanelUse("use-second", "second", "panel-other", "/applications/app-panel-a/second",
+            null, Map.of("en", "Second"), null, null, null, null, null, null, false);
         var duplicate = use("third", null);
         var uses = List.of(allowed, denied, duplicate);
         var application = app("app-panel-a", "panels", uses);

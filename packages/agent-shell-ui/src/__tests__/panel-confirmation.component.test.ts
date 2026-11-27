@@ -45,6 +45,7 @@ function history(pendingQuestions: AgentPendingQuestion[]): AgentHostSessionHist
     messages: [
       { id: "13131313-1313-4313-8313-131313131313", runId: rootRunId, messageSeq: 1, contextSeq: 1, message: { role: "user", content: "Run the inspection task", timestamp: 1 } },
       { id: "12121212-1212-4212-8212-121212121212", runId: rootRunId, messageSeq: 2, contextSeq: 2, message: { role: "assistant", content: [{ type: "text", text: "I asked you to confirm." }], api: "x", provider: "x", model: "x", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 } },
+      { id: questionId, runId: rootRunId, messageSeq: 3, contextSeq: null, message: { role: "notification", kind: "agent-question", recipient: "user", source: confirmation.source, content: confirmation.message, defaultAssumption: confirmation.defaultAssumption, options: confirmation.options, timestamp: 3 } },
     ],
     latestRun: null,
     page: { olderCursor: null, nextCursor: null, throughCursor: "through", messageSeq: 2 },
@@ -212,7 +213,10 @@ it("takes the answer's receipt without starting or following a run", async () =>
   expect(root.querySelector(".waiting")).toBeNull();
   expect([...root.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Stop" || button.getAttribute("aria-label") === "Stop")).toBe(false);
   expect(root.querySelector(".questions")).toBeNull();
-  expect(root.textContent).toContain("Answered: Run");
+  const answer = [...root.querySelectorAll(".user-bubble")].at(-1)!;
+  expect(answer.querySelector(".answer-question")?.textContent).toBe(confirmation.message);
+  expect(answer.querySelector(".answer-text")?.textContent).toBe("Answered: Run");
+  expect(root.querySelector(".agent-notification")).toBeNull();
 });
 
 it("shows the owner whether agents ask before panel operations, and lets the owner change it from the conversation's menu", async () => {

@@ -335,7 +335,7 @@ function previewEntriesFromManifest(manifest: ApplicationSourceManifest, locale?
   return manifest.panelUses.filter(isApplicationPanelUse).map(use => ({
     id: use.id,
     panelId: use.panelId,
-    label: (use.names && localizedApplicationText(use.names, resolveLocale(locale))) || use.id,
+    label: localizedApplicationText(use.names, resolveLocale(locale))!,
     path: use.path,
   }));
 }
@@ -983,6 +983,7 @@ export async function publishApplicationBuilderSource(
         id: "main",
         pageKey: "main",
         panelId,
+        names: defaultLocalizedMap(displayName),
         path: `/applications/${appId}/main`,
       }],
       delivery: { panels: [panelId], projections: [], packages: [], agents: [], skills: [] },

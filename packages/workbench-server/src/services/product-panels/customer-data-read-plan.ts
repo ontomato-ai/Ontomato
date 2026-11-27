@@ -21,7 +21,7 @@ function prepareRead(method: string, type: string, parameters: object, present: 
   return { call: { type, name: method, parameters: runtimeJsonObjectSchema.parse(parameters) }, present };
 }
 
-export function prepareCustomerObjectRead(selection: PanelReadSelection, params: Record<string, unknown>) {
+function prepareCustomerObjectRead(selection: PanelReadSelection, params: Record<string, unknown>) {
   const { kind, typeId, method } = selection;
   const read = (type: string, parameters: object, present: (payload: unknown) => unknown) =>
     prepareRead(method, type, parameters, present);

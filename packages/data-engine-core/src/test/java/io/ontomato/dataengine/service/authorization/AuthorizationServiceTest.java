@@ -27,7 +27,7 @@ class AuthorizationServiceTest {
     @BeforeEach
     void roles() {
         when(subjects.resolveRoles("domain", "user")).thenReturn(
-                new RoleResolution(Set.of("role"), Set.of("role"), List.of(), Set.of(), Map.of(), true, false));
+                new RoleResolution(Set.of("role"), Set.of("role"), List.of(), Set.of(), Map.of(), true));
         when(store.policies("domain", Set.of("role"))).thenReturn(List.of(new PolicyRef("role", "policy", PolicyKind.OBJECT)));
     }
 
@@ -51,7 +51,7 @@ class AuthorizationServiceTest {
         assertTrue(authorization.decide(admin, new Management(AuthorizationPolicies.CHANGE)).allowed());
 
         when(subjects.resolveRoles("domain", "user")).thenReturn(
-                new RoleResolution(Set.of("role"), Set.of("role"), List.of(), Set.of(), Map.of(), false, false));
+                new RoleResolution(Set.of("role"), Set.of("role"), List.of(), Set.of(), Map.of(), false));
         when(store.policies("domain", Set.of("role"))).thenReturn(
                 List.of(new PolicyRef("role", "operations", PolicyKind.MANAGEMENT)));
         when(store.managementOperations("domain", Set.of("operations"))).thenReturn(Set.of(AuthorizationPolicies.READ));
@@ -85,7 +85,7 @@ class AuthorizationServiceTest {
         var roles = Set.of("direct", "assigned", "without-root");
         when(subjects.resolveRoles("domain", "user")).thenReturn(new RoleResolution(
                 roles, Set.of("direct"), List.of(), Set.of("membership"),
-                Map.of("assigned", Set.of("position"), "direct", Set.of("organization-grant")), false, false));
+                Map.of("assigned", Set.of("position"), "direct", Set.of("organization-grant")), false));
         when(store.policies("domain", roles)).thenReturn(roles.stream()
                 .map(role -> new PolicyRef(role, "policy", PolicyKind.OBJECT)).toList());
         when(subjects.organizationCodes("domain", Set.of("membership", "organization-grant"), GrantScope.Kind.self_descendants))

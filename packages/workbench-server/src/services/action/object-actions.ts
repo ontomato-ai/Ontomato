@@ -210,9 +210,10 @@ export async function resolveObjectAction(host: Host, selection: ObjectActionSel
     const located = { actionId: selection.actionId, keyParameter: null, object: null } as const;
     const opened = await actionForm(host, located);
     if (!opened.success) throw readRefusal(opened, "ACTION_FORM_FAILED", "The owner could not open the action form");
+    const form = actionFormSchema.parse(opened.data);
     return {
       ...located, codeHash: action.codeHash, name: action.name, affects,
-      declaration: objectActionDeclaration(action),
+      declaration: objectActionDeclaration(action, new Map(form.fields.map(field => [field.key, field.label]))),
     };
   }
   if (selection.object === undefined)
@@ -223,9 +224,10 @@ export async function resolveObjectAction(host: Host, selection: ObjectActionSel
   // The owner's form admits this caller to run this Action now; its fields are the declaration's, so only the answer counts.
   const opened = await actionForm(host, located);
   if (!opened.success) throw readRefusal(opened, "ACTION_FORM_FAILED", "The owner could not open the action form");
+  const form = actionFormSchema.parse(opened.data);
   return {
     ...located, codeHash: action.codeHash, name: action.name, affects,
-    declaration: objectActionDeclaration(action),
+    declaration: objectActionDeclaration(action, new Map(form.fields.map(field => [field.key, field.label]))),
   };
 }
 
@@ -237,6 +239,7 @@ export async function resolveObjectAction(host: Host, selection: ObjectActionSel
  */
 export function objectActionDeclaration(
   action: Pick<StoredObjectAction, "id" | "function" | "target">,
+  fieldLabels: ReadonlyMap<string, string> = new Map(),
 ): PanelOperationDeclaration {
   const parameters = action.target === null
     ? action.function.parameters
@@ -254,7 +257,7 @@ export function objectActionDeclaration(
           type: "object",
           properties: Object.fromEntries(parameters.map(parameter => [parameter.name, {
             type: "string",
-            title: parameter.name,
+            title: fieldLabels.get(parameter.name) ?? parameter.name,
             ...(parameter.description ? { description: parameter.description } : {}),
             ...(TEXT_PARAMETER_TYPES.has(parameter.type) ? {} : { contentMediaType: "application/json" }),
           }])),

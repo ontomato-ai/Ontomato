@@ -13,10 +13,10 @@ const app = "app-page-skill";
 const p = panelRecord("panel-page-skill-p", "Tasks", manifestP);
 const q = panelRecord("panel-page-skill-q", "Summary", manifestQ);
 const tasks: ApplicationPanelUse = {
-  id: "use-tasks", pageKey: "page-skill-tasks", panelId: p.id, path: `/applications/${app}/tasks`,
+  id: "use-tasks", names: { en: "use-tasks" }, pageKey: "page-skill-tasks", panelId: p.id, path: `/applications/${app}/tasks`,
 };
 const summary: ApplicationPanelUse = {
-  id: "use-summary", pageKey: "page-skill-summary", panelId: q.id, path: `/applications/${app}/summary`,
+  id: "use-summary", names: { en: "use-summary" }, pageKey: "page-skill-summary", panelId: q.id, path: `/applications/${app}/summary`,
 };
 
 /** The panel reads as they reach Node, and a way to hold one of them or answer it differently. */

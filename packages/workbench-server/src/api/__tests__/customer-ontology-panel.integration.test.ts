@@ -168,7 +168,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("fact-reader");
     res.json({ success: true, data: {
       applicationId: use.applicationId, framePanelId: panelId, menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: use.useId, pageKey: use.useId, path: `/applications/${use.applicationId}/${use.useId}`, panelId },
+      use: { id: use.useId, names: { en: String(use.useId) }, pageKey: use.useId, path: `/applications/${use.applicationId}/${use.useId}`, panelId },
     } });
   });
   javaOwner(app);

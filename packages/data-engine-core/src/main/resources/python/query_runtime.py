@@ -62,26 +62,60 @@ def _praxis_call(method, path, body=None, query=None):
     return result
 
 
-def praxis_list_runs(status=None, limit=None):
-    """List Runs visible through the product Praxis entry."""
+def praxis_list_runs(status=None, limit=None, target_class=None, target_id=None):
+    """List Run summaries visible through the product Praxis entry.
+
+    Use target_class and target_id together to find Runs bound to one business
+    object before retrying a create. This endpoint returns summaries, not full
+    Runs, so call praxis_get_run() when steps or other RunRecord fields are needed.
+
+    Returns:
+        list: RunSummary objects with id, templateRef, status, requester,
+            createdAt and updatedAt.
+    """
     query = {}
     if status is not None:
         query["status"] = status
     if limit is not None:
         query["limit"] = limit
+    if (target_class is None) != (target_id is None):
+        raise ValueError("target_class and target_id must be supplied together")
+    if target_class is not None:
+        query["targetClass"] = target_class
+        query["targetId"] = target_id
     return _praxis_call("GET", "/runs", query=query)
 
 
 def praxis_get_run(run_id):
-    """Read one Run."""
+    """Read one complete RunRecord.
+
+    Returns:
+        dict: RunRecord with id, status, requester, actsOn, steps and events.
+            A step's id identifies the run-time step; stepRef identifies the
+            template step such as s1 or s2.
+    """
     return _praxis_call("GET", "/runs/" + quote(str(run_id), safe=""))
 
 
 def praxis_start_run(workflow_id, inputs=None, assignments=None, acts_on=None, goal_text=None, auto=True):
-    """Start a Run as the signed-in caller.
+    """Start a workflow Run as the signed-in caller.
 
-    assignments maps step ids to candidate.principal values from praxis_step_candidates().
-    Those values are normally loginCode, not arbitrary member ids.
+    Args:
+        workflow_id: Workflow identifier accepted by Praxis.
+        inputs: Optional mapping from template step id to that step's parameter
+            object, for example {"s1": {"task_id": "task-1"}}.
+        assignments: Optional mapping from template step id to a
+            candidate.principal returned by praxis_step_candidates(). The value
+            is normally loginCode; do not substitute an arbitrary member id.
+        acts_on: Optional list of business targets, for example
+            [{"targetClass": "school_task", "targetId": "task-1"}].
+        goal_text: Optional human-readable Run goal.
+        auto: When true, advance the new Run immediately. When false, keep it
+            pending until praxis_tick_run() is called.
+
+    Returns:
+        dict: The complete RunRecord. When auto is true this is the Run after
+            the first tick.
     """
     requester = identity.get("loginCode")
     if not requester:
@@ -103,12 +137,20 @@ def praxis_start_run(workflow_id, inputs=None, assignments=None, acts_on=None, g
 
 
 def praxis_tick_run(run_id):
-    """Advance a Run once as the signed-in caller."""
+    """Advance a Run once as the signed-in caller.
+
+    Returns:
+        dict: The complete RunRecord after the tick.
+    """
     return _praxis_call("POST", "/runs/" + quote(str(run_id), safe="") + "/tick", body={})
 
 
 def praxis_bind_run(run_id, target_class, target_id):
-    """Bind a Run to its business object."""
+    """Bind a Run to its business object as the signed-in requester.
+
+    Returns:
+        dict: The complete RunRecord with the additional act-on target.
+    """
     return _praxis_call(
         "POST",
         "/runs/" + quote(str(run_id), safe="") + "/acts-on",
@@ -116,8 +158,16 @@ def praxis_bind_run(run_id, target_class, target_id):
     )
 
 
-def praxis_assign_step(step_id, principal, assigned_by=None):
-    """Pin or clear a step using a candidate.principal value from praxis_step_candidates()."""
+def praxis_assign_step(step_id, principal=None, assigned_by=None):
+    """Pin or clear a human step.
+
+    Pass a candidate.principal value from praxis_step_candidates() to pin the
+    step, or None to return it to its eligible pool. assigned_by is normally
+    omitted: the service records the signed-in caller as the assigner.
+
+    Returns:
+        dict: The complete RunRecord after the assignment change.
+    """
     return _praxis_call(
         "POST",
         "/steps/" + quote(str(step_id), safe="") + "/assign",
@@ -129,7 +179,16 @@ def praxis_assign_step(step_id, principal, assigned_by=None):
 
 
 def praxis_decide_step(step_id, verdict, comment=None):
-    """Approve or reject a waiting step as the signed-in caller."""
+    """Approve or reject a waiting step as the signed-in caller.
+
+    Args:
+        step_id: Run-time step id, not the template stepRef.
+        verdict: "approve" or "reject".
+        comment: Optional decision comment.
+
+    Returns:
+        dict: The complete RunRecord after the decision and subsequent tick.
+    """
     if verdict not in ("approve", "reject"):
         raise ValueError("verdict must be 'approve' or 'reject'")
     return _praxis_call(
@@ -144,7 +203,16 @@ def praxis_decide_step(step_id, verdict, comment=None):
 
 
 def praxis_inbox(assignee=None):
-    """Read the signed-in caller's Praxis inbox."""
+    """Read the signed-in caller's Praxis inbox.
+
+    Args:
+        assignee: Optional principal to inspect; defaults to the signed-in
+            caller's loginCode.
+
+    Returns:
+        list: Inbox items with runId, stepId, stepRef, assignee, assignedTo,
+            capabilityRef, input and waitingSince.
+    """
     return _praxis_call(
         "GET",
         "/inbox",
@@ -152,23 +220,47 @@ def praxis_inbox(assignee=None):
     )
 
 
-def praxis_subjects():
-    """Read workflow subjects in the current domain."""
-    return _praxis_call("GET", "/subjects")
+def praxis_subjects(role=None):
+    """Read workflow subjects in the current domain.
+
+    Args:
+        role: Optional role code. Without it, return every published subject.
+
+    Returns:
+        dict: CandidateReport with roleCode, candidates, degraded and fallback.
+            Each candidate has principal, displayName and roleIds.
+    """
+    query = {"role": role} if role is not None else None
+    return _praxis_call("GET", "/subjects", query=query)
 
 
 def praxis_step_candidates(step_id):
-    """Read the eligible candidates for a step."""
+    """Read the eligible candidates for one run-time step.
+
+    Returns:
+        dict: CandidateReport fields plus stepId, stepRef, assignee and
+            assignedTo. Each candidate has principal, displayName and roleIds.
+    """
     return _praxis_call("GET", "/steps/" + quote(str(step_id), safe="") + "/candidates")
 
 
 def praxis_case(run_id):
-    """Read a Run's case."""
+    """Read a Run's CaseRecord.
+
+    Returns:
+        dict: CaseRecord with id, runId, workflowId, formSchema, payload,
+            status, currentStep, requester, assignee, actsOnRefs, createdAt and
+            updatedAt.
+    """
     return _praxis_call("GET", "/runs/" + quote(str(run_id), safe="") + "/case")
 
 
 def praxis_case_submit(run_id, payload):
-    """Submit case data as the requester."""
+    """Submit Case payload as the signed-in requester.
+
+    Returns:
+        dict: The updated CaseRecord.
+    """
     return _praxis_call(
         "POST",
         "/runs/" + quote(str(run_id), safe="") + "/case/submit",
@@ -177,7 +269,11 @@ def praxis_case_submit(run_id, payload):
 
 
 def praxis_case_fill(run_id, payload):
-    """Fill case data as the current assignee."""
+    """Fill Case payload as the signed-in current assignee.
+
+    Returns:
+        dict: The updated CaseRecord.
+    """
     return _praxis_call(
         "POST",
         "/runs/" + quote(str(run_id), safe="") + "/case/fill",
@@ -186,7 +282,11 @@ def praxis_case_fill(run_id, payload):
 
 
 def praxis_case_close(run_id):
-    """Close a case."""
+    """Close a Case as the signed-in caller.
+
+    Returns:
+        dict: The updated CaseRecord.
+    """
     return _praxis_call("POST", "/runs/" + quote(str(run_id), safe="") + "/case/close", body={})
 
 
@@ -207,8 +307,8 @@ def execute_dsl(dsl):
 
     Args:
         dsl: a single ontology DSL object. It is the query plan itself, not a
-            class name. Use the `ontomato-analyst` `dsl-reference` command for
-            the current class-specific syntax.
+            class name. Use the available `dsl-reference` command for the
+            current class-specific syntax.
 
     Returns:
         A list of result rows.
@@ -242,8 +342,8 @@ def query(dsl):
 
     Args:
         dsl: a single ontology DSL object. It is the query plan itself, not a
-            class name. Use the `ontomato-analyst` `dsl-reference` command for
-            the current class-specific syntax.
+            class name. Use the available `dsl-reference` command for the
+            current class-specific syntax.
 
     Returns:
         A list of result rows.

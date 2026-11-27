@@ -98,7 +98,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     for (var member : List.of(alice, bob, user("alice", "another-domain"))) {
       when(identity.creator(member.getDomainId(), member.getId())).thenReturn(member);
       when(subjects.resolveRoles(member.getDomainId(), member.getId())).thenAnswer(call ->
-          new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false));
+          new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false));
     }
     when(subjects.objectEntitlement(anyString(), any(), eq(Verb.CREATE))).thenReturn(true);
     when(identity.interactiveLogin()).thenReturn(true);
@@ -421,7 +421,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     when(subjects.managementEntitlement(PlatformTasks.CHANGE)).thenReturn(true);
     var target = new ObjectTarget("sales", Kind.ACTION, "a");
     when(subjects.resolveRoles("sales", "bob")).thenReturn(
-        new RoleResolution(Set.of("poster"), Set.of("poster"), List.of(), Set.of(), Map.of(), false, false));
+        new RoleResolution(Set.of("poster"), Set.of("poster"), List.of(), Set.of(), Map.of(), false));
     when(policy.policies("sales", Set.of("poster"))).thenReturn(List.of(new PolicyRef("poster", "posting", PolicyKind.OBJECT)));
     when(policy.objectGrants(target, Verb.EXECUTE, Set.of("posting")))
         .thenReturn(List.of(new ObjectGrant("posting", target, Verb.EXECUTE, GrantScope.ALL)));

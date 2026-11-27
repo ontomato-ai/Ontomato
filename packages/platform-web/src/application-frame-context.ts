@@ -1,6 +1,6 @@
 import type { ComputedRef, InjectionKey } from "vue";
 import type { DisplayStateUpdate } from "@ontomato/agent-shell-ui";
-import { PANEL_FRAME_QUERY_PREFIX } from "@ontomato/contracts/panel-host";
+import { PANEL_FRAME_QUERY_PREFIX, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type {
   ApplicationEntryMenu,
@@ -71,4 +71,29 @@ export function hasFrameParams(address: string): boolean {
     if (key.startsWith(PANEL_FRAME_QUERY_PREFIX) && key.length > PANEL_FRAME_QUERY_PREFIX.length) return true;
   }
   return false;
+}
+
+/** Reads the frame part of an application panel address, reporting malformed state instead of mistaking it for none. */
+export function frameAddressState(
+  address: string,
+  frameManifest: Pick<PanelManifest, "state"> | undefined,
+): { hasSegment: boolean; named: FrameState; defaults: FrameState } {
+  const defaults = deepLinkDefaultsOf(frameManifest);
+  try {
+    const hasSegment = hasFrameParams(address);
+    const raw = parseApplicationPanelAddress(address);
+    const parsed = parseApplicationPanelAddress(
+      address,
+      frameManifest ? { frameManifest } : undefined,
+    );
+    for (const name of Object.keys(raw.frame)) {
+      if (frameManifest?.state[name]?.deepLink && !(name in parsed.frame)) {
+        console.error(new Error(`Malformed frame state parameter frame.${name} in ${address}`));
+      }
+    }
+    return { hasSegment, named: parsed.frame, defaults };
+  } catch (error) {
+    console.error(error);
+    return { hasSegment: false, named: {}, defaults };
+  }
 }

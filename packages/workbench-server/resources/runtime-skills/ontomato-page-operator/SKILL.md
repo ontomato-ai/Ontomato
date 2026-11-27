@@ -27,6 +27,8 @@ Discovery is permission-bound and hierarchical:
 4. `description ...` generates the current Markdown description for one exact admitted entrance. Use it only after choosing the entrance; do not fetch descriptions speculatively for many pages.
 5. `read ...` reads named projection data using the exact registered source, member path, data name, and inputs documented by the generated page description or current page context.
 
+If `read` fails or is forbidden, say plainly that the page data could not be read and give the failure reason. Never substitute data taken from another endpoint, prior knowledge, or a guess as though it were the page's current data.
+
 ## Current page context
 
 When the host says which page is open, use that placement directly: application, entry, use ID, panel, canonical path, and member path are already known. Do not search merely to establish the current page. Fetch its generated description only when the task needs projection, form, recipe, or operation details that are not already present.

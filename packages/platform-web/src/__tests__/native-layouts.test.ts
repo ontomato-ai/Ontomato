@@ -5,6 +5,7 @@ import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
 import { catalogFixture } from "./fixtures";
 import { catalogPartition } from "../native-layouts";
+import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
 import { observePageRoutes } from "../observe-routes";
 import { appAt } from "../apps";
 
@@ -13,10 +14,39 @@ const t = (key: string) => key;
 const declarations = appDeclarations(generatedNavigation(), closedAccess(["business-knowledge"]), appPartition(), t);
 
 describe("the platform's applications", () => {
+
+  it("keeps a summary-only framed application using navigation facts without inventing entry-table facts", () => {
+    const app = {
+      id: "settings",
+      kind: "native",
+      entry: { entryKey: "settings", path: "/settings", renderer: "settings", home: "/settings/general" },
+      entryPaths: ["/settings/general", "/settings/audit"],
+      ownerService: "data-engine",
+      framePanelId: "builtin-product-platform-frame",
+      names: { en: "System settings" },
+      descriptions: {},
+      icon: "settings",
+      rail: "bottom",
+      category: "admin",
+      sort: 0,
+      scheduleAdapter: null,
+      releaseId: null,
+      allowStandalone: false,
+      singleEntry: false,
+    };
+    const [partitioned] = catalogPartition([app as CatalogApplication], "en");
+    expect(partitioned).toMatchObject({
+      id: "settings",
+      framePanelId: "builtin-product-platform-frame",
+      home: "/settings/general",
+    });
+    expect(partitioned?.entries).toBeUndefined();
+  });
+
   it("shows only the implemented workspace when an old workplace registration remains", () => {
     const catalog = catalogFixture();
     const home = catalog.find(app => app.id === "home")!;
-    const workspace = { ...home, id: "personal-workspace", panelUses: [], entry: { path: "/workspace", renderer: "personal-workspace" } };
+    const workspace = { ...home, id: "personal-workspace", panelUses: [], framePanelId: undefined, entry: { path: "/workspace", renderer: "personal-workspace" } };
     const stale = { ...workspace, id: "workplace", entry: { path: "/workplace", renderer: "workplace" } };
     const partition = catalogPartition([...catalog, workspace, stale], "zh-CN");
     expect(
@@ -25,7 +55,7 @@ describe("the platform's applications", () => {
   });
   it("omits stale native entries until their renderer layout is registered", () => {
     const application = {
-      ...catalogFixture()[0]!, id: "edition-app", panelUses: [],
+      ...catalogFixture()[0]!, id: "edition-app", panelUses: [], framePanelId: undefined,
       entry: { path: "/edition-app", renderer: "later-renderer", home: "/edition-app/home" },
     };
     const pending = catalogPartition([application], "en");
@@ -61,7 +91,7 @@ describe("the platform's applications", () => {
     expect(appBuilder.groups).toEqual([]);
   });
 
-  it("admits fully panel-backed built-in applications without native-layouts and lands home on the first visible named entry", () => {
+  it("admits fully panel-backed built-in applications without native-layouts and lands home on the first visible menu entry", () => {
     const permissionsApp = {
       ...catalogFixture()[0]!,
       id: "permissions",
@@ -71,6 +101,8 @@ describe("the platform's applications", () => {
       panelUses: [
         {
           id: "permissions-member-detail",
+          names: { en: "Member detail", "zh-CN": "成员详情" },
+          inMenu: false,
           pageKey: "permissions-member-detail",
           panelId: "builtin-product-governance-member-detail",
           path: "/permissions/members/detail",
@@ -111,8 +143,8 @@ it("opens and highlights a panel application under its application route", () =>
 });
 
 it("propagates framePanelId and leaves panel application menus to their frame panel", () => {
-  const use = (path: string, names?: Record<string, string>) => ({
-    id: path, pageKey: path, panelId: "shared-panel", path, access: { kind: "domain-member" as const }, names,
+  const use = (path: string, names: Record<string, string>, inMenu = true) => ({
+    id: path, pageKey: path, panelId: "shared-panel", path, names, inMenu,
   });
   const application = {
     ...catalogFixture()[0]!, id: "app-panels-trial-b", kind: "product" as const,
@@ -120,7 +152,7 @@ it("propagates framePanelId and leaves panel application menus to their frame pa
     entry: { renderer: "panels", path: "/panels-trial-b" },
     panelUses: [
       use("/applications/app-panels-trial-b/tasks", { en: "Tasks", "zh-CN": "定时任务" }),
-      use("/applications/app-panels-trial-b/detail"),
+      use("/applications/app-panels-trial-b/detail", { en: "Task detail" }, false),
       use("/applications/app-panels-trial-b/summary", { en: "Task summary" }),
     ],
   };

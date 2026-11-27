@@ -74,5 +74,6 @@ user's message requests it; do not generate one proactively.
 When the user requests PPT, read references/presentation.md, read the report and
 write a slide list in work/. Run:
 `node skills/assistant-report/scripts/render.cjs work/slides.json`
-Link outputs/reports/<name>/report.pptx in the final reply body. No publication
+Keep the existing report path; do not create symbolic links or rename the report.
+Link the generated `.pptx` next to that report in the final reply body. No publication
 command, second model, runtime package installation or network access is needed.

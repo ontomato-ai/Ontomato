@@ -31,7 +31,7 @@ installContentLayout({
   publicSkillsRoot: fs.mkdtempSync(path.join(os.tmpdir(), "page-operator-prepare-public-")),
   runtimeResources: [],
 });
-const { prepareAssistantSkills, validateCurrentPageContext } = await import("../skills");
+const { prepareAssistantSkills, validateAssistantSkills, validateCurrentPageContext } = await import("../skills");
 
 const domainId = "domain";
 const credentials = { token: "token", locale: "en" };
@@ -63,7 +63,7 @@ it("gives page control to a custom agent only when the operator is explicitly se
 
 it("accepts the exact admitted current placement and rejects mismatches as forbidden", async () => {
   mocks.requirePanelEntry.mockResolvedValue({
-    use: { id: "entry", pageKey: "page", panelId: "panel", path: "/applications/app/entry" },
+    use: { id: "entry", names: { en: "entry" }, pageKey: "page", panelId: "panel", path: "/applications/app/entry" },
   });
   await expect(validateCurrentPageContext(domainId, credentials, placement, "user")).resolves.toEqual(placement);
 
@@ -76,4 +76,15 @@ it("accepts the exact admitted current placement and rejects mismatches as forbi
     await expect(validateCurrentPageContext(domainId, credentials, changed, "user"))
       .rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
   }
+});
+
+it("keeps system-agent-only skills in the catalogue but rejects selecting them for a custom agent", async () => {
+  const opsSkill = { namespace: { kind: "provider" as const, provider: "workbench" }, name: "ops-diagnosis" };
+  await expect(validateAssistantSkills(domainId, [opsSkill], credentials))
+    .rejects.toMatchObject({ status: 400, code: "SKILL_NOT_FOUND" });
+
+  const prepared = await prepareAssistantSkills(domainId, { kind: "custom", skills: [opsSkill] }, credentials);
+  expect(prepared.skills).toEqual([]);
+  expect(prepared.pageControl).toBe(false);
+  expect(mocks.publishSkill).not.toHaveBeenCalledWith(expect.anything(), opsSkill);
 });

@@ -12,6 +12,7 @@ import { appIcon } from "@ontomato/platform-shell/icons";
 import { panelContextKey } from "../panel/context";
 import { panelMemberKey, useMemberParam, useMemberRead } from "../panel/member";
 import type { PlatformObjectOption, PlatformObjectRecord } from "../panel/platform-objects";
+import { memberReadKey } from "../panel/direct";
 import { parseCollectionRecords } from "./collection-data";
 import { readConfigString, resolveLocalizedText } from "./localized-text";
 
@@ -338,6 +339,19 @@ const usesOwnerSearch = computed(() =>
   && (unfilteredTruncated.value || requiresKeyword),
 );
 
+const readParamKey = computed(() => {
+  if (!member || !placement || !panel || dataMode === "static") return "";
+  const datum = dataMode === "options" ? optionsDatum : rowsDatum;
+  if (!datum) return "";
+  return memberReadKey(
+    member.projection,
+    datum,
+    placement,
+    member.inputs.value,
+    panel.instance.ownParams(member.key),
+  );
+});
+
 function mapPlatformOption(option: PlatformObjectOption): PanelFormOption | null {
   if (option.value === null) return null;
   const disabled = option.unavailable !== undefined;
@@ -531,6 +545,11 @@ watch(
   },
   { immediate: true },
 );
+
+watch(readParamKey, () => {
+  if (!isOpen.value || dataMode === "static") return;
+  loadCandidates(usesOwnerSearch.value ? searchQuery.value : "");
+});
 
 watch(
   boundSelected,

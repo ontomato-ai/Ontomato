@@ -15,7 +15,6 @@ public class AnonymousAgentExecutionIdentity implements AgentExecutionIdentity {
     if (!"system".equals(actor.userId()) || !"1".equals(actor.domainId()))
       throw new AgentHttpException(403, "FORBIDDEN", "Invalid anonymous actor");
   }
-  public boolean administrator(Actor actor) { return false; }
   public List<Option> options(String domain, String keyword, int pageNum, int pageSize) { return List.of(); }
   public Selected selected(String domain, String userId) { return null; }
   public User requireTarget(String domain, String userId) {

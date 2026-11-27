@@ -626,13 +626,6 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       const ctx = scope(req);
       const runId = runtimeIdSchema.parse(req.params.runId);
       const cursor = readEventSubscription(req.query);
-      const state = await runtime.store.run(ctx.scope, runId);
-      if (cursor.afterSeq > state.seq)
-        throw new RuntimeError(
-          400,
-          "INVALID_REQUEST",
-          "Cursor is in the future",
-        );
       // Subscribe before any header is sent: a rejected subscription must stay an HTTP error rather
       // than an empty 200 stream. Frames arriving before the stream opens are buffered in order.
       const buffered: RuntimeStreamFrame[] = [];

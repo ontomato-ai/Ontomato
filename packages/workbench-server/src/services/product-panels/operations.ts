@@ -5,7 +5,7 @@ import type { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
-import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
+import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import {
   PANEL_CONFIRMATION_EXPIRED, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema, withoutPanelSecretDelivery,
   type inspectPanelOperationImpactRequestSchema,
@@ -17,6 +17,7 @@ import {
 } from "@ontomato/contracts/panel-agent";
 import { hasPanelSecretInput, normalizePanelSecretPointer, panelSchemaSecretPaths, panelSecretPathsOverlap, panelSecretValuePresent, restorePanelSecrets, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
+import { panelFormDescriptionSchema, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import { EXECUTE_OBJECT_ACTION } from "@ontomato/contracts/platform-object-types";
 import {
   AGENT_UPLOAD_UNSUPPORTED, panelFileInputSchema, panelUploadAccepted, panelUploadFileSchema, type PanelUploadFile, type PanelUploadReceipt,
@@ -519,7 +520,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
         ? namedTargets(targets.objects.map((object) => object.label), targets.total, credentials.locale)
         : await confirmationTarget(current.handler, host, prepared, current.operation.label);
       const impactSummary = [
-        impact?.summary ?? confirmationInputSummary(current.handler, prepared),
+        impact?.summary ?? await confirmationInputSummary(owner, credentials, current, prepared),
         confirmation.kind === "batch" ? confirmation.skippedSummary : undefined,
       ].filter(Boolean).join("\n");
       questionPrompt = await panelConfirmation(credentials, {
@@ -772,16 +773,82 @@ async function executeAvailableBatch(
   return { kind: "batch", items: [item(first, 0), ...rest.map((call, index) => item(call, index + 1))], ...(affected && { affected }) };
 }
 
-function confirmationInputSummary(handler: PanelWriteServerOperation, invocation: CheckedInvocation): string | undefined {
+type ConfirmationLabels =
+  | { kind: "schema"; labels: ReadonlyMap<string, string> }
+  | { kind: "form"; fields: PanelFormField[] };
+
+interface ConfirmationOperation {
+  handler: PanelWriteServerOperation;
+  descriptor: { inputSchema: Record<string, unknown> };
+  projectionDefinition: ProductProjection;
+}
+
+function schemaValueLabels(inputSchema: Record<string, unknown>): ReadonlyMap<string, string> {
+  const values = (inputSchema.properties as Record<string, Record<string, unknown>>).values;
+  const properties = values.properties as Record<string, Record<string, unknown>>;
+  return new Map(Object.entries(properties).map(([key, schema]) => [key, String(schema.title ?? key)]));
+}
+
+function nestedFieldLabel(fields: readonly PanelFormField[], pointer: string, base = ""): string | undefined {
+  for (const field of fields) {
+    const path = `${base}${field.path}`;
+    if (pointer === path) return field.label;
+    if (!pointer.startsWith(`${path}/`)) continue;
+    if (field.control.kind === "object") {
+      for (const children of [field.control.fields, ...Object.values(field.control.variants ?? {})]) {
+        const label = nestedFieldLabel(children, pointer, path);
+        if (label !== undefined) return label;
+      }
+    } else if (field.control.kind === "object-array") {
+      const rest = pointer.slice(path.length + 1);
+      const slash = rest.indexOf("/");
+      if (slash > 0 && /^\d+$/u.test(rest.slice(0, slash))) {
+        const label = nestedFieldLabel(field.control.itemFields, rest.slice(slash));
+        if (label !== undefined) return label;
+      }
+    }
+  }
+  return undefined;
+}
+
+async function confirmationLabels(
+  owner: AssistantOwner, credentials: AssistantCredentials, current: ConfirmationOperation, invocation: CheckedInvocation,
+): Promise<ConfirmationLabels | undefined> {
   if (!("call" in invocation)) return undefined;
-  const isFormSave = handler.kind === "form.save";
-  const isObjectAction = handler.kind === "action" && handler.handlerRef === EXECUTE_OBJECT_ACTION;
+  if (current.handler.kind === "action" && current.handler.handlerRef === EXECUTE_OBJECT_ACTION)
+    return { kind: "schema", labels: schemaValueLabels(current.descriptor.inputSchema) };
+  if (current.handler.kind !== "form.save" || current.handler.binding.kind !== "PlatformObjectType") return undefined;
+  const target = invocation.target;
+  const method = target?.kind === "object" ? "form" : "createForm";
+  const { readSelectedPanelOwner } = await import("./panel-owner-reads");
+  const answer = await readSelectedPanelOwner({ owner, viewer: credentials }, {
+    kind: "platform",
+    typeId: current.handler.binding.id,
+    method,
+    ...(target?.kind === "object" ? { primaryKey: target.primaryKey } : {}),
+  }, {}, current.projectionDefinition);
+  return { kind: "form", fields: panelFormDescriptionSchema.parse(answer).fields };
+}
+
+async function confirmationInputSummary(
+  owner: AssistantOwner, credentials: AssistantCredentials, current: ConfirmationOperation, invocation: CheckedInvocation,
+): Promise<string | undefined> {
+  if (!("call" in invocation)) return undefined;
+  const isFormSave = current.handler.kind === "form.save";
+  const isObjectAction = current.handler.kind === "action" && current.handler.handlerRef === EXECUTE_OBJECT_ACTION;
   if (!isFormSave && !isObjectAction) return undefined;
   const { values, submittedFields } = invocation.call.input;
-  const fields = isFormSave && Array.isArray(submittedFields)
-    ? (submittedFields as string[]).map(pointer => pointer.replace(/^\//u, ""))
-    : Object.keys((values ?? {}) as Record<string, unknown>);
-  return fields.length ? fields.join(", ") : undefined;
+  const submitted = isFormSave && Array.isArray(submittedFields)
+    ? (submittedFields as string[])
+    : Object.keys((values ?? {}) as Record<string, unknown>).map(key => `/${key}`);
+  if (!submitted.length) return undefined;
+  const labels = await confirmationLabels(owner, credentials, current, invocation);
+  const label = (pointer: string) => {
+    if (labels?.kind === "schema") return labels.labels.get(pointer.replace(/^\//u, "")) ?? pointer.replace(/^\//u, "");
+    if (labels?.kind === "form") return nestedFieldLabel(labels.fields, pointer) ?? pointer.replace(/^\//u, "");
+    return pointer.replace(/^\//u, "");
+  };
+  return submitted.map(label).join(", ");
 }
 
 async function confirmationTarget(handler: PanelWriteServerOperation,

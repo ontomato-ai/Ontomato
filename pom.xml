@@ -194,6 +194,8 @@
                                 <include>**/ServiceLogJdbcTest.java</include>
                                 <include>**/OntologyRetrievalContractTest.java</include>
                                 <include>**/OntologyGenerationContractTest.java</include>
+                                <include>**/OntologyAgentDefinitionsTest.java</include>
+                                <include>**/DslRuleUtilExampleTest.java</include>
                                 <include>**/QueryRuntimeBoundaryTest.java</include>
                                 <include>**/BusinessConfigControllerModelKeyWriteOnlyTest.java</include>
                                 <include>**/BusinessConfigDaoTest.java</include>

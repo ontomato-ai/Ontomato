@@ -29,7 +29,7 @@ import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame, servePageComposer } from "./app-host";
 import { panelNavigator } from "./panel-navigate";
 import {
-  adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, createPanelOverlayRoot, newPanelInstanceName, scopedPanelStyle,
+  adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, createPanelOverlayRoot, newPanelInstanceName, PanelPersonalStateReadError, scopedPanelStyle,
   type CodedPanelTarget, type DirectPanelRun, type PanelHostPort, type PanelHostState, type PanelSdkRelease,
 } from "@ontomato/platform-shell";
 import { candidateProjectionIds, type PanelManifest, type PanelMemberPath } from "@ontomato/contracts/panel-manifest";
@@ -572,6 +572,7 @@ export function framePanelHost(
 export function builtinFramePanelHost(
   applicationId: string,
   framePanelId: string,
+  frameTitle: string,
   router?: Router,
   chat?: FrameChatOptions,
   /** Optional one-shot provider returning the frame definition bundled in the active route opening response. */
@@ -582,6 +583,7 @@ export function builtinFramePanelHost(
     pageKey: applicationId,
     panelId: framePanelId,
     path: `/${applicationId}`,
+    names: { en: frameTitle },
   };
   const panelChatHost = createPanelChatHost(undefined, chat);
   const shown: PanelUseRef = { applicationId, useId: placeholderUse.id };
@@ -663,6 +665,16 @@ export function builtinFramePanelHost(
     coded: (source, run, target) => {
       const { global } = workbenchI18n();
       const navRouter = router ?? platformRouter();
+      let localReadReported = false;
+      const refuseNativePanelRead = () => {
+        const failure = new Error("Native frame does not read panel data");
+        if (!localReadReported) {
+          localReadReported = true;
+          console.error(failure);
+          run.failed(failure);
+        }
+        return Promise.resolve({ status: "forbidden" as const, reason: failure.message });
+      };
       return mountCoded({
         manifest: source.panel.manifest,
         run,
@@ -675,7 +687,7 @@ export function builtinFramePanelHost(
         preloadComponentIds: panelProjectionComponentIds(source.panel.manifest),
         ...(frameDomainComponents ? { panelDomainComponents: frameDomainComponents } : {}),
         use: null,
-        read: () => Promise.resolve({ status: "forbidden", reason: "Native frame does not read panel data" }),
+        read: refuseNativePanelRead,
         confirmOperation: () => Promise.reject(new Error("A native frame runs no panel operations")),
         expandPageComposer: expandDeclaredComposer,
         navigate: panelNavigator(navRouter),
@@ -1022,7 +1034,8 @@ async function mountNested(
  * the panel takes the reader's saved values under what the address or the entry gives it (those win), above its
  * declared defaults; as the reader changes them, they are saved, a moment after the last change and once more when the
  * panel goes — or the whole page does (a reload or a closed tab unmounts nothing), then as a request that outlives the
- * page. A panel that keeps none reads and writes nothing; a read that fails opens the panel at its defaults.
+ * page. A panel that keeps none reads and writes nothing. A read that fails stops the mount and is reported by the
+ * panel host; defaults are never written back in place of the unread saved state.
  */
 const PERSONAL_STATE_DELAY = 400;
 
@@ -1036,9 +1049,14 @@ function personalFieldKey(fields: string[]) {
   return JSON.stringify([...fields].sort());
 }
 
-function readPersonalState(scope: { source: PanelReadSource; memberPath: PanelMemberPath }, fields: string[]) {
-  return json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) })
-    .catch(() => ({ values: {} }));
+async function readPersonalState(scope: { source: PanelReadSource; memberPath: PanelMemberPath }, fields: string[]) {
+  try {
+    const answer = await json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) });
+    return panelPersonalStateResponseSchema.parse(answer);
+  } catch (error) {
+    // A prefetched read can finish before its panel snapshot. Keep its failure for the host that uses it.
+    return new PanelPersonalStateReadError(error);
+  }
 }
 
 type PersonalStateRead = { fieldKey: string; response: ReturnType<typeof readPersonalState> };
@@ -1053,8 +1071,8 @@ async function withPersonalState(
   warmTemplateCompiler();
   const scope = { source, memberPath };
   const answer = await (pending && pending.fieldKey === personalFieldKey(fields) ? pending.response : readPersonalState(scope, fields));
-  const saved = panelPersonalStateResponseSchema.parse(answer).values;
-  const mounted = await mount({ ...run, initial: { ...saved, ...run.initial } as PanelHostState });
+  if (answer instanceof PanelPersonalStateReadError) throw answer;
+  const mounted = await mount({ ...run, initial: { ...answer.values, ...run.initial } as PanelHostState });
   const readField = (field: string) => mounted.instance.state.values.value[field] ?? null;
   const stored: Record<string, string> = Object.fromEntries(fields.map((field) => [field, JSON.stringify(readField(field))]));
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1071,7 +1089,7 @@ async function withPersonalState(
     if (!Object.keys(values).length) return;
     void json(`/api${PANEL_PERSONAL_STATE_PATH}`, {
       method: "PUT", body: JSON.stringify({ ...scope, values }), ...(keepalive && { keepalive: true }),
-    }).catch(() => {});
+    }).catch(error => console.error(error));
   };
   /** Sends at once what is still waiting for the delay; `keepalive` lets the request finish after the page is gone. */
   const flush = (keepalive: boolean) => {

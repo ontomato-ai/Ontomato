@@ -27,7 +27,7 @@ class TriggerPanelReadsTest {
       new PlatformTasks(store, identity, null, null, null, capabilities, definitions, null));
   private final SubjectContext subject = new SubjectContext(
       new VerifiedIdentity("tenant", "system", CredentialLimit.UNRESTRICTED),
-      new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false),
+      new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false),
       Map.of(), Set.of(), Set.of()).withJavaUserId("admin");
 
   @Test

@@ -3,21 +3,23 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
-  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, AGENT_SESSION, APPLICATION, APPLICATION_DELETE_DRAFT, APPROVE_KNOWLEDGE, ATTRIBUTE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET, APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
+  ACTION, ACTIVATE_WORKFLOW, ADD_ROLE_MEMBERS, ADD_ROLE_POLICIES, AGENT_DEFINITION, AGENT_SESSION, APPLICATION, APPLICATION_DELETE_DRAFT, APPROVE_KNOWLEDGE, ATTRIBUTE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET,
+  APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
   AUTOTEST_RUN, BUSINESS_KNOWLEDGE, CLEAR_OBJECT_DETAIL_PANEL, DASHBOARD, DASHBOARD_CARD, DATA_ADAPTER_CONFIG, DEACTIVATE_WORKFLOW,
   DELETE_ACTION, DELETE_AGENT, DELETE_ATTRIBUTE, DELETE_AUTOTEST_RUN, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_UNIT,
-  DELETE_ORG_POSITION, DELETE_PERMISSION_POLICY, DELETE_ROLE, DELETE_SKILL, DELETE_WORKFLOW, DOWNLOAD_AUTOTEST_CASE_ARTIFACT, DOWNLOAD_TURN_EVIDENCE, DSL_QUERY,
+  DELETE_ORG_POSITION, DELETE_PERMISSION_POLICY, DELETE_ROLE, DELETE_SKILL, DELETE_WORKFLOW, DOWNLOAD_AUTOTEST_CASE_ARTIFACT, EXPORT_SKILL, DOWNLOAD_TURN_EVIDENCE, DSL_QUERY,
   EXTERNAL_MCP_SERVICE, FAVORITE, FEEDBACK_RECORD, FUNCTION, GENERAL_SETTINGS, GENERATE_USER_API_KEY, KEEP_AUTOTEST_RUN,
   KEEP_TURN_EVIDENCE, METRIC_VIEW, MODEL_CONNECTION, MODEL_ENTRY, MODEL_OPTION, MODEL_USAGE, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, OPS_KNOWLEDGE, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
   PERMISSION_POLICY, PRODUCT_PANEL, PRODUCT_PROJECTION, PUBLISHED_MCP_SERVICE, RECENT_VISIT, REGENERATE_USER_API_KEY,
-  RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_USER, RESET_USER_PASSWORD, REVOKE_USER_API_KEY, ROLE, SDK_COMPONENT, SET_ACTION_STATUS,
+  RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_ROLE_MEMBERS, REMOVE_ROLE_POLICIES, REMOVE_USER, RESET_USER_PASSWORD, REVOKE_USER_API_KEY, ROLE, SDK_COMPONENT, SET_ACTION_STATUS,
   SET_PRIMARY_KEY, SKILL, TRIGGER, TURN_EVIDENCE, UNKEEP_AUTOTEST_RUN, UNKEEP_TURN_EVIDENCE, USER, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
 import { panelAddress, productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
 import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { z } from "zod";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n, tForLocale } from "../../../i18n";
@@ -34,12 +36,17 @@ const mocks = vi.hoisted(() => ({
   dashboards: vi.fn(), dashboard: vi.fn(), favoriteKeys: vi.fn(), favoriteState: vi.fn(), isFavorite: vi.fn(), pinnedObjects: vi.fn(),
   sessions: vi.fn(), session: vi.fn(), agents: vi.fn(), knowledgeTree: vi.fn(), knowledgeFile: vi.fn(), getActiveRun: vi.fn(),
   detailMapping: vi.fn(), detailPanel: vi.fn(), currentProduct: vi.fn(), currentProducts: vi.fn(), policyCatalog: vi.fn(),
+  policyObjectEntryUsage: vi.fn(),
 }));
 vi.mock("../java-panel-reads", async original => ({
   ...await original<typeof import("../java-panel-reads")>(), locateViaJava: mocks.locate, readViaJava: mocks.read,
 }));
 vi.mock("../../governance/policy-catalog", async original => ({
   ...await original<typeof import("../../governance/policy-catalog")>(), loadPolicyWorkbenchCatalog: mocks.policyCatalog,
+}));
+vi.mock("../../governance/policy-access", async original => ({
+  ...await original<typeof import("../../governance/policy-access")>(),
+  policyObjectEntryUsagePayload: mocks.policyObjectEntryUsage,
 }));
 vi.mock("../data-reads", async original => ({
   ...await original<typeof import("../data-reads")>(),
@@ -105,6 +112,15 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+function generatedSkillEntry(skill: RuntimeSkillRef, description = "Generated skill") {
+  return {
+    skill,
+    manifest: { name: skill.name, description },
+    source: { kind: "generated" as const },
+    provide: async () => ({ skill, files: [{ path: "SKILL.md", content: `---\nname: ${skill.name}\ndescription: ${description}\n---\n` }] }),
+  };
+}
+
 const credentials = { token: "reader-token", locale: "en" };
 const viewer = { domainId: "tenant", userId: "reader" };
 const source = { kind: "registered", applicationId: "app-test", useId: "objects" } as const;
@@ -112,7 +128,7 @@ const request: RegisteredDataRead = { source, memberPath: [{ member: "catalog" }
 const entryRef = { applicationId: source.applicationId, useId: source.useId };
 const entry = {
   applicationId: source.applicationId, framePanelId: "builtin-product-frame", use: {
-    id: source.useId, pageKey: "objects", path: "/applications/app-test/objects", panelId: "objects-panel",
+    id: source.useId, names: { en: String(source.useId) }, pageKey: "objects", path: "/applications/app-test/objects", panelId: "objects-panel",
     inputs: { search: { literal: "registered input" } },
   },
 };
@@ -467,6 +483,41 @@ it("sends the Workbench policy catalog only to edit forms and shares it within t
     { type: PERMISSION_POLICY, name: "resolve", parameters: { values: choices } },
     undefined,
   ]);
+});
+
+it("includes object entry usage only in registered entry and object policy forms", async () => {
+  const policyTypes = [1, 2, 3];
+  const items = [{ kind: "PANEL", id: "orders-panel", entries: [{ id: "orders/main", label: "Orders" }] }];
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  mocks.policyCatalog.mockResolvedValueOnce({ panels: [], projections: [], components: [], agents: [] });
+  mocks.policyObjectEntryUsage.mockResolvedValueOnce({ policyId: "p3", items });
+  for (const postType of policyTypes) {
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
+    mocks.prepare.mockResolvedValueOnce({
+      declaration: { result: "panelFormDescription" },
+      selection: { typeId: PERMISSION_POLICY, method: "form", primaryKey: `p${postType}` },
+      params: {},
+    });
+  }
+  mocks.read.mockResolvedValueOnce({
+    viewer,
+    results: policyTypes.map(postType => ({
+      status: "ready",
+      payload: {
+        submitOn: "manual", fields: [], values: { postType }, errors: [],
+        save: { method: "POST", path: "/panel/governance/policies/save", bodySchema: {} },
+      },
+    })),
+  });
+
+  const prepared = await prepareRegisteredDataReads(credentials, policyTypes.map(() => request));
+  const [system, data, entryAndObject] = await runPreparedDataReads(credentials, prepared);
+  expect(entryAndObject).toMatchObject({ status: "ready", value: { values: { postType: 3, entryUsage: items } } });
+  expect(system).toMatchObject({ status: "ready", value: { values: { postType: 1 } } });
+  expect(system).not.toHaveProperty("value.values.entryUsage");
+  expect(data).toMatchObject({ status: "ready", value: { values: { postType: 2 } } });
+  expect(data).not.toHaveProperty("value.values.entryUsage");
+  expect(mocks.policyObjectEntryUsage).toHaveBeenCalledWith(credentials, viewer.domainId, "p3");
 });
 
 it("preserves browser error replies for missing owner records and metric execution refusals", async () => {
@@ -990,8 +1041,9 @@ it("describes agent deletion with the admitted EDIT decision and the existing sy
 
 it("reads AgentDefinition form and createForm from one admitted second batch", async () => {
   const { assistantStore } = await import("../../assistant/store");
-  mocks.skills.mockResolvedValue({ registry: { getSkills: () => [] } });
   const visible = { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" } as const;
+  const analystEntry = generatedSkillEntry(visible);
+  mocks.skills.mockResolvedValue({ registry: { getSkills: () => [analystEntry] } });
   const hidden = { namespace: { kind: "domain", domainId: viewer.domainId }, name: "removed-skill" } as const;
   const primaryKey = "20000000-0000-4000-8000-000000000009";
   const stored = vi.spyOn(assistantStore, "agent").mockResolvedValue({
@@ -1245,13 +1297,18 @@ it("uses the P1 skill editor decision for a draft and the stored agent before re
 it("keeps four skill library reads and describes fixed and row deletion from the same library facts", async () => {
   const fixed: RegisteredDataRead = { source, memberPath: [{ member: "remove" }], operations: true, inputs: {} };
   const remove = { operation: { kind: "PlatformOperation", id: DELETE_SKILL } };
+  const exportOperation = { operation: { kind: "PlatformOperation", id: EXPORT_SKILL } };
   const fixedProjection = { inputs: {}, data: {}, operations: {
-    remove: { ...remove, target: { literal: { className: SKILL, primaryKey: "builtin" } } },
+    remove: { ...remove, target: { literal: { className: SKILL, primaryKey: "knowledge-governance" } } },
+    export: { ...exportOperation, target: { literal: { className: SKILL, primaryKey: "knowledge-governance" } } },
   } };
-  const queryProjection = { inputs: {}, data: {}, operations: { remove: { ...remove, target: { row: true } } } };
+  const queryProjection = { inputs: {}, data: {}, operations: {
+    remove: { ...remove, target: { row: true } },
+    export: { ...exportOperation, target: { row: true } },
+  } };
   const readonlySkill = {
-    skill: { name: "builtin", namespace: { kind: "provider", provider: "workbench" } },
-    source: { kind: "public", path: "/fixture/builtin" }, manifest: { description: "Public package" },
+    skill: { name: "knowledge-governance", namespace: { kind: "provider", provider: "ontology" } },
+    source: { kind: "generated" }, manifest: { description: "Generated package" },
   };
   const domainSkill = {
     skill: { name: "local", namespace: { kind: "domain", domainId: viewer.domainId } },
@@ -1261,7 +1318,7 @@ it("keeps four skill library reads and describes fixed and row deletion from the
   const catalogue = {
     registry: {
       getSkills: () => [readonlySkill, domainSkill],
-      getSkillById: (id: string) => id === "builtin" ? readonlySkill : domainSkill,
+      getSkillById: (id: string) => id === "knowledge-governance" ? readonlySkill : domainSkill,
     },
     requireSkillById: () => domainSkill,
   };
@@ -1291,19 +1348,27 @@ it("keeps four skill library reads and describes fixed and row deletion from the
     expect(mocks.skills).not.toHaveBeenCalled();
     const output = await runPreparedDataReads(credentials, prepared);
     const readOnly = tForLocale("en", "panels.skill.readOnlyPublic");
+    const noExport = tForLocale("en", "panels.skill.generatedExportUnavailable");
     const key = (id: string) => `${SKILL}:${id}`;
     expect(output).toMatchObject([
       { status: "ready", value: { total: 2 }, rowOperations: {
-        [key("builtin")]: { remove: { available: false, unavailable: { reason: readOnly } } },
-        [key("local")]: { remove: { available: true } },
+        [key("knowledge-governance")]: {
+          export: { available: false, unavailable: { reason: noExport } },
+          remove: { available: false, unavailable: { reason: readOnly } },
+        },
+        [key("local")]: { export: { available: true }, remove: { available: true } },
       } },
       { status: "ready", value: { primaryKey: "local" } },
       { status: "ready", value: [{ primaryKey: "SKILL.md" }] },
       { status: "ready", value: { fields: { content: "Skill instructions" } } },
       { status: "ready", value: { total: 2 }, rowOperations: {
-        [key("local")]: { remove: { available: false, unavailable: { reason: "CHANGE required" } } },
+        [key("knowledge-governance")]: { export: { available: false, unavailable: { reason: noExport } } },
+        [key("local")]: { export: { available: true }, remove: { available: false, unavailable: { reason: "CHANGE required" } } },
       } },
-      { status: "ready", value: { remove: { unavailable: { reason: readOnly } } } },
+      { status: "ready", value: {
+        export: { unavailable: { reason: noExport } },
+        remove: { unavailable: { reason: readOnly } },
+      } },
       { status: "ready", value: { remove: { unavailable: { reason: "CHANGE required" } } } },
     ]);
     expect(mocks.read.mock.lastCall?.[1].map(({ call }: JavaPanelRead) => call?.name)).toEqual([
@@ -2388,7 +2453,7 @@ it("reads application detail with the admitted frame label and preserves masked 
     id: primaryKey, names: { en: "Shipping" }, descriptions: { en: "Shipment catalogue" },
     icon: "pages", source: "domain", canMaintain: true, canEditEntries: true, entryCount: 1, ownerName: "Owner",
     entry: { path: "/applications/app-shipping", home: "/applications/app-shipping/overview" },
-    panelUses: [{ id: "overview", pageKey: "shipping:overview", panelId: "panel-shipping", path: "/applications/app-shipping/overview" }],
+    panelUses: [{ id: "overview", names: { en: "overview" }, pageKey: "shipping:overview", panelId: "panel-shipping", path: "/applications/app-shipping/overview" }],
     groups: [], framePanelId, theme: { light: { accent: "#123456" } },
   };
   const time = new Date("2026-11-26T00:00:00Z");
@@ -2952,6 +3017,8 @@ it("describes fixed governance delete targets from the owner batch without reque
     { slot: "orgHeader", operation: DELETE_ORG_UNIT, type: ORG_UNIT, id: "team" },
     { slot: "deletePolicy", operation: DELETE_PERMISSION_POLICY, type: PERMISSION_POLICY, id: "outside" },
     { slot: "orgHeader", operation: DELETE_ORG_UNIT, type: ORG_UNIT, id: "denied" },
+    { slot: "removeMembership", operation: REMOVE_ORG_MEMBERSHIP, type: ORG_MEMBERSHIP, id: "org-member" },
+    { slot: "deletePosition", operation: DELETE_ORG_POSITION, type: ORG_POSITION, id: "org-position" },
   ];
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
@@ -2978,6 +3045,8 @@ it("describes fixed governance delete targets from the owner batch without reque
     { status: "ready", payload: { reason: null } },
     { status: "error", code: "POLICY_NOT_FOUND", error: "Policy not found" },
     { status: "forbidden", error: "Organization read denied" },
+    { status: "ready", payload: { reason: null } },
+    { status: "ready", payload: { reason: "Position has roles" } },
     { status: "ready" },
   ] });
 
@@ -2989,14 +3058,85 @@ it("describes fixed governance delete targets from the owner batch without reque
     { status: "ready", value: { delete: { handlerRef: DELETE_ORG_UNIT, inspectImpact: { handlerRef: `${DELETE_ORG_UNIT}.inspect-impact` } } } },
     { status: "error", code: "POLICY_NOT_FOUND", message: "Policy not found" },
     { status: "forbidden", reason: "Organization read denied" },
+    { status: "ready", value: { delete: { handlerRef: REMOVE_ORG_MEMBERSHIP } } },
+    { status: "ready", value: { delete: { handlerRef: DELETE_ORG_POSITION, unavailable: { reason: "Position has roles" } } } },
     { status: "ready", value: { deletePolicy: { target: { source: "row" } } } },
   ]);
   expect(results[1]).not.toHaveProperty("value.delete.unavailable");
+  expect(results[4]).not.toHaveProperty("value.delete.unavailable");
   const calls = mocks.read.mock.lastCall![1] as JavaPanelRead[];
   expect(calls.map(({ call }) => call)).toEqual([
     ...targets.map(({ type, id }) => ({ type, name: "deleteRefusal", parameters: { primaryKey: id } })), undefined,
   ]);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("describes the role detail delete operation using the selected role's delete refusal", async () => {
+  const selections = [
+    { primaryKey: "empty-role", reason: null },
+    { primaryKey: "assigned-role", reason: "Role still has members" },
+  ];
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  for (const { primaryKey } of selections) {
+    mocks.resolve.mockResolvedValueOnce({
+      panel: { manifest: { state: {}, members: {} } },
+      member: { inputs: { role: { literal: { className: ROLE, primaryKey } } } },
+      projection: {
+        inputs: { role: { kind: "object", objectType: ROLE } },
+        operations: { delete: { operation: { kind: "PlatformOperation", id: DELETE_ROLE }, target: { input: "role" } } },
+      },
+      inputs: {},
+    });
+  }
+  mocks.read.mockResolvedValueOnce({ viewer, results: selections.map(({ reason }) => ({ status: "ready", payload: { reason } })) });
+
+  const prepared = await prepareRegisteredDataReads(credentials, selections.map(() => ({
+    source, memberPath: [{ member: "deleteBtn" }], operations: true, inputs: {},
+  })));
+  const [deletable, assigned] = await runPreparedDataReads(credentials, prepared);
+  expect(deletable).toMatchObject({ status: "ready", value: { delete: { handlerRef: DELETE_ROLE } } });
+  expect(deletable).not.toHaveProperty("value.delete.unavailable");
+  expect(assigned).toHaveProperty("value.delete.unavailable.reason", "Role still has members");
+  expect((mocks.read.mock.lastCall![1] as JavaPanelRead[]).map(({ call }) => call))
+    .toEqual(selections.map(({ primaryKey }) => ({ type: ROLE, name: "deleteRefusal", parameters: { primaryKey } })));
+});
+
+it("describes all role assignment operations with the selected role's owner refusal", async () => {
+  const bindings = { addMembers: ADD_ROLE_MEMBERS, removeMembers: REMOVE_ROLE_MEMBERS,
+    addPolicies: ADD_ROLE_POLICIES, removePolicies: REMOVE_ROLE_POLICIES };
+  const selections = [
+    { primaryKey: "ordinary", result: { status: "ready", payload: { reason: null } } },
+    { primaryKey: "reserved", result: { status: "ready", payload: { reason: "Managed by domain membership" } } },
+    { primaryKey: "missing", result: { status: "error", code: "ROLE_NOT_FOUND", error: "Role not found" } },
+  ];
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  for (const { primaryKey } of selections) {
+    mocks.resolve.mockResolvedValueOnce({
+      panel: { manifest: { state: {}, members: {} } },
+      member: { inputs: { role: { literal: { className: ROLE, primaryKey } } } },
+      projection: {
+        inputs: { role: { kind: "object", objectType: ROLE } },
+        operations: Object.fromEntries(Object.entries(bindings).map(([name, id]) =>
+          [name, { operation: { kind: "PlatformOperation", id }, target: { input: "role" } }])),
+      },
+      inputs: {},
+    });
+  }
+  mocks.read.mockResolvedValueOnce({ viewer, results: selections.map(({ result }) => result) });
+
+  const prepared = await prepareRegisteredDataReads(credentials, selections.map(() => ({
+    source, memberPath: [{ member: "roleAssignments" }], operations: true, inputs: {},
+  })));
+  const [ordinary, reserved, missing] = await runPreparedDataReads(credentials, prepared);
+  expect(ordinary).toMatchObject({ status: "ready", value: Object.fromEntries(Object.entries(bindings)
+    .map(([name, handlerRef]) => [name, { handlerRef }])) });
+  for (const name of Object.keys(bindings)) {
+    expect(ordinary).not.toHaveProperty(`value.${name}.unavailable`);
+    expect(reserved).toHaveProperty(`value.${name}.unavailable.reason`, "Managed by domain membership");
+  }
+  expect(missing).toEqual({ status: "error", code: "ROLE_NOT_FOUND", message: "Role not found" });
+  expect((mocks.read.mock.lastCall![1] as JavaPanelRead[]).map(({ call }) => call))
+    .toEqual(selections.map(({ primaryKey }) => ({ type: ROLE, name: "assignRefusal", parameters: { primaryKey } })));
 });
 
 it("keeps application entries and a masked missing application as separate batch items", async () => {
@@ -3006,7 +3146,7 @@ it("keeps application entries and a masked missing application as separate batch
   const entries = {
     applicationId: primaryKey,
     entry: { path: "/applications/app-shipping", home: "/applications/app-shipping/overview", entryKey: "overview" },
-    panelUses: [{ id: "overview", pageKey: "shipping:overview", panelId: "panel-shipping", path: "/applications/app-shipping/overview" }],
+    panelUses: [{ id: "overview", names: { en: "overview" }, pageKey: "shipping:overview", panelId: "panel-shipping", path: "/applications/app-shipping/overview" }],
     groups: [],
     framePanelId: "panel-frame",
     theme: { light: { accent: "#123456" } },
@@ -3041,7 +3181,7 @@ it("keeps application entries and a masked missing application as separate batch
 it("names admitted application entry rows with same-item USE or EDIT and local default agent options", async () => {
   const primaryKey = "app-shipping";
   const path = "/applications/app-shipping";
-  const panelUse = (id: string) => ({ id, pageKey: `shipping:${id}`, path: `${path}/${id}`, panelId: `panel-${id}` });
+  const panelUse = (id: string) => ({ id, names: { en: String(id) }, pageKey: `shipping:${id}`, path: `${path}/${id}`, panelId: `panel-${id}` });
   const panelUses = [
     {
       ...panelUse("overview"), names: { en: "Overview" }, groupKey: "main",
@@ -3966,7 +4106,7 @@ it("reads published MCP declarations after batch admission using the server requ
     ...request, source: { kind: "registered", applicationId: "settings", useId: "published-mcp" },
   };
   const mcpEntry = { applicationId: "settings", use: {
-    id: "published-mcp", pageKey: "published-mcp", panelId: "builtin-product-published-mcp", path: "/settings/mcp-services",
+    id: "published-mcp", names: { en: "published-mcp" }, pageKey: "published-mcp", panelId: "builtin-product-published-mcp", path: "/settings/mcp-services",
   } };
   const run = async (items: typeof cases, requestLocation: typeof location | undefined) => {
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry: mcpEntry }] });
@@ -4662,6 +4802,26 @@ it("uses the same customer neighbors owner for an admitted live reader and prese
   }], reader.viewer, undefined);
 });
 
+it("forwards instance graph reads from a callback with a verified caller and run marker", async () => {
+  const { readResolvedPanelOwner } = await import("../data-reads");
+  const projection = {} as Parameters<typeof readResolvedPanelOwner>[3];
+  const path = { source: request.source, registration: { panelId: "panel", framePanelId: "frame", inputs: undefined }, uses: [] };
+  const selection = { kind: "platform", typeId: OBJECT_TYPE, method: "instanceNeighbors" } as const;
+  const node = { className: "Person", primaryKey: "p1" };
+  const reader = { owner: viewer, viewer: {
+    token: "viewer-token",
+    headers: { "X-Ontomato-Agent-Execution": "run", "X-Ontomato-Retrieval-Caller-Id": "scope" },
+  } };
+  mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "ready", payload: {
+    success: true, status: "READY", data: { nodes: [{ class: node.className, primaryKey: node.primaryKey }], edges: [], version: "v1" },
+  } }] });
+  await expect(readResolvedPanelOwner(reader, selection, { node }, projection, path, "scope"))
+    .resolves.toMatchObject({ node, neighbors: [] });
+  expect(mocks.read).toHaveBeenLastCalledWith(viewer, [{ ...path,
+    call: { type: OBJECT_TYPE, name: "instanceNeighbors", parameters: { node } },
+  }], reader.viewer, "scope");
+});
+
 it("reads platform class directories, including model definitions, in the registered data-browser batch", async () => {
   const object = { className: OBJECT_TYPE, primaryKey: "order_archive" };
   const route = "/ontology/objects?selected=order_archive";
@@ -4740,7 +4900,8 @@ it("uses the exact Trigger detail and the P1 library gate for platform browser r
     admitted, { status: "forbidden", error: "Skill library denied" },
     admitted, { status: "ready", payload: true },
   ] });
-  mocks.skills.mockResolvedValueOnce({ registry: { getSkills: () => [] } });
+  const analyst = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "ontomato-analyst-assistant" };
+  mocks.skills.mockResolvedValueOnce({ registry: { getSkills: () => [generatedSkillEntry(analyst)] } });
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
   const prepared = await prepareRegisteredDataReads(credentials, reads.map(() => request));

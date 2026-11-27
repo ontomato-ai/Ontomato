@@ -2,7 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { ref } from "vue";
 import { createI18n } from "vue-i18n";
 import { describe, expect, it, vi } from "vitest";
-import { pageCounterKey, type AgentHostAgent, type PageCounter } from "@ontomato/agent-shell-ui";
+import { pageCounterKey, servePageComposerKey, type AgentHostAgent, type PageComposerExpand, type PageCounter } from "@ontomato/agent-shell-ui";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelContext } from "../../../apps-sdk/src/panel/context";
 import { panelContextKey, projectionKey } from "../../../apps-sdk/src/panel/context";
@@ -49,7 +49,11 @@ function counter(ask = vi.fn()): PageCounter {
   };
 }
 
-function mountEntry(slots: Record<string, string>) {
+function mountEntry(
+  slots: Record<string, string>,
+  options: { ask?: ReturnType<typeof vi.fn>; served?: PageComposerExpand[] } = {},
+) {
+  const served = options.served ?? [];
   return mount(ConversationEntry, {
     props: { presentation: "inline" },
     slots,
@@ -58,7 +62,11 @@ function mountEntry(slots: Record<string, string>) {
       provide: {
         [panelContextKey as symbol]: { t: (key: string) => key } as unknown as PanelContext,
         [projectionKey as symbol]: { slot: "askInline", projection },
-        [pageCounterKey as symbol]: counter(),
+        [pageCounterKey as symbol]: counter(options.ask),
+        [servePageComposerKey as symbol]: (expand: PageComposerExpand) => {
+          served.push(expand);
+          return () => void served.splice(served.indexOf(expand), 1);
+        },
       },
     },
   });
@@ -86,6 +94,24 @@ describe("the inline conversation entry's agent picker", () => {
     await own.trigger("click");
     await flushPromises();
     expect(wrapper.get("button.page-own-picker").text()).toBe("Agent|agent-governance|2");
+    wrapper.unmount();
+  });
+
+  it("refuses a sibling entry whose target agent is unavailable without prefilling, switching, or submitting", async () => {
+    const ask = vi.fn();
+    const served: PageComposerExpand[] = [];
+    const wrapper = mountEntry({}, { ask, served });
+    await flushPromises();
+    expect(served).toHaveLength(1);
+
+    await served[0]!({ target: { kind: "id", id: "missing-agent" }, prefill: "Do not send", submit: true });
+    await flushPromises();
+
+    expect(wrapper.get("textarea").element.value).toBe("");
+    expect(wrapper.text()).toContain(regular.name);
+    expect(wrapper.get('[role="alert"]').text()).toBe(en.assistant.pageAgentUnavailable);
+    expect(wrapper.emitted("error")?.[0]?.[0]).toBeInstanceOf(Error);
+    expect(ask).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });

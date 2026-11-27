@@ -6,25 +6,11 @@
 # configuration, skills and startup files. Nothing is assembled
 # outside this image, and the image is what runs online and offline.
 #
-# The public component consumes build-central (empty Maven settings). The
-# enterprise component consumes build-secret: its private settings arrive as a
-# BuildKit secret and its license jar check runs in the same JDK stage.
 ARG JDK_IMAGE=docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438
 ARG PYTHON_BUILD_IMAGE=docker.io/library/python:3.10-slim-bookworm@sha256:2559be987fd64d61badbdafd303ea58a9ccab36d6c3c08bce219e762177d2eca
 ARG JRE_IMAGE=docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f
-# Which export stage the final image copies from. The builder selects it: the
-# public component builds build-central, the enterprise component build-secret.
-ARG EXPORT_STAGE=build-central
-
-# ---- Maven export ----
-# One reactor package, then the target app's runtime closure. The central export
-# writes empty Maven settings; the secret export takes the private settings only
-# as a BuildKit secret (never copied or read by the host), the target native
-# library, the license profile, and one artifact check run in the same JDK stage
-# on the exported jar, named by Maven's default <artifactId>-<version>.jar.
-# Both exports also write maven-licenses.json: the Maven license record of every
-# runtime dependency of the app module, which the final image joins with the
-# files under its lib/.
+# The recipe exports the application's own jars, dependency closure and license
+# records for the runtime image below.
 FROM ${JDK_IMAGE} AS ontomato-src
 WORKDIR /src
 COPY ontomato/ /src/ontomato/
@@ -133,28 +119,7 @@ MAVEN_SETTINGS=/tmp/maven-settings.xml /usr/local/bin/export-java.sh
 rm -f /tmp/maven-settings.xml
 EOF
 
-FROM recipe AS enterprise-src
-COPY enterprise/ /src/enterprise/
-
-FROM enterprise-src AS build-secret
-ARG REACTOR_DIR
-ARG APP_MODULE
-ARG APP_LIB_MODULES
-ARG EXCLUDE_ARTIFACT_IDS
-ARG KEEP_NATIVE=
-ARG LICENSE_PROFILE=
-ARG APP_CHECK_SCRIPT
-ARG APP_CHECK_JAR
-ARG APP_CHECK_ARG
-RUN --mount=type=secret,id=maven-settings,required=true \
-    --mount=type=cache,target=/root/.m2 \
-    test -n "${APP_CHECK_SCRIPT}" && test -n "${APP_CHECK_JAR}" && test -n "${APP_CHECK_ARG}" \
- && MAVEN_SETTINGS=/run/secrets/maven-settings /usr/local/bin/export-java.sh \
- && sh "${APP_CHECK_SCRIPT}" "${APP_CHECK_JAR}" "${APP_CHECK_ARG}"
-
-# The selected export. Only this stage and its inputs are built: the public
-# component never evaluates the enterprise source or the secret stage.
-FROM ${EXPORT_STAGE} AS exported
+FROM build-central AS exported
 
 # ---- Build-only verification and notices; Python never enters the final image ----
 FROM ${JRE_IMAGE} AS jre
@@ -184,7 +149,7 @@ COPY --from=assembly /licenses/ /licenses/
 COPY --from=assembly /app/ /app/
 
 # The product version and build identity the image labels carry, for the running
-# service to report its own version (the enterprise license page shows them).
+# service to report its own version.
 # Declared after the last RUN so a new build identity reuses every layer above.
 ARG ONTOMATO_PRODUCT_VERSION
 ARG ONTOMATO_PRODUCT_BUILD

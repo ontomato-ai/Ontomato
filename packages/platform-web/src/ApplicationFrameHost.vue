@@ -39,8 +39,7 @@ import { usePanelSessionRuns } from "./panel-session-runs";
 import { useApplicationCatalog } from "./catalog";
 import {
   applicationFrameHostKey,
-  deepLinkDefaultsOf,
-  hasFrameParams,
+  frameAddressState,
   type FrameState,
   type PanelFrameRegistration,
 } from "./application-frame-context";
@@ -218,7 +217,7 @@ watch(
     if (!applicationId || matchingPanelEntry.value || matchingOpenedEntry.value) return;
     const app = catalog.applicationById(applicationId);
     if (app && app.panelUses === undefined) {
-      void catalog.ensureApplication(applicationId).catch(() => undefined);
+      void catalog.ensureApplication(applicationId).catch(error => console.error(error));
     }
   },
   { immediate: true },
@@ -237,6 +236,20 @@ const anchorUse = computed<EntryUse | null>(() => {
   return panelUse
     ?? (matching && !isNativeApplicationEntry(matching) ? matching : null)
     ?? openedUse;
+});
+
+/**
+ * Whether the application is known to have registered panel entries or known to be native-only. Until one of those
+ * answers arrives, the frame has no safe port to choose: a native port guessed early would keep the same cache key after
+ * the registered entry appears.
+ */
+const frameEntryDecisionResolved = computed(() => {
+  if (anchorUse.value) return true;
+  const panel = matchingPanelEntry.value;
+  if (panel && !panel.resolved) return false;
+  if (catalogApp.value?.panelUses !== undefined) return true;
+  if (panel?.resolved) return true;
+  return matchingOpenedEntry.value !== null;
 });
 
 function refreshFrame(change: PanelObjectChange) {
@@ -319,8 +332,9 @@ const port = computed<PanelHostPort | null>(() => {
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
+  if (!frameEntryDecisionResolved.value) return null;
   if (frame.hostGroups?.length || isBuiltinProductId(frame.framePanelId)) {
-    const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, router, chat, initialFrame);
+    const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, frame.title, router, chat, initialFrame);
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
@@ -334,7 +348,6 @@ const frameSurfaceReady = ref(true);
 const lastFrame = ref<{
   key: string;
   framePanelId: string;
-  addressState: FrameState;
   liveState: FrameState;
 } | null>(null);
 const frameManifest = shallowRef<{
@@ -372,19 +385,11 @@ const activeFrameManifest = computed(() => {
 
 const frameState = computed((): FrameState => {
   if (!effectiveFrame.value) return {};
-  let named: FrameState;
-  let hasSegment: boolean;
-  try {
-    hasSegment = hasFrameParams(route.fullPath);
-    named = parseApplicationPanelAddress(
-      route.fullPath,
-      activeFrameManifest.value ? { frameManifest: activeFrameManifest.value } : undefined,
-    ).frame;
-  } catch {
-    return {};
-  }
-  const defaults = deepLinkDefaultsOf(activeFrameManifest.value);
-  const live = lastFrame.value?.key === frameKey.value ? lastFrame.value.liveState : undefined;
+  const parsed = frameAddressState(route.fullPath, activeFrameManifest.value);
+  const named = parsed.named;
+  const hasSegment = parsed.hasSegment;
+  const defaults = parsed.defaults;
+  const live = hasSegment && lastFrame.value?.key === frameKey.value ? lastFrame.value.liveState : undefined;
   const base = live ? { ...defaults, ...live } : defaults;
   if (hasSegment) return { ...base, ...named };
   return Object.keys(base).length ? base : named;
@@ -400,8 +405,7 @@ function reportFrameState(state: FrameState) {
     const cached = cachedApplicationFrameManifest(frame.applicationId, frame.framePanelId);
     if (cached) frameManifest.value = { key, framePanelId: frame.framePanelId, manifest: cached };
   }
-  const prev = lastFrame.value?.key === key ? lastFrame.value : null;
-  lastFrame.value = { key, framePanelId: frame.framePanelId, addressState: prev?.addressState ?? {}, liveState: state };
+  lastFrame.value = { key, framePanelId: frame.framePanelId, liveState: state };
 }
 
 function reportFrameAddress(input: DisplayPageAddressInput) {
@@ -414,37 +418,23 @@ function reportFrameAddress(input: DisplayPageAddressInput) {
       if (cached) frameManifest.value = { key, framePanelId: frame.framePanelId, manifest: cached };
     }
     const prev = lastFrame.value?.key === key ? lastFrame.value : null;
-    lastFrame.value = { key, framePanelId: frame.framePanelId, addressState: reported, liveState: prev?.liveState ?? reported };
+    lastFrame.value = { key, framePanelId: frame.framePanelId, liveState: prev?.liveState ?? reported };
   }
   const { path, state, query } = parseApplicationPanelAddress(route.fullPath);
   const next = applicationPanelAddress(path, { frame: reported, state, query });
   if (next !== route.fullPath) void router.replace(next);
 }
 
-/** An entry opened without `frame.*` params while the same frame stands restores the frame's non-default state in URL. */
-watch([() => route.fullPath, frameKey], () => {
-  const keptFrame = lastFrame.value;
-  const key = frameKey.value;
-  if (keptFrame && keptFrame.key !== key) {
-    lastFrame.value = null;
-    return;
-  }
-  if (!effectiveFrame.value || !keptFrame || !Object.keys(keptFrame.addressState).length) return;
-  if (hasFrameParams(route.fullPath)) return;
-  const { path, state, query } = parseApplicationPanelAddress(route.fullPath);
-  void router.replace(applicationPanelAddress(path, { frame: keptFrame.addressState, state, query }));
-});
-
 const entryMenu = computed<ApplicationEntryMenu>(() => {
   if (matchingPanelEntry.value?.menu) return matchingPanelEntry.value.menu;
   if (matchingOpenedEntry.value?.menu) return matchingOpenedEntry.value.menu;
   const app = catalogApp.value;
   const frame = effectiveFrame.value;
-  const panelUses = app?.panelUses ?? [];
-  const totalNamed = frame?.hostGroups && frame.hostGroups.length > 0
+  const panelUses = app?.panelUses?.filter(use => use.inMenu !== false) ?? [];
+  const menuCount = frame?.hostGroups && frame.hostGroups.length > 0
     ? frame.hostGroups.reduce((total, group) => total + group.items.length, 0)
-    : panelUses.filter((use) => Boolean(use.names)).length;
-  const singleEntry = app?.singleEntry ?? frame?.singleEntry ?? (totalNamed <= 1);
+    : panelUses.length;
+  const singleEntry = app?.singleEntry ?? frame?.singleEntry ?? (menuCount <= 1);
   return {
     names: app?.names ?? (frame ? { en: frame.title } : undefined),
     singleEntry,

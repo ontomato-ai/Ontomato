@@ -15,7 +15,7 @@ export type ProcessStep = ProcessStepView;
 export type ProcessBlock =
   | { kind: "note"; key: string; text: string; final: boolean; runId: string }
   | { kind: "steps"; key: string; steps: ProcessStep[]; active: boolean }
-  | { kind: "input"; key: string; messageId: string; text: string; source: "user"; replyTo?: string; runId: string; final: true }
+  | { kind: "input"; key: string; messageId: string; text: string; source: "user"; replyTo?: string; question?: string; runId: string; final: true }
   | { kind: "task"; key: string; task: ChannelAgentTask }
   | { kind: "detail"; key: string; detail: RuntimeRunDetail };
 
@@ -40,6 +40,8 @@ export interface UserItem {
   text: string;
   /** The reader answered one of the agents' questions with it. */
   answer: boolean;
+  /** The question this message answers, when the question it names is in the conversation. */
+  question?: string;
   /** Accepted by the runtime and queued until the previous turn finishes. */
   queued?: boolean;
 }
@@ -69,8 +71,8 @@ export interface ResponseItem {
   finishedAt: number | null;
 }
 
-/** A question an agent asked is model-written Markdown, rendered within the run that holds it; other notifications stay plain text. */
-export type ConversationItem = UserItem | ResponseItem | { kind: "notification"; key: string; text: string; error?: boolean; markdownRunId?: string };
+/** Notifications other than questions stay plain text in the conversation. */
+export type ConversationItem = UserItem | ResponseItem | { kind: "notification"; key: string; text: string; error?: boolean };
 
 /** Generic one-line summary of a tool call: the first short string argument. */
 export function toolSummary(args: Record<string, RuntimeJsonValue>): string {
@@ -87,6 +89,11 @@ export function toolSummary(args: Record<string, RuntimeJsonValue>): string {
 function userText(content: string | { type: string; text?: string }[]): string {
   if (typeof content === "string") return content;
   return content.map((part) => (part.type === "text" ? (part.text ?? "") : "")).join("");
+}
+
+function answeredQuestion(state: ConversationState, replyTo: string | undefined): string | undefined {
+  const message = replyTo === undefined ? undefined : state.messages[replyTo]?.message;
+  return message?.role === "notification" && message.kind === "agent-question" ? message.content : undefined;
 }
 
 function hasUsageTokens(counts: RuntimeUsageCount): boolean {
@@ -267,10 +274,12 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       const current=entry.runId ? responses.get(entry.runId) : undefined;
       if(current && entry.contextSeq !== null) {
         place(current,message.timestamp);
-        current.process.push({kind:"input",key:entry.id,messageId:entry.id,text:userText(message.content),source:"user",...(message.role === "notification" ? {replyTo:message.replyTo}:{}),runId:current.runId,final:true});
+        const question = answeredQuestion(state, message.role === "notification" ? message.replyTo : undefined);
+        current.process.push({kind:"input",key:entry.id,messageId:entry.id,text:userText(message.content),source:"user",...(message.role === "notification" ? {replyTo:message.replyTo}:{}),...(question === undefined ? {} : {question}),runId:current.runId,final:true});
       } else {
         const queued = entry.runId === null && queuedInputIds.has(entry.id);
-        items.push({ kind: "user", key: entry.id, text: userText(message.content), answer: userAnswer, ...(queued ? { queued: true } : {}) });
+        const question = answeredQuestion(state, message.role === "notification" ? message.replyTo : undefined);
+        items.push({ kind: "user", key: entry.id, text: userText(message.content), answer: userAnswer, ...(question === undefined ? {} : { question }), ...(queued ? { queued: true } : {}) });
       }
       for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
@@ -288,14 +297,10 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
         resultRuns.set(message.source.runId, entry.runId);
         if (state.runs[entry.runId]?.status === "running") openResponse(entry.runId).retrievalProgress = "answering";
       }
-      // A delegated agent's result or model-directed question is input to the requesting model, not a message in the main conversation.
-      const userQuestion =
-        message.kind === "agent-question" &&
-        (message.recipient === "user" ||
-          ("session" in message.source && message.source.session.sessionId === state.sessionId));
-      if (message.kind !== "agent-result" && (message.kind !== "agent-question" || userQuestion)) {
-        items.push({ kind: "notification", key: entry.id, text: message.content,
-          ...(userQuestion && "session" in message.source ? { markdownRunId: entry.runId ?? message.source.runId } : {}) });
+      // A delegated agent's result or question is input to the requesting model, not a message in the main conversation;
+      // a question to the reader waits in the questions panel instead.
+      if (message.kind !== "agent-result" && message.kind !== "agent-question") {
+        items.push({ kind: "notification", key: entry.id, text: message.content });
       }
       for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;

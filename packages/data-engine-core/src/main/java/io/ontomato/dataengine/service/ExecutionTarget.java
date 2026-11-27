@@ -26,8 +26,11 @@ public record ExecutionTarget(String contextId, String sandboxId, List<String> c
   public enum Mode { LIVE, SANDBOX }
   public Mode mode() { return sandboxId == null ? Mode.LIVE : Mode.SANDBOX; }
   public boolean testing() { return contextId != null; }
+  public boolean allowsClasses(List<String> names) {
+    return (!testing() && classNames.isEmpty()) || (names != null && !names.isEmpty() && classNames.containsAll(names));
+  }
   public void requireClasses(List<String> names) {
-    if ((testing() || !classNames.isEmpty()) && (names == null || names.isEmpty() || !classNames.containsAll(names))) {
+    if (!allowsClasses(names)) {
       if(testing()) throw new SandboxException(HttpStatus.FORBIDDEN, "SANDBOX_FORBIDDEN: empty or out-of-context class declaration");
       throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Execution exceeds the caller class scope");
     }

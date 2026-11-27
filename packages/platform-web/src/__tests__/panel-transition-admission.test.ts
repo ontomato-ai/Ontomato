@@ -4,6 +4,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { ApplicationOpenResponse, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DirectPanelRun } from "@ontomato/platform-shell";
+import { ApiRequestError } from "@ontomato/workbench-ui";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import elementEn from "element-plus/es/locale/lang/en";
@@ -34,6 +35,7 @@ const reportsUse: ApplicationPanelUse = {
 };
 const hiddenUse: ApplicationPanelUse = {
   id: "use-hidden",
+  names: { en: "use-hidden" },
   panelId: "panel-hidden",
   path: "/applications/app-a/hidden",
   pageKey: "app-a-hidden",
@@ -162,7 +164,7 @@ function resolutionOf(
     allowStandalone: true,
     frame: null,
     content: null,
-    menu: { singleEntry: panelUses.filter((entry) => Boolean(entry.names)).length <= 1, groups: [], panelUses },
+    menu: { singleEntry: panelUses.filter(entry => entry.inMenu !== false).length <= 1, groups: [], panelUses },
   };
 }
 
@@ -396,7 +398,7 @@ describe("entry-table admission, refresh, and transition experience", () => {
     resolveApplicationEntryMock
       .mockResolvedValueOnce(resolutionOf(appA, tasksUse, [tasksUse, summaryUse]))
       .mockResolvedValueOnce(resolutionOf(appA, tasksUse, [tasksUse, summaryUse]))
-      .mockRejectedValueOnce(new Error("Forbidden"));
+      .mockRejectedValueOnce(new ApiRequestError("Forbidden", 403, { code: "FORBIDDEN" }));
 
     const { wrapper } = await mountRoute(tasksUse.path);
     await flushPromises();

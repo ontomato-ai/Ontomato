@@ -45,6 +45,7 @@ export const assistantSkillOptionSchema = z.object({
   skill: runtimeSkillRefSchema,
   title: z.string(),
   description: z.string(),
+  unavailable: z.object({ reason: z.string().min(1) }).strict().optional(),
 }).strict();
 export const assistantSkillCatalogSchema = z.object({
   skills: z.array(assistantSkillOptionSchema),

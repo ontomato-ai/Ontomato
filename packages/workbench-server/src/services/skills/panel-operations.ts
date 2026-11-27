@@ -4,6 +4,7 @@ import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
 import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { panelFileInputSchema, type PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
+import { builtinSkillEntries } from "./builtin-catalog";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import type {
@@ -32,6 +33,16 @@ const skillObjectTarget = z.object({
   objectType: z.literal(SKILL),
   primaryKey: z.string().min(1),
 }).strict();
+
+const generatedBuiltinSkillNames = new Set(
+  builtinSkillEntries().filter(entry => entry.source.kind === "generated").map(entry => entry.skill.name),
+);
+
+export function generatedSkillExportRefusal(primaryKey: string, locale?: string) {
+  return generatedBuiltinSkillNames.has(primaryKey)
+    ? { reason: tForLocale(locale, "panels.skill.generatedExportUnavailable") }
+    : undefined;
+}
 
 const deleteInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
@@ -241,9 +252,16 @@ export const skillExportOperation = {
   targetSchema: skillObjectTarget,
   inputSchema: deleteInputSchema,
   resultSchema: panelDownloadReceiptSchema,
+  async unavailable({ executor: { credentials }, locale }, target) {
+    if (!target) return;
+    return generatedSkillExportRefusal(target.primaryKey, locale ?? credentials.locale);
+  },
   async execute({ executor: { owner, credentials } }, call) {
     const { primaryKey } = skillObjectTarget.parse(call.target);
     const skillManager = await loadSkillManager();
+    const skill = await skillManager.requireReadableSkill(owner.domainId, primaryKey, credentials);
+    if (skill.source.kind === "generated")
+      throw new HttpError(422, tForLocale(credentials.locale, "panels.skill.generatedExportUnavailable"), "SKILL_EXPORT_UNAVAILABLE");
     const bytes = await skillManager.exportSkill(owner.domainId, primaryKey, credentials);
     return { kind: "file", bytes: new Uint8Array(bytes), suggestedName: `${primaryKey}.zip`, mime: "application/zip" };
   },

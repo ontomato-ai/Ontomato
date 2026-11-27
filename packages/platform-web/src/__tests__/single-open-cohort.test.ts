@@ -128,6 +128,7 @@ const relationsUse: ApplicationPanelUse = {
 };
 const opsDiagnosisUse: ApplicationOpenResponse["use"] = {
   id: "ops-diagnosis",
+  names: { en: "ops-diagnosis" },
   pageKey: "ops-diagnosis",
   kind: "frame-conversation",
   path: "/ops/diagnosis",

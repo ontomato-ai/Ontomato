@@ -1,21 +1,17 @@
-import path from "node:path";
 import { configuredAssistantSkills } from "./skill-selection";
 import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
-import { APP_BUILDER_SKILL } from "../app-builder/definition";
-import { isPageOperatorSkill, PAGE_OPERATOR_SKILL, runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
+import { isPageOperatorSkill, runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import type { CurrentPageContext } from "@ontomato/contracts/page-context";
 import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
-import { skillRegistryManager, skillSourceLabel } from "../../core/skills/registry/manager";
+import { skillRegistryManager } from "../../core/skills/registry/manager";
 import type { SkillEntry } from "../../core/skills/types";
 import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
 import { readSkillView, type SkillView } from "../skills/view";
-import {
-  publishOntologyAssistantSkill, publishSkill, publishSkillPackage, workbenchBuiltinSkillRoot,
-} from "../agent-runtime/skills";
+import { builtinSkillEntries } from "../skills/builtin-catalog";
+import { publishOntologyAssistantSkill, publishSkill, publishSkillPackage } from "../agent-runtime/skills";
 import { tForLocale } from "../../i18n";
-import { InvalidSkillPackageError, readSkillMarkdown } from "../../core/skills/manifest";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { requirePanelEntry } from "../product-panels/application-use";
 import { isApplicationPanelUse } from "@ontomato/contracts/product-panels";
@@ -23,7 +19,7 @@ import type { AssistantOwner } from "./store";
 
 const RETRIEVAL_SKILLS = new Set(["ontomato-analyst-assistant"]);
 const ANALYST_SKILL: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" };
-const PLATFORM_SKILL_NAMES = ["assistant-report", "application-design", "ontomato-agent-builder", PAGE_OPERATOR_SKILL.name];
+const STARTUP_PLATFORM_SKILL_NAMES = ["ontomato-app-builder", "assistant-report", "application-design", "ontomato-agent-builder", "ontomato-page-operator"];
 
 /** The selectable ontology query skill is the only assistant skill that needs a retrieval caller. */
 export function needsRetrievalScope(skills: readonly RuntimeSkillRef[]) {
@@ -35,64 +31,23 @@ export function hasGovernanceSkill(skills: readonly RuntimeSkillRef[]) {
   return skills.some(skill => runtimeSkillKey(skill) === runtimeSkillKey(GOVERNANCE_SKILL));
 }
 
-function platformSkills() {
-  return PLATFORM_SKILL_NAMES.map((name) => {
-    const skill = { namespace: { kind: "provider" as const, provider: "workbench" }, name };
-    const root = workbenchBuiltinSkillRoot(skill);
-    const parsed = readSkillMarkdown(path.join(root, "SKILL.md"));
-    if (!parsed) throw new Error(`Missing platform skill: ${name}`);
-    return { kind: "platform" as const, root, skill, manifest: parsed.manifest };
-  });
-}
-
-type AssistantSkillSource = SkillEntry | ReturnType<typeof platformSkills>[number]
-  | { kind: "governance" | "analyst"; skill: RuntimeSkillRef };
-
-function assistantSkillOption(entry: AssistantSkillSource, locale?: string): AssistantSkillOption {
+function assistantSkillOption(entry: SkillEntry, locale?: string): AssistantSkillOption {
   const { skill } = entry;
-  if ("source" in entry) {
-    const { title, description } = skillManager.describeSkill(entry, locale);
-    return { skill, title, description };
-  }
-  switch (entry.kind) {
-    case "governance":
-      return { skill, title: tForLocale(locale, "assistant.default.knowledge-governance.name"),
-        description: tForLocale(locale, "assistant.default.knowledge-governance.description") };
-    case "analyst":
-      return { skill, title: tForLocale(locale, "assistant.skills.analyst.title"),
-        description: tForLocale(locale, "assistant.skills.analyst.description") };
-    case "platform":
-      if (skill.name === "assistant-report")
-        return { skill, title: tForLocale(locale, "assistant.skills.report.title"), description: tForLocale(locale, "assistant.skills.report.description") };
-      if (isPageOperatorSkill(skill))
-        return { skill, title: tForLocale(locale, "assistant.skills.pageOperator.title"), description: tForLocale(locale, "assistant.skills.pageOperator.description") };
-      return { skill, title: skill.name, description: entry.manifest.description };
-  }
+  const { title, description } = skillManager.describeSkill(entry, locale);
+  return {
+    skill, title, description,
+    ...(entry.selectionRestricted ? { unavailable: { reason: tForLocale(locale, "assistant.skills.systemRestricted.reason") } } : {}),
+  };
 }
 
 export async function registerAssistantSkills() {
-  await publishSkill(workbenchBuiltinSkillRoot(APP_BUILDER_SKILL), APP_BUILDER_SKILL);
-  for (const entry of platformSkills()) await publishSkill(entry.root, entry.skill);
+  const startup = new Set(STARTUP_PLATFORM_SKILL_NAMES);
+  for (const entry of builtinSkillEntries()) {
+    if (entry.source.kind === "public" && startup.has(entry.skill.name))
+      await publishSkill(entry.source.path, entry.skill);
+  }
   for (const skill of await skillRegistryManager.publicSkills())
     await publishSkill(skill.path, { namespace: { kind: "provider", provider: "workbench" }, name: skill.id });
-}
-
-function assistantSkillSources(view: SkillView) {
-  const builtins: AssistantSkillSource[] = [
-    { kind: "governance", skill: GOVERNANCE_SKILL },
-    ...platformSkills(),
-    { kind: "analyst", skill: ANALYST_SKILL },
-  ];
-  const builtinKeys = new Set(builtins.map(({ skill }) => runtimeSkillKey(skill)));
-  const sources = new Map<string, AssistantSkillSource>();
-  for (const entry of builtins) sources.set(runtimeSkillKey(entry.skill), entry);
-  for (const entry of view.registry.getSkills()) {
-    const key = runtimeSkillKey(entry.skill);
-    if (builtinKeys.has(key))
-      throw new InvalidSkillPackageError(`Skill ${entry.skill.name} from ${skillSourceLabel(entry.source)} conflicts with a built-in skill of the same identity`);
-    sources.set(key, entry);
-  }
-  return sources;
 }
 
 export async function countAssistantSkills(domainId: string, credentials: AssistantCredentials): Promise<number> {
@@ -100,16 +55,21 @@ export async function countAssistantSkills(domainId: string, credentials: Assist
 }
 
 export function countAssistantSkillsFromView(view: SkillView): number {
-  return assistantSkillSources(view).size;
+  return view.registry.getSkills().length;
 }
 
 export async function readAssistantSkillView(domainId: string, initiatorCredentials: AssistantCredentials, userId?: string) {
   const view = await readSkillView(domainId, initiatorCredentials, userId);
-  const sources = assistantSkillSources(view);
+  const entries = view.registry.getSkills();
+  const keys = new Map(entries.map(entry => [runtimeSkillKey(entry.skill), entry] as const));
   return {
     ...view,
-    options: [...sources.values()].map(entry => assistantSkillOption(entry, initiatorCredentials.locale)),
-    hasSkill: (ref: RuntimeSkillRef) => sources.has(runtimeSkillKey(ref)),
+    options: entries.map(entry => assistantSkillOption(entry, initiatorCredentials.locale)),
+    hasSkill: (ref: RuntimeSkillRef) => keys.has(runtimeSkillKey(ref)),
+    isSkillSelectable: (ref: RuntimeSkillRef) => {
+      const entry = keys.get(runtimeSkillKey(ref));
+      return !!entry && !entry.selectionRestricted;
+    },
   };
 }
 
@@ -125,9 +85,9 @@ export function hasHiddenAssistantSkillRefs(refs: readonly RuntimeSkillRef[], vi
 
 export function effectiveAssistantSkills(
   agent: { kind: string; skills: readonly RuntimeSkillRef[] },
-  view?: Pick<AssistantSkillView, "hasSkill">,
+  view?: Pick<AssistantSkillView, "hasSkill" | "isSkillSelectable">,
 ): RuntimeSkillRef[] {
-  return configuredAssistantSkills({ kind: agent.kind, skills: view ? agent.skills.filter(view.hasSkill) : agent.skills });
+  return configuredAssistantSkills({ kind: agent.kind, skills: view ? agent.skills.filter(view.isSkillSelectable) : agent.skills });
 }
 
 export async function assistantSkillCatalog(domainId: string, credentials: AssistantCredentials, view?: AssistantSkillView) {
@@ -142,7 +102,7 @@ function skillNotFound() {
 function checkSkillSelection(refs: readonly RuntimeSkillRef[], view: AssistantSkillView) {
   const names = new Set<string>();
   for (const ref of refs) {
-    if (!view.hasSkill(ref)) throw skillNotFound();
+    if (!view.isSkillSelectable(ref)) throw skillNotFound();
     if (names.has(ref.name)) throw new HttpError(400, "Selected skill names must be unique", "INVALID_REQUEST");
     names.add(ref.name);
   }
@@ -166,18 +126,12 @@ async function publishSelectedSkill(domainId: string, ref: RuntimeSkillRef, view
   if (key === runtimeSkillKey(ANALYST_SKILL)) return publishOntologyAssistantSkill(domainId);
 
   const entry = view.registry.getSkillByRef(ref);
-  if (entry) {
-    const { skill, digest } = entry.source.kind === "public"
-      ? await publishSkill(entry.source.path, ref)
-      : await publishSkillPackage(await entry.provide(), domainId);
-    return { skill, digest };
-  }
-  if (key === runtimeSkillKey(APP_BUILDER_SKILL) ||
-    (ref.namespace.kind === "provider" && ref.namespace.provider === "workbench" && PLATFORM_SKILL_NAMES.includes(ref.name))) {
-    const { skill, digest } = await publishSkill(workbenchBuiltinSkillRoot(ref), ref);
-    return { skill, digest };
-  }
-  throw new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
+  if (!entry || entry.selectionRestricted || entry.source.kind === "generated")
+    throw new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
+  const { skill, digest } = entry.source.kind === "public"
+    ? await publishSkill(entry.source.path, ref)
+    : await publishSkillPackage(await entry.provide(), domainId);
+  return { skill, digest };
 }
 
 async function validateCurrentPage(owner: AssistantOwner, credentials: AssistantCredentials, pageSkillContext?: CurrentPageContext) {

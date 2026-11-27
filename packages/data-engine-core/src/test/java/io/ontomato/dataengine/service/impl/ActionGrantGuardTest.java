@@ -17,6 +17,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.action.Action;
@@ -29,6 +30,9 @@ import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionRuntimeGrant;
+import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.service.DslService;
+import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
@@ -38,6 +42,7 @@ import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.impl.WorkflowRunResolver;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -427,8 +432,10 @@ class ActionGrantGuardTest {
     assertEquals("ACTION_TARGET_OUT_OF_SCOPE", error.code());
     assertEquals("Target is outside scope", error.getMessage());
     verify(queries).actionTargetExists(eq(action.getTarget()), eq("00123"), eq(CapabilityGrantLookup.Admission.ALL), any());
-    org.mockito.Mockito.verifyNoInteractions(preconditions, programs);
+    verify(preconditions, never()).evaluate(any(), any(), any(), any(), any());
+    verifyNoInteractions(programs);
   }
+
   @Test
   void formAndExecutionBothRejectAnOutOfScopeTarget() throws Exception {
     var action = publishedAction();
@@ -450,7 +457,28 @@ class ActionGrantGuardTest {
     assertEquals(prepared.code(), submitted.code());
     assertEquals(prepared.code(), executed.code());
     verify(queries, org.mockito.Mockito.times(3)).actionTargetExists(eq(action.getTarget()), eq("O-1"), any(), any());
-    verifyNoInteractions(preconditions, programs);
+    verify(preconditions, never()).evaluate(any(), any(), any(), any(), any());
+    verifyNoInteractions(programs);
   }
 
+  @Test
+  void scopedExecutionRejectsAnIndependentConditionClassBeforeReadingBusinessState() {
+    var action = publishedAction();
+    action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Order", "order_id"));
+    action.setSubmissionCriteria(JSONObject.of("conditions", JSONArray.of(JSONObject.of("className", "/Warehouse"))));
+    grantAnswer(true);
+    var admin = mock(AdminService.class);
+    when(admin.getJSONRule(DOMAIN)).thenReturn(Map.of("classDef", List.of(Map.of("className", "Warehouse"))));
+    var dsl = mock(DslService.class);
+    var queries = mock(OntologyQueryService.class);
+    ReflectionTestUtils.setField(service, "queries", queries);
+    ReflectionTestUtils.setField(service, "preconditions", new ActionPreconditionService(dsl, admin, queries));
+    var scope = new ExecutionTarget(null, null, List.of("Order"), Long.MAX_VALUE);
+
+    var denied = assertThrows(ActionPreconditionService.CallerScopeDenied.class, () ->
+        service.execute(ACTION_ID, params(), LANG, alice, permission, 5, scope, new Standalone()));
+
+    assertEquals("超出本轮数据范围", denied.getMessage());
+    verifyNoInteractions(dsl, queries, programs);
+  }
 }

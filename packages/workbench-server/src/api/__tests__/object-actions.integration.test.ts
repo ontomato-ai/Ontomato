@@ -135,7 +135,7 @@ beforeAll(async () => {
     if (req.header("tk") !== "alice") { res.sendStatus(403); return; }
     res.json({ success: true, data: {
       applicationId: use.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: use.useId, pageKey: "orders", path: `/applications/${use.applicationId}/orders`,
+      use: { id: use.useId, names: { en: String(use.useId) }, pageKey: "orders", path: `/applications/${use.applicationId}/orders`,
         panelId: "panel-orders" },
     } });
   });

@@ -46,7 +46,7 @@ const appBHomeUse: ApplicationPanelUse = {
 };
 
 const conversationUse: ApplicationOpenResponse["use"] = {
-  kind: "frame-conversation", id: "chat", pageKey: "chat", path: "/applications/app-b/chat",
+  kind: "frame-conversation", id: "chat", names: { en: "chat" }, pageKey: "chat", path: "/applications/app-b/chat",
 };
 const runFeed = vi.hoisted(() => ({ subscribe: vi.fn(), detach: vi.fn() }));
 vi.mock("@ontomato/workbench-ui/features/workbench/assistant-host", () => ({
@@ -295,7 +295,7 @@ function resolutionOf(
     allowStandalone: true,
     frame: null,
     content: null,
-    menu: { singleEntry: singleEntry ?? panelUses.filter((entry) => Boolean(entry.names)).length <= 1, groups: [], panelUses },
+    menu: { singleEntry: singleEntry ?? panelUses.filter(entry => entry.inMenu !== false).length <= 1, groups: [], panelUses },
   };
 }
 
@@ -543,6 +543,70 @@ describe("ApplicationFrameHost single persistent outer frame", () => {
 
     pendingResolve.resolve(resolutionOf("ontology", playgroundUse, [playgroundUse, objectsUse], ontologyFrameId));
     await flushPromises();
+    wrapper.unmount();
+  });
+
+  it("waits for a late entry decision instead of caching the native frame port", async () => {
+    manualFrameSurfaceReady = true;
+    catalogApplications.value = [
+      { id: "ontology", framePanelId: ontologyFrameId },
+      { id: "app-b", framePanelId: appBFrameId, panelUses: [appBHomeUse] },
+    ];
+    const pendingResolve = deferred<ApplicationOpenResponse>();
+    resolveApplicationEntryMock.mockReturnValueOnce(pendingResolve.promise);
+
+    const { wrapper } = await mountPlatformShell("/ontology/playground");
+    await flushPromises();
+
+    expect(framePanelHostCalls).toHaveLength(0);
+    expect(builtinFramePanelHostCalls).toHaveLength(0);
+    expect(wrapper.find("[data-panel-loading-placeholder]").exists()).toBe(true);
+
+    pendingResolve.resolve(resolutionOf("ontology", playgroundUse, [playgroundUse, objectsUse], ontologyFrameId));
+    await flushPromises();
+
+    expect(builtinFramePanelHostCalls).toHaveLength(0);
+    expect(framePanelHostCalls).toEqual([
+      { applicationId: "ontology", framePanelId: ontologyFrameId, useId: playgroundUse.id },
+    ]);
+    expect(wrapper.find(`[data-frame-panel="${ontologyFrameId}"]`).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+
+  it("does not restore the previous frame state onto a later address without frame parameters", async () => {
+    resolveApplicationEntryMock.mockImplementation(async () =>
+      resolutionOf("ontology", objectsUse, [playgroundUse, objectsUse], ontologyFrameId),
+    );
+    const { router, wrapper } = await mountPlatformShell("/ontology/objects?frame.term=B");
+    await flushPromises();
+    expect(wrapper.get('[data-content-use="use-ontology-objects"]').attributes("data-frame-state")).toBe(JSON.stringify({ term: "B" }));
+
+    await router.push("/ontology/objects");
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe("/ontology/objects");
+    expect(wrapper.get('[data-content-use="use-ontology-objects"]').attributes("data-frame-state")).toBe(JSON.stringify({}));
+    wrapper.unmount();
+  });
+
+  it("reports malformed frame address state and falls back to frame defaults", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const manifest = {
+      state: {
+        page: { type: { kind: "scalar", type: "number" }, personal: false, deepLink: true, external: true, default: 1 },
+      },
+      members: {},
+    };
+    resolveApplicationEntryMock.mockImplementation(async () => ({
+      ...resolutionOf("ontology", objectsUse, [playgroundUse, objectsUse], ontologyFrameId),
+      frame: { panel: { id: ontologyFrameId, manifest } } as never,
+    }));
+    const { wrapper } = await mountPlatformShell("/ontology/objects?frame.page=not-a-number");
+    await flushPromises();
+
+    expect(errorSpy).toHaveBeenCalled();
+    expect(wrapper.get('[data-content-use="use-ontology-objects"]').attributes("data-frame-state")).toBe(JSON.stringify({ page: 1 }));
     wrapper.unmount();
   });
 
