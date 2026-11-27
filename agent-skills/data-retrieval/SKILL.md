@@ -34,8 +34,10 @@ What you deliver is a query logic package. It has one of two shapes, delivered t
 
 - One table per delivery. A question that needs several tables gets several deliveries, each with its
   own `--out`; do not merge unrelated results with Python.
-- Deliver when the logic is ready; the delivery itself runs the query and reports any error.
-  `preview` takes the same arguments and is only for a real doubt about the result.
+- Write the query straight into the file you will deliver. Deliver when the logic is ready; the
+  delivery itself runs the query and reports any error. To see a result first, run that same file
+  with `execute-dsl`, and when it answers the question deliver it unchanged rather than writing it
+  again. `preview` takes the same arguments as `deliver` and is only for a real doubt about the result.
 - A small table's rows come back in the command's response; open the file only when you need more.
 - Reference the returned file; never edit its rows or receipt.
 
