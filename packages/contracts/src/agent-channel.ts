@@ -77,7 +77,7 @@ export const agentProviderExecutionSchema = z.object({ execution: agentExecution
 export const agentDeliverySchema = z.object({
   /** All host-owned attachments have settled; independent from this execution's status. */
   settled: z.boolean(),
-  status: z.enum(["starting", "running", "completed", "failed", "cancelled"]), summary: z.string(),
+  status: z.enum(["starting", "running", "completed", "failed", "cancelled"]),
   process: z.discriminatedUnion("mode", [
     z.object({ mode: z.literal("inline"), runtimeSessionId: id, runtimeRunId: id }).strict(),
     z.object({ mode: z.literal("page"), href: key }).strict(),

@@ -284,7 +284,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       }
       if (req.url === "/read") {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ settled: true, status: "completed", summary: "Done", process: { mode: "none" }, results: [], files: [] }));
+        res.end(JSON.stringify({ settled: true, status: "completed", process: { mode: "none" }, results: [], files: [] }));
         return;
       }
       if (req.url === "/settle" || req.url === "/cancel") {
