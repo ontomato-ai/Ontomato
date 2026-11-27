@@ -12,7 +12,7 @@ import { type CreatePanelHumanOperationIntentRequest, type PanelOperationIntent 
 import { agentHostObjectChangedFrameSchema } from "@ontomato/contracts/agent-host";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { AGENT_DEFINITION, APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
@@ -265,9 +265,9 @@ it("session settings compare the authenticated owner even when a session is read
  await expect(ownPanelSettings(owner,root)).rejects.toMatchObject({code:"FORBIDDEN"});
  expect((await panelOperationStore.settings(owner,root)).confirmBeforeExecute).toBe(true);
 });
-it("requires the human root and confirmation for build-test page operations",async()=>{
- current.channel!.authority.executionKind="build-test";
- await expect(prepareLiveAction(action())).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});
+it("requires the human root and confirmation for preview page operations",async()=>{
+ current.channel!.authority.executionKind="preview";
+ await expect(prepareLiveAction(action())).rejects.toMatchObject({code:"PREVIEW_WRITE_FORBIDDEN"});
  current.channel!.root = { session, runId: current.id };
  current.channel!.userRecipient = { session, actor: current.channel!.actor };
  automatic = true;
@@ -808,7 +808,7 @@ it("runs a registered read using the reader and preview context without creating
     target: { kind: "draft" as const },
     input: { draft: { name: "Unsaved metric" }, parameters: { amount: 3 }, bindingId: "sample" },
   } };
-  const preview = { ...credentials, headers: { [BUILD_TEST_HEADER]: "build-preview" } };
+  const preview = { ...credentials, headers: { [EXECUTION_CONTEXT_HEADER]: "build-preview" } };
   const execute = vi.fn(async (host: serverOperations.PanelOperationHost, call: typeof input.call) => {
     await host.request("/api/data-query/metricView/testExecute", { method: "POST", body: JSON.stringify(call.input) });
     return { kind: "json" as const, value: [{ amount: 3 }] };
@@ -831,7 +831,7 @@ it("runs a registered read using the reader and preview context without creating
   const ownerRead = vi.fn(async (url, init) => {
     expect(url).toBe("http://owner.test/metricView/testExecute");
     expect(new Headers(init.headers).get("tk")).toBe("U-token");
-    expect(new Headers(init.headers).get(BUILD_TEST_HEADER)).toBe("build-preview");
+    expect(new Headers(init.headers).get(EXECUTION_CONTEXT_HEADER)).toBe("build-preview");
     expect(JSON.parse(init.body)).toEqual(input.call.input);
     return Response.json({});
   });

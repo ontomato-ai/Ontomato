@@ -14,7 +14,6 @@ public class AnonymousAuthController {
         this.identity = identity;
     }
 
-    @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @PostMapping("/sso/verify")
     public R<User> verify() {
         return R.of(identity.getCurrentUser());

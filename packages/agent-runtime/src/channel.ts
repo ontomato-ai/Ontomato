@@ -281,8 +281,8 @@ export class AgentChannel {
       });
       const authority = prepared.authority ?? intent.channel.authority;
       const inherited = intent.channel.authority;
-      if (inherited.executionKind === "build-test" && authority.executionKind !== "build-test") throw new RuntimeError(403,"BUILD_TEST_FORBIDDEN","A provider cannot change build-test authority to live");
-      if (inherited.executionContextId && authority.executionContextId !== inherited.executionContextId) throw new RuntimeError(403,"BUILD_TEST_FORBIDDEN","A provider cannot change the delegated execution context");
+      if (inherited.executionKind === "preview" && authority.executionKind !== "preview") throw new RuntimeError(403,"PREVIEW_EXECUTION_FORBIDDEN","A provider cannot change preview authority to live");
+      if (inherited.executionContextId && authority.executionContextId !== inherited.executionContextId) throw new RuntimeError(403,"EXECUTION_CONTEXT_FORBIDDEN","A provider cannot change the delegated execution context");
       if (inherited.classNames.length && (!authority.classNames.length || authority.classNames.some(name => !inherited.classNames.includes(name)))) throw new RuntimeError(403,"SCOPE_EXPANDED","A provider cannot expand the delegated class scope");
       const channel = { ...intent.channel, authority };
       const host = this.runtime.options.hosts.find(host => host.id === scope.hostId)!;
@@ -519,7 +519,7 @@ export class AgentChannel {
     const current=external?null:run as RuntimeRun;
     const channel=external?{actor:external.actor,authority:external.authority,root:null,agent:null}:current!.channel;
     if (!channel) throw new RuntimeError(403, "ACTOR_REQUIRED", "The host did not supply an agent caller");
-    if (channel.authority.executionKind === "build-test") throw new RuntimeError(422,"BUILD_TEST_UNSUPPORTED","The agent channel is not available in a build-test execution");
+    if (channel.authority.executionKind === "preview") throw new RuntimeError(422,"PREVIEW_WRITE_FORBIDDEN","The agent channel is not available in a preview execution");
     const source:AgentExecutionRef|undefined=current?{session:{providerId:channel.agent!.providerId,sessionId:current.sessionId},runId:current.id}:undefined;
     if (command.op === "list") {
       const directories = await Promise.all((this.runtime.options.agentProviders ?? []).map(async provider => {

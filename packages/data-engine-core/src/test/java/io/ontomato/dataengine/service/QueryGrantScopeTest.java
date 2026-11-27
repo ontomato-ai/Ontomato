@@ -85,7 +85,7 @@ class QueryGrantScopeTest {
     var contexts = mock(DataSandboxService.class);
     ReflectionTestUtils.setField(grants, "contexts", contexts);
     var target = new ExecutionTarget("context", "context-sandbox", List.of("Order"), deadline);
-    when(contexts.require("context", "user", "domain")).thenReturn(target);
+    when(contexts.requireActionTrial("context", "user", "domain")).thenReturn(target);
     var authority = PythonAuthority.write("user", "domain", "context-sandbox").withTarget(target)
         .withAuthorSandbox("author-sandbox");
     var parent = grants.issueAuthoringParent(authority, "parent", deadline);
@@ -107,7 +107,7 @@ class QueryGrantScopeTest {
     var contexts = mock(DataSandboxService.class);
     ReflectionTestUtils.setField(grants, "contexts", contexts);
     var target = new ExecutionTarget("context", "sample", List.of("Order"), deadline);
-    when(contexts.require("context", "initiator", "domain")).thenReturn(target);
+    when(contexts.requireActionTrial("context", "initiator", "domain")).thenReturn(target);
     var user = new QueryAccessService.GrantUser("executor", "domain");
     var access = new QueryAccessService.Access(user, null, null, null, deadline, List.of("Order"), target);
     var token = grants.issueForTarget("ontology-generation", "run", deadline + 60_000, access,
@@ -144,7 +144,7 @@ class QueryGrantScopeTest {
     assertBlocked(filter, request(token));
 
     var override = request(token);
-    override.addHeader(DataSandboxService.HEADER, "{}");
+    override.addHeader(PreviewExecution.HEADER, "{}");
     assertBlocked(filter, override);
   }
 

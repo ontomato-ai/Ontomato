@@ -20,7 +20,6 @@ import {
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
-import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
@@ -65,7 +64,7 @@ import { createPanelPreviewHost } from "./panel-preview";
  *   credential; a projection's record is read inside the frame by the projection itself.
  * - An author's workspace candidate is Node's too (`GET /api/workspaces/:id/panel-candidate?ref=`), under the author's
  *   workspace access. It is the same host with another source: no use relation, panel ID or revision of its own, and a
- *   build-test execution context instead of a live one.
+ *   preview execution identity instead of a live one.
  * - Viewers reconcile revisions using short requests. Author hosts share the document's definition stream.
  */
 
@@ -710,7 +709,7 @@ export function builtinFramePanelHost(
 /**
  * The author's preview of a workspace candidate (design 6.2): the same host, reading the candidate instead of a use
  * relation. The preview is an author's host, so it declares author mode: the registered projections the candidate names
- * follow the document's definition stream. Its frame runs on the workspace's build-test context — NONE when the
+ * follow the document's definition stream. Its frame runs on the workspace's preview context — NONE when the
  * workspace has none — and each owner decides what such a request may do.
  */
 export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] & { pageKey: string }): PanelHostPort<CandidatePanelSource> {
@@ -723,7 +722,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
     use: null,
     panel,
     release,
-    frame: (frame, source, open) => registerCandidateFrame(frame, buildExecutionContext(source.workspace.id, source.previewContext.test), source.workspace, {
+    frame: (frame, source, open) => registerCandidateFrame(frame, source.workspace, {
       pageKey: candidate.pageKey,
       manifest: source.panel.manifest,
     }, open),
@@ -739,7 +738,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
-        confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
+        confirmOperation: () => Promise.reject(new Error("预览里不执行写操作，动作的对错用动作试跑验")),
         expandPageComposer: expandDeclaredComposer,
         navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},
@@ -755,7 +754,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
 
 /**
  * Application-scoped candidate preview host: runs a panel from an application's source (or unmaterialized live definition)
- * in author mode under build-test context, reading nested members through `source.kind === "app-candidate"`.
+ * in author mode under preview context, reading nested members through `source.kind === "app-candidate"`.
  */
 export function appCandidatePanelHost(
   initial: AppCandidatePanelSource,
@@ -785,7 +784,6 @@ export function appCandidatePanelHost(
     release,
     frame: (frame, source, open) => registerCandidateFrame(
       frame,
-      buildExecutionContext(source.app.id, source.previewContext.test),
       { id: source.app.id, ref: source.app.ref },
       { pageKey, manifest: source.panel.manifest },
       open,
@@ -800,7 +798,7 @@ export function appCandidatePanelHost(
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "app-candidate", app: source.app }, ...request }),
-        confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
+        confirmOperation: () => Promise.reject(new Error("预览里不执行写操作，动作的对错用动作试跑验")),
         expandPageComposer: expandDeclaredComposer,
         navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},

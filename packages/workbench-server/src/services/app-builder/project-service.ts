@@ -4,7 +4,6 @@ import { z } from "zod";
 import { domainApplicationIconSchema, recommendApplicationIcon } from "@ontomato/contracts/application-icons";
 import { applicationCatalogueQueryResultSchema } from "@ontomato/contracts/application-catalogue";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { buildTestContextSchema } from "@ontomato/contracts/build-tests";
 import {
   isApplicationPanelUse, isBuiltinProductId, METRIC_CHART_COMPONENT,
   type ProductPanelInput, type ProductProjectionInput,
@@ -26,7 +25,6 @@ import type { AssistantOwner } from "../assistant/store";
 import { applicationCatalogueClient } from "../product-panels/application-catalogue";
 import { saveCurrentPanel, saveCurrentProjection } from "../product-panels/current";
 import { assertAppBuilderAccess } from "./access";
-import { closeWorkspaceBuildTests, WorkspaceBuildTests } from "./build-tests";
 import { readAdmittedLiveApplicationSnapshot, readLiveApplicationSnapshot, type LiveSnapshotResult } from "./live-snapshot";
 import {
   appBuilderProjectStore, appWorkspaceSlot, draftApplicationMetaSchema,
@@ -63,11 +61,6 @@ export interface BuilderPreviewEntry {
   path: string;
 }
 
-const builderTestStatusSchema = buildTestContextSchema.pick({ status: true, expiresAt: true }).extend({
-  sampleSummary: buildTestContextSchema.shape.sampleSummary.pick({ name: true }),
-});
-export type BuilderTestStatus = z.infer<typeof builderTestStatusSchema>;
-
 export interface BuilderProjectDetail extends BuilderProjectSummary {
   sourceKind: "panel" | "empty";
   materialized: boolean;
@@ -77,7 +70,6 @@ export interface BuilderProjectDetail extends BuilderProjectSummary {
   drift: DriftReport;
   conflictFiles: string[];
   hasConflicts: boolean;
-  test: BuilderTestStatus | null;
   previewEntries: BuilderPreviewEntry[];
   foreignPanelIds: string[];
   foreignProjectionIds: string[];
@@ -89,10 +81,6 @@ export function builderPublishBlock(detail: BuilderProjectDetail) {
   if (!detail.materialized) return "notMaterialized";
   if (detail.drift.hasDrift) return "driftBlocking";
   if (detail.hasConflicts) return "conflictsBlocking";
-}
-
-export function canRestartBuilderTest(test: BuilderTestStatus | null) {
-  return test !== null && (test.status === "EXPIRED" || test.status === "CLOSED") && Boolean(test.sampleSummary.name);
 }
 
 export interface AuthorizedProjectContext {
@@ -208,22 +196,14 @@ export async function prepareBuilderProjectFacts(
   const catalogueIndex = draft ? undefined : facts.push({
     call: { type: APPLICATION, name: live ? "record" : "builderProjectMetadata", parameters: { primaryKey: appId } },
   }) - 1;
-  const statusIndex = status && project ? facts.push({
-    call: { type: APPLICATION, name: "builderTestStatus", parameters: { workspaceId: project.workspaceId } },
-  }) - 1 : undefined;
-
   return {
-    facts, catalogueIndex, statusIndex,
+    facts, catalogueIndex,
     async context(results: readonly JavaPanelReadResult[]) {
       if (draft) return builderProjectContext(owner, appId, project, draft, draft);
       const payload = builderFactPayload(results[catalogueIndex!]);
       if (!live) return builderProjectContext(owner, appId, project, draft, draftApplicationMetaSchema.parse(payload));
       const snapshot = await readAdmittedLiveApplicationSnapshot(owner.domainId, appId, payload, project !== null);
       return builderProjectContext(owner, appId, project, draft, snapshot.snapshot.application.declaration, snapshot);
-    },
-    test(results: readonly JavaPanelReadResult[]): BuilderTestStatus | null {
-      if (statusIndex === undefined || results[statusIndex].status === "empty") return null;
-      return builderTestStatusSchema.parse(builderFactPayload(results[statusIndex]));
     },
   };
 }
@@ -388,28 +368,20 @@ export async function getBuilderProject(
   appId: string,
 ): Promise<BuilderProjectDetail> {
   const ctx = await authorizeBuilderProject(owner, credentials, appId);
-  return readBuilderProjectDetail(owner.domainId, ctx, credentials.locale, workspaceId =>
-    new WorkspaceBuildTests(owner, credentials, workspaceId, appWorkspaceSlot(appId)).current());
+  return readBuilderProjectDetail(owner.domainId, ctx, credentials.locale);
 }
 
 export async function readBuilderProjectDetail(
   domainId: string, ctx: AuthorizedProjectContext, locale: string | undefined,
-  readTest: (workspaceId: string) => BuilderTestStatus | null | Promise<BuilderTestStatus | null>,
 ): Promise<BuilderProjectDetail> {
   const { appId, project, live, runtime } = ctx;
 
   let workspace: Workspace | null = null;
-  let test: BuilderTestStatus | null = null;
   let workingFiles: WorkspaceFile[] = [];
 
   if (project) {
     workspace = workspaceSchema.parse(await runtime.request(`/v1/workspaces/${project.workspaceId}`));
-    const [currentTest, files] = await Promise.all([
-      readTest(project.workspaceId),
-      readWorkspaceFiles(runtime, project.workspaceId),
-    ]);
-    test = currentTest;
-    workingFiles = files;
+    workingFiles = await readWorkspaceFiles(runtime, project.workspaceId);
   }
 
   let sourceKind: "panel" | "empty" = "empty";
@@ -468,7 +440,6 @@ export async function readBuilderProjectDetail(
     drift,
     conflictFiles,
     hasConflicts: conflictFiles.length > 0,
-    test,
     previewEntries,
     foreignPanelIds: live?.foreignPanelIds ?? [],
     foreignProjectionIds: live?.foreignProjectionIds ?? [],
@@ -1103,7 +1074,7 @@ export async function deleteApplicationBuilderDraft(
 }
 
 /**
- * Cleans up any builder project, workspace, build-test context, sessions, and owned-resource claims
+ * Cleans up any builder project, workspace, sessions and owned-resource claims
  * for `appId`. Invoked both when deleting a draft and by `applications.delete` after removing a
  * published application from Java `ApplicationCatalog`.
  */
@@ -1115,7 +1086,6 @@ export async function cleanupApplicationBuilderArtifacts(
   const project = await appBuilderProjectStore.findByAppId(owner.domainId, appId);
   if (project) {
     const runtime = appRuntimeClient(owner, appId);
-    await closeWorkspaceBuildTests(owner.domainId, project.workspaceId, credentials.locale);
     await runtime.request(`/v1/workspaces/${project.workspaceId}`, "DELETE");
     const { assistantService } = await import("../assistant/service");
     await assistantService.deleteWorkspaceSessions(owner.domainId, project.workspaceId);

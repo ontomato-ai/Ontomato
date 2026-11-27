@@ -95,11 +95,9 @@ public class AgentCaller {
     var classes=authority.getList("classNames",String.class);
     if(purpose == Purpose.QUERY) classes=io.ontomato.dataengine.service.QueryAccessService.classScope(permission,classes);
     var target=io.ontomato.dataengine.service.ExecutionTarget.LIVE;
-    if ("build-test".equals(authority.getString("executionKind"))) {
-      if (authority.getString("executionContextId")!=null) target=contexts.require(authority.getString("executionContextId"),actor.user().getId(),domain);
-      else throw new AgentHttpException(403,"BUILD_TEST_CONTEXT_REQUIRED","Build-test delegation requires its execution context");
-      if (classes.isEmpty()) classes=target.classNames();
-      target.requireClasses(classes);
+    if ("preview".equals(authority.getString("executionKind"))) {
+      if (authority.getString("executionContextId") != null)
+        throw new AgentHttpException(403,"PREVIEW_EXECUTION_FORBIDDEN","Preview authority does not carry an execution context");
     }
     long expires=target.testing()?Math.min(actor.expiresAt(),target.expiresAt()):actor.expiresAt();
     var access=new io.ontomato.dataengine.service.QueryAccessService.Access(executor,permission,null,null,expires,classes,target,executionActor==null?null:executor.getId(),actor.owner().userId());
@@ -122,7 +120,6 @@ public class AgentCaller {
         token=servlet.getRequest().getHeader("tk"); key=servlet.getRequest().getHeader("X-API-Key");
         Long expiry=identity.getCurrentCredentialExpiresAt();
         if(expiry!=null) deadline=Math.min(deadline,expiry);
-        if(servlet.getRequest().getHeader(io.ontomato.dataengine.service.DataSandboxService.HEADER)!=null) access=access.withTarget(contexts.resolve(servlet.getRequest()));
       }
     }
     return new OntologyAgentAccess.Context(owner,access,token,key,language,deadline,caller,access.executionUserId());

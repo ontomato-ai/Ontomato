@@ -333,17 +333,6 @@ class MetricViewPanelEndpointTest {
     assertEquals("Binding 'First': Missing parameter: amount", errors.getJSONObject(0).getString("message"));
   }
 
-  @Test
-  void theFormEndpointsAreDeclaredAsReadsAndSetStatusIsNot() throws Exception {
-    assertEquals(BuildTestAccess.Access.NO_BUSINESS_DATA,
-        MetricViewController.class.getMethod("form", String.class, JSONObject.class)
-            .getAnnotation(BuildTestAccess.class).value());
-    assertEquals(BuildTestAccess.Access.NO_BUSINESS_DATA,
-        FunctionController.class.getMethod("form", String.class, JSONObject.class)
-            .getAnnotation(BuildTestAccess.class).value());
-    assertNull(MetricViewController.class.getMethod("setStatus", String.class, JSONObject.class)
-        .getAnnotation(BuildTestAccess.class));
-  }
 
   @Test
   void theFormEndpointReturnsTheOwnersDescription() throws Exception {

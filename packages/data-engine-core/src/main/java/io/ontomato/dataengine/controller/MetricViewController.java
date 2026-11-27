@@ -73,10 +73,6 @@ public class MetricViewController {
         this.agentExecutionScope = agentExecutionScope;
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
-    private io.ontomato.dataengine.service.DataSandboxService buildTests;
-
-
 	@Autowired
     private IdentityService identityService;
 	
@@ -203,8 +199,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
@@ -243,8 +237,6 @@ public class MetricViewController {
 		return new WorkbenchPanelRead("platform:MetricView", "count", (subject, parameters) ->
 				Map.of("rows", List.of(), "total", metricViewService.count(null, null, null, null, subject)));
 	}
-
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
@@ -271,8 +263,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@GetMapping("/metricView/export")
 	public ResponseEntity<byte[]> exportMetricViews(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		try {
@@ -305,8 +295,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/form")
 	@ResponseBody
 	public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -467,8 +455,6 @@ public class MetricViewController {
 			default -> origin;
 		};
 	}
-
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/metricView/find")
     @ResponseBody
     public JSONObject find(@RequestBody JSONObject param) {
@@ -507,8 +493,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/metricView/test")
     @ResponseBody
     public JSONObject test(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
@@ -525,7 +509,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			MetricViewContent metricViewContent = metricViewService.test(metricView, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)));
+			MetricViewContent metricViewContent = metricViewService.test(metricView, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,io.ontomato.dataengine.service.ExecutionTarget.LIVE));
 			ret.put("success", true);
 			ret.put("data", metricViewContent);
 		} catch (OwnerRefusal e) {
@@ -540,8 +524,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/metricView/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
@@ -556,7 +538,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, param.getJSONObject("parameterTexts"), lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)));
+			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, param.getJSONObject("parameterTexts"), lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,io.ontomato.dataengine.service.ExecutionTarget.LIVE));
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
@@ -570,8 +552,6 @@ public class MetricViewController {
 		}
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/metricView/testExecute")
     @ResponseBody
     public JSONObject testExecute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
@@ -588,7 +568,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.testExecute(metricView, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)));
+			Object[] o = metricViewService.testExecute(metricView, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,io.ontomato.dataengine.service.ExecutionTarget.LIVE));
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);

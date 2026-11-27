@@ -62,14 +62,14 @@ const candidateOf = (html: string): CandidatePanelSource => ({
       members: { definition: { target: { projectionId: agentForm.id }, inputs: {} }, summary: { target: { projectionId: summary.id }, inputs: {} } },
     }),
   },
-  previewContext: { kind: "build-test", test: null },
+  previewContext: { kind: "preview" },
 });
 
 
 const candidatePath = `/api/workspaces/${WORKSPACE}/panel-candidate`;
 const previewAddress = `/app-builder/${WORKSPACE}/panel-preview/working/agent-settings`;
 
-/** Node's candidate port and the owners, as they answer a preview. An owner refuses a write marked with a build-test context. */
+/** Node's candidate port and the owners, as they answer a preview. An owner refuses a write marked with the preview execution identity. */
 function network(candidate: () => CandidatePanelSource | Response) {
   const streams: ProductDefinitionTarget[][] = [];
   const answer = (request: Sent) => {

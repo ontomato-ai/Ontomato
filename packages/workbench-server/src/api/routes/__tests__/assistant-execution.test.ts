@@ -2,10 +2,9 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn(),workspace:vi.fn(),buildTest:vi.fn()}));
-vi.mock('../../../services/app-builder/build-tests',()=>({
- sessionBuildTestWorkspace:mocks.workspace,
- WorkspaceBuildTests:class { current=mocks.buildTest; },
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn(),session:vi.fn()}));
+vi.mock('../../../services/assistant/store',()=>({
+ assistantStore:{session:mocks.session},
 }));
 vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring,adoptAppBuilderDefinition:mocks.adopt}));
 vi.mock('../../../core/skills/registry/manager',()=>({skillRegistryManager:{}}));
@@ -39,37 +38,39 @@ async function call(path:string,extra:Record<string,string>={},method='POST',tok
 it("resolves the workspace only for the active App Builder session", async () => {
  const path = "workbench/api/app-builder/workspace";
  expect((await call(path, {}, "GET")).status).toBe(403);
- expect(mocks.workspace).not.toHaveBeenCalled();
- mocks.run.mockResolvedValue({status:"running",sessionId:other,channel:{authority:{executionKind:"build-test"}}});
- mocks.workspace.mockResolvedValue(run);
+ expect(mocks.session).not.toHaveBeenCalled();
+ mocks.run.mockResolvedValue({status:"running",sessionId:other,channel:{authority:{executionKind:"preview"}}});
+ mocks.session.mockResolvedValue({workspace_id:run});
  const response = await call(path, {}, "GET");
  expect(await response.json()).toEqual({workspaceId:run});
- expect(mocks.workspace).toHaveBeenCalledWith({userId:"U",domainId:"domain"},other);
+ expect(mocks.session).toHaveBeenCalledWith(other,{userId:"U",domainId:"domain"});
 });
-it.each([{contextId:other},null])("binds action execution to the run workspace even if the sandbox leaves out the header: %j", async current => {
+it("injects the exact preview execution header from the run authority", async () => {
  const upstream=vi.fn(async(_url: string,_init?:Parameters<typeof fetch>[1])=>Response.json({result:"test"}));
  vi.stubGlobal("fetch",upstream);
- mocks.restore.mockResolvedValue({run:{sessionId:other,channel:{authority:{executionKind:"build-test"}}},credentials:{locale:"en"}});
- mocks.workspace.mockResolvedValue(run);
- mocks.buildTest.mockResolvedValue(current);
+ mocks.restore.mockResolvedValue({run:{sessionId:other,channel:{authority:{executionKind:"preview"}}},credentials:{locale:"en"}});
  expect((await call("ontology/action/execute")).status).toBe(200);
- expect(mocks.workspace).toHaveBeenCalledWith({userId:"U",domainId:"domain"},other);
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
-   .toBe(JSON.stringify({kind:"build-test",contextId:current?.contextId??null}));
+   .toBe('{"kind":"preview"}');
 });
-it("does not let a build-test run select a different context or omit the marker for other data paths", async () => {
+it("forwards no execution context for a live run", async () => {
+ const upstream=vi.fn(async(_url: string,_init?:Parameters<typeof fetch>[1])=>Response.json({result:"test"}));
+ vi.stubGlobal("fetch",upstream);
+ expect((await call("ontology/action/execute")).status).toBe(200);
+ expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context")).toBeNull();
+});
+it("rejects a caller-supplied execution context that differs from the run authority", async () => {
  const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
  vi.stubGlobal("fetch", upstream);
  mocks.restore.mockResolvedValue({
-   run: { channel: { authority: { executionKind: "build-test", executionContextId: other } } },
+   run: { channel: { authority: { executionKind: "preview" } } },
    credentials: { token: "initiator-token", locale: "en" },
  });
- const override = JSON.stringify({ kind: "build-test", contextId: run });
- expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": override })).status).toBe(403);
+ expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"live"}' })).status).toBe(403);
  expect(upstream).not.toHaveBeenCalled();
- expect((await call("ontology/dsl/executeV1")).status).toBe(200);
+ expect((await call("ontology/dsl/executeV1", { "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(200);
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
-   .toBe(JSON.stringify({ kind: "build-test", contextId: other }));
+   .toBe('{"kind":"preview"}');
 });
 
 it('restores the initiator before resolving the executor and forwards only ordinary business authentication',async()=>{
@@ -263,9 +264,6 @@ it.each([
   ["GET", `workbench/api/workspaces/${other}/tree`, `http://workbench.test/api/workspaces/${other}/tree`],
   ["GET", `workbench/api/workspaces/${other}/files/content?path=panel.json`, `http://workbench.test/api/workspaces/${other}/files/content?path=panel.json`],
   ["GET", `workbench/api/workspaces/${other}/panel-candidate?ref=working`, `http://workbench.test/api/workspaces/${other}/panel-candidate?ref=working`],
-  ["GET", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
-  ["POST", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
-  ["DELETE", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
   ["POST", `workbench/api/workspaces/${other}/import`, `http://workbench.test/api/workspaces/${other}/import`],
   ["POST", `workbench/api/workspaces/${other}/publish`, `http://workbench.test/api/workspaces/${other}/publish`],
   ["GET", "workbench/api/product-panels/panel-1", "http://workbench.test/api/product-panels/panel-1"],
@@ -333,16 +331,16 @@ it("forwards the bound execution context and reuse-panel header", async () => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ ok: true }));
   vi.stubGlobal("fetch", upstream);
   mocks.restore.mockResolvedValue({
-    run: { channel: { authority: { executionKind: "build-test", executionContextId: "ctx-1" } } },
+    run: { channel: { authority: { executionKind: "preview" } } },
     credentials: { token: "initiator-token", locale: "en" },
   });
   const response = await call("workbench/api/product-projections/proj-1", {
-    "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: "ctx-1" }),
+    "X-Ontomato-Execution-Context": '{"kind":"preview"}',
     "X-Ontomato-Projection-Reuse-Panel": "panel-1",
   }, "PUT");
   expect(response.status).toBe(200);
   expect(upstream.mock.calls[0]?.[1]?.headers).toMatchObject({
-    "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: "ctx-1" }),
+    "X-Ontomato-Execution-Context": '{"kind":"preview"}',
     "X-Ontomato-Projection-Reuse-Panel": "panel-1",
   });
 });

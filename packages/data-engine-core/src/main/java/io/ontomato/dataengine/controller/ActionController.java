@@ -87,10 +87,6 @@ public class ActionController {
         this.agentExecutionScope = agentExecutionScope;
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
-    private io.ontomato.dataengine.service.DataSandboxService buildTests;
-
-
 	@Autowired
     private IdentityService identityService;
 	
@@ -309,8 +305,6 @@ public class ActionController {
 		}
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
@@ -329,7 +323,7 @@ public class ActionController {
 				ret.put("data", null);
 			} else {
 				if ("execute".equals(param.getString("purpose"))) {
-                    admitExecutionDefinition(action, lang, () -> authorization.subject(user), buildTests.resolve(request));
+                    admitExecutionDefinition(action, lang, () -> authorization.subject(user), ExecutionTarget.LIVE);
                     return JSONObject.of("success", true, "data", executionDefinition(action));
                 }
                 var subject = authorization.subject(user);
@@ -551,8 +545,6 @@ public class ActionController {
 	private List<JSONObject> executionCatalog(SubjectContext subject, List<Action> candidates) {
 		return candidates.stream().filter(visibleActions(subject, true)).map(ActionController::executionDefinition).toList();
 	}
-
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
@@ -594,15 +586,11 @@ public class ActionController {
 
 	@org.springframework.beans.factory.annotation.Autowired
 	private io.ontomato.dataengine.service.SandboxPermissionService sandboxPermissions;
-
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@GetMapping("/action/sandboxCapability")
 	public JSONObject sandboxCapability() {
 		User user = SystemUtils.getCurUser();
 		return JSONObject.of("success", true, "data", sandboxPermissions.read(user.getDomainId()));
 	}
-
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/definitionForm")
 	@ResponseBody
 	public JSONObject definitionForm(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -692,8 +680,6 @@ public class ActionController {
 		}
 		return ret;
 	}
-
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@GetMapping("/action/export")
 	public ResponseEntity<byte[]> exportActions(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		try {
@@ -724,8 +710,6 @@ public class ActionController {
 		}
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/find")
     @ResponseBody
     public JSONObject find(@RequestBody JSONObject param) {
@@ -770,7 +754,6 @@ public class ActionController {
 	 * An Action's form: without {@code values} its fields and their initial text from the bound {@code parameters};
 	 * with them the field errors, or the typed parameters that {@code /action/execute} then takes.
 	 */
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/action/form")
     @ResponseBody
     public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param,
@@ -781,7 +764,7 @@ public class ActionController {
 			JSONArray readOnly = param.getJSONArray("readOnlyParameters");
             User user = SystemUtils.getCurUser();
             var permission = identityService.getCurrentUserDataPermission();
-            var target = agentExecutionScope.target(request, user, permission, buildTests.resolve(request));
+            var target = agentExecutionScope.target(request, user, permission, ExecutionTarget.LIVE);
             ret.put("data", actionService.form(param.getString("id"), bound == null ? new JSONObject() : bound,
 					param.getJSONObject("values"), readOnly == null ? List.of() : readOnly.toJavaList(String.class),
 					lang, user, permission, target));
@@ -834,8 +817,6 @@ public class ActionController {
 		BusinessConfig config = businessConfigService.get(user.getDomainId());
 		return Math.max(1, (int) (config.getDslCookerTimeout() / 60000));
 	}
-
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/action/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang,
@@ -845,6 +826,13 @@ public class ActionController {
     		@RequestParam(value = "file", required = false) List<MultipartFile> files) {
 		JSONObject ret = new JSONObject();
 		List<Path> tempFiles = new ArrayList<Path>();
+		if (io.ontomato.dataengine.service.PreviewExecution.isPreview(executionRequest)) {
+			ret.put("success", false);
+			ret.put("code", io.ontomato.dataengine.service.PreviewExecution.WRITE_CODE);
+			ret.put("message", io.ontomato.dataengine.service.PreviewExecution.WRITE_MESSAGE);
+			((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getResponse().setStatus(422);
+			return ret;
+		}
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
@@ -871,7 +859,7 @@ public class ActionController {
 			}
 			int timeoutMinutes = executionTimeout(user);
 			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes,
-				agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)), path,
+				agentExecutionScope.target(executionRequest,user,curUserDataPermission,ExecutionTarget.LIVE), path,
 				callerToken(executionRequest));
 			if (result.getError() != null && !"".equals(result.getError().trim())) {
 				throw new Exception(result.getError());

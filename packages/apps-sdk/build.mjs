@@ -1,4 +1,4 @@
-import { BUILD_TEST_SDK_CAPABILITY } from "../contracts/src/build-tests.ts";
+import { PREVIEW_SDK_CAPABILITY } from "../contracts/src/execution-context.ts";
 // Builds one product's apps SDK: `node build.mjs <edition module> <output root>`. The output root then holds exactly
 // current.json and one release directory with the browser modules, the stylesheet, the docs, the examples and the Node
 // module a check of panel sources runs. A platform serves the one release it ships at `/apps-sdk/current/`. The source
@@ -268,7 +268,7 @@ async function main() {
   writeFileSync(join(outDir, "sdk.json"), `${JSON.stringify(check.appsSdkReleaseManifestSchema.parse({
     version,
     product: facts.product,
-    executionContext: BUILD_TEST_SDK_CAPABILITY,
+    executionContext: PREVIEW_SDK_CAPABILITY,
     hostTransport: 1,
     messageBridge: 2,
     entries: Object.fromEntries(ENTRIES.map((entry) => [entry.specifier, entry.file])),

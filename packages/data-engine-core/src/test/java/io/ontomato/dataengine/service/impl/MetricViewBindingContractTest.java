@@ -196,9 +196,6 @@ class MetricViewBindingContractTest {
     ReflectionTestUtils.setField(controller, "identityService", identity);
     ReflectionTestUtils.setField(controller, "businessConfigService", configs);
     ReflectionTestUtils.setField(controller, "metricViewService", service);
-    var buildTests=mock(io.ontomato.dataengine.service.DataSandboxService.class);
-    when(buildTests.resolve(any())).thenReturn(io.ontomato.dataengine.service.ExecutionTarget.LIVE);
-    ReflectionTestUtils.setField(controller,"buildTests",buildTests);
     var mvc = MockMvcBuilders.standaloneSetup(controller).build();
     String request = JSONObject.of("id", metric.getId(), "param", JSONObject.of("topN", 5),
         "parameterTexts", JSONObject.of("topN", "5", "at", "2026-11-10T12:00:00Z",

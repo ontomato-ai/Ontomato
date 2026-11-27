@@ -65,7 +65,7 @@ public class QueryGrantFilter extends OncePerRequestFilter {
     var call = QueryGrantOperation.resolve(request.getMethod(), request.getRequestURI());
     if (authorization != null && authorization.startsWith("oq.")) {
       try {
-        if (request.getHeader(DataSandboxService.HEADER) != null)
+        if (request.getHeader(io.ontomato.dataengine.service.PreviewExecution.HEADER) != null)
           throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The grant already binds the execution target");
         var claims = grants.verifyRequest(authorization, request.getHeader("X-Ontomato-Run-Id"), call);
         String purpose = claims.getString("purpose");

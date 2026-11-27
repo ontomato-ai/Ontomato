@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import type { BuildTestContext } from "@ontomato/contracts/build-tests";
 import type { AppCandidatePanelSource, ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import {
   isApplicationPanelUse,
@@ -17,9 +16,7 @@ import type { AssistantOwner } from "../assistant/store";
 import { readPanelDomainComponents } from "../product-panels/component-catalogue";
 import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../product-panels/current";
 import { resolvePanelMemberPath } from "../product-panels/member-path";
-import { WorkspaceBuildTests } from "./build-tests";
 import { authorizeBuilderProject, type BuilderPreviewEntry } from "./project-service";
-import { appWorkspaceSlot } from "./project-store";
 import {
   parseApplicationSource,
   serializeApplicationSource,
@@ -39,7 +36,7 @@ export type AppPreviewDescriptor =
       workspaceId: string | null;
       entries: BuilderPreviewEntry[];
       activeEntryId: null;
-      previewContext: { kind: "build-test"; test: BuildTestContext | null };
+      previewContext: { kind: "preview" };
     }
   | {
       kind: "panel";
@@ -57,7 +54,6 @@ interface LoadedPreviewSource {
   workspaceId: string | null;
   ref: "working" | string;
   parsed: ParsedApplicationSource;
-  test: BuildTestContext | null;
 }
 
 async function readAllWorkingFiles(
@@ -76,7 +72,6 @@ async function readAllWorkingFiles(
   );
   const files: WorkspaceFile[] = [];
   for (const entry of tree.files) {
-    if (entry.path.startsWith("test-data/")) continue;
     const bytes = await runtime.bytes(`/v1/workspaces/${workspaceId}/files/content?${new URLSearchParams({ path: entry.path })}`);
     files.push({ path: entry.path, encoding: "utf8", content: bytes.toString("utf8") });
   }
@@ -92,18 +87,13 @@ async function loadPreviewSource(
   const ctx = await authorizeBuilderProject(owner, credentials, appId);
   if (ctx.project) {
     const workspaceId = ctx.project.workspaceId;
-    const tests = new WorkspaceBuildTests(owner, credentials, workspaceId, appWorkspaceSlot(appId));
-    const [files, test] = await Promise.all([
-      readAllWorkingFiles(ctx.runtime, workspaceId, ref),
-      tests.current(),
-    ]);
+    const files = await readAllWorkingFiles(ctx.runtime, workspaceId, ref);
     return {
       appId,
       materialized: true,
       workspaceId,
       ref,
       parsed: parseApplicationSource(files),
-      test,
     };
   }
 
@@ -116,7 +106,6 @@ async function loadPreviewSource(
       workspaceId: null,
       ref: "working",
       parsed: parseApplicationSource(files),
-      test: null,
     };
   }
 
@@ -126,7 +115,6 @@ async function loadPreviewSource(
     workspaceId: null,
     ref: "working",
     parsed: { kind: "empty" },
-    test: null,
   };
 }
 
@@ -209,7 +197,7 @@ export async function readApplicationPreviewDescriptor(
       workspaceId: source.workspaceId,
       entries: [],
       activeEntryId: null,
-      previewContext: { kind: "build-test", test: source.test },
+      previewContext: { kind: "preview" },
     };
   }
 
@@ -249,7 +237,7 @@ export async function readApplicationPreviewDescriptor(
             app: { id: appId, ref: source.ref, entryId: chosen.id },
             panel,
             ...(domainComponents && { domainComponents }),
-            previewContext: { kind: "build-test", test: source.test },
+            previewContext: { kind: "preview" },
           },
         };
       }
@@ -261,7 +249,7 @@ export async function readApplicationPreviewDescriptor(
       workspaceId: source.workspaceId,
       entries: [],
       activeEntryId: null,
-      previewContext: { kind: "build-test", test: source.test },
+      previewContext: { kind: "preview" },
     };
   }
 
@@ -298,7 +286,7 @@ export async function readApplicationPreviewDescriptor(
       app: { id: appId, ref: source.ref, entryId: selected.activeEntryId },
       panel: selected.panel,
       ...(domainComponents && { domainComponents }),
-      previewContext: { kind: "build-test", test: source.test },
+      previewContext: { kind: "preview" },
     },
   };
 }
@@ -332,7 +320,7 @@ export async function resolveApplicationPreviewPath(
     return input && { ...input, id, domainId: owner.domainId, ownerId: owner.userId,
       revision: 0, createdAt: now, updatedAt: now, editable: true };
   });
-  return { ...placement, previewContext: { kind: "build-test" as const, test: source.test } };
+  return { ...placement, previewContext: { kind: "preview" as const } };
 }
 
 export async function resolveApplicationPreviewMember(...args: Parameters<typeof resolveApplicationPreviewPath>) {

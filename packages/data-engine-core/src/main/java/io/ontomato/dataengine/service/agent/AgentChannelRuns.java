@@ -12,8 +12,7 @@ public class AgentChannelRuns {
   public AgentChannelRuns(AgentCaller callers,AgentRuntimeClient runtime) { this.callers=callers; this.runtime=runtime; }
   public static JSONObject authority(OntologyAgentAccess.Context context) {
     var access=context.access();
-    var result=JSONObject.of("classNames",access==null?List.of():access.classNames(),"executionKind",access!=null && access.target().testing()?"build-test":"live");
-    if (access!=null && access.target().testing()) result.put("executionContextId",access.target().contextId());
+    var result=JSONObject.of("classNames",access==null?List.of():access.classNames(),"executionKind","live");
     return result;
   }
   /** The credential is transport data, never stored with a caller, intent or binding. */

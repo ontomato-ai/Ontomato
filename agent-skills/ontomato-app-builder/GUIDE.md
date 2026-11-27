@@ -189,8 +189,8 @@ For built-in panel checks, see [platform development](references/platform-develo
 | --- | --- |
 | `dataset-desc`, `classes` | Current domain and available object classes |
 | `schema <class> ...`, `relationships <class> ...` | Technical attributes, types and actual relationship mappings |
-| `distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]` | Values from the current build-test sample |
-| `execute-dsl <json or @file>` | Query the current build-test sample; use the bundled [DSL reference](references/dsl.md) |
+| `distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]` | Live values of one attribute, under the current user's permissions |
+| `execute-dsl <json or @file>` | Query live data under the current user's permissions; use the bundled [DSL reference](references/dsl.md) |
 | `function list [<filter json or @file>]` | Full Function definitions; optional `operation` and `className` filters |
 | `function get <id>`, `function save <definition>`, `function delete <id>` | Read, save or delete a Function; save returns its definition including ID |
 | `metric-view find <class> [<question>]`, `action find <class> [<question>]` | Published interfaces related to the object |
@@ -213,11 +213,11 @@ For an Action, embed an `OPERATION_WRITE` Function with the Python protocol and 
 2. **Sandbox trial (`action trial`)**: single external trial entry (`POST /action/trial`) for an already saved Action. Supply `--sample` (`{objDatas, relDatas, vectorDatas}`) with sample rows for the target class and any classes the Action reads or writes, plus `--parameters` for runtime inputs; omitting `--sample` defaults to an empty sample (allowed for pure computation, refuses any data read/write and never touches live data). The server opens an isolated business-database sandbox, loads the sample, validates preconditions, executes the Action, records the receipt against the canonical digest `(domainId, codeHash, target {className, keyParameter}, parameters [{name, type, classNames}])`, and closes the sandbox automatically. Changing code, target class/key parameter, or parameter declaration invalidates prior trials and requires re-running `action trial`; changing only trial parameter values does not. Common trial refusals: `ACTION_NOT_FOUND`, `ACTION_TRIAL_INVALID`, `ACTION_TRIAL_FORBIDDEN`, `ACTION_TRIAL_SANDBOX_UNAVAILABLE`.
 3. **Publish gate (`action publish <id>`)**: check `action get <id>` for non-empty `codeSegments` matching the current `codeHash` and `trialStatus === "passed"` (`queryById` / `queryList` also return `trialStatusLabel`, `lastTrialAt`, `lastTrialError`, `publishBlockedCode`, `publishBlockedReason`). If the explanation is still pending, wait briefly or run `action re-explain --missing --id <id>`. Publishing checks the explanation first (`ACTION_EXPLANATION_REQUIRED`) and then the latest trial for the current digest (`ACTION_TRIAL_REQUIRED` when never run or stale after edits; `ACTION_TRIAL_FAILED` when the latest trial failed).
 
-In an App Builder conversation, MetricView authoring and `action context` use the current run callback and the attached workspace's active build-test (`test start`). In the standalone suite, `metric-view generate` opens and closes its authoring window with the current user's credentials (pass `--workspace <id>` to bind that workspace's active build-test). Action `save`, `trial`, and `publish` use the same owner endpoints identically inside and outside the platform.
+In an App Builder conversation, MetricView authoring and `action context` use the current run callback. In the standalone suite, `metric-view generate` opens and closes its authoring window with the current user's credentials; each authoring run prepares its own isolated sandbox for tests. Action `save`, `trial`, and `publish` use the same owner endpoints identically inside and outside the platform.
 
 A definition without an ID creates an asset; with an ID it updates that asset. Use the returned ID, never a same-name search. A MetricView's `bindings` belong to that metric: omit them to preserve existing bindings, use `[]` to remove them. The retired GENERAL/STATIC `type` field is not accepted.
 
-`metric-view execute <id> [<parameter JSON>] [--binding <id>]` reads data. `action execute <id> [<parameter JSON>] [--file <path> ...]` performs the business write; execute only within the authorized scope. Supply parameter values by the names in `function.parameters`. A binding supplies its saved values. Action files use multipart uploads. A vector parameter uses `{className, attrName, text, fileId, uploadFile}` as applicable; `uploadFile` is the zero-based file position. Vector writes use the platform's vector operations, not ordinary object insert/update.
+`metric-view execute <id> [<parameter JSON>] [--binding <id>]` reads data. `action execute <id> [<parameter JSON>] [--file <path> ...]` performs the business write; execute only within the authorized scope. Supply parameter values by the names in `function.parameters`. A binding supplies its saved values. Action files use multipart uploads. A vector parameter uses `{className, attrName, text, fileId, uploadFile}` as applicable; `uploadFile` is the zero-based file position.
 
 Actions that orchestrate Praxis use the `praxis_*` helpers from `query_runtime`. The Action runtime supplies
 `ONTOMATO_PRAXIS_URL` and a server-only `ONTOMATO_CALLER_TK` for the current human caller. Do not add the token to
@@ -227,11 +227,7 @@ assignments, decisions, inbox/candidates, and Case reads/writes through the prod
 ## Agent delegation
 
 In a platform conversation, use the native `agent` tool or `node "$SKILL/scripts/ontomato.mjs" agent <command>`.
-The script uses the current run's authority, with the same build-test restrictions as the native tool.
-
-## Build-test vector operations
-
-`vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. Agent delegation and retrieval are unavailable in build tests.
+The script uses the current run's authority, with the same preview restrictions as the native tool.
 
 ## Command input and failure contract (5.0)
 
@@ -247,7 +243,6 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `action` / `metric-view` `find/get/save/publish/delete` | find requires a class, optional question defaults to omitted. get/publish/delete require ID. save takes the full definition object, with the embedded Function. Action save returns immediately as `PENDING_REVIEW` and generates its code explanation in the background; `action publish` requires both a current explanation (`ACTION_EXPLANATION_REQUIRED`) and a passed trial for the current digest (`ACTION_TRIAL_REQUIRED` / `ACTION_TRIAL_FAILED`). Confirm `codeSegments` and `trialStatus: "passed"` via `action get <id>` before publishing through `/action/setStatus`. MetricView publish retains its definition-save path. |
 | `action` / `metric-view` `execute` | Required ID; JSON parameters default to `{}` only for zero-parameter assets. Every declared key must be present. Explicit null is accepted; `""` and `0` are preserved. Missing keys fail with `Missing parameter: <name>`. MetricView `--binding` supplies its complete saved parameter object and cannot be overridden. |
 | `action re-explain` | Optional repeated IDs; `--missing` defaults false. Results identify individual failures. |
-| `vector-upload`, `vector-delete` | Required class, attribute and object ID; upload requires text and optionally file, delete requires resource path. Vector fields are rejected by ordinary object insert/update. |
 | `sdk current/read` | current has no body. read requires one file path relative to the current SDK release. |
 | `component list/read/register` | list takes no arguments; read requires one `domain-component:<uuid>` ID; register requires a directory with `component.json`, `component.html` and optional `component.mjs`, plus `--revision <n>` when updating an existing component. |
 | `panel check` | Requires an authoring directory. For a legacy root `--material` supplies registration JSON. `--sdk-dir` selects an installed SDK release for offline checks. The command reports structural errors, third-party UI/token violations (`el-*`, `v-loading`, `--el-*`, `element-plus`), and unresolved projection or `manifest.components` references without writing to the platform. |
@@ -258,9 +253,11 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 
 The platform injects the Python helper module when it executes a generated Action; it is not a file in this skill package. Read the Python protocol and helpers with `action context`; execute through the Action authoring or business API. Write helpers take object dictionaries and arrays of dictionaries. A where is a nonempty condition object, never a list; invalid conditions fail before object queries or vector/file cleanup. `appendVector`/`updateVector` require nonempty text; with fileBase64 omitted or null, Java explicitly stores that text as a UTF-8 attachment. With fileBase64 supplied, it must be base64 file bytes; text remains required for embedding. There is no empty-file fallback when both are missing.
 
-## Business testing
+## Verifying actions and previews
 
-Write `test-data/sample.json` in the workspace using the complete envelope below: `objDatas` contains groups of `{className, rows}`; each row is an object dictionary with its primary key and enabled attributes. `relDatas` and `vectorDatas` may be empty arrays. Use technical class and field names from `schema`; replace the example class and attributes to match the current ontology.
+Application and panel previews read live data under the current user's permissions; they never execute writes. An operation attempted in a preview is refused with 「预览里不执行写操作，动作的对错用动作试跑验」 (`PREVIEW_WRITE_FORBIDDEN`), including `action execute` through the run callback. Verify an Action's behavior with `action trial` instead: it runs the saved Action once in an isolated business-database sandbox against a sample you supply, records the receipt, and closes the sandbox automatically.
+
+A trial sample uses the complete envelope below: `objDatas` contains groups of `{className, rows}`; each row is an object dictionary with its primary key and enabled attributes. `relDatas` and `vectorDatas` may be empty arrays. Use technical class and field names from `schema`; replace the example class and attributes to match the current ontology.
 
 ```json
 {
@@ -277,8 +274,4 @@ Write `test-data/sample.json` in the workspace using the complete envelope below
 }
 ```
 
-Attachments are relative to that sample. Keep sample files in `test-data/`. In a hosted conversation, `test start`, `test status`, and `test stop` use the workspace bound to the session. Pass `--workspace <id>` to select it explicitly, including when running the CLI independently. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID. Once a round has expired or ended, the user may also restart it from the notice in the preview: that is the same start, preparing the sample at the same path again as the workspace holds it now, so read `test status` rather than assume the context you started is still the current one.
-
-Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. Delegation in a build-test context is rejected with HTTP 422; it cannot dispatch live work. Metadata discovery and asset editing keep their existing APIs. Verify live behavior in the registered panel under the intended user permissions. A conversation ending does not stop its test context. An interface that does not declare test support refuses a headed request with BUILD_TEST_UNSUPPORTED; do not retry without the header. Definition reads, parameter forms and identity checks remain available.
-
-`test status` and `test stop` succeed when the workspace has no test context, returning `{workspaceId, contextId: null, status: "NONE"}`. This is a normal absence result, not a failed request and not permission to use live data.
+Vector sample entries use `{className, objectId, attrName, text}` with inline text. Authoring-run tests (`metric-view generate`, `action context` flows) prepare their own per-run sandbox the same way; no workspace test context exists to start, inspect or stop. `execute-dsl` and `distinct-values` read live data directly. Delegation in a preview context is rejected with HTTP 422; it cannot dispatch live work. Verify live behavior in the registered panel under the intended user permissions.

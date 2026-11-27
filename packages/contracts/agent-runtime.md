@@ -428,11 +428,11 @@ No external provider registration endpoint is introduced.
 
 Both channel command routes (`/v1/channel/commands` and
 `/v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands`), task events/files and
-provider callbacks have no BuildTestAccess declaration or Node build-test route registration.
+provider callbacks carry no preview execution semantics.
 Requests carrying an execution-context header (`X-Ontomato-Execution-Context`) are refused with
-422 `BUILD_TEST_UNSUPPORTED` before side effects. Native agent commands and run-scoped script
-commands also refuse build-test authority (`422 BUILD_TEST_UNSUPPORTED`). Existing host prepare
-restrictions remain in force; no test context becomes live delegation.
+422 `PREVIEW_WRITE_FORBIDDEN` before side effects. Native agent commands and run-scoped script
+commands also refuse preview authority (`422 PREVIEW_WRITE_FORBIDDEN`). Existing host prepare
+restrictions remain in force; a preview run never becomes live delegation.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 
 Failed preparations are projected from the existing admission intent in `preparationFailures`.

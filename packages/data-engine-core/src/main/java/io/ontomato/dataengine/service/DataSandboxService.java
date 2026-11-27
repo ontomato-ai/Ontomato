@@ -22,10 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.dao.VectorResourceDao.ResourceDirectoryException;
 import jakarta.annotation.PostConstruct;
-import jakarta.servlet.http.HttpServletRequest;
 import java.util.*;
-import java.util.concurrent.locks.ReentrantLock;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,17 +36,6 @@ import org.springframework.stereotype.Service;
 public class DataSandboxService {
   private final ConcurrentHashMap<String,ReentrantReadWriteLock> locks=new ConcurrentHashMap<>();
   public ReentrantReadWriteLock lock(String id) { return locks.computeIfAbsent(id,key->new ReentrantReadWriteLock()); }
-  private record WorkspaceKey(String owner, String domain, String workspace) {}
-  private final ConcurrentHashMap<WorkspaceKey, ReentrantLock> workspaces = new ConcurrentHashMap<>();
-  private ReentrantLock workspaceLock(String owner, String domain, String workspace) {
-    return workspaces.computeIfAbsent(new WorkspaceKey(owner,domain,workspace), key -> new ReentrantLock());
-  }
-  private ReentrantLock workspaceLock(JSONObject row) {
-    return workspaceLock(row.getString("owner_id"), row.getString("domain_id"), row.getString("scope_key"));
-  }
-  @Value("${ontomato.build-test.ttl-minutes:60}")
-  private long ttlMinutes = 60;
-  public static final String HEADER = "X-Ontomato-Execution-Context";
   private final JdbcTemplate jdbc;
   private final IdentityService identity;
   private final JSONRuleDao schemas;
@@ -72,7 +58,6 @@ public class DataSandboxService {
   }
   @PostConstruct
   public void initialize() {
-    if (ttlMinutes <= 0) throw new IllegalArgumentException("ontomato.build-test.ttl-minutes must be positive");
     jdbc.execute("""
         CREATE TABLE IF NOT EXISTS data_sandboxes (
           id text PRIMARY KEY, short_id text NOT NULL UNIQUE CHECK (short_id ~ '^[a-z0-9]{8}$'),
@@ -88,62 +73,19 @@ public class DataSandboxService {
         """);
   }
 
-  private BuildTestException error(HttpStatus status, String code) { return new BuildTestException(status, code); }
+  private SandboxException error(HttpStatus status, String code) { return new SandboxException(status, code); }
   private JSONObject row(String id) {
     var rows=jdbc.queryForList("SELECT row_to_json(c)::text FROM data_sandboxes c WHERE id=?", String.class,id);
-    if(rows.isEmpty()) throw error(HttpStatus.NOT_FOUND,"BUILD_TEST_CONTEXT_NOT_FOUND");
+    if(rows.isEmpty()) throw error(HttpStatus.NOT_FOUND,"SANDBOX_NOT_FOUND");
     return JSON.parseObject(rows.get(0));
   }
   private void owner(JSONObject row, String user, String domain) {
     if(!Objects.equals(row.getString("owner_id"),user) || !Objects.equals(row.getString("domain_id"),domain))
-      throw error(HttpStatus.FORBIDDEN,"BUILD_TEST_FORBIDDEN");
+      throw error(HttpStatus.FORBIDDEN,"SANDBOX_FORBIDDEN");
   }
   private String fingerprint(String domain) {
     return AgentJson.hash(JSONObject.of("schema",schemas.query(domain),"routing",configs.get(domain)));
   }
-  @Transactional(propagation = Propagation.NOT_SUPPORTED)
-  public JSONObject create(String workspace, JSONObject input, Map<String, byte[]> attachments) {
-    return create(workspace, input, attachments, "sample.json");
-  }
-
-  @Transactional(propagation = Propagation.NOT_SUPPORTED)
-  public JSONObject create(String workspace, JSONObject input, Map<String, byte[]> attachments, String sampleName) {
-    identity.requireQueryAccess();
-    var user = identity.getCurrentUser();
-    if (workspace == null || workspace.isBlank())
-      throw error(HttpStatus.BAD_REQUEST, "BUILD_TEST_SAMPLE_INVALID: workspaceId required");
-    JSONObject sample;
-    try {
-      sample = validateSample(input, attachments, user.getDomainId());
-    } catch (RuntimeException invalid) {
-      throw error(HttpStatus.BAD_REQUEST, "BUILD_TEST_SAMPLE_INVALID: " + invalid.getMessage());
-    }
-    var classes = sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream()
-        .map(item -> item.getString("className")).distinct().toList();
-    if (classes.isEmpty()) throw error(HttpStatus.BAD_REQUEST, "BUILD_TEST_SAMPLE_INVALID: classes required");
-    if (!QueryAccessService.classScope(identity.getCurrentUserDataPermission(), classes).containsAll(classes))
-      throw error(HttpStatus.FORBIDDEN, "BUILD_TEST_FORBIDDEN");
-
-    var workspaceLock = workspaceLock(user.getId(), user.getDomainId(), workspace);
-    workspaceLock.lock();
-    try {
-      var previous = current(workspace);
-      if (previous != null) close(previous.getString("contextId"));
-      var failure = jdbc.queryForList("""
-          SELECT id FROM data_sandboxes WHERE owner_id=? AND domain_id=? AND scope_key=?
-          AND purpose='build-test' AND cleanup_attempted=true AND (cleanup_error IS NULL OR cleanup_error<>'')
-          """, String.class, user.getId(), user.getDomainId(), workspace);
-      if (!failure.isEmpty()) throw error(HttpStatus.CONFLICT, "BUILD_TEST_CLEANUP_FAILED: " + failure.getFirst());
-      long expires = System.currentTimeMillis() + ttlMinutes * 60000L;
-      if (identity.getCurrentCredentialExpiresAt() != null)
-        expires = Math.min(expires, identity.getCurrentCredentialExpiresAt());
-      return status(open(user.getDomainId(), user.getId(), "build-test", workspace, expires,
-          classes, sample, sampleName, attachments, true));
-    } finally {
-      workspaceLock.unlock();
-    }
-  }
-
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public String open(String domain, String owner, String run, long expiresAt, List<String> classes) {
     return open(domain, owner, "action-trial", run, expiresAt, classes, null, null, Map.of(), false);
@@ -262,14 +204,14 @@ public class DataSandboxService {
 
   private void prepare(String id, String shortId, String domain, JSONObject data,
       Map<String, byte[]> attachments, boolean load) {
-    String stage = "BUILD_TEST_SCHEMA_FAILED";
+    String stage = "SANDBOX_SCHEMA_FAILED";
     try {
       createSampleStructure(target(id, shortId, data), data, domain, () -> save(id, data));
-      stage = "BUILD_TEST_DATA_FAILED";
+      stage = "SANDBOX_DATA_FAILED";
       if (load) loadSample(id, data.getJSONObject("sample"), attachments, domain);
       jdbc.update("UPDATE data_sandboxes SET state='READY' WHERE id=?", id);
     } catch (Exception failure) {
-      if (failure instanceof ResourceDirectoryException) stage = "BUILD_TEST_DATA_FAILED";
+      if (failure instanceof ResourceDirectoryException) stage = "SANDBOX_DATA_FAILED";
       data.put("prepareError", failure.getMessage());
       jdbc.update("UPDATE data_sandboxes SET state='PREPARE_FAILED',data=?::jsonb WHERE id=?", data.toJSONString(), id);
       cleanup(row(id));
@@ -303,20 +245,14 @@ public class DataSandboxService {
   }
 
   private JSONObject active(JSONObject record, String domain) {
-    if (!domain.equals(record.getString("domain_id"))) throw error(HttpStatus.FORBIDDEN, "BUILD_TEST_FORBIDDEN");
+    if (!domain.equals(record.getString("domain_id"))) throw error(HttpStatus.FORBIDDEN, "SANDBOX_FORBIDDEN");
     if (record.getLongValue("expires_at") <= System.currentTimeMillis())
-      throw error(HttpStatus.GONE, "BUILD_TEST_CONTEXT_EXPIRED");
+      throw error(HttpStatus.GONE, "SANDBOX_EXPIRED");
     if (!List.of("READY", "PREPARING").contains(record.getString("state")))
-      throw error(HttpStatus.CONFLICT, "BUILD_TEST_CONTEXT_NOT_READY");
+      throw error(HttpStatus.CONFLICT, "SANDBOX_NOT_READY");
     if (!fingerprint(domain).equals(record.getJSONObject("data").getString("fingerprint")))
-      throw error(HttpStatus.CONFLICT, "BUILD_TEST_CONTEXT_CHANGED");
+      throw error(HttpStatus.CONFLICT, "SANDBOX_CHANGED");
     return record;
-  }
-
-  private void buildOwner(JSONObject row, String user, String domain) {
-    owner(row, user, domain);
-    if (!"build-test".equals(row.getString("purpose")))
-      throw error(HttpStatus.NOT_FOUND, "BUILD_TEST_CONTEXT_NOT_FOUND");
   }
 
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -326,7 +262,7 @@ public class DataSandboxService {
     try {
       var record = row(id);
       if (!domain.equals(record.getString("domain_id")) || !"action-trial".equals(record.getString("purpose")))
-        throw error(HttpStatus.FORBIDDEN, "BUILD_TEST_FORBIDDEN");
+        throw error(HttpStatus.FORBIDDEN, "SANDBOX_FORBIDDEN");
       jdbc.update("UPDATE data_sandboxes SET state='CLOSED' WHERE id=? AND state IN ('READY','PREPARING')", id);
       cleanup(row(id));
       var cleaned = row(id);
@@ -337,143 +273,14 @@ public class DataSandboxService {
     }
   }
 
-  private String currentBuildTestId(String workspace, User user) {
-    return jdbc.queryForList("""
-        SELECT id FROM data_sandboxes
-        WHERE owner_id=? AND domain_id=? AND scope_key=? AND purpose='build-test'
-        ORDER BY CASE WHEN state IN ('PREPARING','READY') THEN 0 ELSE 1 END,created_at DESC,id DESC
-        LIMIT 1
-        """, String.class, user.getId(), user.getDomainId(), workspace).stream().findFirst().orElse(null);
-  }
-
-  public JSONObject current(String workspace) {
-    identity.requireQueryAccess();
-    var id = currentBuildTestId(workspace, identity.getCurrentUser());
-    return id == null ? null : status(id);
-  }
-
-  public JSONObject currentStatusFact(String workspace, QueryAccessService.Access access) {
-    var id = currentBuildTestId(workspace, access.user());
-    if (id == null) return null;
-    var record = row(id);
-    return JSONObject.of("status", effectiveBuildTestState(record), "expiresAt", record.getLong("expires_at"),
-        "sampleSummary", JSONObject.of("name", record.getJSONObject("data").getString("sampleName")));
-  }
-
-  private static String effectiveBuildTestState(JSONObject record) {
-    String state = record.getString("state");
-    return "READY".equals(state) && record.getLongValue("expires_at") <= System.currentTimeMillis() ? "EXPIRED" : state;
-  }
-
-  private void persistBuildTestExpiry(String id) {
-    jdbc.update("UPDATE data_sandboxes SET state='EXPIRED' WHERE id=? AND state='READY'", id);
-  }
-
-  public JSONObject status(String id) {
-    identity.requireQueryAccess();
-    var record = row(id);
-    var user = identity.getCurrentUser();
-    buildOwner(record, user.getId(), user.getDomainId());
-    if (!effectiveBuildTestState(record).equals(record.getString("state"))) {
-      persistBuildTestExpiry(id);
-      record = row(id);
-    }
-    var data = record.getJSONObject("data");
-    return JSONObject.of("contextId", id, "workspaceId", record.getString("scope_key"),
-        "status", record.getString("state"), "expiresAt", record.getLong("expires_at"), "classNames", data.get("classNames"),
-        "sampleSummary", JSONObject.of("name", data.getString("sampleName"), "classes",
-            data.getJSONArray("classNames").size(), "sha256", data.getString("sampleSha256")),
-        "prepareError", data.get("prepareError"), "cleanupError", record.get("cleanup_error"), "resources", data.get("resources"));
-  }
-
-  public ExecutionTarget resolve(HttpServletRequest request) {
-    String header=request.getHeader(HEADER);
-    if(header==null) return ExecutionTarget.LIVE;
-    JSONObject declaration;
-    try { declaration=JSON.parseObject(header); } catch(Exception invalid) { throw error(HttpStatus.BAD_REQUEST,"BUILD_TEST_CONTEXT_REQUIRED"); }
-    if(declaration==null || !"build-test".equals(declaration.getString("kind")) || declaration.getString("contextId")==null)
-      throw error(HttpStatus.BAD_REQUEST,"BUILD_TEST_CONTEXT_REQUIRED");
-    var user=identity.getCurrentUser();
-    var target=require(declaration.getString("contextId"),user.getId(),user.getDomainId());
-    var expiry=identity.getCurrentCredentialExpiresAt();
-    return expiry==null ? target : new ExecutionTarget(target.contextId(),target.sandboxId(),target.classNames(),Math.min(expiry,target.expiresAt()));
-  }
-  public ExecutionTarget require(String id,String user,String domain) {
-    var r=row(id);buildOwner(r,user,domain);
-    return requireReady(id, domain, r);
-  }
-
   public ExecutionTarget requireActionTrial(String id, String user, String domain) {
     var record = row(id);
     owner(record, user, domain);
     if (!"action-trial".equals(record.getString("purpose")))
-      throw error(HttpStatus.NOT_FOUND, "BUILD_TEST_CONTEXT_NOT_FOUND");
+      throw error(HttpStatus.NOT_FOUND, "SANDBOX_NOT_FOUND");
     var active = active(record, domain);
     return ExecutionTarget.actionTrial(id, active.getJSONObject("data").getList("classNames", String.class),
         active.getLongValue("expires_at"));
-  }
-
-  private ExecutionTarget requireReady(String id, String domain, JSONObject r) {
-    // An ended test stays ended after its deadline passes: the reader is told what they did, as the status reports it.
-    if("CLOSED".equals(r.getString("state"))) throw error(HttpStatus.GONE,"BUILD_TEST_CONTEXT_CLOSED");
-    if(r.getLongValue("expires_at")<=System.currentTimeMillis()) throw error(HttpStatus.GONE,"BUILD_TEST_CONTEXT_EXPIRED");
-    if(!"READY".equals(r.getString("state"))) throw error(HttpStatus.CONFLICT,"BUILD_TEST_CONTEXT_NOT_READY");
-    var data=r.getJSONObject("data");
-    if(!fingerprint(domain).equals(data.getString("fingerprint"))) throw error(HttpStatus.CONFLICT,"BUILD_TEST_CONTEXT_CHANGED");
-    return new ExecutionTarget(id,id,data.getList("classNames",String.class),r.getLong("expires_at"));
-  }
-  public JSONObject close(String id) {
-    identity.requireQueryAccess();
-    var captured = row(id);
-    var user = identity.getCurrentUser();
-    buildOwner(captured, user.getId(), user.getDomainId());
-    closeContext(captured);
-    return status(id);
-  }
-
-  public void closeWorkspace(String domainId, String workspaceId) {
-    var ids = jdbc.queryForList(
-        "SELECT id FROM data_sandboxes WHERE domain_id=? AND purpose='build-test' AND scope_key=? "
-            + "AND (state IN ('READY','PREPARING') OR NOT cleanup_attempted OR cleanup_error <> '')",
-        String.class, domainId, workspaceId);
-    for (String id : ids) closeContext(row(id));
-  }
-
-  private void closeContext(JSONObject captured) {
-    String id = captured.getString("id");
-    var workspaceLock = workspaceLock(captured);
-    workspaceLock.lock();
-    try {
-      jdbc.update("UPDATE data_sandboxes SET state='CLOSED' WHERE id=? AND state IN ('READY','PREPARING')", id);
-      cleanup(row(id));
-      var result = status(id);
-      if (result.getString("cleanupError") != null && !result.getString("cleanupError").isEmpty()) {
-        throw error(HttpStatus.INTERNAL_SERVER_ERROR, "BUILD_TEST_CLEANUP_FAILED: " + result.getString("cleanupError"));
-      }
-    } finally {
-      workspaceLock.unlock();
-    }
-  }
-
-  public JSONObject retryCleanup(String id) {
-    identity.requireQueryAccess();
-    var captured = row(id);
-    var user = identity.getCurrentUser();
-    buildOwner(captured, user.getId(), user.getDomainId());
-    var workspaceLock = workspaceLock(captured);
-    workspaceLock.lock();
-    try {
-      var record = row(id);
-      String state = effectiveBuildTestState(record);
-      if (List.of("READY", "PREPARING").contains(state))
-        throw error(HttpStatus.CONFLICT, "BUILD_TEST_CONTEXT_NOT_READY: end before cleanup");
-      if (!state.equals(record.getString("state"))) persistBuildTestExpiry(id);
-      jdbc.update("UPDATE data_sandboxes SET cleanup_attempted=false WHERE id=?", id);
-      cleanup(row(id));
-      return status(id);
-    } finally {
-      workspaceLock.unlock();
-    }
   }
 
   private void cleanup(JSONObject r) {
@@ -575,7 +382,7 @@ public class DataSandboxService {
     private JSONObject bindClasses(List<String> classes, String domain) {
       var config = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(configs.get(domain)));
       var adapter=getDataAdapter(domain);
-      if(!adapter.supportsSandbox(classes)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,"BUILD_TEST_UNSUPPORTED");
+      if(!adapter.supportsSandbox(classes)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,"PREVIEW_WRITE_FORBIDDEN");
       var hashes = new JSONObject();
       var connections=config.getJSONObject("dataAdapterConnections");
       connections.forEach((name,connection)->hashes.put(name,connectionHash(connection)));

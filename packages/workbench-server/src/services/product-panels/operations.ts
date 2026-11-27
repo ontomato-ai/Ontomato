@@ -1,3 +1,4 @@
+import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import { isLivePresentationEligibleRun } from "../agent-host/presentation";
 import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import type { z } from "zod";
@@ -479,9 +480,9 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
       return humanPreparation(existing.intent);
     }
     const { run, channel, root } = await requireActivePageRun(owner, input.agentRun);
-    const buildTest = channel.authority.executionKind === "build-test";
-    if (buildTest && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
-      throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
+    const preview = channel.authority.executionKind === "preview";
+    if (preview && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
+      throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
     const { use, framePanelId } = await requireAgentPanelUse(owner, credentials, input);
     const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
     const current = writeOperation(await declaredOperation(owner, credentials, panel, use.panelId, use, input, invocationTarget(input), {
@@ -499,7 +500,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     const host = operationHost({ owner, credentials });
     const confirmation = await humanConfirmation(current.handler, host, prepared);
     const settings = await store.settings(owner, root);
-    const autoMode = !buildTest && !settings.confirmBeforeExecute;
+    const autoMode = !preview && !settings.confirmBeforeExecute;
     const questionId = autoMode ? null : randomUUID();
     let questionPrompt: Awaited<ReturnType<typeof panelConfirmation>> | null = null;
     if (!autoMode) {

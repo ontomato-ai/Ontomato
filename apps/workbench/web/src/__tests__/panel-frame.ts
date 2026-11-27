@@ -14,7 +14,7 @@ import { panelUsePath, type PanelHostMessage } from "@ontomato/contracts/panel-h
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { appsSdkCurrentSchema, type AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
 import type { PanelMemberSnapshot } from "@ontomato/contracts/product-subscriptions";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import {
   platformScheduleFormSchema,
   platformSchedulesPath,
@@ -419,7 +419,7 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
       path: url.pathname,
       search: url.search,
       credential: new Headers(init?.headers).get("tk"),
-      execution: new Headers(init?.headers).get(BUILD_TEST_HEADER),
+      execution: new Headers(init?.headers).get(EXECUTION_CONTEXT_HEADER),
       body: typeof init?.body === "string" ? JSON.parse(init.body) : (init?.body instanceof FormData ? init.body : null),
     };
     sent.push(request);

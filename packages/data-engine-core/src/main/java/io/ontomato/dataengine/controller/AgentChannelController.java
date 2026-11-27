@@ -131,7 +131,7 @@ public class AgentChannelController {
     String kind=OntologyGenerationService.kindForAgent(agent);
     if(!OntologyAgentStore.isKnownAgent(agent)) throw AgentHttpException.missing();
     var authority=body.getJSONObject("authority");
-    if("build-test".equals(authority.getString("executionKind")) && (body.getJSONObject("requestedBy")!=null || kind==null)) throw new AgentHttpException(422,"BUILD_TEST_UNSUPPORTED","The agent channel is not available in a build-test execution");
+    if("preview".equals(authority.getString("executionKind")) && (body.getJSONObject("requestedBy")!=null || kind==null)) throw new AgentHttpException(422,"PREVIEW_WRITE_FORBIDDEN","The agent channel is not available in a preview execution");
     var actor=body.getJSONObject("actor");String language=body.getString("language");
     var requestedBy=body.getJSONObject("requestedBy");
     var root=body.getJSONObject("root");

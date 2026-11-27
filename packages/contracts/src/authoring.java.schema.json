@@ -48,39 +48,17 @@
           "maximum": 9007199254740991
         },
         "target": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "const": "live"
-                }
-              },
-              "required": [
-                "kind"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "const": "build-test"
-                },
-                "contextId": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              },
-              "required": [
-                "kind",
-                "contextId"
-              ],
-              "additionalProperties": false
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "live"
             }
-          ]
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

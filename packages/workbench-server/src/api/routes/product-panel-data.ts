@@ -2,7 +2,6 @@ import {
   PANEL_READ_BATCH_PATH, productPanelReadBatchRequestSchema, productPanelReadRequestSchema,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { Router, type RequestHandler } from "express";
 import type { ZodType } from "zod";
@@ -11,7 +10,6 @@ import { runWithLogContext } from "../../logging/log-context";
 import { readScopedPanelData, readScopedPanelDataBatch } from "../../services/product-panels/data-reads";
 import { prepareRegisteredDataReads, runPreparedDataReads, type RegisteredDataRead } from "../../services/product-panels/registered-read-plan";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
-import { buildTestAccess } from "../build-test-access";
 import { context, wrap } from "../utils/agent-host";
 import { getApiKeyFromRequest, getLocaleFromRequest, getTokenFromRequest } from "../utils/request";
 
@@ -21,15 +19,13 @@ function isRegisteredRead(read: ProductPanelReadRequest): read is RegisteredData
 
 export function createProductPanelReadRouter(authenticate: RequestHandler) {
   const router = Router();
-  const scopedAccess = Router().use(authenticate, buildTestAccess);
+  const scopedAccess = Router().use(authenticate);
 
   function handle<T>(schema: ZodType<T>, items: (body: T) => ProductPanelReadRequest[], batch: boolean): RequestHandler {
     return (req, res, next) => {
       const parsed = schema.safeParse(req.body);
-      const previewHeader = req.header(BUILD_TEST_HEADER);
       // Preview and execution proxy requests keep their owner-specific context.
-      const scopedRequest = previewHeader !== undefined
-        || Boolean(req.header("X-Ontomato-Retrieval-Caller-Id"))
+      const scopedRequest = Boolean(req.header("X-Ontomato-Retrieval-Caller-Id"))
         || req.header(AGENT_EXECUTION_HEADER) !== undefined;
       const formal: RegisteredDataRead[] = [];
       const scoped: ProductPanelReadRequest[] = [];
@@ -54,12 +50,9 @@ export function createProductPanelReadRouter(authenticate: RequestHandler) {
         const { owner, credentials } = context(req);
         const callerUserName = (req as AuthenticatedRequest).userName;
         return runWithLogContext({ ...owner, token: credentials.token, apiKey: credentials.apiKey }, async () => {
-          if (batch) return readScopedPanelDataBatch(owner, credentials, scoped, { previewHeader, callerUserName, location: req });
+          if (batch) return readScopedPanelDataBatch(owner, credentials, scoped, { callerUserName, location: req });
           const read = scoped[0]!;
-          const viewer = isRegisteredRead(read) && previewHeader !== undefined
-            ? { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: previewHeader } }
-            : credentials;
-          return [await readScopedPanelData(owner, viewer, read, callerUserName, req)];
+          return [await readScopedPanelData(owner, credentials, read, callerUserName, req)];
         });
       }
 

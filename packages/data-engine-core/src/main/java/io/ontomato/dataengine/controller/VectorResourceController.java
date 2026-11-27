@@ -41,7 +41,6 @@ import io.ontomato.dataengine.util.SystemUtils;
 @RestController
 @Owned
 public class VectorResourceController {
-    @Autowired private DataSandboxService buildTests;
     @Autowired private WriteFunctionOperationService writes;
     @Autowired private IdentityService identity;
 
@@ -61,8 +60,6 @@ public class VectorResourceController {
 		ret.put("success", true);
 		return ret;
 	}
-	
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/vectorResource/delete")
 	@ResponseBody
 	public JSONObject delete(@RequestBody JSONObject param, HttpServletRequest request) throws Exception {
@@ -80,8 +77,6 @@ public class VectorResourceController {
         }
         return JSONObject.of("success", true);
     }
-
-	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/vectorResource/upload")
 	@ResponseBody
 	public JSONObject upload(
@@ -129,7 +124,7 @@ public class VectorResourceController {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "An action execution grant is required");
             return new VectorWrite(claims.getString("domainId"), QueryGrantService.target(claims));
         }
-        var target = buildTests.resolve(request);
+        var target = ExecutionTarget.LIVE;
         if (!target.testing())
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "An action execution grant is required for live writes");
         return new VectorWrite(identity.getCurrentUser().getDomainId(), target);

@@ -54,7 +54,6 @@ function takeFlag(argv, name) {
 
 function headers(api) {
   return { "Accept-Language": api.lang,
-    ...(api.executionContext ? {"X-Ontomato-Execution-Context":api.executionContext} : {}),
     ...(api.apiKey ? { "X-API-Key": api.apiKey } : api.tk ? { tk: api.tk } : {}),
   };
 }
@@ -94,53 +93,11 @@ function printData(json) {
   else console.log(JSON.stringify(json.data, null, 2));
 }
 
-async function vectorUpload(api, argv) {
-  const file = takeOption(argv, "--file");
-  const text = takeOption(argv, "--text");
-  if (text == null) die("vector-upload requires --text <content|@file>");
-  if (argv.length !== 3)
-    die("vector-upload requires <class> <attribute> <objectId>");
-  const [className, attrName, objectId] = argv;
-  const content = readInput(text);
-  const form = new FormData();
-  form.append("className", className);
-  form.append("attrName", attrName);
-  form.append("objectId", objectId);
-  form.append("content", content);
-  if (file != null) {
-    const ext = path.extname(file).replace(/^\./, "").toLowerCase();
-    form.append("suffix", ext);
-    form.append("file", new Blob([fs.readFileSync(file)]), path.basename(file));
-  }
-  const res = await fetch(
-    `${api.ontologyUrl}/vectorResource/upload`,
-    {
-      method: "POST",
-      headers: headers(api),
-      body: form,
-    },
-  );
-  printData(await readJson(res));
-}
-
-async function vectorDelete(api, argv) {
-  if (argv.length !== 4)
-    die("vector-delete requires <class> <attribute> <objectId> <path>");
-  const [className, attrName, objectId, path] = argv;
-  await requestJson(api, "POST", "/vectorResource/delete", {
-    className,
-    attrName,
-    objectId,
-    path,
-  });
-  console.log("ok");
-}
-
 function isPlatformAuthoring() {
   return Boolean(process.env.ONTOMATO_EXECUTION_CALLBACK);
 }
 
-async function withAuthoring(api, kind, workspaceId, work) {
+async function withAuthoring(api, kind, work) {
   if (isPlatformAuthoring()) {
     const { ONTOMATO_AUTHORING_URL: base, ONTOMATO_EXECUTION_CALLBACK: callback } = process.env;
     if (!base) throw new Error("The current platform run must supply its authoring callback URL");
@@ -156,16 +113,13 @@ async function withAuthoring(api, kind, workspaceId, work) {
     })));
   }
 
-  if (workspaceId) {
-    await bindTestTarget(api, workspaceId);
-  }
   const root = "/ontology/ai/generation";
   const { runId } = await requestJson(api, "POST", `${root}/gates`, { kind: kind === "action" ? "action" : "metric" });
   try {
     return await work((operation, input = {}) =>
       requestJson(api, "POST", `${root}/${runId}/authoring/${kind}/${operation}`, input));
   } finally {
-    await requestJson({ ...api, executionContext: undefined }, "POST", `${root}/${runId}/close`, {});
+    await requestJson(api, "POST", `${root}/${runId}/close`, {});
   }
 }
 
@@ -174,11 +128,11 @@ async function runAuthorTest(author, input) {
   if (result.error) throw new Error(result.error);
 }
 
-async function generateMetricView(api, args, workspaceId) {
+async function generateMetricView(api, args) {
   const save = takeFlag(args, "--save");
   if (args.length !== 1) die("Usage: metric-view generate [--save] <definition JSON or @file>");
   const definition = JSON.parse(readInput(args[0]));
-  const accepted = await withAuthoring(api, "metric-view", workspaceId, async author => {
+  const accepted = await withAuthoring(api, "metric-view", async author => {
     const { queryPackage, returnDef } = definition.function;
     const columnLabels = returnDef?.columnLabels;
     await runAuthorTest(author, { queryPackage, columnLabels });
@@ -192,7 +146,7 @@ async function generateMetricView(api, args, workspaceId) {
     return (await author("adopt", { definition })).definition;
   });
   if (save) {
-    printData(await requestJson({ ...api, executionContext: undefined }, "POST", "/metricView/save", accepted));
+    printData(await requestJson(api, "POST", "/metricView/save", accepted));
   } else {
     print(accepted);
   }
@@ -207,20 +161,20 @@ async function trialAction(api, args) {
   const body = { id: args[0] };
   if (sample !== null) body.sample = JSON.parse(readInput(sample));
   if (parameters !== null) body.parameters = JSON.parse(readInput(parameters));
-  const response = await requestJson({ ...api, executionContext: undefined }, "POST", "/action/trial", body);
+  const response = await requestJson(api, "POST", "/action/trial", body);
   printData(response);
   if (response.data?.passed === false) process.exitCode = 1;
 }
 
-async function assetCommand(api, prefix, argv, workspaceId) {
+async function assetCommand(api, prefix, argv) {
   const sub = argv[0];
   const rest = argv.slice(1);
   if (sub === "context") {
     if (rest.length) die(`Usage: ${prefix === "action" ? "action" : "metric-view"} context`);
     const kind = prefix === "action" ? "action" : "metric-view";
-    return print(await withAuthoring(api, kind, workspaceId, author => author("context")));
+    return print(await withAuthoring(api, kind, author => author("context")));
   }
-  if (sub === "generate" && prefix === "metricView") return generateMetricView(api, rest, workspaceId);
+  if (sub === "generate" && prefix === "metricView") return generateMetricView(api, rest);
   if (sub === "trial" && prefix === "action") return trialAction(api, rest);
   if (sub === "execute") {
     const bindingId = prefix === "metricView" ? takeOption(rest, "--binding") : null;
@@ -569,7 +523,6 @@ async function workspaceCommand(api, [command, ...args]) {
 
 function usage() {
   die(`usage: scripts/ontomato.mjs [--lang <tag>] <command>
-  test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
   sdk icons
   sdk read <relative path, e.g. docs/components.md or docs/components/ObjectList.md>
@@ -608,11 +561,9 @@ function usage() {
   classes
   schema <class> [<class> ...]
   relationships <class> [<class> ...]
-  vector-upload <class> <attribute> <objectId> [--file <path>] --text <text|@file>
-  vector-delete <class> <attribute> <objectId> <path>
   distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
   execute-dsl <json|@file>
-  metric-view context [--workspace <id>]
+  metric-view context
   metric-view generate [--save] <definition JSON or @file>
   metric-view execute <id> [<param json|@file>]
   metric-view find <class> [<question>]
@@ -620,17 +571,11 @@ function usage() {
   metric-view save <json|@file>
   metric-view publish <id>
   metric-view delete <id>
-  action context [--workspace <id>]
+  action context
   action trial <id> [--sample <json|@file>] [--parameters <json|@file>]
   action find|get|save|publish|delete ...   (same arguments as metric-view)
   action re-explain [--missing] [--id <id> ...]
   action execute <id> [<param json|@file>] [--file <path> ...]`);
-}
-
-async function bindTestTarget(api,workspaceId) {
-  if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
-  const context=await workbench(api,"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`);
-  api.executionContext=JSON.stringify({kind:"build-test",contextId:context?.contextId ?? null});
 }
 
 async function resolveWorkspace(api, workspaceId) {
@@ -696,20 +641,8 @@ async function main() {
     }
   }
   const api = await commandApi();
-  const needsWorkspace = ["test", "vector-upload", "vector-delete", "distinct-values", "execute-dsl"].includes(cmd) ||
-    (["action", "metric-view"].includes(cmd) && argv[1] === "execute") ||
-    (cmd === "panel" && argv[1] === "preview");
+  const needsWorkspace = cmd === "panel" && argv[1] === "preview";
   const workspaceId = needsWorkspace ? await resolveWorkspace(api, explicitWorkspaceId) : explicitWorkspaceId;
-  if(cmd==="test") {
-    if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
-    const sub=argv[1], samplePath=takeOption(argv,"--sample") ?? "test-data/sample.json";
-    if(!["start","status","stop"].includes(sub)) die("test start|status|stop [--workspace <id>] [--sample test-data/sample.json]");
-    const result=await workbench(api,sub==="start"?"POST":sub==="stop"?"DELETE":"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`,sub==="start"?{samplePath}:undefined);
-    return print(result===null && sub!=="start" ? {workspaceId,contextId:null,status:"NONE"} : result);
-  }
-  if(["vector-upload","vector-delete"].includes(cmd) || ["action","metric-view"].includes(cmd) && argv[1]==="execute") {
-    await bindTestTarget(api,workspaceId);
-  }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
   if (cmd === "component") return componentCommand(api, argv.slice(1));
   if (cmd === "panel") return panelCommand(api, workspaceId, argv.slice(1));
@@ -733,16 +666,8 @@ async function main() {
     printData(await requestJson(api, "POST", backendPath, { classNames }));
     return;
   }
-  if (cmd === "vector-upload") {
-    await vectorUpload(api, argv.slice(1));
-    return;
-  }
-  if (cmd === "vector-delete") {
-    await vectorDelete(api, argv.slice(1));
-    return;
-  }
   if (cmd === "distinct-values" || cmd === "execute-dsl" || cmd === "agent")
-    return analystCommand(api,argv,async()=>{await bindTestTarget(api,workspaceId);return headers(api);});
+    return analystCommand(api,argv,()=>headers(api));
   if (cmd === "action" && argv[1] === "re-explain") {
     const rest = argv.slice(2);
     const missing = takeFlag(rest, "--missing");
@@ -762,14 +687,14 @@ async function main() {
     return;
   }
   if (cmd === "metric-view") {
-    await assetCommand(api, "metricView", argv.slice(1), workspaceId);
+    await assetCommand(api, "metricView", argv.slice(1));
     return;
   }
   if (cmd === "action") {
-    await assetCommand(api, "action", argv.slice(1), workspaceId);
+    await assetCommand(api, "action", argv.slice(1));
     return;
   }
-  die(`BUILD_TEST_UNSUPPORTED: command not supported: ${cmd}`);
+  die(`PREVIEW_WRITE_FORBIDDEN: command not supported: ${cmd}`);
 }
 
 main().catch(error => { console.error(error.message);process.exitCode=1; });

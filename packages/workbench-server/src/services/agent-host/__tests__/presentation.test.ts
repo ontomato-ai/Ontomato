@@ -61,7 +61,7 @@ it("issues a callback only for the same host's directly admitted human run with 
       owner,
       runId,
       sessionId: session.sessionId,
-      channel: { ...bound, authority: { classNames: [], executionKind: "build-test" } },
+      channel: { ...bound, authority: { classNames: [], executionKind: "preview" } },
     })).toBe(true);
     expect(issue(direct)).toBeUndefined();
     expect(issue({ ...bound, requestedBy: direct.root })).toBeUndefined();

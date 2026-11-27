@@ -118,7 +118,7 @@ class ActionRuntimeGrantBoundaryTest {
         verify(owner).requireCurrent(same(ACTOR), eq(action), eq(sandbox));
 
         request = request(QUERY, token);
-        request.addHeader(DataSandboxService.HEADER, "{\"kind\":\"build-test\",\"contextId\":\"other\"}");
+        request.addHeader(PreviewExecution.HEADER, "{\"kind\":\"preview\"}");
         reject(request, 403);
 
         var computation = new ActionRuntimeGrant("domain", "operator", "compute", null, null);

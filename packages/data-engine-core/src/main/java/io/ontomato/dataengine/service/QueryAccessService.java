@@ -15,8 +15,6 @@ import org.springframework.web.server.ResponseStatusException;
 /** HTTP query authorization composes identity/permissions above the grant lifecycle. */
 @Service
 public class QueryAccessService {
-  @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
-  private DataSandboxService contexts;
   private final IdentityService identity;
   private final DataPermissionLookup permissions;
   private final QueryGrantService grants;
@@ -79,7 +77,7 @@ public class QueryAccessService {
     if (query) identity.requireQueryAccess();
     return new Access(
         user, identity.getCurrentUserDataPermission(), null, null,
-        identity.getCurrentCredentialExpiresAt()).withTarget(request.getHeader(DataSandboxService.HEADER)==null ? ExecutionTarget.LIVE : contexts.resolve(request));
+        identity.getCurrentCredentialExpiresAt());
   }
 
   /** Load the ordinary query facts for a verified viewer within the originating request's authorization scope. */

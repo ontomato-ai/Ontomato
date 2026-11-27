@@ -16,7 +16,7 @@ import {
   runtimeKeySchema,
   type RuntimeJsonObject,
 } from "@ontomato/contracts/agent-runtime-values";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import type {
   HarnessToolCall,
   HarnessToolCallResult,
@@ -531,7 +531,7 @@ export function registerSkillCallbackRoutes(app: Express, dispatcher: SessionSki
       };
       res.json(await dispatcher.sessionChannelCommand(
         scope, runtimeIdSchema.parse(req.params.sessionId),
-        req.header("X-Ontomato-Callback-Credential"), req.header(BUILD_TEST_HEADER), req.body,
+        req.header("X-Ontomato-Callback-Credential"), req.header(EXECUTION_CONTEXT_HEADER), req.body,
       ));
     };
     void handle().catch(next);

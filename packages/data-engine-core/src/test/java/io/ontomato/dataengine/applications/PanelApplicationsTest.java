@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.controller.BuildTestAccessInterceptor;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.*;
 import java.util.*;
@@ -376,7 +375,7 @@ class PanelApplicationsTest {
         when(identity.getCurrentUser()).thenReturn(user);
         var http = MockMvcBuilders.standaloneSetup(new AppEntryController(catalog, access),
             new ApplicationController(catalog, identity, new WorkbenchServiceAuthentication("service-fixture")))
-            .setControllerAdvice(new ApplicationErrors()).addInterceptors(new BuildTestAccessInterceptor()).build();
+            .setControllerAdvice(new ApplicationErrors()).build();
 
         var proxy = "/internal/app-entry";
         http.perform(get(proxy).header("X-App-Request-Uri", "/apps/app-connected/config?view=one"))
@@ -387,7 +386,7 @@ class PanelApplicationsTest {
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                 .string("X-App-Proxy-Path", "/connector/config?view=one"));
         http.perform(get(proxy).header("X-App-Request-Uri", "/apps/app-connected/config")
-                .header("X-App-Credential", "verified-user").header(DataSandboxService.HEADER, "{}"))
+                .header("X-App-Credential", "verified-user").header(PreviewExecution.HEADER, "{}"))
             .andExpect(status().isUnprocessableEntity());
 
         String select = "?applicationId=app-panel-a&useId=use-denied";

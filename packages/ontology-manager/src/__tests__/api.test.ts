@@ -6,7 +6,7 @@ import {
   type ManagerCredential,
   type ManagerRequestContext,
 } from "../api";
-import { BUILD_TEST_HEADER, buildExecutionContext } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { englishMessages } from "../i18n";
 
 interface RecordedRequest {
@@ -498,18 +498,18 @@ describe("requests used by data browsing and visual modeling", () => {
   });
 });
 
-it("binds missing build contexts explicitly and leaves live requests unchanged", async () => {
+it("marks preview requests with the preview execution identity and leaves live requests unchanged", async () => {
   const {context,client}=setup({type:"anonymous"});
-  context.executionContext=buildExecutionContext("workspace",null);
+  context.executionContext={kind:"preview"};
   await client.loadOntology();
-  expect(JSON.parse(requests[0]!.headers[BUILD_TEST_HEADER]!)).toEqual({kind:"build-test",contextId:null});
+  expect(JSON.parse(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]!)).toEqual({kind:"preview"});
   context.executionContext={kind:"live"};await client.loadOntology();
-  expect(requests[1]!.headers[BUILD_TEST_HEADER]).toBeUndefined();
+  expect(requests[1]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
 });
 
 it("rejects unwired SDK operations instead of starting a live assistant from a preview",async()=>{
-  const {context}=setup({type:"anonymous"});context.executionContext=buildExecutionContext("workspace",null);
+  const {context}=setup({type:"anonymous"});context.executionContext={kind:"preview"};
   const request=createManagerRequest(context,()=>{});
-  await expect(request.request("/assistant/sessions",{method:"POST"},"")).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});
+  await expect(request.request("/assistant/sessions",{method:"POST"},"")).rejects.toMatchObject({code:"PREVIEW_WRITE_FORBIDDEN"});
   expect(requests).toHaveLength(0);
 });

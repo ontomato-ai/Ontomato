@@ -1,12 +1,10 @@
 import { HttpError } from "../../utils/errors";
 import { platformService } from "../middleware/platform-service";
 import { Router } from "express";
-import { buildTestAccess } from "../build-test-access";
 import { wrap } from "../utils/agent-host";
 import { agentChannelService } from "../../services/agent-host/channel";
 
 export const agentChannelRouter = Router();
-agentChannelRouter.use(buildTestAccess);
 agentChannelRouter.use(platformService);
 for (const action of ["list", "prepare", "settle", "read", "cancel"] as const) {
   agentChannelRouter.post("/" + action, wrap(async (req, res) => {

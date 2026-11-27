@@ -1,6 +1,6 @@
 # DSL reference
 
-`execute-dsl` runs the DSL in the workspace's current build-test context. Start that context from an explicit sample first.
+`execute-dsl` runs the DSL against live data under the current user's permissions.
 
 Use the class and attribute names exactly as `classes` and `schema` return them; `schema` and `distinct-values` need the exact name. In a DSL, a leading `/` on a class name is also accepted. A relationship's `type` is the relationship type from `relationships`, and `from` / `to` point at the source and target classes.
 

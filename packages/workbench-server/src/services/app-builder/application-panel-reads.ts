@@ -30,7 +30,6 @@ import {
   authorizeBuilderProject,
   builderProjectRowsSchema,
   builderPublishBlock,
-  canRestartBuilderTest,
   fileLanguageForPath,
   getBuilderProject,
   getBuilderProjectStatus,
@@ -126,18 +125,13 @@ export class ApplicationBuilderReadAdapter {
 
   /**
    * Full builder detail for a single application (`platform:Application.builderProject`).
-   * Computes live drift, conflict markers, build-test status, and previewable entries on demand.
+   * Computes live drift, conflict markers, previewable entries on demand.
    */
   async builderProject(appId: string): Promise<PanelRecord> {
     return this.presentBuilderProject(await getBuilderProject(this.owner, this.credentials, appId));
   }
 
   presentBuilderProject(detail: BuilderProjectDetail): PanelRecord {
-    const buildTestStatus = detail.test?.status ?? "NONE";
-    const buildTestSampleName = detail.test?.sampleSummary?.name ?? "";
-    const buildTestExpiresAt = detail.test?.expiresAt ?? "";
-    const buildTestCanRestart = canRestartBuilderTest(detail.test);
-
     const outputs = {
       appId: detail.appId,
       name: detail.name,
@@ -155,11 +149,7 @@ export class ApplicationBuilderReadAdapter {
       driftCount: detail.drift.items.length,
       hasConflicts: detail.hasConflicts,
       conflictCount: detail.conflictFiles.length,
-      buildTestStatus,
-      buildTestSampleName,
-      buildTestExpiresAt,
-      buildTestCanRestart,
-      canEditEntries: detail.canEditEntries,
+                      canEditEntries: detail.canEditEntries,
       currentReleaseId: detail.currentReleaseId ?? "",
       activeRunId: detail.activeRunId ?? "",
       driftItemsJson: JSON.stringify(detail.drift.items),
@@ -175,14 +165,11 @@ export class ApplicationBuilderReadAdapter {
       fieldLabels: this.fieldLabels([
         "shortHeadCommit",
         "busyLabel",
-        "buildTestStatusLabel",
-        "buildTestSampleName",
         "updatedAt",
       ]),
       fields: {
         ...outputs,
         busyLabel: this.text(detail.busy ? "statusBusy" : "idle"),
-        buildTestStatusLabel: this.text(`test.${buildTestStatus}`),
         updatedAt: detail.updatedAt,
         driftItems: { kind: "json", value: detail.drift.items.map(item => ({ ...item })) },
         conflictFiles: detail.conflictFiles,
@@ -192,10 +179,6 @@ export class ApplicationBuilderReadAdapter {
       },
       tones: {
         busyLabel: detail.busy ? "warning" : "default",
-        buildTestStatusLabel:
-          buildTestStatus === "READY" ? "success"
-            : buildTestStatus === "PREPARE_FAILED" ? "danger"
-              : buildTestStatus === "NONE" ? "default" : "warning",
       },
     };
   }
@@ -612,8 +595,7 @@ export async function prepareBuilderPanelFacts(
     facts: project.facts,
     async present(_viewer, results) {
       const ctx = await project.context(results);
-      const test = project.test(results);
-      const detail = await readBuilderProjectDetail(owner.domainId, ctx, credentials.locale, () => test);
+      const detail = await readBuilderProjectDetail(owner.domainId, ctx, credentials.locale);
       if (method === "builderProject") return adapter.presentBuilderProject(detail);
       const { items } = await readBuilderCommitPage(ctx, 0, 50);
       return adapter.presentBuilderPublishForm(detail, items, values, defaultCommit);

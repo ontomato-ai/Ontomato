@@ -16,7 +16,7 @@ for (const [command, option] of [
         env: { ...process.env, ONTOMATO_URL: "http://127.0.0.1:1", ONTOMATO_API_KEY: "test-only" },
       });
       assert.notEqual(result.status, 0);
-      assert.ok(result.stderr.includes(command[0].startsWith("prod-") ? "BUILD_TEST_UNSUPPORTED" : `${option}: expected a finite number`), result.stderr);
+      assert.ok(result.stderr.includes(command[0].startsWith("prod-") ? "PREVIEW_WRITE_FORBIDDEN" : `${option}: expected a finite number`), result.stderr);
       assert.ok(!result.stderr.includes("fetch failed"), result.stderr);
     });
   }
@@ -63,10 +63,7 @@ test("skill Action execution preserves complete explicit parameters and owner er
       response.end(JSON.stringify({workspaceId:"11111111-1111-4111-8111-111111111111"}));
       return;
     }
-    if(request.url.endsWith("/build-tests")) {
-      response.setHeader("content-type","application/json");response.end(JSON.stringify({contextId:"22222222-2222-4222-8222-222222222222"}));return;
-    }
-    assert.deepEqual(JSON.parse(request.headers["x-ontomato-execution-context"]),{kind:"build-test",contextId:"22222222-2222-4222-8222-222222222222"});
+    assert.equal(request.headers["x-ontomato-execution-context"], undefined);
     let text = "";
     for await (const chunk of request) text += chunk;
     const match = text.match(/name="param"\r\n\r\n([^\r]+)/);
@@ -88,37 +85,20 @@ test("skill Action execution preserves complete explicit parameters and owner er
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
-for(const command of ["status","stop"]) {
-  test(`test ${command} reports NONE for an absent workspace context`,async()=>{
-    const methods=[];
-    const server=createServer((request,response)=>{
-      methods.push(request.method);response.setHeader("content-type","application/json");response.end("null");
-    });
-    await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
-    try {
-      const result=await promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/scripts/ontomato.mjs","test",command,"--workspace","11111111-1111-4111-8111-111111111111"],{
-        env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only"},
-      });
-      assert.deepEqual(JSON.parse(result.stdout),{workspaceId:"11111111-1111-4111-8111-111111111111",contextId:null,status:"NONE"});
-      assert.deepEqual(methods,[command==="status"?"GET":"DELETE"]);
-    } finally {await new Promise(resolve=>server.close(resolve));}
-  });
-}
 
-test("agent dispatch carries build-test context and preserves the entry-point refusal",async()=>{
+test("agent dispatch preserves the entry-point refusal",async()=>{
   const paths=[];
   const server=createServer((request,response)=>{
     paths.push(request.url);response.setHeader("content-type","application/json");
-    if(request.url.endsWith("/build-tests")) {response.end(JSON.stringify({contextId:"22222222-2222-4222-8222-222222222222"}));return;}
-    assert.deepEqual(JSON.parse(request.headers["x-ontomato-execution-context"]),{kind:"build-test",contextId:"22222222-2222-4222-8222-222222222222"});
-    response.writeHead(422);response.end(JSON.stringify({success:false,code:"BUILD_TEST_UNSUPPORTED",message:"Agent commands are unavailable in build tests"}));
+    assert.equal(request.headers["x-ontomato-execution-context"], undefined);
+    response.writeHead(422);response.end(JSON.stringify({success:false,code:"PREVIEW_WRITE_FORBIDDEN",message:"Agent commands are unavailable in previews"}));
   });
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   try {
     await assert.rejects(promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/scripts/ontomato.mjs","agent","list","--workspace","11111111-1111-4111-8111-111111111111"],{
       env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only"},
-    }),error=>error.stderr.includes("Agent commands are unavailable in build tests"));
-    assert.equal(paths.length,2);assert.ok(paths[1].endsWith("/platform/agent-channel/commands"));
+    }),error=>error.stderr.includes("Agent commands are unavailable in previews"));
+    assert.equal(paths.length,1);assert.ok(paths[0].endsWith("/platform/agent-channel/commands"));
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
 
@@ -136,7 +116,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   };
   const source = {
     kind: "candidate", workspace: { id: workspaceId, ref }, panel,
-    previewContext: { kind: "build-test", test: null },
+    previewContext: { kind: "preview" },
   };
   const requests = [];
   const sdkPath = "/apps-sdk/current";
@@ -1116,7 +1096,6 @@ test("process-admin and workflow-maker clients call single POST /action/trial an
 
 test("standalone MetricView authoring closes its window when a bound query package fails", async () => {
   const runId = "11111111-1111-4111-8111-111111111111";
-  const contextId = "22222222-2222-4222-8222-222222222222";
   const definition = {
     function: { queryPackage: { manifest: { parameterDefs: [{ name: "count", value: 1 }] } } },
     bindings: [{ parameters: { count: 2 } }],
@@ -1129,8 +1108,7 @@ test("standalone MetricView authoring closes its window when a bound query packa
     const context = request.headers["x-ontomato-execution-context"];
     requests.push({ path: request.url, method: request.method, context, body });
     response.setHeader("content-type", "application/json");
-    if (request.url.endsWith("/build-tests")) response.end(JSON.stringify({ contextId }));
-    else if (request.url.endsWith("/gates")) response.end(JSON.stringify({ runId }));
+    if (request.url.endsWith("/gates")) response.end(JSON.stringify({ runId }));
     else if (request.url.endsWith("/close")) response.end(JSON.stringify({ closed: true }));
     else if (request.url.endsWith("/test")) {
       const count = body.queryPackage.manifest.parameterDefs[0].value;
@@ -1147,13 +1125,11 @@ test("standalone MetricView authoring closes its window when a bound query packa
       ONTOMATO_AUTHORING_URL: "", ONTOMATO_EXECUTION_CALLBACK: "", ONTOMATO_WORKBENCH_URL: base,
       ONTOMATO_ONTOLOGY_URL: base + "/ontology", ONTOMATO_API_KEY: "external-key" } }), /Sample query failed/);
     const root = "/ontology/ontology/ai/generation";
-    const context = JSON.stringify({ kind: "build-test", contextId });
     const trial = `${root}/${runId}/authoring/metric-view/test`;
     assert.deepEqual(requests, [
-      { path: "/api/workspaces/workspace/build-tests", method: "GET", context: undefined, body: undefined },
-      { path: root + "/gates", method: "POST", context, body: { kind: "metric" } },
-      { path: trial, method: "POST", context, body: { queryPackage: definition.function.queryPackage } },
-      { path: trial, method: "POST", context, body: { queryPackage: { manifest: { parameterDefs: [{ name: "count", value: 2 }] } } } },
+      { path: root + "/gates", method: "POST", context: undefined, body: { kind: "metric" } },
+      { path: trial, method: "POST", context: undefined, body: { queryPackage: definition.function.queryPackage } },
+      { path: trial, method: "POST", context: undefined, body: { queryPackage: { manifest: { parameterDefs: [{ name: "count", value: 2 }] } } } },
       { path: `${root}/${runId}/close`, method: "POST", context: undefined, body: {} },
     ]);
   } finally { await new Promise(resolve => server.close(resolve)); }

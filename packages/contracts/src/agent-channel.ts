@@ -52,7 +52,7 @@ export const agentDirectoryEntrySchema = z.object({
   contextSchema: runtimeJsonObjectSchema.optional(),
 }).strict();
 export const agentDirectorySchema = z.object({ agents: z.array(agentDirectoryEntrySchema) }).strict();
-export const agentAuthoritySchema = z.object({ classNames: z.array(key), executionKind: z.enum(["live", "build-test"]), executionContextId: key.optional() }).strict();
+export const agentAuthoritySchema = z.object({ classNames: z.array(key), executionKind: z.enum(["live", "preview"]), executionContextId: key.optional() }).strict();
 export const agentRunContextSchema = z.object({
   agent: agentRefSchema, actor: agentActorRefSchema,
   authority: agentAuthoritySchema,

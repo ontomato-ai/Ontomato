@@ -14,8 +14,8 @@ import {
 
 /**
  * Official application preview component:
- * renders a candidate panel application (in build-test context), a live panel application definition, or a legacy
- * hosted preview through the platform's injected `PanelPreviewHost` without exposing preview tokens, build-test
+ * renders a candidate panel application (in preview execution), a live panel application definition, or a legacy
+ * hosted preview through the platform's injected `PanelPreviewHost` without exposing preview tokens, execution-context
  * headers, credentials, or raw iframe URLs to panel scripts.
  *
  * Strictly renders the preview surface and reports navigation/selection context and status; business test data

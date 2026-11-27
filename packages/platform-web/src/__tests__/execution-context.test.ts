@@ -4,7 +4,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { createRouter, createMemoryHistory } from "vue-router";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { APP_HOST_GLOBAL, type AppHost } from "@ontomato/contracts/app-host";
-import { buildExecutionContext,BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { previewExecutionContextValue,EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { installAppHost, registerBuildPreview, registerLiveFrame } from "../app-host";
 import ApplicationRoute from "../pages/ApplicationRoute.vue";
 import {installAuthHost} from '@ontomato/workbench-ui/utils/auth';
@@ -38,7 +38,7 @@ describe("explicit frame execution bindings",()=>{
     const source = frame();
     registerLiveFrame(source, "published");
     const preview = frame();
-    registerBuildPreview(preview, buildExecutionContext("workspace", null));
+    registerBuildPreview(preview, previewExecutionContextValue);
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("attachment"));
     const path = "/vectorResource/resource/vector-Order-proof-domain/file.pdf";
     const response = await host().request!(source, path, { method: "GET", headers: { tk: "forged" } }, "/data-query");
@@ -52,17 +52,17 @@ describe("explicit frame execution bindings",()=>{
     expect(request).toHaveBeenCalledTimes(1);
   });
   it('derives preview execution headers from the registered frame rather than trusting source headers',async()=>{
-    const source=frame();const context=buildExecutionContext('workspace',null);registerBuildPreview(source,context);
+    const source=frame();const context=previewExecutionContextValue;registerBuildPreview(source,context);
     const request=vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({success:true,data:[]}));
-    await host().request!(source,'/metricView/execute',{method:'POST',headers:{[BUILD_TEST_HEADER]:'forged',tk:'forged'},body:'{}'},'/data-query');
+    await host().request!(source,'/metricView/execute',{method:'POST',headers:{[EXECUTION_CONTEXT_HEADER]:'forged',tk:'forged'},body:'{}'},'/data-query');
     const headers=new Headers(request.mock.calls[0][1]?.headers);
-    expect(headers.get(BUILD_TEST_HEADER)).toBe(JSON.stringify({kind:'build-test',contextId:context.contextId}));
+    expect(headers.get(EXECUTION_CONTEXT_HEADER)).toBe(JSON.stringify({kind:'preview'}));
     expect(headers.has('tk')).toBe(false);
   });
   it('keeps a hosted build preview off Node: its product request is refused here, with the preview refusal code',async()=>{
-    const source=frame();registerBuildPreview(source,buildExecutionContext('workspace',null));
+    const source=frame();registerBuildPreview(source,previewExecutionContextValue);
     const request=vi.spyOn(globalThis,'fetch');
-    await expect(host().request!(source,'/assistant/sessions',{method:'POST',body:'{}'},'')).rejects.toMatchObject({code:'BUILD_TEST_UNSUPPORTED'});
+    await expect(host().request!(source,'/assistant/sessions',{method:'POST',body:'{}'},'')).rejects.toMatchObject({code:'PREVIEW_WRITE_FORBIDDEN'});
     expect(request).not.toHaveBeenCalled();
   });
   it("throws for unregistered frames instead of selecting live",()=>{
@@ -84,15 +84,15 @@ describe("explicit frame execution bindings",()=>{
     const element=route.get("iframe").element as HTMLIFrameElement;
     expect(host().executionContext(element.contentWindow!)).toEqual({kind:"live"});
   });
-  it("keeps preview bindings build-test and requires a new frame to change targets",()=>{
-    const source=frame(),initial=buildExecutionContext("workspace",null);
+  it("keeps preview bindings preview and requires a new frame to change kinds",()=>{
+    const source=frame(),initial=previewExecutionContextValue;
     const registration=registerBuildPreview(source,initial),changed=vi.fn();
     const stop=host().subscribeExecutionContext(source,changed);
     expect(host().executionContext(source)).toEqual(initial);
-    registration.update({...initial,status:"PREPARING"});expect(changed).toHaveBeenCalledOnce();
-    expect(()=>registration.update({...initial,contextId:"new-context"})).toThrow("Reload");
+    registration.update({...initial});expect(changed).toHaveBeenCalledOnce();
+    expect(()=>registration.update({kind:"live"})).toThrow("Reload");
     expect(()=>registerLiveFrame(source)).toThrow("Reload");
     expect(host()).not.toHaveProperty("registerLiveFrame");
-    stop();registration.dispose();expect(host().executionContext(source).kind).toBe("build-test");
+    stop();registration.dispose();expect(host().executionContext(source).kind).toBe("preview");
   });
 });

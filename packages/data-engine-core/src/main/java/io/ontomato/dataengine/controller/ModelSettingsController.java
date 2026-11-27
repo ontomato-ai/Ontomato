@@ -127,8 +127,6 @@ public class ModelSettingsController {
     return success(vectors.saveModelSettings(domain,
         () -> runtime.json(domain, "model-settings", "/v1/models/settings", "PUT", body, null)));
   }
-
-  @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
   @GetMapping("/model-options")
   public Object options(HttpServletRequest request) throws Exception {
     return success(readModelOptions(domain(request)));

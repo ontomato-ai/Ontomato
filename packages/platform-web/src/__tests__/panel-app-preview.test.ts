@@ -471,7 +471,7 @@ describe("Platform createPanelPreviewHost", () => {
           messages: {},
         },
       },
-      previewContext: { kind: "build-test" as const, test: null },
+      previewContext: { kind: "preview" as const },
     };
 
     // 1. Panel candidate descriptor -> resolves kind="panel" with appCandidatePanelHost.
@@ -493,10 +493,10 @@ describe("Platform createPanelPreviewHost", () => {
     const deniedTarget = await defaultResolvePreview({ appId, revision: "working", entryId: null });
     expect(deniedTarget).toEqual({ kind: "error", message: "Forbidden" });
 
-    // 3. 409 BUILD_TEST_SDK_UPGRADE_REQUIRED -> resolves kind="legacy-sdk".
+    // 3. 409 PREVIEW_SDK_UPGRADE_REQUIRED -> resolves kind="legacy-sdk".
     mocks.nodeApiGet.mockRejectedValueOnce(
       new ApiRequestError("Upgrade the workspace SDK references before previewing", 409, {
-        code: "BUILD_TEST_SDK_UPGRADE_REQUIRED",
+        code: "PREVIEW_SDK_UPGRADE_REQUIRED",
         details: {
           requiredVersion: "1.1.2",
           foundVersions: ["0.8.4"],
@@ -524,7 +524,7 @@ describe("Platform createPanelPreviewHost", () => {
 
   it("detectLegacySdkError recognizes both code-only and structured upgrade details envelopes", () => {
     expect(
-      detectLegacySdkError(new ApiRequestError("Legacy SDK", 409, { code: "BUILD_TEST_SDK_UPGRADE_REQUIRED" })),
+      detectLegacySdkError(new ApiRequestError("Legacy SDK", 409, { code: "PREVIEW_SDK_UPGRADE_REQUIRED" })),
     ).toEqual({ message: "Legacy SDK" });
     expect(detectLegacySdkError({ code: "LEGACY_SDK", message: "Unsupported legacy SDK" })).toEqual({
       message: "Unsupported legacy SDK",

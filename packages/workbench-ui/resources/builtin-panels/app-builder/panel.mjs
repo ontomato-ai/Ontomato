@@ -239,48 +239,6 @@ await mountPanel({
       { immediate: true },
     );
 
-    // ---- Build-test status bar ----
-    const buildTestStatus = computed(() => String(projectOutputs.value.buildTestStatus || "NONE"));
-    const buildTestSampleName = computed(() => String(projectOutputs.value.buildTestSampleName || ""));
-    const buildTestCanRestart = computed(() => projectOutputs.value.buildTestCanRestart === true);
-
-    const buildTestTagType = computed(() => {
-      switch (buildTestStatus.value) {
-        case "READY": return "success";
-        case "PREPARE_FAILED": return "danger";
-        case "PREPARING": return "warning";
-        case "EXPIRED":
-        case "CLOSED": return "warning";
-        default: return "info";
-      }
-    });
-
-    const buildTestStatusText = computed(() => {
-      const map = {
-        NONE: "test.none",
-        PREPARING: "test.preparing",
-        READY: "test.ready",
-        PREPARE_FAILED: "test.failed",
-        CLOSED: "test.closed",
-        EXPIRED: "test.expired",
-        UNAVAILABLE: "test.unavailable",
-      };
-      return t(map[buildTestStatus.value] || "test.unavailable");
-    });
-
-    const buildTestNotice = computed(() => {
-      if (buildTestStatus.value === "NONE") {
-        return { type: "info", message: t("test.noneHint") };
-      }
-      if (buildTestStatus.value === "EXPIRED" || buildTestStatus.value === "CLOSED") {
-        return { type: "warning", message: t("test.expiredHint") };
-      }
-      if (buildTestStatus.value === "PREPARE_FAILED") {
-        return { type: "error", message: t("test.failedHint") };
-      }
-      return null;
-    });
-
     // ---- Member operations (shared by human clicks and agent page_action) ----
     function refreshWorkspaceViews() {
       projectRef.value?.refresh?.();
@@ -298,14 +256,6 @@ await mountPanel({
       available: () => Boolean(currentAppId.value && projectHasDrift.value),
       onSettled: () => {
         refreshWorkspaceViews();
-        previewReloadKey.value += 1;
-      },
-    });
-
-    const restartBuildTestOp = usePanelOperation("project", "restartBuildTest", {
-      available: () => Boolean(currentAppId.value && buildTestCanRestart.value),
-      onSettled: () => {
-        projectRef.value?.refresh?.();
         previewReloadKey.value += 1;
       },
     });
@@ -522,10 +472,6 @@ await mountPanel({
       await syncOp.run();
     }
 
-    const restartTestRunning = computed(() => Boolean(restartBuildTestOp.running.value));
-    async function runRestartBuildTest() {
-      await restartBuildTestOp.run();
-    }
 
     function driftStatusLabel(status) {
       if (status === "added") return t("drawer.driftAdded");
@@ -586,18 +532,12 @@ await mountPanel({
       projectConflictCount,
       conflictFiles,
       previewEntries,
-      buildTestSampleName,
-      buildTestTagType,
-      buildTestStatusText,
-      buildTestNotice,
-      buildTestCanRestart,
       chatSessionContext,
       chatGreeting,
       carriedPageChip,
       carriedSelectionChip,
       refreshTooltip,
       syncSourceRunning,
-      restartTestRunning,
       shortCommit,
       outcomeCommit,
       setTab,
@@ -620,7 +560,6 @@ await mountPanel({
       onPreviewContextChange,
       onPreviewStatusChange,
       runSyncSource,
-      runRestartBuildTest,
       driftStatusLabel,
       jumpToConflictFile,
       openExternalPath,

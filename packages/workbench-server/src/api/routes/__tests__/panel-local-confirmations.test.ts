@@ -82,7 +82,7 @@ function post(url: string, body: object) {
 it.each([
   { executionKind: "live", requireConfirmation: true },
   { executionKind: "live", requireConfirmation: undefined },
-  { executionKind: "build-test", requireConfirmation: false },
+  { executionKind: "preview", requireConfirmation: false },
 ])("handles local action confirmation in full-auto mode (%j)", async ({ executionKind, requireConfirmation }) => {
   const actor = { id: "reader", domainId: "domain" };
   mocks.runForOwner.mockResolvedValue({
@@ -102,7 +102,7 @@ it.each([
   expect(response.status).toBe(200);
   const result = await response.json();
 
-  if (executionKind === "build-test" || requireConfirmation) {
+  if (executionKind === "preview" || requireConfirmation) {
     expect(result).toMatchObject({ autoMode: false, questionId: expect.any(String) });
     expect(mocks.runtimeRequest).toHaveBeenCalledWith(
       "/v1/channel/user-questions", "POST",

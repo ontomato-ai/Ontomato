@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   overview: vi.fn(),
   hasGovernance: vi.fn(),
-  authorize: vi.fn(),
 }));
 
 
@@ -47,7 +46,6 @@ vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   },
 }));
 vi.mock("../ontology-retrieval", () => ({ OntologyRetrievalClient: class { open = mocks.open; } }));
-vi.mock("../../app-builder/build-tests", () => ({ WorkspaceBuildTests: class { authorize = mocks.authorize; } }));
 vi.mock("../../app-builder/sdk", () => ({ currentAppSdk: async () => ({ version: "sdk" }) }));
 vi.mock("../../agent-runtime/skills", () => ({
   workbenchBuiltinSkillRoot: () => "/skills",

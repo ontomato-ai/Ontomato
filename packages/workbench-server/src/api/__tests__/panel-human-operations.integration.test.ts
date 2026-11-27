@@ -8,7 +8,7 @@ import path from "node:path";
 import express from "express";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { panelHumanOperationPreparationSchema } from "@ontomato/contracts/panel-agent";
 import { platformTaskRunSchema, platformTaskSchema } from "@ontomato/contracts/platform-schedules";
 import scheduleExamples from "../../../../contracts/examples/platform-schedules.json";
@@ -16,7 +16,6 @@ import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
-import { buildTestAccess } from "../build-test-access";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "" }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -99,7 +98,7 @@ beforeAll(async () => {
     const userId = req.header("tk");
     Object.assign(req, { userId, domainId: "domain", token: userId, locale: "en" });
     next();
-  }, buildTestAccess, panelOperationsRouter);
+  },  panelOperationsRouter);
   server = await new Promise<Server>(resolve => {
     const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
   });
@@ -116,7 +115,7 @@ afterAll(async () => {
 
 function request(path: string, user: string, body?: object, preview = false) {
   return fetch(state.base + "/api" + path, {
-    headers: { tk: user, "Content-Type": "application/json", ...(preview && { [BUILD_TEST_HEADER]: "preview" }) },
+    headers: { tk: user, "Content-Type": "application/json", ...(preview && { [EXECUTION_CONTEXT_HEADER]: "preview" }) },
     ...(body && { method: "POST", body: JSON.stringify(body) }),
   });
 }

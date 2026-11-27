@@ -330,12 +330,12 @@ export const assistantService = {
       return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader }, appId);
     });
     await assistantStore.admitted(id,message);
-    return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
+    return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "preview" : "live" } };
   },
   async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
     const a = await assistantStore.agent(id,owner);
     if (!a.enabled) throw new HttpError(409,"Agent disabled","AGENT_DISABLED");
-    if (authority?.executionKind === "build-test" && !isAppBuilderKind(a.kind)) throw new HttpError(403,"Build-test runs cannot delegate to a live agent","BUILD_TEST_FORBIDDEN");
+    if (authority?.executionKind === "preview" && !isAppBuilderKind(a.kind)) throw new HttpError(403,"Preview runs cannot delegate to a live agent","PREVIEW_EXECUTION_FORBIDDEN");
     if (authority?.classNames.length) {
       a.class_names = a.class_names.length ? a.class_names.filter(name => authority.classNames.includes(name)) : authority.classNames;
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
@@ -358,7 +358,7 @@ export const assistantService = {
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId, appId ? appWorkspaceSlot(appId) : owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
-    const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
+    const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "preview" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
     const context = {
       ...(appId ? { appId } : {}),
       ...(input.variables ? { variables: input.variables } : {}),

@@ -416,8 +416,6 @@ public class BusinessConfigController {
 			}
 		}
 	}
-	
-    @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping("/businessConfig/generalForm")
     @Owned
     public JSONObject generalForm(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String locale) {

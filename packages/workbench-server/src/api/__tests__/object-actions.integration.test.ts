@@ -22,7 +22,6 @@ import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
-import { buildTestAccess } from "../build-test-access";
 
 /*
  * A published business Action run on one customer object from a panel, over the real operation routes and an isolated
@@ -180,7 +179,7 @@ beforeAll(async () => {
   mountWorkbenchPanelReadsOwner(app, { token: "fixture-service", viewer: userId => ({ domainId: "domain", userId }), read: actionOwnerRead });
   const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
   app.use("/api", createProductPanelReadRouter(authenticate));
-  app.use("/api", authenticate, buildTestAccess, panelOperationsRouter);
+  app.use("/api", authenticate,  panelOperationsRouter);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   server = await new Promise<Server>(resolve => {

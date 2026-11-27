@@ -448,9 +448,9 @@ it("a question without a creator is output on its own run and does not stop it",
   await expect(port.execute(scope,run,{op:"send",session:"parent",message:"Which period?",needsInput:true,defaultAssumption:"Current year"})).resolves.toMatchObject({questionId:inputId,taskId:runId,recipient:"caller"});
   expect(receive).toHaveBeenCalledWith(scope,sessionId,expect.objectContaining({kind:"agent-question",defaultAssumption:"Current year"}),{outputRunId:runId});
 });
-it("native commands refuse build-test authority before contacting a provider",async()=>{
+it("native commands refuse preview authority before contacting a provider",async()=>{
   const {channel:port}=channel();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
-  await expect(port.execute(scope,{...run,channel:{...context,authority:{...context.authority,executionKind:"build-test"}}},{op:"list"})).rejects.toMatchObject({status:422,code:"BUILD_TEST_UNSUPPORTED"});
+  await expect(port.execute(scope,{...run,channel:{...context,authority:{...context.authority,executionKind:"preview"}}},{op:"list"})).rejects.toMatchObject({status:422,code:"PREVIEW_WRITE_FORBIDDEN"});
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -691,7 +691,7 @@ it("parses a task-stream notification with no invented pending-question property
  }]}).notifications?.[0].message).toEqual(notification);
 });
 
-it("authenticates the session command, uses its active run and refuses build-test and late calls", async () => {
+it("authenticates the session command, uses its active run and refuses preview-marked and late calls", async () => {
   const { channel: port } = channel();
   const workspace = await mkdtemp(path.join(os.tmpdir(), "channel-cmd-"));
   const activeRun: RuntimeRun = { ...run, status: "running", executionUserId: "exec-user", channel: humanChannel };
@@ -722,7 +722,7 @@ it("authenticates the session command, uses its active run and refuses build-tes
     expect((await post(commandUrl(scope.hostId, "other-domain"), credential)).status).toBe(401);
     expect((await post(commandUrl(), { "X-Ontomato-Callback-Credential": "wrong-secret" })).status).toBe(401);
     expect((await post(commandUrl(), credential, { op: "list", caller: "forged" })).status).toBe(400);
-    expect((await post(commandUrl(), { ...credential, "X-Ontomato-Execution-Context": "build-test" })).status).toBe(422);
+    expect((await post(commandUrl(), { ...credential, "X-Ontomato-Execution-Context": "{\"kind\":\"preview\"}" })).status).toBe(422);
 
     // 6. Live run start via script channel inherits requestedBy/root/userRecipient and can be read/cancelled natively
     const childId = inputId;
@@ -766,17 +766,17 @@ it("authenticates the session command, uses its active run and refuses build-tes
     await port.execute(scope, activeRun, { op: "cancel", taskId: childId });
     expect(cancel).toHaveBeenCalledWith(scope, childIntent);
 
-    // 7. Build-test authority on the active run is refused with 422
+    // 7. Preview authority on the active run is refused with 422
     active.run = {
       ...activeRun,
-      channel: { ...humanChannel, authority: { ...humanChannel.authority, executionKind: "build-test" } },
+      channel: { ...humanChannel, authority: { ...humanChannel.authority, executionKind: "preview" } },
     };
-    const buildTestRun = await post(commandUrl(), {
+    const previewRun = await post(commandUrl(), {
       "X-Ontomato-Callback-Credential": secret,
       "X-Ontomato-Run-Id": runId,
     });
-    expect(buildTestRun.status).toBe(422);
-    expect(await buildTestRun.json()).toMatchObject({ error: { code: "BUILD_TEST_UNSUPPORTED" } });
+    expect(previewRun.status).toBe(422);
+    expect(await previewRun.json()).toMatchObject({ error: { code: "PREVIEW_WRITE_FORBIDDEN" } });
 
     active.sealed = true;
     expect((await post(commandUrl(), credential)).status).toBe(409);

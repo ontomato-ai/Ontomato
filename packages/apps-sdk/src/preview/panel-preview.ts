@@ -48,7 +48,7 @@ export interface PanelPreviewMountHandle {
 
 /**
  * Outcome of resolving and mounting an application preview in the platform host.
- * Preview tokens, build-test headers, credentials, and raw iframe URLs stay strictly inside the platform host
+ * Preview tokens, execution-context headers, credentials, and raw iframe URLs stay strictly inside the platform host
  * and are never exposed to panel scripts.
  */
 export type PanelPreviewOutcome =
@@ -80,12 +80,12 @@ export type PanelPreviewOutcome =
 /**
  * Platform preview host provided to mounted panels so official `AppPreview` mounts candidate/live panel
  * applications or legacy hosted previews through platform-owned host boundaries without exposing preview tokens,
- * build-test headers, credentials, or raw iframe URLs to panel scripts.
+ * execution-context headers, credentials, or raw iframe URLs to panel scripts.
  */
 export interface PanelPreviewHost {
   /**
    * Resolves and mounts the preview for the requested application/revision/entry into `request.container`.
-   * The host handles all server-side authorization checks and build-test execution bindings internally.
+   * The host handles all server-side authorization checks and preview execution bindings internally.
    */
   mount(request: PanelPreviewRequest, signal?: AbortSignal): Promise<PanelPreviewOutcome>;
 }

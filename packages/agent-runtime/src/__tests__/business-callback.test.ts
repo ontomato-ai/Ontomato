@@ -36,7 +36,7 @@ it.each(["PUT", "DELETE"])("authenticates %s with tk and forwards the full body 
     const body = Uint8Array.of(0, 1, 193, 127, 255);
     const response = await nativeFetch(url, {
       method, body, headers: { tk: sessionCredential, "Content-Type": "application/octet-stream",
-        "X-Ontomato-Execution-Context": '{"kind":"build-test","contextId":null}' },
+        "X-Ontomato-Execution-Context": '{"kind":"preview"}' },
     });
     expect(response.status).toBe(204);
     expect(upstream).toHaveBeenCalledTimes(1);
@@ -48,7 +48,7 @@ it.each(["PUT", "DELETE"])("authenticates %s with tk and forwards the full body 
     expect(headers.get("X-Ontomato-Callback-Credential")).toBe("wbc1.fixture");
     expect(headers.get("X-Ontomato-Run-Id")).toBe(runId);
     expect(headers.get("X-Ontomato-Agent-Execution")).toBe(runId);
-    expect(headers.get("X-Ontomato-Execution-Context")).toBe('{"kind":"build-test","contextId":null}');
+    expect(headers.get("X-Ontomato-Execution-Context")).toBe('{"kind":"preview"}');
     expect(headers.has("tk")).toBe(false);
   } finally {
     await callback.close();

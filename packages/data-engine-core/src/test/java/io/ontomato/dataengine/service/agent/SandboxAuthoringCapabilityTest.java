@@ -20,7 +20,7 @@ class SandboxAuthoringCapabilityTest {
             null, null, null, null);
         when(ontology.rule(access)).thenReturn(Map.of("classDef", List.of()));
         var authoring = new PlatformAuthoringService(null, null, null, null, null, ontology,
-            null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null);
         var sandboxPermissions = mock(SandboxPermissionService.class);
         when(sandboxPermissions.read("business")).thenReturn(JSONObject.of("status", "unchecked"));
         ReflectionTestUtils.setField(authoring, "sandboxPermissions", sandboxPermissions);

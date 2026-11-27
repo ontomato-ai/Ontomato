@@ -1,7 +1,7 @@
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import {
-  ACTION, AGENT_DEFINITION, APPLICATION, APPLICATION_PUBLISH_BUILDER_SOURCE, APPLICATION_RESTART_BUILD_TEST,
+  ACTION, AGENT_DEFINITION, APPLICATION, APPLICATION_PUBLISH_BUILDER_SOURCE,
   APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
   APPROVE_KNOWLEDGE, ATTRIBUTE, BUSINESS_KNOWLEDGE, CLEAR_OBJECT_DETAIL_PANEL, DELETE_ACTION, DELETE_AGENT, DELETE_ATTRIBUTE,
   DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_UNIT, DELETE_PERMISSION_POLICY, DELETE_SKILL, FUNCTION, GENERATE_USER_API_KEY,
@@ -15,7 +15,7 @@ import { HttpError } from "../../utils/errors";
 import { describeObjectAction, objectActionDeclaration, storedObjectActionSchema } from "../action/object-actions";
 import { actionStatusFieldSchema, renderActionStatusInputSchema } from "../action/panel-operations";
 import {
-  builderPublishBlock, canRestartBuilderTest, prepareBuilderProjectFacts, readBuilderProjectDetail, readBuilderProjectStatus,
+  builderPublishBlock, prepareBuilderProjectFacts, readBuilderProjectDetail, readBuilderProjectStatus,
 } from "../app-builder/project-service";
 import { approveUnavailableReason } from "../business-knowledge/panel-operations";
 import { attributeOperationRefusal, attributeReferenceRefusal } from "../ontology-model/model-operations";
@@ -73,7 +73,7 @@ function defersModelRefusal(call: JavaPanelRead["call"], result: JavaPanelReadRe
 
 type OperationDescription = ReturnType<typeof prepareOperationDescriptions>[number];
 const builderOperations = new Set<string>([
-  APPLICATION_SYNC_BUILDER_SOURCE, APPLICATION_RESTART_BUILD_TEST, APPLICATION_PUBLISH_BUILDER_SOURCE,
+  APPLICATION_SYNC_BUILDER_SOURCE, APPLICATION_PUBLISH_BUILDER_SOURCE,
 ]);
 
 function builderTarget(description: OperationDescription) {
@@ -134,7 +134,7 @@ export async function prepareRegisteredOperationRead(
     const opts = builderOptions.get(id) ?? { live: false, status: false };
     const operation = description.handler.handlerRef;
     opts.live ||= operation === APPLICATION_PUBLISH_BUILDER_SOURCE;
-    opts.status ||= operation === APPLICATION_RESTART_BUILD_TEST || operation === APPLICATION_PUBLISH_BUILDER_SOURCE;
+    opts.status ||= operation === APPLICATION_PUBLISH_BUILDER_SOURCE;
     builderOptions.set(id, opts);
   }
   const builderProjects = new Map((await Promise.all([...builderOptions].map(async ([id, options]) =>
@@ -251,7 +251,6 @@ export async function prepareRegisteredOperationRead(
         }
         if (call?.type === APPLICATION && call.name === "deleteAvailability"
             && result.status === "error" && result.code === "APPLICATION_NOT_FOUND") continue;
-        if (call?.type === APPLICATION && call.name === "builderTestStatus" && result.status === "empty") continue;
         if (result.status === "ready" || skipsActionDescription(call, result) || defersModelRefusal(call, result)) continue;
         if (result.status === "empty") return { status: "empty" };
         if (result.status === "forbidden") return { status: "forbidden", reason: result.error };
@@ -262,12 +261,10 @@ export async function prepareRegisteredOperationRead(
         for (const [id, { options, project, indexes }] of builderProjects) {
           const facts = indexes.map(read => results[read]);
           const ctx = await project.context(facts);
-          const test = project.test(facts);
-          const detail = options.live ? await readBuilderProjectDetail(domainId, ctx, locale, () => test) : undefined;
+          const detail = options.live ? await readBuilderProjectDetail(domainId, ctx, locale) : undefined;
           const workspace = detail ?? await readBuilderProjectStatus(ctx, locale);
           builderReasons.set(id, {
             sync: workspace.busy ? "busy" : undefined,
-            restart: canRestartBuilderTest(test) ? undefined : "restartUnavailable",
             publish: detail && builderPublishBlock(detail),
           });
         }
@@ -372,8 +369,7 @@ export async function prepareRegisteredOperationRead(
         if (description.builderProject !== undefined) {
           const reasons = builderReasons.get(description.builderProject)!;
           const operation = description.handler.handlerRef;
-          const reason = operation === APPLICATION_SYNC_BUILDER_SOURCE ? reasons.sync
-            : operation === APPLICATION_RESTART_BUILD_TEST ? reasons.restart : reasons.publish;
+          const reason = operation === APPLICATION_SYNC_BUILDER_SOURCE ? reasons.sync : reasons.publish;
           entries.push([name, reason
             ? { ...descriptor, unavailable: { reason: tForLocale(locale, `panels.appBuilder.${reason}`) } }
             : descriptor]);

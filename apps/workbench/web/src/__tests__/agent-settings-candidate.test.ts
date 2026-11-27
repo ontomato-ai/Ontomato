@@ -38,7 +38,7 @@ function candidate(): CandidatePanelSource {
     kind: "candidate",
     workspace: { id: WORKSPACE, ref: "working" },
     panel: { manifest, content: { html: files["panel.html"]!, module: files["panel.mjs"], recipes: files["recipes.md"], ...content } },
-    previewContext: { kind: "build-test", test: null },
+    previewContext: { kind: "preview" },
   };
 }
 

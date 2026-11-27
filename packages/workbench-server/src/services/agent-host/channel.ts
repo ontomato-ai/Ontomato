@@ -41,7 +41,7 @@ export const agentChannelService = {
     const owner = restored.owner, credentials = { ...restored.credentials,locale: body.language };
     const provider = body.agent.providerId;
     if (provider !== "workbench" && provider !== "observe") throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
-    if (body.authority.executionKind === "build-test" && body.requestedBy) throw new HttpError(422,"Agent delegation is not available in a build-test execution","BUILD_TEST_UNSUPPORTED");
+    if (body.authority.executionKind === "preview" && body.requestedBy) throw new HttpError(422,"Agent delegation is not available in a preview execution","PREVIEW_WRITE_FORBIDDEN");
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
@@ -66,7 +66,7 @@ export const agentChannelService = {
     let prepared;
     // Legacy "observe" provider compatibility layer for `/api/observe/agent/*` and pre-migration ops_sessions.
     if (provider === "observe") {
-      if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
+      if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "PREVIEW_EXECUTION_FORBIDDEN");
       await createDiagnosis(body.sessionId, owner, credentials, null, true);
       prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body));
     } else {

@@ -889,7 +889,7 @@ public class ApplicationCatalog {
                 var request = attributes.getRequest();
                 if (request.getAttribute(QueryGrantService.ATTRIBUTE) != null) {
                     limit = ignored -> false;
-                } else if (request.getHeader(DataSandboxService.HEADER) != null) {
+                } else if (false) {
                     // The MVC interceptor admits only the designated no-business-data endpoints.
                     limit = requestToDecide -> requestToDecide instanceof Entry;
                 } else {

@@ -1,7 +1,7 @@
 import { AgentChannel, type AgentProvider } from "./channel";
 import { processLanguageInstruction } from "./process-language";
 import { agentChannelCommandSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
-import { BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
+import { PREVIEW_WRITE_FORBIDDEN } from "@ontomato/contracts/execution-context";
 import type { RuntimePresentationCallback } from "@ontomato/contracts/agent-presentation";
 import { Workspaces } from "./workspaces";
 import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
@@ -378,8 +378,8 @@ export class AgentRuntime {
   async sessionChannelCommand(scope: Scope, sessionId: string, credential: string | undefined, executionContext: string | undefined, body: unknown) {
     const active = this.activeForSkillCallback(scope, sessionId, credential);
     const { run, controller } = active;
-    if (executionContext !== undefined || run.channel?.authority.executionKind === "build-test")
-      throw new RuntimeError(422, BUILD_TEST_UNSUPPORTED, "The agent channel is not available in a build-test execution");
+    if (executionContext !== undefined || run.channel?.authority.executionKind === "preview")
+      throw new RuntimeError(422, PREVIEW_WRITE_FORBIDDEN, "The agent channel is not available in a preview execution");
     if (!run.channel)
       throw new RuntimeError(403, "FORBIDDEN", "Skill commands are not authorized for this run");
     return this.trackSkillCommand(active, this.channel.execute(scope, run, agentChannelCommandSchema.parse(body), controller.signal));

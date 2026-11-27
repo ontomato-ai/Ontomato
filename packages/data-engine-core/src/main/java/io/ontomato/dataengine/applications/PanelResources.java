@@ -93,7 +93,7 @@ public class PanelResources {
         if (!domain.equals(user.getDomainId()))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Application registration must be in the registrant's domain");
         var servlet = attributes.getRequest();
-        if (servlet.getAttribute(QueryGrantService.ATTRIBUTE) != null || servlet.getHeader(DataSandboxService.HEADER) != null)
+        if (servlet.getAttribute(QueryGrantService.ATTRIBUTE) != null)
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The current credential cannot register an application");
 
         var headers = new HttpHeaders();

@@ -1,5 +1,5 @@
-import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
-import {BUILD_TEST_HEADER,BUILD_TEST_UNSUPPORTED} from '@ontomato/contracts/build-tests';
+import type { AppExecutionContext } from "@ontomato/contracts/execution-context";
+import {EXECUTION_CONTEXT_HEADER,PREVIEW_WRITE_FORBIDDEN,PREVIEW_WRITE_MESSAGE,previewExecutionContextHeader} from '@ontomato/contracts/execution-context';
 import { watch,h,type App } from "vue";
 import { confirmDanger } from "@ontomato/platform-shell";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -109,7 +109,7 @@ export function installProductEmbedding(app:App){
   bridge?.dispose();bridge=installAppBridge(app,host,source=>publishedFrames.get(source)??panelFrames.get(source)?.bridgeIdentity,source=>panelFrames.get(source)?.open??true,expandPageComposer,confirmPanelOperation);
 }
 function assertFrameBinding(previous: AppExecutionContext | undefined, next: AppExecutionContext) {
-  if(previous && (previous.kind!==next.kind || previous.kind==="build-test" && next.kind==="build-test" && (previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId)))
+  if(previous && previous.kind!==next.kind)
     throw new Error("Reload the preview frame to change its execution context");
 }
 /** Register before the frame runs. Updating its ID requires a new frame. */
@@ -134,7 +134,7 @@ function registerFrame(source: object, context: AppExecutionContext) {
 }
 
 export function registerBuildPreview(source: object, context: AppExecutionContext) {
-  if(context.kind!=="build-test") throw new Error("A preview requires a build-test binding");
+  if(context.kind!=="preview") throw new Error("A preview requires a preview binding");
   return registerFrame(source,context);
 }
 /** Published application frames explicitly select live execution through this module. */
@@ -172,11 +172,11 @@ export function registerPanelFrame(source: object,use: PanelUseRef,panel:PanelDe
 
 /**
  * The frame of an author's candidate preview: narrowed by the candidate's declaration like any panel frame, and running
- * on its workspace's build-test context — never live. Its requests carry that context to their owners, which accept
- * them only where they declared support for test data or definition-only reads.
+ * on its workspace's preview context — never live. Its requests carry that context to their owners, which accept
+ * them only where they declared support for preview data or definition-only reads.
  */
-export function registerCandidateFrame(source: object,context: Extract<AppExecutionContext,{kind:"build-test"}>,workspace:CandidatePanelSource["workspace"],panel:PanelDeclaration,open: boolean) {
-  return registerDeclaredFrame(source,`workspace:${context.workspaceId}`,panel,context,open,{kind:"candidate",workspace});
+export function registerCandidateFrame(source: object,workspace:CandidatePanelSource["workspace"],panel:PanelDeclaration,open: boolean) {
+  return registerDeclaredFrame(source,`workspace:${workspace.id}`,panel,{kind:"preview"},open,{kind:"candidate",workspace});
 }
 /** Refuses, before anything is sent, a request of a panel's frame that its declaration does not cover. */
 function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:string,body:BodyInit|null|undefined){
@@ -265,7 +265,7 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
   const panel=panelFrames.get(source);
   if(!panel)throw new Error('This operation is not declared by the panel');
   const {registered}=panel;
-  if(!registered)throw Object.assign(new Error('This operation is not available for test-data preview'),{code:BUILD_TEST_UNSUPPORTED});
+  if(!registered)throw Object.assign(new Error(PREVIEW_WRITE_MESSAGE),{code:PREVIEW_WRITE_FORBIDDEN});
   return confirmPanelIntent(registered.use,intentId,registered.changed,operationId=>{
     const declared=[...panel.memberProjections].some(([member,projectionId])=>operationId.startsWith(`${member}.`)
       &&operationId.length>member.length+1&&panel.bindings.get(projectionId)!=null);
@@ -394,16 +394,16 @@ export function installAppHost(options: {
       }
       if(!['GET','POST','PUT','DELETE'].includes(method))throw new Error('Unsupported SDK request method');
       // A panel frame's requests are its declaration's, and in a candidate
-      // preview they go to their owners marked with its build-test context: each owner admits or refuses them.
-      if(execution.kind==='build-test'&&service!=='/data-query'&&!panel)throw Object.assign(new Error('This operation is not available for test-data preview'),{code:BUILD_TEST_UNSUPPORTED});
+      // preview they go to their owners marked with its preview context: each owner admits or refuses them.
+      if(execution.kind==='preview'&&service!=='/data-query'&&!panel)throw Object.assign(new Error(PREVIEW_WRITE_MESSAGE),{code:PREVIEW_WRITE_FORBIDDEN});
       const headers=new Headers(init.headers);
-      headers.delete(BUILD_TEST_HEADER);headers.delete('tk');headers.delete('authorization');headers.delete('x-api-key');
+      headers.delete(EXECUTION_CONTEXT_HEADER);headers.delete('tk');headers.delete('authorization');headers.delete('x-api-key');
       // A multipart body's Content-Type carries its boundary: only the browser that writes the body may state it.
       if(init.body instanceof FormData)headers.delete('content-type');
       if(!options.credential)throw new Error('Platform credential unavailable');
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);
-      if(execution.kind==='build-test')headers.set(BUILD_TEST_HEADER,JSON.stringify({kind:'build-test',contextId:execution.contextId}));
+      if(execution.kind==='preview')headers.set(EXECUTION_CONTEXT_HEADER,previewExecutionContextHeader);
       const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${path}`,{...init,headers,credentials:'omit',...(readsVectorResource ? {redirect:'error'} : {})});
       return panel?relayToPanel(panel,method,path,service,response):response;
     },
