@@ -314,10 +314,6 @@ public class ActionController {
 		try {
 			User user = SystemUtils.getCurUser();
 			String id = param.getString("id");
-			if ("delete-availability".equals(param.getString("purpose"))) {
-				var reason = actionService.deleteRefusal(id, lang, authorization.subject(user));
-				return JSONObject.of("success", true, "data", JSONObject.of("reason", reason));
-			}
 			Action action = ownedAction(id, user.getDomainId());
 			ret.put("success", true);
 			if (action == null) {

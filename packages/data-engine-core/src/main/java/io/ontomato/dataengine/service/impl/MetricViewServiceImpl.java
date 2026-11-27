@@ -425,19 +425,10 @@ public class MetricViewServiceImpl implements MetricViewService {
   }
 
   @Override
-  public String systemDeletionRefusal(String id, String domainId, String lang) {
-    return systemDeletionRefusal(id, domainId, lang, () -> definitions.current());
-  }
-
-  @Override
   public String systemDeletionRefusal(String id, String lang, SubjectContext subject) {
-    return systemDeletionRefusal(id, subject.identity().domainId(), lang, () -> subject);
-  }
-
-  private String systemDeletionRefusal(String id, String domainId, String lang, java.util.function.Supplier<SubjectContext> subject) {
-    MetricView metric = queryById(id, domainId);
+    MetricView metric = queryById(id, subject.identity().domainId());
     if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
-    definitions.require(subject.get(), access(metric, Verb.EDIT));
+    definitions.require(subject, access(metric, Verb.EDIT));
     OwnerRefusal refusal = systemDeletionRefusal(metric, lang);
     return refusal == null ? null : refusal.getMessage();
   }

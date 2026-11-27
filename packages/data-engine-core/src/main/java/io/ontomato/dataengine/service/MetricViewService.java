@@ -46,8 +46,6 @@ public interface MetricViewService {
 	
 	public void delete(String id, String domainId, String lang) throws Exception;
 
-	String systemDeletionRefusal(String id, String domainId, String lang);
-
 	String systemDeletionRefusal(String id, String lang, SubjectContext subject);
 	
 	public MetricView queryById(String id, String domainId);

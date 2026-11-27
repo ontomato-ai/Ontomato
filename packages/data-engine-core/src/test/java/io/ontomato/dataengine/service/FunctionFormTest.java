@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service;
 
 import static io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions;
 import static io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.subject;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.subject;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -150,26 +151,26 @@ class FunctionFormTest {
     system.setOrigin(Function.ORIGIN_SYSTEM);
     when(functionDao.queryById("f1")).thenReturn(system);
     assertRefusal("FUNCTION_SYSTEM", () -> service.delete("f1", "domain-a", "en"));
-    assertEquals("Function.cannotDeleteSystem", service.deleteRefusal("f1", "domain-a", "en"));
+    assertEquals("Function.cannotDeleteSystem", service.deleteRefusal("f1", "en", subject("domain-a", "user-1")));
 
     Function product = readFunction();
     product.setOperation(Function.OPERATION_PRODUCT);
     when(functionDao.queryById("f1")).thenReturn(product);
     assertRefusal("FUNCTION_PRODUCT_IMMUTABLE", () -> service.delete("f1", "domain-a", "en"));
-    assertEquals("Function.cannotDeleteProduct", service.deleteRefusal("f1", "domain-a", "en"));
+    assertEquals("Function.cannotDeleteProduct", service.deleteRefusal("f1", "en", subject("domain-a", "user-1")));
 
     when(functionDao.queryById("f1")).thenReturn(readFunction());
     when(metricViewDao.referencedFunctionIds()).thenReturn(Set.of("f1"));
     assertRefusal("FUNCTION_REFERENCED", () -> service.delete("f1", "domain-a", "en"));
-    assertEquals("Function.referencedByMetricView", service.deleteRefusal("f1", "domain-a", "en"));
+    assertEquals("Function.referencedByMetricView", service.deleteRefusal("f1", "en", subject("domain-a", "user-1")));
     verify(functionDao, never()).delete(anyString());
 
     // The reason is the reader's: the owner looks it up in the language the request names.
-    service.deleteRefusal("f1", "domain-a", "zh-CN");
+    service.deleteRefusal("f1", "zh-CN", subject("domain-a", "user-1"));
     verify(langService).get("zh-CN", "Function.referencedByMetricView");
 
     when(metricViewDao.referencedFunctionIds()).thenReturn(Set.of());
-    assertNull(service.deleteRefusal("f1", "domain-a", "en"));
+    assertNull(service.deleteRefusal("f1", "en", subject("domain-a", "user-1")));
   }
 
   @Test
@@ -178,8 +179,8 @@ class FunctionFormTest {
 
     service.delete("f1", "domain-b", "en");
     verify(functionDao, never()).delete(anyString());
-    assertRefusal("FUNCTION_NOT_FOUND", () -> service.deleteRefusal("f1", "domain-b", "en"));
-    assertRefusal("FUNCTION_NOT_FOUND", () -> service.deleteRefusal("missing", "domain-a", "en"));
+    assertRefusal("FUNCTION_NOT_FOUND", () -> service.deleteRefusal("f1", "en", subject("domain-b", "user-1")));
+    assertRefusal("FUNCTION_NOT_FOUND", () -> service.deleteRefusal("missing", "en", subject("domain-a", "user-1")));
   }
 
   @Test

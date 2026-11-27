@@ -22,11 +22,9 @@ public interface FunctionService {
 	public void delete(String id, String domainId, String lang) throws Exception;
 
 	/**
-	 * Why the owner would refuse to delete this domain's Function, in the reader's language, or null when it may be deleted.
-	 * The same rule the delete applies; a Function not in this domain does not exist.
+	 * Why the owner would refuse this subject deleting its domain's Function, in the reader's language, or null when it
+	 * may be deleted. The same rule the delete applies; a Function not in this domain does not exist.
 	 */
-	public String deleteRefusal(String id, String domainId, String lang);
-
 	String deleteRefusal(String id, String lang, SubjectContext subject);
 	
 	public Function queryById(String id);
