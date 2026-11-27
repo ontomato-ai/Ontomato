@@ -136,32 +136,3 @@ it("keeps a running reply's steps on one folded line until the reader opens them
   expect(root.querySelector("button.process-toggle")?.getAttribute("aria-expanded")).toBe("false");
   expect((root.querySelector(".process-body") as HTMLElement).style.display).toBe("none");
 });
-
-it("keeps the outer process open through retrieval waiting and folds when the final reply arrives", async () => {
-  const root = document.createElement("div"); document.body.append(root);
-  const item = ref(response("r", true));
-  app = createApp({ render: () => h(ShellResponse, { item: item.value, sessionId: "s" }) });
-  provide(app); app.mount(root);
-  item.value = { ...item.value, running: false, handoff: true, delegationProgress: "delegating" };
-  await nextTick();
-  expect(root.querySelector("button.process-toggle")?.getAttribute("aria-expanded")).toBe("true");
-  item.value = { ...item.value, handoff: false, delegationProgress: undefined, answerMessageId: "answer", answerText: "Done" };
-  await nextTick();
-  expect(root.querySelector("button.process-toggle")?.getAttribute("aria-expanded")).toBe("false");
-});
-
-it("preserves a manual outer fold or expansion across progress and completion", async () => {
-  const root = document.createElement("div"); document.body.append(root);
-  const item = ref(response("r", true));
-  app = createApp({ render: () => h(ShellResponse, { item: item.value, sessionId: "s" }) });
-  provide(app); app.mount(root);
-  const button = root.querySelector<HTMLButtonElement>("button.process-toggle")!;
-  button.click(); await nextTick();
-  item.value = { ...item.value, running: false, delegationProgress: "delegating" };
-  await nextTick();
-  expect(button.getAttribute("aria-expanded")).toBe("false");
-  button.click(); await nextTick();
-  item.value = { ...item.value, delegationProgress: undefined, finishedAt: 1000 };
-  await nextTick();
-  expect(button.getAttribute("aria-expanded")).toBe("true");
-});

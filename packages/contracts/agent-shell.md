@@ -148,7 +148,7 @@ Lookup is always host override → shell default → generic file card or step.
   HTML is escaped. The shell adds only its link and image nodes for `outputs/`
   files and host page links.
 - **Process, answer and reviews**: a response has three regions. The process holds the main
-  agent's own text, thinking and tool steps, and the cards of the retrievals it delegated
+  agent's own text, thinking and tool steps, and the cards of the tasks it delegated
   (each after the work that started it), in order; it is
   open and grows while the run works, and folds to one "worked for" line with the
   main run's duration once the run stops, which the user can open again. The answer
@@ -159,13 +159,12 @@ Lookup is always host override → shell default → generic file card or step.
   answer and its actions come the quality reviews of the data the answer cited, one per
   retrieval, signed as another party's and folded to one line (score and first sentence);
   they appear once the reply has its answer and update as checks settle. The process stays
-  open while a retrieval it delegated still runs after the run stopped to wait for it.
+  open while a delegated task still runs and the run has no answer.
 - **Tasks**: a host that serves the [task routes](agent-tasks.md) sets `tasks` on its client
-  and supplies `labels.tasks`. Each delegated task renders in a light bounded card with a
-  role badge (retriever or generic delegated agent), title, status pill, delivered datasets
-  when applicable, and—while an inline task runs—its live thinking, notes and steps followed
-  in their own state with the same reducer; its files show as names only. Folded handoff
-  turns label themselves as delegated work rather than a specific executor. The
+  and supplies `labels.tasks`. Each delegated task renders in a light bounded card with the
+  delegated agent's display name, title, status pill, delivered datasets when applicable,
+  and—while an inline task runs—its live thinking, notes and steps followed in their own
+  state with the same reducer; its files show as names only. The
   conversation's corner opens the reply's task list, which leads to a card or a review.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
   card that opens the right panel; an unclosed reference shows a placeholder.

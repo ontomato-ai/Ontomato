@@ -375,6 +375,20 @@ restricted to the creator and created children. Inputs have one stable message I
 assigned on receipt, with a null runId until consumed. Notifications retain their role through
 history and UI; only the model boundary presents them as explicitly attributed context.
 
+`start` is admission-only: it validates the target in the provider directory, records that directory
+entry's display name on the admission intent for task projection, returns `{taskId,sessionRef,status}`,
+and the child runs asynchronously. `wait` is the separate run-only operation for a direct child. It
+long-waits on session events, not polling, until the same delivery condition used for a completion
+notification is met: the provider has settled, `/read` is terminal, the final assistant reply has been
+read, and the delivered files have been linked and registered in the parent session. It then returns
+`{taskId,state:"delivered",outcome,content,files}` as its tool result. If a question or another input
+reaches the waiting run first, it returns early with `state:"interrupted"` and `reason:"question"` or
+`"input"` (a question carries its request id, text, default and options); the caller may answer or
+consume that input and call `wait` again. Only the run that started the child may wait for it. A result
+collected by `wait` is not also sent as an `agent-result` notification in the same runtime process; if
+the notification had already been accepted before the wait, both inputs remain visible to the model.
+Cancellation aborts the wait with the parent run.
+
 Provider `prepare` receives mode `run` or `steer`, the execution language and a typed input, including question kind and
 replyTo. Questions do not stop the sender. The runtime consumes ordinary queued notifications at the end-of-loop boundary and steering inputs through PI getSteeringMessages. The runtime reserves a preparing
 intent under the session lock, calls prepare outside it, then confirms admission under the lock.
@@ -386,11 +400,12 @@ receives `{providerId,actor,executionActor?,language}` and returns only that pro
 calls every registered provider directly and merges their lists; Java answers only the ontology
 provider's list and identity recovery. There is no separate directory port or Java-to-Node lookup.
 Prepare receives requestedBy (nullable) and the fixed root. Run mode returns a runtime start request; steer mode acknowledges the host's input recording and can return updated host context. The runtime retains typed input and its original receipt ID in both cases. Settle closes
-business eligibility; read returns the host's delivery projection. Retrieval summaries are one sentence
-with its status, process, results and formal file list. After the provider reports the execution settled,
-the runtime reads the child run's final assistant reply itself, maps the listed immutable artifacts as read-only
-links beneath the parent session's `outputs/agents/<taskId>/`, and notifies the parent with the reply and exact paths
-to cite. The parent session resolves those paths as artifact references without copying their bytes. Cancel closes eligibility
+business eligibility; read returns the host's delivery projection with its status, process, results and
+formal file list. After the provider reports the execution settled, the runtime reads the child run's
+final assistant reply itself, maps the listed immutable artifacts as read-only links beneath the parent
+session's `outputs/agents/<taskId>/`, and either returns them to a waiting parent run or notifies the
+parent with the reply and exact paths to cite. The parent session resolves those paths as artifact references
+without copying their bytes. Cancel closes eligibility
 before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
 automatic wakeup from that cancellation. No platform task table or delegation budget is added.
 
@@ -417,11 +432,11 @@ An ordinary busy send fails with SESSION_BUSY before recording an input unless s
 A question requires a defaultAssumption and never ends the sender's loop. A root with no creator
 records its outgoing question in its own read/events; it does not fabricate a parent run.
 
-POST `/platform/agent-channel/commands` accepts the five verbs from agent-channel.ts. The Java
+POST `/platform/agent-channel/commands` accepts the verbs from agent-channel.ts. The Java
 boundary authenticates tk/API Key and derives the domain; the runtime uses the same execute
 path as the native tool, with an explicit external caller rather than a synthetic RuntimeRun.
-Only this endpoint uses the explicit external caller (empty `requestedBy`, independent `root`).
-Reads and cancellation resolve an existing task's actor only after checking its canonical user
+Only this endpoint uses the explicit external caller (empty `requestedBy`, independent `root`);
+because it is not a parent run, it cannot use `wait`. Reads and cancellation resolve an existing task's actor only after checking its canonical user
 and domain. GET `/platform/agent-channel/tasks/:taskId/events` registers the subscription before
 reading a task_snapshot and pushes changes. The files endpoint rechecks exact-run delivery
 ownership. Standalone CLI `read --files` downloads delivered bytes to `outputs` through the provider file entry.
@@ -477,7 +492,8 @@ and closure, while the agent caller's lifetime also covers children after their 
 
 Intent reads are scoped to their use: task IDs use a domain/task lookup, read/cancel authorization
 walks requestedBy ancestors, and task snapshots use a recursive CTE seeded by this conversation's
-direct delegations. Direct child reads and recursive joins use requestedBy expression indexes;
+direct delegations. Agent task entries carry the provider-directory display name captured at delegation
+time as `agentName`. Direct child reads and recursive joins use requestedBy expression indexes;
 conversation seeds use a requester-session expression index. No domain-wide intent list is read.
 
 ### Initiating credentials and delegated authorization

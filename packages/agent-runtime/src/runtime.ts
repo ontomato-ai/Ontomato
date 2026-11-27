@@ -399,6 +399,14 @@ export class AgentRuntime {
     await this.store.pool.query(`UPDATE ${this.store.table("runs")} SET run=jsonb_set(run,'{definition,context}',$4::jsonb) WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[scope.hostId,scope.domainId,runId,JSON.stringify(context)]);
   }
   acceptsInput(scope: Scope, runId: string) { const active=this.active.get(key(scope,runId));return !!active && !active.sealed; }
+  /** Inputs already handed to the engine but not yet consumed by the model. */
+  inputInFlight(scope: Scope, runId: string) {
+    const active = this.active.get(key(scope, runId));
+    return {
+      waiting: active?.inputPending ?? false,
+      inputs: active ? [...active.sentInputs].map(([id, input]) => ({ id, message: input.message })) : [],
+    };
+  }
   private activeForSkillCallback(scope: Scope, sessionId: string, credential: string | undefined) {
     const runId = this.sessionEngines.callbackRun(scope, sessionId, credential);
     const active = this.active.get(key(scope, runId))!;

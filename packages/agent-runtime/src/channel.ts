@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { agentChannelCommandSchema, agentDeliverySchema, agentProviderAcknowledgementSchema, agentSteerPreparationSchema, agentDirectorySchema, type AgentRunIntent, type AgentRunContext, type AgentExecutionRef, type AgentSessionRef, type AgentInput, type AgentNotification, type AgentPrepareRequest, type AgentActorRef, type AgentCredential, type AgentInputDelivery } from "@ontomato/contracts/agent-channel";
+import { agentChannelCommandSchema, agentDeliverySchema, agentProviderAcknowledgementSchema, agentSteerPreparationSchema, agentDirectorySchema, type AgentRunIntent, type AgentRunContext, type AgentExecutionRef, type AgentSessionRef, type AgentInput, type AgentNotification, type AgentPrepareRequest, type AgentActorRef, type AgentCredential, type AgentInputDelivery, type AgentDeliveredFile } from "@ontomato/contracts/agent-channel";
 import type { AgentUserQuestionRequest } from "@ontomato/contracts/agent-user-questions";
 import { isDirectUserRun, MID_ROUND_RESULT_NOTIFICATION_FACT } from "@ontomato/contracts/agent-visibility";
 import type { PresentationBinding } from "@ontomato/contracts/agent-presentation";
@@ -17,7 +17,7 @@ import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contra
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
 
 const CHANNEL_TOOL_DESCRIPTION =
-  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its result will wake you with a notification when finished; if you need to wait for the child task, end this turn instead of polling with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, view, cursor, limit; inspects an execution, its delivered file references, or its messages, not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
+  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its result wakes you with a notification when finished unless you collect it with wait. wait: taskId; waits for that direct child's delivery and returns its final status, final reply and delivered file references, or returns early when a question or another input reaches this run. Do not poll with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, view, cursor, limit; inspects an execution, its delivered file references, or its messages, not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
 
 const CHANNEL_TOOL_PARAMETERS: RuntimeJsonObject = {
   type: "object",
@@ -86,11 +86,20 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 
 export interface ExternalAgentCaller { kind:"external";actor:AgentActorRef;authority:AgentRunContext["authority"];language:string;credential:AgentCredential }
 export interface AgentProvider { id: string; hostId: string; url: string; token: string }
+interface SettledAgentResult {
+  intent: AgentRunIntent;
+  outcome: "completed" | "failed" | "cancelled";
+  content: string;
+  files: AgentDeliveredFile[];
+}
 type Listener = () => void;
 export class AgentChannel {
   readonly facts: ChannelStore;
   /** PI returns the same queued object; preserve its receipt identity in the event sink. */
   private listeners = new Map<string, Set<Listener>>();
+  private resultWaiters = new Map<string, number>();
+  private resultsInTool = new Set<string>();
+  private resultQueues = new Map<string, Promise<void>>();
   private chains = new Map<string, { credential: AgentCredential; executions: Set<string>; presentationBinding?: PresentationBinding }>();
   private chainKey(channel: AgentRunContext) { return JSON.stringify([channel.actor.domainId,channel.root.session.providerId,channel.root.session.sessionId,channel.root.runId]); }
   remember(channel: AgentRunContext, credential: AgentCredential, presentationBinding?: PresentationBinding) {
@@ -459,7 +468,7 @@ export class AgentChannel {
         language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,
         context:resultRecipientRunId ? previous!.context : web?.context ?? binding.context,
         executionUserId:account,
-        queued,
+        queued,agentName:previous?.agentName,
       });
       if((web || external) && channel.root.runId===runId)
         this.remember(channel,web?.credential ?? external!.credential,web?.presentationBinding);
@@ -494,7 +503,7 @@ export class AgentChannel {
     if (!rows.length) return;
     // Left-over input runs as the run it was given to, so it keeps that run's identity rather than this one's.
     const owner = rows[0].intentId && rows[0].intentId !== run.id ? await this.facts.intent(scope, rows[0].intentId) : null;
-    const followUp=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, owner?.channel ?? run.channel, { language: (owner ?? intent).language,context: (owner ?? intent).context,executionUserId:owner ? owner.executionUserId : run.executionUserId });
+    const followUp=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, owner?.channel ?? run.channel, { language: (owner ?? intent).language,context: (owner ?? intent).context,executionUserId:owner ? owner.executionUserId : run.executionUserId,agentName:(owner ?? intent).agentName });
     this.retain(followUp);return followUp;
   }
   async stopped(scope: Scope, run: RuntimeRun, next?: AgentRunIntent) {
@@ -511,33 +520,57 @@ export class AgentChannel {
       throw error;
     } finally { if (next) this.launch(next); }
   }
+  private resultKey(scope: Scope, runId: string) { return JSON.stringify([scope.hostId, scope.domainId, runId]); }
+  /** Read the provider's settled delivery once and map the files it names into the requester's session. */
+  private async prepareResult(scope: Scope, runId: string, preparedFailure = false, signal?: AbortSignal): Promise<SettledAgentResult | null> {
+    const intent = await this.facts.intent(scope, runId);
+    const missingRun = preparedFailure || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode !== "model" && !await this.facts.hasRun(scope, runId));
+    const delivery = missingRun
+      ? { status: intent.status, settled: true, files: [] }
+      : agentDeliverySchema.parse(await this.callback(intent, "read", signal));
+    if (delivery.status === "running" || delivery.status === "starting" || !delivery.settled) return null;
+    let content = intent.error ?? delivery.status;
+    if (delivery.status === "completed") {
+      const reply = await this.runtime.store.finalReply(scope, runId);
+      content = reply && reply.role === "assistant"
+        ? reply.content.filter(part => part.type === "text").map(part => part.text).join("\n")
+        : "";
+    }
+    const parent = intent.channel.requestedBy;
+    const files = parent && delivery.files.length
+      ? await this.runtime.linkAgentFiles(this.scope(parent.session, scope.domainId), parent.session.sessionId, intent.channel.authority.executionKind, scope, intent.session.sessionId, runId, delivery.files)
+      : [];
+    return { intent, outcome: delivery.status, content, files };
+  }
+  /** Serialize delivery reads per child: an unsettled read racing settlement can never be reused as the post-settlement answer. */
+  private settledResult(scope: Scope, runId: string, signal?: AbortSignal) {
+    const key = this.resultKey(scope, runId);
+    const tail = this.resultQueues.get(key) ?? Promise.resolve();
+    const result = tail.then(() => this.prepareResult(scope, runId, false, signal));
+    const queued = result.then(() => undefined, () => undefined);
+    this.resultQueues.set(key, queued);
+    void queued.then(() => {
+      if (this.resultQueues.get(key) === queued) this.resultQueues.delete(key);
+    });
+    return result;
+  }
+  private resultWaiterActive(scope: Scope, runId: string) {
+    return (this.resultWaiters.get(this.resultKey(scope, runId)) ?? 0) > 0;
+  }
   private async notify(scope: Scope, runId: string,preparedFailure=false) {
     const intent = await this.facts.intent(scope, runId);
     await this.announce(intent);
-    const parent = intent.channel.requestedBy;
-    const missingRun = preparedFailure || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(scope,runId));
-    const delivery = missingRun
-      ? { status: intent.status, settled: true, files: [] }
-      : agentDeliverySchema.parse(await this.callback(intent, "read"));
-    if (delivery.status === "running" || delivery.status === "starting" || !delivery.settled) return;
-    if (parent && !(intent.cancelled && intent.cancelMode!=="model")) {
-      let content = intent.error ?? delivery.status;
-      if (delivery.status === "completed") {
-        const reply = await this.runtime.store.finalReply(scope, runId);
-        content = reply && reply.role === "assistant"
-          ? reply.content.filter(part => part.type === "text").map(part => part.text).join("\n")
-          : "";
-      }
-      const parentScope = this.scope(parent.session, scope.domainId);
-      const files = delivery.files.length
-        ? await this.runtime.linkAgentFiles(parentScope, parent.session.sessionId, intent.channel.authority.executionKind, scope, intent.session.sessionId, runId, delivery.files)
-        : [];
-      await this.deliver(parent.session, intent.channel.actor, {
-        role: "notification", kind: "agent-result", source: { session: intent.session, runId },
-        outcome: delivery.status, content, files, timestamp: Date.now(),
-      }, { resultRecipientRunId: parent.runId, senderAuthority: intent.channel.authority });
+    // Preparation failed before a settled provider execution existed, so there is no provider delivery to read.
+    const result = preparedFailure ? await this.prepareResult(scope, runId, true) : await this.settledResult(scope, runId);
+    if (!result) return;
+    const parent = result.intent.channel.requestedBy;
+    if (parent && !(result.intent.cancelled && result.intent.cancelMode !== "model") && !this.resultsInTool.has(this.resultKey(scope, runId)) && !this.resultWaiterActive(scope, runId)) {
+      await this.deliver(parent.session, result.intent.channel.actor, {
+        role: "notification", kind: "agent-result", source: { session: result.intent.session, runId },
+        outcome: result.outcome, content: result.content, files: result.files, timestamp: Date.now(),
+      }, { resultRecipientRunId: parent.runId, senderAuthority: result.intent.channel.authority });
     }
-    if (delivery.settled) this.release(intent);
+    this.release(result.intent);
   }
   async changed(scope:Scope,runId:string,kind:"delivery"|"quality"|"progress") {
     const intent=await this.facts.intent(scope,runId);
@@ -569,6 +602,52 @@ export class AgentChannel {
     const fact = midRound && message.kind === "agent-result" ? `\n${MID_ROUND_RESULT_NOTIFICATION_FACT}` : "";
     return { role:"user", timestamp:message.timestamp,
       content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome,files:message.files})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}${fact}` };
+  }
+  private async waitInterruption(scope: Scope, run: RuntimeRun) {
+    const inputs = new Map<string, AgentInput>();
+    for (const row of await this.facts.pending(scope, run.sessionId, undefined, run.id)) inputs.set(row.id, row.message as AgentInput);
+    const inFlight = this.runtime.inputInFlight(scope, run.id);
+    for (const input of inFlight.inputs) inputs.set(input.id, input.message as AgentInput);
+    for (const [id, message] of inputs) {
+      if (message.role === "notification" && message.kind === "agent-question")
+        return { reason: "question" as const, question: { requestId: id, message: message.content, defaultAssumption: message.defaultAssumption, ...(message.options ? { options: message.options } : {}) } };
+    }
+    return inputs.size || inFlight.waiting ? { reason: "input" as const } : null;
+  }
+  private sameExecution(left: AgentExecutionRef, right: AgentExecutionRef) {
+    return left.runId === right.runId && left.session.providerId === right.session.providerId && left.session.sessionId === right.session.sessionId;
+  }
+  private async waitForResult(scope: Scope, run: RuntimeRun, entry: { scope: Scope; intent: AgentRunIntent }, source: AgentExecutionRef, signal?: AbortSignal) {
+    const parent = entry.intent.channel.requestedBy;
+    if (!parent || !this.sameExecution(parent, source)) throw new RuntimeError(403, "FORBIDDEN", "Only the execution that delegated a task can wait for its result");
+    const key = this.resultKey(entry.scope, entry.intent.id);
+    this.resultWaiters.set(key, (this.resultWaiters.get(key) ?? 0) + 1);
+    let wake: () => void = () => {};
+    let changed = new Promise<void>(resolve => { wake = resolve; });
+    const unsubscribe = this.subscribe(scope, run.sessionId, () => wake());
+    const aborted = new Promise<never>((_resolve, reject) => {
+      if (signal?.aborted) reject(signal.reason);
+      else signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+    try {
+      for (;;) {
+        signal?.throwIfAborted();
+        const result = await Promise.race([this.settledResult(entry.scope, entry.intent.id, signal), aborted]);
+        if (result) {
+          this.resultsInTool.add(key);
+          return { taskId: entry.intent.id, state: "delivered", outcome: result.outcome, content: result.content, files: result.files };
+        }
+        const interrupted = await this.waitInterruption(scope, run);
+        if (interrupted) return { taskId: entry.intent.id, state: "interrupted", ...interrupted };
+        await Promise.race([changed, aborted]);
+        changed = new Promise<void>(resolve => { wake = resolve; });
+      }
+    } finally {
+      unsubscribe();
+      const count = this.resultWaiters.get(key)! - 1;
+      if (count) this.resultWaiters.set(key, count);
+      else this.resultWaiters.delete(key);
+    }
   }
   tool(scope: Scope, run: RuntimeRun): PlatformTool {
     return {
@@ -602,9 +681,18 @@ export class AgentChannel {
     if (command.op === "start") {
       const target = { providerId: command.agent.providerId, sessionId: randomUUID() }, targetScope = this.scope(target, scope.domainId);
       const runId=randomUUID();
+      const port = this.provider(command.agent.providerId);
+      const directory = agentDirectorySchema.parse(await this.post(port, "/list", {
+        providerId: port.id,
+        actor: channel.actor,
+        executionActor: current?.executionUserId ? { userId: current.executionUserId, domainId: scope.domainId } : null,
+        language: run.language,
+      }, scope.domainId, external?.credential ?? this.credential(current!.channel!), signal));
+      const agent = directory.agents.find(entry => entry.ref.providerId === command.agent.providerId && entry.ref.agentId === command.agent.agentId);
+      if (!agent) throw new RuntimeError(404, "AGENT_NOT_FOUND", "Agent is not in its provider directory");
       const intent = await this.runtime.locked(targetScope, target.sessionId, () => this.facts.reserve(targetScope, target.sessionId,runId,randomUUID(),
         { agent: command.agent, actor: channel.actor, authority: channel.authority, requestedBy: source ?? null, root: channel.root ?? {session:target,runId}, userRecipient: current?.channel?.userRecipient ?? null },
-        { language: run.language,context: command.context, title: command.title, create: { binding: { agent: command.agent, actor: channel.actor, parent: source ?? null, context: command.context },
+        { language: run.language,context: command.context, title: command.title, agentName: agent.name, create: { binding: { agent: command.agent, actor: channel.actor, parent: source ?? null, context: command.context },
           input: { role: "notification", kind: "agent-message", source: source ?? {kind:"external"}, content: command.message, timestamp: Date.now() } } }));
       if (external) this.remember(intent.channel,external.credential);
       this.retain(intent);
@@ -643,6 +731,10 @@ export class AgentChannel {
     if (!entry || (source?!await this.accessible(entry.intent,source.session,scope.domainId):channel.actor.id!==entry.intent.channel.actor.id)) throw new RuntimeError(403, "FORBIDDEN", "Execution is outside your delegation tree");
     if (command.op === "cancel") {
       await this.cancel(entry.scope, entry.intent); return { taskId: command.taskId, accepted: true };
+    }
+    if (command.op === "wait") {
+      if (!current || !source) throw new RuntimeError(403, "ACTOR_REQUIRED", "Only a run in this runtime can wait for a delegated result");
+      return this.waitForResult(scope, current, entry, source, signal);
     }
     const intent = entry.intent;
     const questions=await this.facts.questions(entry.scope,{session:intent.session,runId:intent.id});
@@ -725,7 +817,7 @@ export class AgentChannel {
       const input = (await this.runtime.store.messages(this.scope(intent.session,scope.domainId),intent.session.sessionId)).find(row => row.id === intent.inputId)!.message;
       tasks.push({ id: intent.id, kind: "agent", root: { sessionId, runId: rootRunId }, requestedBy, parentTaskId: own(requestedBy) ? null : requestedBy.runId,
         title: intent.title ?? (typeof input.content === "string" ? input.content.split("\n")[0] : intent.channel.agent.agentId), status: delivery?.status ?? intent.status, error: intent.error ? { code: "AGENT_EXECUTION_FAILED", message: intent.error } : null,
-        createdAt: intent.createdAt, agentRef: intent.channel.agent, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [] });
+        createdAt: intent.createdAt, agentRef: intent.channel.agent, agentName: intent.agentName!, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [] });
     }
     // Quality checks belong to the host's replies; the host adds them to this projection.
     return { sessionId, tasks, qualityResults: [], preparationFailures: await this.facts.preparationFailures(scope,sessionId), queuedRuns: await this.facts.queuedRuns(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };

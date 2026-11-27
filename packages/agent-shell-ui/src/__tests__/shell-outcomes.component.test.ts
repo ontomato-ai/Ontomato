@@ -285,7 +285,7 @@ describe("tool outcome tri-state", () => {
   it("renders unknown outcome visually distinct from failed and completed in ShellResponse", async () => {
     const state = emptyConversation(sessionId);
     applyRunSnapshot(state, makeSnapshot({
-      run: makeRun({ status: "stopped", stopReason: "aborted", finishedAt: new Date(5000).toISOString() }),
+      run: makeRun({ status: "stopped", stopReason: "error", errorMessage: "Engine failed", finishedAt: new Date(5000).toISOString() }),
       messages: [
         { id: userId, runId, messageSeq: 0, contextSeq: 0, message: { role: "user", content: "Deploy", timestamp: 1 } },
         {
@@ -526,5 +526,31 @@ describe("token usage display", () => {
     expect(item.usage).toEqual({
       counts: { input: 900, output: 170, cacheRead: 300, cacheWrite: 30, totalTokens: 1400 },
     });
+  });
+
+  it("does not warn about unknown tool outcomes when the reader stopped the run", async () => {
+    const state = emptyConversation(sessionId);
+    applyRunSnapshot(state, makeSnapshot({
+      run: makeRun({ status: "stopped", stopReason: "aborted", finishedAt: new Date(5000).toISOString() }),
+      messages: [
+        { id: userId, runId, messageSeq: 0, contextSeq: 0, message: { role: "user", content: "Deploy", timestamp: 1 } },
+        {
+          id: replyId, runId, messageSeq: 1, contextSeq: 1,
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "c1", name: "agent", arguments: { op: "wait", taskId: "33333333-3333-4333-8333-333333333333" } }],
+            api: null, provider: null, model: null, usage: null, stopReason: "toolUse", timestamp: 2000,
+          },
+        },
+      ],
+      toolExecutions: [{ toolCallId: "c1", toolName: "agent", args: { op: "wait" }, status: "unknown", result: null }],
+    }));
+
+    const item = conversationItems(state).find((entry): entry is ResponseItem => entry.kind === "response")!;
+    const root = mountResponse(item);
+    await nextTick();
+
+    expect(root.querySelector(".process-unknown")).toBeNull();
+    expect(root.querySelector(".end-note")?.textContent).toContain("Stopped");
   });
 });
