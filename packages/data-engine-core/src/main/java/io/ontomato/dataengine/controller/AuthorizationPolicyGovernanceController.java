@@ -51,6 +51,7 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.Map;
 import org.springframework.context.annotation.Bean;
@@ -126,12 +127,12 @@ public class AuthorizationPolicyGovernanceController {
     }
 
     @PostMapping("/entry-roots")
-    public EntryRootsResult entryRoots(HttpServletRequest request, @RequestBody EntryRootsRequest input) {
+    public EntryRootsResult entryRoots(HttpServletRequest request, @RequestBody EntryRootsRequest input, Locale locale) {
         var ctx = authorization.resolveSubject(actor(request));
         requireRead(ctx);
         var domainId = ctx.identity().domainId();
         var selected = input.entryIds() == null ? Set.<String>of() : input.entryIds();
-        var entries = PolicyEntryCatalog.list(catalog, subjects, domainId, selected);
+        var entries = PolicyEntryCatalog.list(catalog, subjects, domainId, selected, locale);
         var policyId = blank(input.policyId()) ? null : input.policyId();
         var existing = List.<ExistingGrant>of();
         var roles = Set.<String>of();
