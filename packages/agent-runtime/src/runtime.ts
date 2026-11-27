@@ -49,7 +49,7 @@ import {
 } from "./skills";
 import type { ResolvedChatModel } from "./model";
 import type { ModelGatewayClient } from "./gateway-client";
-import { RuntimeError, safeMessage } from "./errors";
+import { RuntimeError, missing, safeMessage } from "./errors";
 import { connectMcp } from "./tools";
 import { RuntimeMcpServices } from "./mcp";
 import { RuntimeModelSettings } from "./model-settings";
@@ -792,33 +792,82 @@ export class AgentRuntime {
       return ids;
     });
   }
-  /** Stops admitting anything to these sessions, each inside its own admission lock, or lets them admit again. */
-  async setSessionsClosing(scope: Scope, ids: readonly string[], closing: boolean) {
-    for (const id of ids) await this.locked(scope, id, () => this.store.setClosing(scope, id, closing));
-  }
-  /** `onlyPreviewRuns`: the host deletes on a preview's behalf, which deletes nothing that holds a live run. */
+  /**
+   * Deletes a session on its own. It takes the right to close the session inside the session's admission lock, so a
+   * workspace deletion holding that right refuses it (409 `SESSION_CLOSING`), and gives the right back if it fails.
+   * `onlyPreviewRuns`: the host deletes on a preview's behalf, which deletes nothing that holds a live run.
+   */
   async deleteSession(scope: Scope, id: string, onlyPreviewRuns: boolean) {
     await this.files.withLock(() =>
       this.locked(scope, id, async () => {
-        if (onlyPreviewRuns) await this.store.requireOnlyPreviewRuns(scope, id);
-        const hashes = (
-          await this.store.pool.query(
-            `SELECT DISTINCT sha256 FROM ${this.store.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
-            [scope.hostId, scope.domainId, id],
-          )
-        ).rows;
-        await this.sessionEngines.remove(scope, id);
-        for (const { sha256 } of hashes) {
-          const referenced = (
-            await this.store.pool.query(
-              `SELECT EXISTS(SELECT 1 FROM ${this.store.table("artifacts")} WHERE sha256=$1) OR EXISTS(SELECT 1 FROM ${this.store.table("code_executions")} c, jsonb_each(c.outputs) o WHERE o.value->>'sha256'=$1) AS present`,
-              [sha256],
-            )
-          ).rows[0].present;
-          if (!referenced) await this.files.remove(sha256);
+        if (!await this.store.acquireClosing(scope, id)) missing();
+        try {
+          if (onlyPreviewRuns) await this.store.requireOnlyPreviewRuns(scope, id);
+          await this.removeSession(scope, id);
+        } catch (failed) {
+          await this.store.releaseClosing(scope, id);
+          throw failed;
         }
       }),
     );
+  }
+  /**
+   * Deletes a workspace with its conversations without ever holding one lock while waiting for another: the workspace
+   * row is locked only for the short steps that take, end or complete the right to delete it (a run's start, which
+   * holds its session's lock, may wait on those, and they wait on nothing), and each conversation's admission lock only
+   * while that conversation is closed, released or deleted.
+   *
+   * Once the workspace is being deleted no conversation joins it. Every conversation it holds is then closed to
+   * admission (one a single deletion has already removed is skipped; one another deletion is closing refuses this one),
+   * and only then judged: each must be idle and, on a preview's behalf (`onlyPreviewRuns`), hold only the preview's
+   * runs. If anything fails, what this deletion closed and has not deleted admits runs again and the workspace may be
+   * deleted again.
+   */
+  async deleteWorkspace(scope: Scope, owner: string, id: string, onlyPreviewRuns: boolean) {
+    const conversations = await this.workspaces.beginDeletion(scope, owner, id);
+    const closed: string[] = [];
+    const deleted: string[] = [];
+    try {
+      for (const session of conversations)
+        if (await this.locked(scope, session, () => this.store.acquireClosing(scope, session))) closed.push(session);
+      for (const session of closed) {
+        await this.store.requireIdle(scope, session);
+        if (onlyPreviewRuns) await this.store.requireOnlyPreviewRuns(scope, session);
+      }
+      for (const session of closed) {
+        await this.files.withLock(() => this.locked(scope, session, async () => {
+          if (onlyPreviewRuns) await this.store.requireOnlyPreviewRuns(scope, session);
+          await this.removeSession(scope, session);
+        }));
+        deleted.push(session);
+      }
+      await this.workspaces.completeDeletion(scope, owner, id);
+    } catch (failed) {
+      for (const session of closed)
+        if (!deleted.includes(session)) await this.locked(scope, session, () => this.store.releaseClosing(scope, session));
+      await this.workspaces.endDeletion(scope, id);
+      throw failed;
+    }
+    return { sessionIds: deleted };
+  }
+  /** Inside the session's admission lock. */
+  private async removeSession(scope: Scope, id: string) {
+    const hashes = (
+      await this.store.pool.query(
+        `SELECT DISTINCT sha256 FROM ${this.store.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
+        [scope.hostId, scope.domainId, id],
+      )
+    ).rows;
+    await this.sessionEngines.remove(scope, id);
+    for (const { sha256 } of hashes) {
+      const referenced = (
+        await this.store.pool.query(
+          `SELECT EXISTS(SELECT 1 FROM ${this.store.table("artifacts")} WHERE sha256=$1) OR EXISTS(SELECT 1 FROM ${this.store.table("code_executions")} c, jsonb_each(c.outputs) o WHERE o.value->>'sha256'=$1) AS present`,
+          [sha256],
+        )
+      ).rows[0].present;
+      if (!referenced) await this.files.remove(sha256);
+    }
   }
   private async snapshotUnlocked(
     scope: Scope,

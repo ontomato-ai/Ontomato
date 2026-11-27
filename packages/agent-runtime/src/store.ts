@@ -36,6 +36,9 @@ export type ExecutionLane = "live" | "preview";
 export function sessionClosing() {
   return new RuntimeError(409, "SESSION_CLOSING", "The conversation is being deleted");
 }
+export function workspaceDeleting() {
+  return new RuntimeError(409, "WORKSPACE_DELETING", "The workspace is being deleted");
+}
 export function runLane(run: { channel?: { authority: { executionKind: ExecutionLane } } | null }): ExecutionLane {
   return run.channel?.authority.executionKind ?? "live";
 }
@@ -181,6 +184,7 @@ export class RuntimeStore {
         created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY(host_id,domain_id,id));
         CREATE INDEX IF NOT EXISTS workspaces_owner_idx ON ${this.table("workspaces")}(host_id,domain_id,owner_id,updated_at,id);
+        ALTER TABLE ${this.table("workspaces")} ADD COLUMN IF NOT EXISTS deleting boolean NOT NULL DEFAULT false;
         ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS workspace_id uuid;
         CREATE INDEX IF NOT EXISTS sessions_workspace_idx ON ${this.table("sessions")}(host_id,domain_id,workspace_id);`);
       if (!versions.some(row => row.version === 3)) {
@@ -358,8 +362,9 @@ export class RuntimeStore {
   async createSession(scope: Scope, id: string, workspaceId?: string, owner?: string) {
     const replayed = await this.transaction(async (c) => {
       if (workspaceId) {
-        const row = (await c.query(`SELECT id FROM ${this.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND owner_id=$4`, [...values(scope), workspaceId, owner])).rows[0];
+        const row = (await c.query(`SELECT id,deleting FROM ${this.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND owner_id=$4`, [...values(scope), workspaceId, owner])).rows[0];
         if (!row) missing();
+        if (row.deleting) throw workspaceDeleting();
       }
       const repeat = await this.admission(
         c,
@@ -614,11 +619,21 @@ export class RuntimeStore {
     return rows.map(row => ({ id: row.id, runId: row.run_id, messageSeq: Number(row.context_seq), contextSeq: Number(row.context_seq), message: row.message, lane: row.lane }));
   }
   /**
-   * A session being deleted admits nothing: no input is queued in it and no queued run starts. Set and cleared inside
-   * the session's admission lock, which every admission reads it under.
+   * Takes the right to close a session, inside its admission lock (which every admission reads `closing` under): from
+   * then on it admits nothing, no input is queued in it and no queued run starts. True when taken, false when the
+   * session no longer exists; a session another deletion is closing is refused, so only the deletion that took the right
+   * gives it back.
    */
-  async setClosing(scope: Scope, sessionId: string, closing: boolean) {
-    await this.pool.query(`UPDATE ${this.table("sessions")} SET closing=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId, closing]);
+  async acquireClosing(scope: Scope, sessionId: string): Promise<boolean> {
+    const taken = await this.pool.query(`UPDATE ${this.table("sessions")} SET closing=true WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND NOT closing RETURNING id`, [...values(scope), sessionId]);
+    if (taken.rowCount) return true;
+    const exists = await this.pool.query(`SELECT 1 FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId]);
+    if (exists.rowCount) throw sessionClosing();
+    return false;
+  }
+  /** Gives back the right to close a session its deletion took and did not use; inside the session's admission lock. */
+  async releaseClosing(scope: Scope, sessionId: string) {
+    await this.pool.query(`UPDATE ${this.table("sessions")} SET closing=false WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId]);
   }
   async closing(scope: Scope, sessionId: string): Promise<boolean> {
     const row = (await this.pool.query(`SELECT closing FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId])).rows[0];

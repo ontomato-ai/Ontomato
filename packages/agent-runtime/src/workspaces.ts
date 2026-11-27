@@ -3,17 +3,12 @@ import { mkdir, chmod, rm } from "node:fs/promises";
 import path from "node:path";
 import type pg from "pg";
 import type { WorkspaceFile } from "@ontomato/contracts/workspaces";
-import { RuntimeStore, digest, type Scope } from "./store";
+import { RuntimeStore, digest, workspaceDeleting, type Scope } from "./store";
 import { allocateUid, type WorkerPolicy } from "./worker";
 import { RuntimeError, missing } from "./errors";
 import { WorkspaceGit } from "./workspace-git";
 export function workspaceDirectory(root: string, scope: Scope, id: string) {
   return path.join(root, "workspaces", digest([scope, id]));
-}
-/** The conversations a workspace holds, as the runtime admits and deletes them. */
-export interface WorkspaceConversations {
-  setClosing(ids: readonly string[], closing: boolean): Promise<void>;
-  delete(id: string): Promise<void>;
 }
 export class Workspaces {
   constructor(private store: RuntimeStore, private root: string, private policy: WorkerPolicy) {}
@@ -72,31 +67,29 @@ export class Workspaces {
     });
   }
   /**
-   * Deletes the workspace with every conversation in it, all or none. Admission to every one of them is closed first,
-   * so nothing is queued or started in any while they are judged: each must be idle and, on a preview's behalf
-   * (`onlyPreviewRuns`), hold or have queued only the preview's runs. A refusal opens them all again before anything is
-   * deleted; each is then deleted, checked once more inside its own admission lock.
+   * Takes the right to delete the workspace, in a short transaction that waits on no other lock: from its commit on no
+   * conversation is created in or bound to it. Returns the conversations it holds.
    */
-  async delete(scope: Scope, owner: string, id: string, onlyPreviewRuns: boolean, conversations: WorkspaceConversations) {
+  async beginDeletion(scope: Scope, owner: string, id: string): Promise<string[]> {
     return this.store.transaction(async c => {
       const row = await this.row(scope, owner, id, c, true);
+      if (row.deleting) throw workspaceDeleting();
       if (row.active_run_id) throw new RuntimeError(409, "WORKSPACE_BUSY", "Workspace has an active run");
-      const sessions = (await c.query(`SELECT id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND workspace_id=$3`, [scope.hostId, scope.domainId, id])).rows;
-      const ids = sessions.map(session => session.id as string);
-      await conversations.setClosing(ids, true);
-      try {
-        for (const session of ids) {
-          await this.store.requireIdle(scope, session);
-          if (onlyPreviewRuns) await this.store.requireOnlyPreviewRuns(scope, session);
-        }
-      } catch (refused) {
-        await conversations.setClosing(ids, false);
-        throw refused;
-      }
-      for (const session of ids) await conversations.delete(session);
+      await c.query(`UPDATE ${this.store.table("workspaces")} SET deleting=true WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, id]);
+      return (await c.query(`SELECT id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND workspace_id=$3 ORDER BY id`, [scope.hostId, scope.domainId, id]))
+        .rows.map(session => session.id as string);
+    });
+  }
+  /** A deletion that did not complete lets conversations join the workspace again. */
+  async endDeletion(scope: Scope, id: string) {
+    await this.store.pool.query(`UPDATE ${this.store.table("workspaces")} SET deleting=false WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, id]);
+  }
+  /** Removes the workspace once its conversations are gone, in a short transaction of its own. */
+  async completeDeletion(scope: Scope, owner: string, id: string) {
+    await this.store.transaction(async c => {
+      await this.row(scope, owner, id, c, true);
       await c.query(`DELETE FROM ${this.store.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, id]);
       await rm(this.git(scope, id).directory, { recursive: true });
-      return { sessionIds: sessions.map(s => s.id as string) };
     });
   }
   async saveSession(scope: Scope, sessionId: string, runId: string) {

@@ -28,10 +28,7 @@ export function workspaceRouter(runtime: AgentRuntime, scope: (req: Request) => 
   router.delete("/:id", route(async (req, res) => {
     const current = scope(req);
     const { onlyPreviewRuns = false } = z.object({ onlyPreviewRuns: z.boolean().optional() }).strict().parse(req.body ?? {});
-    res.json(await runtime.workspaces.delete(current, workspaceOwner(req), id(req), onlyPreviewRuns, {
-      setClosing: (ids, closing) => runtime.setSessionsClosing(current, ids, closing),
-      delete: sessionId => runtime.deleteSession(current, sessionId, onlyPreviewRuns),
-    }));
+    res.json(await runtime.deleteWorkspace(current, workspaceOwner(req), id(req), onlyPreviewRuns));
   }));
   router.get("/:id/tree", route(async (req, res) => {
     const { commit } = workspaceReadSchema.parse(req.query);

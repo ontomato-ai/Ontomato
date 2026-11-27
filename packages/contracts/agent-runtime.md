@@ -453,11 +453,16 @@ only what runs of its identity consumed, and only live runs read stored compacti
 or close the conversation. `DELETE /v1/sessions/:sessionId` and `DELETE /v1/workspaces/:id` accept
 `{ "onlyPreviewRuns": true }` from a host deleting on a preview's behalf: inside each session's
 admission lock a session that holds or has queued a live run is refused with 422
-`PREVIEW_WRITE_FORBIDDEN`. A workspace is deleted with its conversations all or none: admission to
-every one of them is closed first (`sessions.closing`, set inside each session's admission lock; a
-closing session queues no input, 409 `SESSION_CLOSING`, starts nothing it has queued and admits no
-direct run), then each must be idle and, on a preview's behalf, hold only the preview's runs; a
-refusal opens them all again before any is deleted.
+`PREVIEW_WRITE_FORBIDDEN`. Closing a session is a right one deletion takes, inside the session's
+admission lock (`sessions.closing`, set only where it is false): a closing session queues no input
+(409 `SESSION_CLOSING`), starts nothing it has queued and admits no direct run, and a second deletion
+is refused with 409 `SESSION_CLOSING`; only the deletion that took the right gives it back when it does
+not complete. A workspace is deleted without holding one lock while waiting for another: its row is
+locked only for the short steps that mark it `deleting` (no conversation is then created in or bound
+to it), unmark it, or remove it; every conversation is then closed in its own lock, judged (idle, and
+on a preview's behalf holding only the preview's runs) and deleted. A refusal or failure gives back
+the right on every conversation this deletion closed and has not deleted, and unmarks the workspace;
+one already deleted on its own is skipped.
 The execution account is bound once. A top-level admission (no binding and no delegating run) sends
 `/prepare` no `executionActor` and the provider chooses; a delegated or continued run sends the
 account it is bound to (`null` for the initiator's own), and the runtime refuses to start it with 403

@@ -9,8 +9,6 @@ import { openSkillCallback } from "../skill-callback";
 import { SessionEngines } from "../session-engines";
 import { createRuntimeHttp } from "../http";
 import { ArtifactFiles } from "../files";
-import { Workspaces } from "../workspaces";
-import type { WorkerPolicy } from "../worker";
 import { canonical, RuntimeStore, type MessageRow } from "../store";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -1084,25 +1082,21 @@ describe("a conversation being deleted", () => {
     const { runtime, submit, receipts } = presentationAdmission();
     const closed = new Set<string>();
     vi.mocked(runtime.store.closing).mockImplementation(async (_scope, id) => closed.has(id));
-    const store = Object.assign(Object.create(RuntimeStore.prototype), {
-      table: (name: string) => name,
-      transaction: async (operation: (client: { query: (sql: string) => Promise<{ rows: object[] }> }) => Promise<unknown>) =>
-        operation({ query: async (sql: string) => sql.includes("FROM workspaces") ? { rows: [{ id: "w", active_run_id: null }] }
-          : sql.includes("FROM sessions") ? { rows: [{ id: sessionId }] } : { rows: [] } }),
-      requireIdle: async () => {},
-      sessionRunLanes: async () => {
-        // After the deletion has closed admission and while it judges the conversation, a person's live message comes in.
-        await expect(submit()).rejects.toMatchObject({ status: 409, code: "SESSION_CLOSING" });
-        return [{ runId, lane: "preview" as const }];
-      },
-    }) as RuntimeStore;
-    const deleted = vi.fn(async () => {});
-    const deleting = new Workspaces(store, "/nonexistent", { development: true } as WorkerPolicy).delete(scope, "owner", "w", true, {
-      setClosing: async (ids, closing) => { for (const id of ids) { if (closing) closed.add(id); else closed.delete(id); } },
-      delete: deleted,
+    Object.assign(runtime, {
+      files: { withLock: (operation: () => Promise<unknown>) => operation() },
+      workspaces: { beginDeletion: async () => [sessionId], endDeletion: vi.fn(), completeDeletion: vi.fn() },
+      removeSession: vi.fn(async () => {}),
     });
-    await expect(deleting).rejects.toMatchObject({ code: "ENOENT" });  // the fixture workspace has no directory to remove
-    expect(deleted).toHaveBeenCalledWith(sessionId);
+    Object.assign(runtime.store, {
+      acquireClosing: async (_scope: unknown, id: string) => { closed.add(id); return true; },
+      releaseClosing: vi.fn(),
+      requireIdle: async () => {},
+      // After the deletion has closed admission and while it judges the conversation, a person's live message comes in.
+      requireOnlyPreviewRuns: async () => {
+        await expect(submit()).rejects.toMatchObject({ status: 409, code: "SESSION_CLOSING" });
+      },
+    });
+    await expect(AgentRuntime.prototype.deleteWorkspace.call(runtime, scope, "owner", "w", true)).resolves.toEqual({ sessionIds: [sessionId] });
     expect(receipts.size).toBe(0);
   });
 
