@@ -39,8 +39,7 @@ import { usePanelSessionRuns } from "./panel-session-runs";
 import { useApplicationCatalog } from "./catalog";
 import {
   applicationFrameHostKey,
-  deepLinkDefaultsOf,
-  hasFrameParams,
+  frameAddressState,
   type FrameState,
   type PanelFrameRegistration,
 } from "./application-frame-context";
@@ -386,26 +385,10 @@ const activeFrameManifest = computed(() => {
 
 const frameState = computed((): FrameState => {
   if (!effectiveFrame.value) return {};
-  let named: FrameState;
-  let hasSegment: boolean;
-  try {
-    hasSegment = hasFrameParams(route.fullPath);
-    const raw = parseApplicationPanelAddress(route.fullPath);
-    const parsed = parseApplicationPanelAddress(
-      route.fullPath,
-      activeFrameManifest.value ? { frameManifest: activeFrameManifest.value } : undefined,
-    );
-    for (const name of Object.keys(raw.frame)) {
-      if (activeFrameManifest.value?.state[name]?.deepLink && !(name in parsed.frame)) {
-        console.error(new Error(`Malformed frame state parameter frame.${name} in ${route.fullPath}`));
-      }
-    }
-    named = parsed.frame;
-  } catch (error) {
-    console.error(error);
-    return deepLinkDefaultsOf(activeFrameManifest.value);
-  }
-  const defaults = deepLinkDefaultsOf(activeFrameManifest.value);
+  const parsed = frameAddressState(route.fullPath, activeFrameManifest.value);
+  const named = parsed.named;
+  const hasSegment = parsed.hasSegment;
+  const defaults = parsed.defaults;
   const live = hasSegment && lastFrame.value?.key === frameKey.value ? lastFrame.value.liveState : undefined;
   const base = live ? { ...defaults, ...live } : defaults;
   if (hasSegment) return { ...base, ...named };
@@ -422,7 +405,6 @@ function reportFrameState(state: FrameState) {
     const cached = cachedApplicationFrameManifest(frame.applicationId, frame.framePanelId);
     if (cached) frameManifest.value = { key, framePanelId: frame.framePanelId, manifest: cached };
   }
-  const prev = lastFrame.value?.key === key ? lastFrame.value : null;
   lastFrame.value = { key, framePanelId: frame.framePanelId, liveState: state };
 }
 

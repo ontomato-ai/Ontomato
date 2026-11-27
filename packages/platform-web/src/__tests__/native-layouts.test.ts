@@ -5,6 +5,7 @@ import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
 import { catalogFixture } from "./fixtures";
 import { catalogPartition } from "../native-layouts";
+import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
 import { observePageRoutes } from "../observe-routes";
 import { appAt } from "../apps";
 
@@ -17,7 +18,7 @@ describe("the platform's applications", () => {
   it("keeps a summary-only framed application using navigation facts without inventing entry-table facts", () => {
     const app = {
       id: "settings",
-      kind: "builtin",
+      kind: "native",
       entry: { entryKey: "settings", path: "/settings", renderer: "settings", home: "/settings/general" },
       entryPaths: ["/settings/general", "/settings/audit"],
       ownerService: "data-engine",
@@ -25,12 +26,15 @@ describe("the platform's applications", () => {
       names: { en: "System settings" },
       descriptions: {},
       icon: "settings",
-      rail: "tail",
-      category: "system",
+      rail: "bottom",
+      category: "admin",
+      sort: 0,
+      scheduleAdapter: null,
+      releaseId: null,
       allowStandalone: false,
       singleEntry: false,
     };
-    const [partitioned] = catalogPartition([app as never], "en");
+    const [partitioned] = catalogPartition([app as CatalogApplication], "en");
     expect(partitioned).toMatchObject({
       id: "settings",
       framePanelId: "builtin-product-platform-frame",

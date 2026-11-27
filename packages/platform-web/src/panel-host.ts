@@ -1068,7 +1068,7 @@ async function withPersonalState(
     if (!Object.keys(values).length) return;
     void json(`/api${PANEL_PERSONAL_STATE_PATH}`, {
       method: "PUT", body: JSON.stringify({ ...scope, values }), ...(keepalive && { keepalive: true }),
-    }).catch(() => {});
+    }).catch(error => console.error(error));
   };
   /** Sends at once what is still waiting for the delay; `keepalive` lets the request finish after the page is gone. */
   const flush = (keepalive: boolean) => {

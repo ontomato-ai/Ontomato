@@ -27,8 +27,7 @@ import { panelHasInlineConversationEntry, platformPanelHost, resolveApplicationE
 import { routeOpenedEntry } from "../panel-entries";
 import {
   applicationFrameHostKey,
-  deepLinkDefaultsOf,
-  hasFrameParams,
+  frameAddressState,
   type FrameState,
   type PanelFrameRegistration,
 } from "../application-frame-context";
@@ -561,18 +560,10 @@ const activeBesideFrameManifest = computed(() => {
 const frameState = computed((): FrameState => {
   if (props.applicationId === "dashboards" && props.legacyDashboardLayout) return { legacyDashboardLayout: true };
   if (outerFrame) return outerFrame.frameState.value;
-  let named: FrameState;
-  let hasSegment: boolean;
-  try {
-    hasSegment = hasFrameParams(opened.value);
-    named = parseApplicationPanelAddress(
-      opened.value,
-      activeBesideFrameManifest.value ? { frameManifest: activeBesideFrameManifest.value } : undefined,
-    ).frame;
-  } catch {
-    return {};
-  }
-  const defaults = deepLinkDefaultsOf(activeBesideFrameManifest.value);
+  const parsed = frameAddressState(opened.value, activeBesideFrameManifest.value);
+  const named = parsed.named;
+  const hasSegment = parsed.hasSegment;
+  const defaults = parsed.defaults;
   if (hasSegment) return { ...defaults, ...named };
   return Object.keys(defaults).length ? defaults : named;
 });
