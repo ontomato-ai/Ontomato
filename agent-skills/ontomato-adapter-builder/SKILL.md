@@ -954,8 +954,7 @@ Never run a bare `./mvnw -pl packages/data-adapters/foo -am test`: `-am` builds 
 form still builds upstream modules but runs zero tests there; `failIfNoSpecifiedTests=false` keeps
 those modules from failing with "No tests were executed".
 
-The enterprise repository has no Maven wrapper; run the public wrapper with `-f` pointing at the
-enterprise pom. Read `target/surefire-reports/TEST-*.xml` for counts. Report
+Read `target/surefire-reports/TEST-*.xml` for counts. Report
 `tests run / failures / errors / skipped`; explain every skip.
 
 ## 9. Frontend configuration
@@ -1048,8 +1047,7 @@ Checklist for the UI:
 ## 11. Review gate
 
 - [ ] Module in root pom, application pom, and `apps/data-engine/build.mjs`
-      (`PUBLIC_ADAPTERS`/`appLibModules`/`excludeArtifactIds`/`contextTrees`; the enterprise
-      build has its own `ENTERPRISE_ADAPTERS` list and context tree).
+      (`PUBLIC_ADAPTERS`/`appLibModules`/`excludeArtifactIds`/`contextTrees`).
 - [ ] `type()` stable; provider test asserts type/label/join-fields/fields/examples.
 - [ ] Provider `create` forwards the real `jsonRule`.
 - [ ] Every `DataAdapter` method implemented or throws a typed unsupported error.
