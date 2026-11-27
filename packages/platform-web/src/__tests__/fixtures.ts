@@ -84,7 +84,7 @@ export function catalogFixture(additional: BuiltinApplication[] = []) {
       const panelUses = [...(declaration.panelUses ?? [])];
       const { entryKey, home, path } = app.entry;
       if (entryKey && (!panelUses.length || home && !panelUses.some(use => use.id === entryKey || use.path === home))) {
-        panelUses.push({ id: entryKey, pageKey: entryKey, path: home ?? path, kind: "native" });
+        panelUses.push({ id: entryKey, names: declaration.names, pageKey: entryKey, path: home ?? path, kind: "native" });
       }
       return { ...app, ...declaration, releaseId: null, panelUses,
         ownerService: workbenchApplications.some(registered => registered.id === app.id) ? "workbench" : "data-engine",
@@ -99,11 +99,12 @@ export function catalogEntryFixture(url: URL): Response {
   for (const app of catalogFixture()) {
     const uses = app.panelUses ?? [];
     const use = uses.find(entry => entry.path === path);
+    const menuUses = uses.filter(entry => entry.inMenu !== false);
     if (use) return Response.json({
       applicationId: app.id, use, framePanelId: app.framePanelId,
       allowStandalone: app.allowStandalone ?? true,
       frame: null, content: null,
-      menu: { singleEntry: uses.length <= 1, names: app.names, groups: app.groups ?? [], panelUses: uses },
+      menu: { singleEntry: menuUses.length <= 1, names: app.names, groups: app.groups ?? [], panelUses: menuUses },
     });
   }
   return Response.json({ error: { message: "Entry not found" } }, { status: 404 });
@@ -132,7 +133,7 @@ export function nativeEntryConflicts(
       .filter((path) => !path.includes(":"));
     const uses = application.declaration.panelUses ?? [];
     for (const use of uses) {
-      if (use.names && !listed.includes(use.path)) conflicts.push(`${application.id}: ${use.path} has a menu name but no place in its menu table`);
+      if (use.inMenu !== false && !listed.includes(use.path)) conflicts.push(`${application.id}: ${use.path} is enabled for the menu but absent from its menu table`);
     }
     for (const path of listed.filter(own)) {
       const entry = uses.some((use) => use.path === path);

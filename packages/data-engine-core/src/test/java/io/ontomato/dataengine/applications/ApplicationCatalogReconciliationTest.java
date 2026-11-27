@@ -87,7 +87,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         http.perform(put("/platform/applications/app-upgrade/panel-uses").contentType(MediaType.APPLICATION_JSON).content("""
             {"entry":{"path":"/applications/app-upgrade","renderer":"panels"},"initialOpenEntryIds":[],
              "declaration":{"names":{"en":"Upgrade"},"descriptions":{},"icon":"pages","groups":[]},
-             "panelUses":[{"id":"browse","pageKey":"upgrade-browse","panelId":"panel-upgrade",
+             "panelUses":[{"id":"browse","names":{"en":"Browse"},"pageKey":"upgrade-browse","panelId":"panel-upgrade",
                "path":"/applications/app-upgrade/browse"}]}
             """)).andExpect(status().isOk());
         var upgrade = new ApplicationCatalogUpgrade(jdbc);
@@ -202,14 +202,14 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data[?(@.id=='native-framed-demo')].framePanelId").value("builtin-product-native-frame"));
     }
 
-    @Test void builtinDescriptionsRoundTripWithoutAddingANamelessEntryToTheMenu() throws Exception {
+    @Test void builtinDescriptionsRoundTripForNamedEntriesOutsideTheMenu() throws Exception {
         var source = new ByteArrayResource("""
             {"id":"descriptions-test","kind":"native","rail":"apps","category":"build","sort":100,
              "entry":{"path":"/descriptions-test","renderer":"descriptions"},"initialOpenEntryIds":[],
              "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[],
                "panelUses":[
-                 {"id":"info","pageKey":"descriptions-info","path":"/descriptions-test/info","panelId":"builtin-product-info","descriptions":{"en":"  Keep the original text.  ","zh-CN":"入口说明"}},
-                 {"id":"plain","pageKey":"descriptions-plain","path":"/descriptions-test/plain","panelId":"builtin-product-info"}]}}
+                 {"id":"info","names":{"en":"Information"},"inMenu":false,"pageKey":"descriptions-info","path":"/descriptions-test/info","panelId":"builtin-product-info","descriptions":{"en":"  Keep the original text.  ","zh-CN":"入口说明"}},
+                 {"id":"plain","names":{"en":"Plain"},"inMenu":false,"pageKey":"descriptions-plain","path":"/descriptions-test/plain","panelId":"builtin-product-info"}]}}
             """.getBytes(StandardCharsets.UTF_8), "applications/descriptions-test.json");
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
@@ -220,7 +220,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.use.descriptions.en").value("  Keep the original text.  "))
             .andExpect(jsonPath("$.data.use.descriptions['zh-CN']").value("入口说明"))
-            .andExpect(jsonPath("$.data.use.names").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.use.names.en").value("Information"))
             .andExpect(jsonPath("$.data.menu.panelUses.length()").value(0));
         http.perform(get("/platform/applications/catalogue/descriptions-test"))
             .andExpect(status().isOk())
@@ -233,7 +233,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             {"entry":{"path":"/applications/app-descriptions","renderer":"panels"},
              "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[]},
              "initialOpenEntryIds":[],
-             "panelUses":[{"id":"info","pageKey":"app-descriptions-info","path":"/applications/app-descriptions/info",
+             "panelUses":[{"id":"info","names":{"en":"Information"},"pageKey":"app-descriptions-info","path":"/applications/app-descriptions/info",
                "panelId":"info-panel","descriptions":%s}]}
             """.formatted(descriptions);
     }
@@ -365,7 +365,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertNull(jdbc.queryForObject("SELECT to_regclass('public.product_grant')::text", String.class));
         verifyNoInteractions(panels);
 
-        var localUse = new ApplicationPanelUse("local", "local", "builtin-product-browser", "/applications/app-local/home", null, null);
+        var localUse = new ApplicationPanelUse("local", "local", "builtin-product-browser", "/applications/app-local/home", null, Map.of("en", "Home"));
         var registration = new ApplicationController.PanelRegistration(
             new ApplicationController.PanelEntry("/applications/app-local", "panels"), List.of(localUse),
             builtin("local", "native").declaration(), List.of());
@@ -376,7 +376,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     }
 
     private ApplicationCatalog.Builtin builtInBrowser(String panelId) {
-        var use = new ApplicationPanelUse("browse", "browse", panelId, "/browser/data", null, null);
+        var use = new ApplicationPanelUse("browse", "browse", panelId, "/browser/data", null, Map.of("en", "Browse"));
         var metadata = builtin("browser", "native").declaration();
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
             metadata.groups(), List.of(use));
@@ -414,7 +414,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
              "panelUses":[
                {"id":"school","pageKey":"school","panelId":"panel-school","path":"/applications/app-school/main",
                 "names":{"en":"School"},"groupKey":"school","inputs":{"term":{"literal":null}}},
-               {"id":"private","pageKey":"private","panelId":"panel-school","path":"/applications/app-school/private"}]}
+               {"id":"private","names":{"en":"Private"},"inMenu":false,"pageKey":"private","panelId":"panel-school","path":"/applications/app-school/private"}]}
             """)).andExpect(status().isOk());
 
         http.perform(get(path).param("purpose", "management")).andExpect(status().isOk())
@@ -431,7 +431,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.values.panelUses[0].names.en").value("School"))
-            .andExpect(jsonPath("$.data.values.panelUses[1].names").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.values.panelUses[1].names.en").value("Private"))
+            .andExpect(jsonPath("$.data.values.panelUses[1].inMenu").value(false))
             .andExpect(jsonPath("$.data.values.panelUses[1].descriptions").doesNotHaveJsonPath())
             .andReturn().getResponse().getContentAsString();
         var rowFields = JSON.parseObject(form).getJSONObject("data").getJSONArray("fields").getJSONObject(1)
@@ -442,7 +443,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             assertEquals("localized-text", control.getString("kind"));
             assertEquals("zh-CN", control.getString("primaryLocale"));
             assertEquals(List.of(), control.getList("requiredLocales", String.class));
-            assertFalse(field.getBooleanValue("required"));
+            assertEquals("/names".equals(fieldPath), field.getBooleanValue("required"));
         }
         var inputsField = rowFields.stream().filter(item -> "/inputs".equals(item.getString("path"))).findFirst().orElseThrow();
         assertTrue(inputsField.getBooleanValue("advanced"));
@@ -497,7 +498,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             {"entry":{"path":"/applications/app-root-inputs","renderer":"panels"},"initialOpenEntryIds":[],
              "declaration":{"names":{"en":"Root inputs"},"descriptions":{},"icon":"pages","groups":[]},
              "framePanelId":"panel-shared","panelUses":[
-               {"id":"main","pageKey":"root-inputs","panelId":"panel-shared","path":"/applications/app-root-inputs",
+               {"id":"main","names":{"en":"Main"},"pageKey":"root-inputs","panelId":"panel-shared","path":"/applications/app-root-inputs",
                 "inputs":{"value":{"literal":null}}}]}
             """;
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration)).andExpect(status().isOk());
@@ -528,8 +529,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
          "declaration":{"names":{"en":"Catalogue demo","zh-CN":"目录示例"},"descriptions":{"en":"Find me"},"icon":"pages",
           "groups":[]},
          "panelUses":[
-          {"id":"public","pageKey":"public","panelId":"panel-public","path":"/applications/app-catalogue/public"},
-          {"id":"hidden","pageKey":"hidden","panelId":"panel-hidden","path":"/applications/app-catalogue/hidden"}]}
+          {"id":"public","names":{"en":"Public"},"pageKey":"public","panelId":"panel-public","path":"/applications/app-catalogue/public"},
+          {"id":"hidden","names":{"en":"Hidden"},"inMenu":false,"pageKey":"hidden","panelId":"panel-hidden","path":"/applications/app-catalogue/hidden"}]}
         """;
 
     @Test void catalogueNameOrderUsesReaderLanguageAndPagesAcrossEqualNames() throws Exception {
@@ -873,9 +874,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                     {"entry":{"path":"/applications/app-default-agent-proof","renderer":"panels"},"initialOpenEntryIds":[],
                      "declaration":{"names":{"en":"Default agent proof"},"descriptions":{},"icon":"pages","groups":[]},
                      "panelUses":[
-                       {"id":"overview","pageKey":"overview-proof","panelId":"panel-overview",
+                       {"id":"overview","names":{"en":"Overview"},"pageKey":"overview-proof","panelId":"panel-overview",
                         "path":"/applications/app-default-agent-proof/overview"},
-                       {"id":"history","pageKey":"history-proof","panelId":"panel-overview",
+                       {"id":"history","names":{"en":"History"},"pageKey":"history-proof","panelId":"panel-overview",
                         "path":"/applications/app-default-agent-proof/history",
                         "defaultAgent":{"kind":"preset","agentKind":"knowledge-governance"}}]}
                     """)).andExpect(status().isConflict())
@@ -923,7 +924,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             var body = """
                 {"entry":{"path":"/applications/app-native-settings","renderer":"panels"},"initialOpenEntryIds":[],
                  "declaration":{"names":{"en":"Settings"},"descriptions":{},"icon":"pages","groups":[]},
-                 "panelUses":[{"id":"overview","pageKey":"frame-demo-overview","panelId":"panel-overview",
+                 "panelUses":[{"id":"overview","names":{"en":"Overview"},"pageKey":"frame-demo-overview","panelId":"panel-overview",
                    "path":"/applications/app-native-settings/overview",
                    "inputs":{"term":{"frameState":"term"}}}]}
                 """;
@@ -976,10 +977,13 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
             remote.requireUsableRegistration("domain", null, List.of(
                 new ApplicationPanelUse("report", "report", "panel-report", "/example/report",
-                    new DefaultAgentTarget("preset", null, "knowledge-governance"), null),
+                    new DefaultAgentTarget("preset", null, "knowledge-governance"), Map.of("en", "Report"),
+                    null, null, null, null, null, null, false),
                 new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan",
-                    new DefaultAgentTarget("id", "planner", null), null),
-                new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", null, null)
+                    new DefaultAgentTarget("id", "planner", null), Map.of("en", "Plan"),
+                    null, null, null, null, null, null, false),
+                new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", null, Map.of("en", "Ordinary"),
+                    null, null, null, null, null, null, false)
             ), null, null, null, null);
 
             assertEquals("test-service", serviceHeader.get());

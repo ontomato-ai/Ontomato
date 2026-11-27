@@ -173,7 +173,7 @@ export interface ShellLabels {
   conversationTab?: string;
   fileTab?: string;
   reportTab?: string;
-  backToFile?: string;
+  backToFile: string;
   newConversation: string;
   agent: string;
   sessions: string;
@@ -325,7 +325,7 @@ export interface ShellLabels {
   elapsed: (time: string) => string;
   /** A finished response's folded process line; `time` is the run's duration, formatted as m:ss. */
   worked: (time: string) => string;
-  retrievalProgress?: { retrieving: string; datasetReady: string; answering: string };
+  delegationProgress?: { delegating: string; answering: string };
   /** The head of the panel over the composer, its toggle: how many of the agents' questions wait for the reader. */
   questionsWaiting: (count: number) => string;
   /** Marks the option that is the agent's default. */

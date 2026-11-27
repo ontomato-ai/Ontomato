@@ -44,7 +44,7 @@ const source = { kind: "application-use", applicationId: "app", useId: "use-1" }
 const locator = { applicationId: "app", entryKey: "use-1", pageKey: "ontology-agents" };
 const entry = {
   applicationId: source.applicationId,
-  use: { id: source.useId, pageKey: locator.pageKey, path: "/ontology/agents", panelId: panel.id },
+  use: { id: source.useId, names: { en: String(source.useId) }, pageKey: locator.pageKey, path: "/ontology/agents", panelId: panel.id },
   framePanelId: frame.id,
   menu: { singleEntry: true, groups: [], panelUses: [] },
   allowStandalone: false,

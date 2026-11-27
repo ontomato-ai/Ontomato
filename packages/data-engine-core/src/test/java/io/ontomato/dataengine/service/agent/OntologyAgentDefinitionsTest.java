@@ -60,4 +60,31 @@ class OntologyAgentDefinitionsTest {
     assertEquals(
         List.of("ontology-query", "ontology-generation"), names(definitions.publishActionCreation()));
   }
+
+  @Test
+  void agentDefinitionsMarkOnlyTheirOwnPreloadSkills() {
+    var retrieval = definitions.definition("d", "en", 1000, List.of(
+        new SkillVersion(RuntimeCodeClient.SKILL, "a".repeat(64)),
+        new SkillVersion(OntologyAgentDefinitions.DATASET_SKILL, "b".repeat(64))));
+    var retrievalSkills = retrieval.getList("skills", SkillVersion.class);
+    assertTrue(retrievalSkills.get(0).preload());
+    assertTrue(retrievalSkills.get(1).preload());
+    assertFalse(retrieval.containsKey("openingKnowledgeLimit"));
+
+    var generationSkills = List.of(
+        new SkillVersion(OntologyAgentDefinitions.DATASET_SKILL, "a".repeat(64)),
+        new SkillVersion(OntologyAgentDefinitions.GENERATION_SKILL, "b".repeat(64)));
+    var generation = definitions.generation("d", "action", "prompt", "en", 1000, generationSkills)
+        .getList("skills", SkillVersion.class);
+    assertFalse(generation.get(0).preload());
+    assertTrue(generation.get(1).preload());
+
+    var metric = definitions.metricView("d", "prompt", "en", 1000,
+        List.of(new SkillVersion(OntologyAgentDefinitions.METRICVIEW_SKILL, "c".repeat(64))))
+        .getList("skills", SkillVersion.class);
+    assertTrue(metric.getFirst().preload());
+    assertFalse(definitions.generation("d", "action", "prompt", "en", 1000, generationSkills)
+        .getString("systemPrompt").contains("name: ontology-generation"));
+  }
+
 }

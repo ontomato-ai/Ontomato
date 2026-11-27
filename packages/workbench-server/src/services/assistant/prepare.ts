@@ -69,17 +69,18 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const pageContext = currentPage
     ? "\n\nCurrent panel placement for this turn (data):\n" + JSON.stringify(currentPage)
     : "";
+  const dataScopeContext = turn.class_names.length
+    ? "\n\nConfigured data scope for this run: only these ontology classes are in scope: " + turn.class_names.join(", ")
+      + ". Reads through page operations or retrieval may return only data inside this scope. When answering, say the result is within your configured data scope; do not present it as the unrestricted page total."
+    : "";
   // Runtime keeps the exact system prompt in the persisted run definition.
   const instructions = effectiveSystemPrompt(a, resolveLocale(credentials.locale))
     + (retrieval ? "\n\nInitial ontology context:\n" + ontologyContext : "")
-    + externalContext + pageContext;
+    + dataScopeContext + externalContext + pageContext;
   const governance=hasGovernanceSkill(skillRefs);
   const artifactInstructions = [
     ARTIFACT_MARKDOWN_PROMPT,
     reader ? agentVisibilityPrompt(reader) : "",
-    retrieval && input.role === "notification" && input.kind === "agent-result"
-      ? "Read the delegated result with agent read and files:true. When downloaded[].dataset supplies the needed rows and scope, reuse it without another file read. Follow the host's delivery mode: for reports, cite downloaded[].path inside the report and link the report in chat; otherwise answer directly and cite downloaded[].path. Read the file separately only when evidence is missing."
-      : "",
   ].filter(Boolean).join("\n\n");
   const businessCallbacks = {
     ...executionBusinessCallbacks(owner, credentials, id, { pageControl, retrieval }),

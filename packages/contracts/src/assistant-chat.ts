@@ -5,6 +5,7 @@ import { agentHostAgentSchema } from "./agent-host";
 import {
   runtimeSkillNamespaceSchema,
   runtimeSkillRefSchema,
+  runtimeSkillSelectionSchema,
 } from "./agent-runtime-skills";
 import {
   runtimeKeySchema,
@@ -19,7 +20,7 @@ export const assistantAgentDefinitionSchema = agentHostAgentSchema.omit({ worksp
   executionUserId: z.string().trim().min(1).nullable(),
   engine: assistantEngineSchema.default("pi"),
   modelSelection: modelSelectionSchema,
-  skills: z.array(runtimeSkillRefSchema),
+  skills: z.array(runtimeSkillSelectionSchema),
   classNames: z.array(z.string().trim().min(1)).default([]),
   enabledMcpServiceIds: z.array(runtimeIdSchema).default([]),
   sortOrder: z.number().int().default(0),
@@ -54,7 +55,7 @@ export const assistantSkillCatalogSchema = z.object({
 export type AssistantSkillOption = z.infer<typeof assistantSkillOptionSchema>;
 export type AssistantSkillCatalog = z.infer<typeof assistantSkillCatalogSchema>;
 /** A definition write can refer to the caller's domain without knowing its ID. */
-export const assistantSkillInputSchema = runtimeSkillRefSchema.extend({
+export const assistantSkillInputSchema = runtimeSkillSelectionSchema.extend({
   namespace: z.discriminatedUnion("kind", [
     runtimeSkillNamespaceSchema.options[0],
     z

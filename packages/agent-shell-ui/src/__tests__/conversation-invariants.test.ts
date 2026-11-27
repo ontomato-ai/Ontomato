@@ -75,8 +75,7 @@ describe("delegated tasks in a reply", () => {
     sessionId,
     tasks: [
       { kind: "agent", id: roundId, root: { sessionId, runId }, title: "Sales?", agentRef: {providerId:"ontology",agentId:"retrieval"}, sessionRef:{providerId:"ontology",sessionId:roundId}, runId:roundId, requestedBy:{session:{providerId:"workbench",sessionId},runId}, results:[], parentTaskId: null, status: "completed", error: null,
-        createdAt: at(3), process: { mode: "none" }, retrieval:{question:"Sales?",decisionRevision:0,
-          datasets: [{ id: dataset, title: "Sales", rowCount: 3, truncation: null }]} },
+        createdAt: at(3), process: { mode: "none" } },
       { kind: "quality", id: checkId, root: { sessionId, runId }, parentTaskId: roundId, status: "completed", error: null,
         createdAt: null, process: { mode: "none" }, checks: { datasets: [{ id: dataset, title: "Sales" }] } },
     ],
@@ -157,17 +156,17 @@ describe("delegated tasks in a reply", () => {
     }
   });
 
-  it("shows real retrieval progress through the handoff and clears it when the answer settles", () => {
+  it("shows delegated-work progress through the handoff and clears it when the answer settles", () => {
     const state = emptyConversation(sessionId);
     applyRunSnapshot(state, snapshot({
       run: run({ status: "stopped", stopReason: "stop", answerMessageId: replyId, finishedAt: at(5) }),
       messages: [user, { contextSeq: 1, id: replyId, runId, messageSeq: 1, message: { ...partial, stopReason: "stop" } }],
     }));
     const progress = (snapshot: AgentTasksSnapshot) => conversationItems(state, snapshot).flatMap(item =>
-      item.kind === "response" && item.retrievalProgress ? [[item.runId, item.retrievalProgress]] : []);
-    const retrieving = { ...tasks, tasks: tasks.tasks.map(task => task.kind === "agent" ? { ...task, status: "running" as const } : task) };
-    expect(progress(retrieving)).toEqual([[runId, "retrieving"]]);
-    expect(progress(tasks)).toEqual([[runId, "datasetReady"]]);
+      item.kind === "response" && item.delegationProgress ? [[item.runId, item.delegationProgress]] : []);
+    const runningTasks = { ...tasks, tasks: tasks.tasks.map(task => task.kind === "agent" ? { ...task, status: "running" as const } : task) };
+    expect(progress(runningTasks)).toEqual([[runId, "delegating"]]);
+    expect(progress(tasks)).toEqual([[runId, "delegating"]]);
     const answerRun = "12121212-1212-4121-8121-121212121212";
     const notification = { contextSeq: 0, id: answerRun, runId: answerRun, messageSeq: 2, message: {
       role: "notification" as const, kind: "agent-result" as const, source: { session: { providerId: "ontology", sessionId: roundId }, runId: roundId },

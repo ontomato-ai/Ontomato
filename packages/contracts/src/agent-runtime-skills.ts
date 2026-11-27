@@ -20,6 +20,12 @@ export const runtimeSkillRefSchema = z
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   })
   .strict();
+/** A skill selected on an agent. `preload` is use-specific: it is never part of the package identity. */
+export const runtimeSkillSelectionSchema = runtimeSkillRefSchema
+  .extend({
+    preload: z.boolean().optional(),
+  })
+  .strict();
 /** Package identity is the same at management and runtime publication boundaries. */
 export const standardSkillFrontmatterSchema = z.object({
   name: runtimeSkillRefSchema.shape.name,
@@ -37,6 +43,12 @@ export function runtimeSkillKey(skill: RuntimeSkillRef): string {
     skill.name]);
 }
 
+/** The package identity of a use-specific selection. */
+export function runtimeSkillRefFromSelection(selection: RuntimeSkillSelection): RuntimeSkillRef {
+  const { preload: _preload, ...ref } = selection;
+  return ref;
+}
+
 /** The one platform skill that teaches page discovery and operation. It never contains page-specific facts. */
 export const PAGE_OPERATOR_SKILL: RuntimeSkillRef = {
   namespace: { kind: "provider", provider: "workbench" },
@@ -50,6 +62,7 @@ export const runtimeSkillVersionSchema = z
   .object({
     skill: runtimeSkillRefSchema,
     digest: z.string().regex(/^[a-f0-9]{64}$/),
+    preload: z.boolean().optional(),
   })
   .strict();
 export const runtimeRegisteredSkillSchema = runtimeSkillVersionSchema.extend({
@@ -126,6 +139,7 @@ export const runtimeEnvironmentSchema = z
         });
   });
 export type RuntimeSkillRef = z.infer<typeof runtimeSkillRefSchema>;
+export type RuntimeSkillSelection = z.infer<typeof runtimeSkillSelectionSchema>;
 export type RuntimeSkillVersion = z.infer<typeof runtimeSkillVersionSchema>;
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentSchema>;
 

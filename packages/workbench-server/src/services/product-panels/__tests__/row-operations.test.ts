@@ -244,6 +244,7 @@ beforeEach(() => {
   currentFramePanelId = undefined;
   currentUse = {
     id: "tasks",
+    names: { en: "tasks" },
     pageKey: "tasks",
     path: "/applications/A/tasks",
     panelId: "P",
@@ -648,6 +649,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     // Entry pins `app` and `scope` as server-verified literals.
     currentUse = {
       id: "tasks",
+      names: { en: "tasks" },
       pageKey: "tasks",
       path: "/applications/A/tasks",
       panelId: "P",

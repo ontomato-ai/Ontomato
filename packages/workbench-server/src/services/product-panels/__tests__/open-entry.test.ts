@@ -21,8 +21,8 @@ const panel = (targets: Record<string, string>) => ({
   content: { html: "<div></div>" },
   manifest: { state: {}, members: Object.fromEntries(Object.entries(targets).map(([name, projectionId]) => [name, { target: { projectionId } }])) },
 });
-const use = { id: "list", pageKey: "app-list", path: "/applications/app-test/list", panelId: "content" };
-const other = { id: "other", pageKey: "app-other", path: "/applications/app-test/other", panelId: "secret-panel" };
+const use = { id: "list", names: { en: "list" }, pageKey: "app-list", path: "/applications/app-test/list", panelId: "content" };
+const other = { id: "other", names: { en: "other" }, pageKey: "app-other", path: "/applications/app-test/other", panelId: "secret-panel" };
 const entry = {
   applicationId: "app-test", use, framePanelId: "frame", allowStandalone: false,
   menu: { groups: [], panelUses: [use, other], singleEntry: false },

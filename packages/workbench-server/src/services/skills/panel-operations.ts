@@ -38,6 +38,12 @@ const generatedBuiltinSkillNames = new Set(
   builtinSkillEntries().filter(entry => entry.source.kind === "generated").map(entry => entry.skill.name),
 );
 
+export function generatedSkillExportRefusal(primaryKey: string, locale?: string) {
+  return generatedBuiltinSkillNames.has(primaryKey)
+    ? { reason: tForLocale(locale, "panels.skill.generatedExportUnavailable") }
+    : undefined;
+}
+
 const deleteInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
 
@@ -248,8 +254,7 @@ export const skillExportOperation = {
   resultSchema: panelDownloadReceiptSchema,
   async unavailable({ executor: { credentials }, locale }, target) {
     if (!target) return;
-    if (generatedBuiltinSkillNames.has(target.primaryKey))
-      return { reason: tForLocale(locale ?? credentials.locale, "panels.skill.generatedExportUnavailable") };
+    return generatedSkillExportRefusal(target.primaryKey, locale ?? credentials.locale);
   },
   async execute({ executor: { owner, credentials } }, call) {
     const { primaryKey } = skillObjectTarget.parse(call.target);

@@ -1,6 +1,6 @@
 import type { AnalysisAgentSkillReference } from "@ontomato/contracts/skills";
 import type { AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
-import { runtimeSkillRefSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillSelectionSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { HttpError } from "../../utils/errors";
 import {
   getPostgresPool,
@@ -17,7 +17,7 @@ export function resolveAssistantSkillReferences(
       skill.namespace.domainId !== domainId
     )
       throw new HttpError(400, "Skill is not in this domain's catalogue", "SKILL_NOT_FOUND");
-    return runtimeSkillRefSchema.parse({
+    return runtimeSkillSelectionSchema.parse({
       ...skill,
       namespace:
         skill.namespace.kind === "domain"

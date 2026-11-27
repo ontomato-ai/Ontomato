@@ -28,6 +28,7 @@ const props = withDefaults(defineProps<{
    * name. A candidate has no registered name, so this is its whole name.
    */
   label?: string;
+  entryName?: string;
   /** The page's address as the reader sees it; the instance's deep-linkable state is added to it. */
   address: string;
   /** The deep-linkable state the page address currently requests. */
@@ -78,6 +79,9 @@ const props = withDefaults(defineProps<{
   currentUser: undefined,
   liveState: null,
 });
+defineSlots<{
+  "personal-state-error"?(failure: { message: string; retry: () => void }): unknown;
+}>();
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -152,6 +156,7 @@ const readCurrentUser = () => {
 const view = usePanelInstance(props.port, {
   labels: props.labels,
   label: (source) => {
+    if (props.entryName !== undefined) return props.entryName;
     if (source.kind !== "registered") return props.label!;
     const name = productPanelDisplayName(source.panel, props.language.locale, props.language.fallback);
     return props.label ? `${props.label} · ${name}` : name;
@@ -208,7 +213,12 @@ defineExpose({ ...view, operations });
 <template>
   <section ref="hostElement" class="panel-host">
     <header v-if="title" class="panel-host-title">{{ title }}</header>
-    <p v-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
+    <slot
+      v-if="view.personalStateFailure.value && $slots['personal-state-error']"
+      name="personal-state-error"
+      v-bind="view.personalStateFailure.value"
+    />
+    <p v-else-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
     <!-- A host notice stands above the content box so the box height adjusts around it and never scrolls the notice. -->
     <p
       v-if="!view.error.value && view.direct.value && view.notice.value"

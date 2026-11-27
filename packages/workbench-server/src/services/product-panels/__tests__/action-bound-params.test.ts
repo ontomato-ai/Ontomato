@@ -296,6 +296,7 @@ describe("customer Action boundParams materialization into input.values", () => 
 
     currentUse = {
       id: "students-use",
+      names: { en: "students-use" },
       panelId: "panel-students",
       pageKey: "students",
       path: "/applications/app-1/students",

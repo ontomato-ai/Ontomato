@@ -55,10 +55,10 @@ let root: string;
 let base: string;
 const applicationId = "app-catalogue";
 const entry = { path: `/applications/${applicationId}`, renderer: "panels" };
-const publicUse = { id: "shown", pageKey: "shown", path: `${entry.path}/shown`,
+const publicUse = { id: "shown", names: { en: "shown" }, pageKey: "shown", path: `${entry.path}/shown`,
   panelId: "catalogue-panel" };
 const admittedEntry = { ...entry, home: publicUse.path, entryKey: publicUse.id };
-const hiddenUse = { ...publicUse, id: "hidden", pageKey: "hidden", path: `${entry.path}/hidden`, panelId: "hidden" };
+const hiddenUse = { ...publicUse, id: "hidden", names: { en: "hidden" }, pageKey: "hidden", path: `${entry.path}/hidden`, panelId: "hidden" };
 const draftId = "app-14d40829-d7d4-4b14-94bf-11c4c8b12e1b";
 const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pages", groups: [] };
 const initialCreateValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },

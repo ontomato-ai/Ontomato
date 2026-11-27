@@ -25,6 +25,7 @@ const credentials = { token: "token", locale: "en" };
 const body = (data: unknown) => ({ text: JSON.stringify({ success: true, data }) });
 const use = (id: string, extra: Record<string, unknown> = {}) => ({
   id,
+  names: { en: String(id) },
   pageKey: `${id}-page`,
   panelId: `${id}-panel`,
   path: `/applications/app/${id}`,
@@ -76,6 +77,8 @@ describe("readPageCatalog", () => {
     expect(result.groups?.[0]).toMatchObject({ key: "main" });
     expect(result.groups?.[0].entries.map(entry => entry.entryKey)).toEqual(["grouped", "native"]);
     expect(result.entries?.map(entry => entry.entryKey)).toEqual(["loose"]);
+    expect([...(result.groups?.flatMap(group => group.entries) ?? []), ...(result.entries ?? [])]
+      .map(entry => entry.name)).toEqual(["Grouped", "Native", "Loose"]);
     expect(result.groups?.[0].entries[1]).toMatchObject({ panelId: null, kind: "native" });
   });
 
@@ -162,6 +165,7 @@ describe("readPageDescription", () => {
       applicationId: "app",
       useId: "entry-1",
       path: "/applications/app/entry-1",
+      names: { en: "entry-1" },
       applicationNames: { en: "Application" },
     }, ["tab"]);
   });

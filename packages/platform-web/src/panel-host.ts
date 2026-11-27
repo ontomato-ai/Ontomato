@@ -27,7 +27,7 @@ import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame, servePageComposer } from "./app-host";
 import { panelNavigator } from "./panel-navigate";
 import {
-  adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, createPanelOverlayRoot, newPanelInstanceName, scopedPanelStyle,
+  adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, createPanelOverlayRoot, newPanelInstanceName, PanelPersonalStateReadError, scopedPanelStyle,
   type CodedPanelTarget, type DirectPanelRun, type PanelHostPort, type PanelHostState, type PanelSdkRelease,
 } from "@ontomato/platform-shell";
 import { candidateProjectionIds, type PanelManifest, type PanelMemberPath } from "@ontomato/contracts/panel-manifest";
@@ -570,6 +570,7 @@ export function framePanelHost(
 export function builtinFramePanelHost(
   applicationId: string,
   framePanelId: string,
+  frameTitle: string,
   router?: Router,
   chat?: FrameChatOptions,
   /** Optional one-shot provider returning the frame definition bundled in the active route opening response. */
@@ -580,6 +581,7 @@ export function builtinFramePanelHost(
     pageKey: applicationId,
     panelId: framePanelId,
     path: `/${applicationId}`,
+    names: { en: frameTitle },
   };
   const panelChatHost = createPanelChatHost(undefined, chat);
   const shown: PanelUseRef = { applicationId, useId: placeholderUse.id };
@@ -1034,8 +1036,14 @@ function personalFieldKey(fields: string[]) {
   return JSON.stringify([...fields].sort());
 }
 
-function readPersonalState(scope: { source: PanelReadSource; memberPath: PanelMemberPath }, fields: string[]) {
-  return json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) });
+async function readPersonalState(scope: { source: PanelReadSource; memberPath: PanelMemberPath }, fields: string[]) {
+  try {
+    const answer = await json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) });
+    return panelPersonalStateResponseSchema.parse(answer);
+  } catch (error) {
+    // A prefetched read can finish before its panel snapshot. Keep its failure for the host that uses it.
+    return new PanelPersonalStateReadError(error);
+  }
 }
 
 type PersonalStateRead = { fieldKey: string; response: ReturnType<typeof readPersonalState> };
@@ -1050,8 +1058,8 @@ async function withPersonalState(
   warmTemplateCompiler();
   const scope = { source, memberPath };
   const answer = await (pending && pending.fieldKey === personalFieldKey(fields) ? pending.response : readPersonalState(scope, fields));
-  const saved = panelPersonalStateResponseSchema.parse(answer).values;
-  const mounted = await mount({ ...run, initial: { ...saved, ...run.initial } as PanelHostState });
+  if (answer instanceof PanelPersonalStateReadError) throw answer;
+  const mounted = await mount({ ...run, initial: { ...answer.values, ...run.initial } as PanelHostState });
   const readField = (field: string) => mounted.instance.state.values.value[field] ?? null;
   const stored: Record<string, string> = Object.fromEntries(fields.map((field) => [field, JSON.stringify(readField(field))]));
   let timer: ReturnType<typeof setTimeout> | undefined;

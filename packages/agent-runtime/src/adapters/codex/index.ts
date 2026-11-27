@@ -1,3 +1,4 @@
+import path from "node:path";
 import { z } from "zod";
 import type {
   HarnessOpenRequest, HarnessPlugin, HarnessProcess, HarnessSession, HarnessSteerResult,
@@ -199,6 +200,8 @@ export function createCodexPlugin(program = binary, entrypoint = launcher): Harn
         gatewayModel: "supported", skills: "supported", usage: "supported", optionalDetails: "limited",
       },
     },
+    skillCatalogDirectory: (directories, name) =>
+      path.posix.join(directories.state, "home", ".agents", "skills", name),
     async open(request: HarnessOpenRequest) {
       request.signal.throwIfAborted();
       // Runtime status messages remain visible after a failed open. They were never part of a native thread.

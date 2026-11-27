@@ -49,6 +49,7 @@ const panelRecord: ProductPanel = {
 
 const use: ApplicationPanelUse = {
   id: "use-objects",
+  names: { en: "use-objects" },
   panelId: panelRecord.id,
   path: "/applications/app-a/objects",
   pageKey: "objects",

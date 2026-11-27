@@ -160,7 +160,7 @@ function selectPanelFromSource(
     .map(use => ({
       id: use.id,
       panelId: use.panelId,
-      label: (use.names && localizedApplicationText(use.names, loc)) || use.pageKey,
+      label: localizedApplicationText(use.names, loc)!,
       path: use.path,
     }));
 
@@ -223,7 +223,7 @@ export async function readApplicationPreviewDescriptor(
         .map(use => ({
           id: use.id,
           panelId: use.panelId,
-          label: (use.names && localizedApplicationText(use.names, loc)) || use.pageKey,
+          label: localizedApplicationText(use.names, loc)!,
           path: use.path,
         }));
       if (entries.length > 0) {

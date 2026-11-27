@@ -45,7 +45,7 @@ for (const [name, scriptDir] of [
     await withChannelServer((request, res) => {
       res.writeHead(200, { "content-type": "application/json" });
       if (request.body.op === "list") res.end(JSON.stringify({ agents: [{ ref: { providerId: "ontology", agentId: "retriever" }, name: "Retriever", description: "" }] }));
-      else if (request.body.op === "read") res.end(JSON.stringify({ taskId, sessionRef: { providerId: "ontology", sessionId }, status: "completed", downloaded: [{ id: taskId, path: `outputs/agents/${taskId}/out.json` }] }));
+      else if (request.body.op === "read") res.end(JSON.stringify({ taskId, sessionRef: { providerId: "ontology", sessionId }, status: "completed", files: [{ id: taskId, name: "out.json", mediaType: "application/json", href: `/platform/agent-channel/tasks/${taskId}/files/${taskId}` }] }));
       else res.end(JSON.stringify({ taskId, status: "cancelled" }));
     }, async ({ requests, base, emptyCwd }) => {
       const commandPath = `/v1/channel/hosts/workbench/domains/domain-a/sessions/${sessionId}/commands`;
@@ -61,7 +61,7 @@ for (const [name, scriptDir] of [
       assert.equal(JSON.parse(listed.stdout).agents[0].ref.agentId, "retriever");
 
       const readFiles = await exec(process.execPath, [cli, "agent", "read", taskId, "--files"], { cwd: emptyCwd, env });
-      assert.equal(JSON.parse(readFiles.stdout).downloaded[0].path, `outputs/agents/${taskId}/out.json`);
+      assert.equal(JSON.parse(readFiles.stdout).files[0].name, "out.json");
 
       const cancelled = await exec(process.execPath, [cli, "agent", "cancel", taskId], { cwd: emptyCwd, env });
       assert.equal(JSON.parse(cancelled.stdout).status, "cancelled");
@@ -75,7 +75,7 @@ for (const [name, scriptDir] of [
         assert.equal(req.headers["x-api-key"], undefined);
       }
       assert.deepEqual(requests[0].body, { op: "list", query: "retriever" });
-      assert.deepEqual(requests[1].body, { op: "read", taskId, files: true });
+      assert.deepEqual(requests[1].body, { op: "read", taskId });
       assert.deepEqual(requests[2].body, { op: "cancel", taskId });
 
       await assert.rejects(

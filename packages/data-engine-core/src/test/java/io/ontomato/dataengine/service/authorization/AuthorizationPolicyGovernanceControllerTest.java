@@ -35,6 +35,7 @@ import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Decision;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -166,7 +167,7 @@ class AuthorizationPolicyGovernanceControllerTest {
     void returnsDomainEntryRootsAndPublishedActionAndWorkflowFacts() throws Exception {
         permissions(true, false);
         when(catalog.entriesInDomain("domain")).thenCallRealMethod();
-        var agents = JSONObject.of("id", "agents",
+        var agents = JSONObject.of("id", "agents", "names", Map.of("en", "Agents"),
                 "entry", JSONObject.of("renderer", "agents", "entryKey", "agents", "home", "/agents/chat"),
                 "panelUses", List.of(new ApplicationPanelUse("settings", "settings", "agent-settings",
                         "/agents/settings", null, Map.of("en", "Settings"))));
@@ -209,9 +210,11 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.workflowStepActions[0].version").value(4))
                 .andExpect(jsonPath("$.workflowStepActions[0].stepNo").value(2))
                 .andExpect(jsonPath("$.workflowStepActions[0].actionId").value("approve"));
-        http.perform(rpc("entry-roots", "{\"entryIds\":[]}"))
+        http.perform(rpc("entry-roots", "{\"entryIds\":[]}").locale(Locale.SIMPLIFIED_CHINESE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.entries[*].entryId", containsInAnyOrder("app/main", "shared/main", "agents/settings", "agents/agents")))
+                .andExpect(jsonPath("$.entries[?(@.entryId == 'app/main')].label", containsInAnyOrder("工作台")))
+                .andExpect(jsonPath("$.entries[?(@.entryId == 'agents/settings')].label", containsInAnyOrder("")))
                 .andExpect(jsonPath("$.entries[1].panelIds", containsInAnyOrder("same")))
                 .andExpect(jsonPath("$.existingGrants").isEmpty())
                 .andExpect(jsonPath("$.targetPolicyRoleIds").isEmpty());
@@ -426,7 +429,7 @@ class AuthorizationPolicyGovernanceControllerTest {
         when(entryAuthorization.decide(any(), eq(new AuthorizationService.Entry(ENTRY)))).thenReturn(Decision.ALLOWED);
         var app = application("app", "domain", "panel", "frame", null);
         app.put("panelUses", List.of(
-                new ApplicationPanelUse("main", "landing", "panel", "/applications/app", null, null),
+                new ApplicationPanelUse("main", "landing", "panel", "/applications/app", null, Map.of("en", "Landing")),
                 new ApplicationPanelUse("private", "private", "panel", "/applications/app/private", null, Map.of("en", "Private"))));
         when(catalog.all()).thenReturn(List.of(app, application("foreign", "other", "panel", "frame", null)));
         when(catalog.entriesInDomain("domain")).thenCallRealMethod();
@@ -456,7 +459,7 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(jsonPath("$.entries[0].applicationId").value("app"))
                 .andExpect(jsonPath("$.entries[0].pageKey").value("landing"))
                 .andExpect(jsonPath("$.entries[0].names").isMap())
-                .andExpect(jsonPath("$.entries[0].names").isEmpty());
+                .andExpect(jsonPath("$.entries[0].names.en").value("Landing"));
         verifyNoInteractions(subjects);
         verify(store).domainObjectGrants("domain");
         verifyNoInteractions(workflows);
@@ -527,7 +530,7 @@ class AuthorizationPolicyGovernanceControllerTest {
 
     private static JSONObject application(String id, String domain, String panel, String frame, String agentId) {
         var agent = agentId == null ? null : new DefaultAgentTarget("id", agentId, null);
-        var use = new ApplicationPanelUse("main", panel, panel, "/applications/" + id, agent, Map.of("en", "Dashboard"));
+        var use = new ApplicationPanelUse("main", panel, panel, "/applications/" + id, agent, Map.of("en", "Dashboard", "zh-CN", "工作台"));
         return JSONObject.of("id", id, "domainId", domain, "kind", "panel-app", "entry", JSONObject.of("renderer", "panels", "path", "/applications/" + id),
                 "panelSettings", JSONObject.of("framePanelId", frame), "panelUses", List.of(use));
     }

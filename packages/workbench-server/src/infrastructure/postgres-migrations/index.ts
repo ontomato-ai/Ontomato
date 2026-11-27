@@ -21,6 +21,7 @@ import { ensureAssistantSchema } from "./20261028-assistant/schema";
 import { ensureAssistantDefaultPromptSchema } from "./20261105-assistant-default-prompts/schema";
 import { ASSISTANT_CHART_SKILLS_NAME, ASSISTANT_CHART_SKILLS_VERSION, migrateAssistantChartSkills } from "./20261118-assistant-chart-skills/migration";
 import { PAGE_OPERATOR_SKILL_NAME, PAGE_OPERATOR_SKILL_VERSION, migratePageOperatorSkill } from "./20261127-page-operator-skill-backfill/migration";
+import { SKILL_PRELOAD_NAME, SKILL_PRELOAD_VERSION, migrateSkillPreload } from "./20261127-skill-preload-backfill/migration";
 import { ONTOLOGY_QUERY_SKILL_NAME, ONTOLOGY_QUERY_SKILL_VERSION, migrateOntologyQuerySkill } from "./20261127-ontology-query-skill-backfill/migration";
 import { GOVERNANCE_REPORT_SKILL_NAME, GOVERNANCE_REPORT_SKILL_VERSION, migrateGovernanceReportSkill } from "./20261121-governance-report-skill/migration";
 import {
@@ -147,6 +148,23 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
           return migrated;
         });
         logger.info("Page operator skill presets migrated", { version: migration.version, ...result });
+      },
+    },
+  },
+  {
+    directory: "20261127-skill-preload-backfill",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: SKILL_PRELOAD_VERSION,
+      name: SKILL_PRELOAD_NAME,
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        const result = await inMigrationTransaction(client, async () => {
+          const migrated = await migrateSkillPreload(client);
+          await recordMigration(client, migration.version, migration.name);
+          return migrated;
+        });
+        logger.info("Assistant skill preload migrated", { version: migration.version, ...result });
       },
     },
   },

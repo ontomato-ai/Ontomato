@@ -363,7 +363,7 @@ beforeAll(async () => {
         applicationId: "app-knowledge",
         menu: { singleEntry: true, groups: [], panelUses: [] },
       use: {
-          id: "knowledge", pageKey: "knowledge", path: "/ontology/knowledge", panelId,
+          id: "knowledge", names: { en: "knowledge" }, pageKey: "knowledge", path: "/ontology/knowledge", panelId,
         },
       },
     });

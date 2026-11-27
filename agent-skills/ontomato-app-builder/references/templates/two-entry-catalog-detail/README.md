@@ -2,13 +2,13 @@
 
 Minimal starter pattern for multi-column catalog + detail management applications:
 
-- **Menu entry (`panels/template-two-entry-catalog/`)**: appears in the application menu (`names` set on the `panelUse`). Renders a `<page-header>`
+- **Menu entry (`panels/template-two-entry-catalog/`)**: has localized `names` and appears in the application menu. Renders a `<page-header>`
   with a top-right primary `+ New …` button, a full-width `ObjectList` whose row click (`@choose`) navigates to the detail entry
   with flat query parameters via `panelAddress(DETAIL_PATH, { selected: item.primaryKey })`, and a centered
   `<sdk-dialog>` hosting `ObjectForm` (`createForm`, `config.actions: "create-only"`). `creating` is public state with `deepLink: false`. Show only the required create fields (here `/name`). The dialog guards unsaved edits on close.
   The form's `saved` event carries the identity from the owner's `created` receipt. On save, close the dialog and
   open the new object's full-width detail when a key was reported.
-- **Detail entry (`panels/template-two-entry-detail/`)**: omitted from the menu (`names` omitted on the `panelUse`), opened via
+- **Detail entry (`panels/template-two-entry-detail/`)**: has localized `names` and sets `inMenu: false` on the `panelUse`, opened via
   `panelAddress(DETAIL_PATH, { selected: primaryKey })` (`?selected=<primaryKey>`) or a direct deep link.
   Renders a single-row `<page-header>` with Back, title, Discard and Save wired to
   `usePanelFormDraft("form")`, plus equal-height cards in a two-column `@container` grid that collapses to one column

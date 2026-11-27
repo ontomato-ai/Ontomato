@@ -178,3 +178,6 @@ ORDER BY a.domain_id, a.id, g.principal_kind, g.principal_id;
 The schema change only adds the coauthor fact. The development data inventory
 and cutover are operator work. Demotion or deletion of legacy rows belongs to
 the subsequent cleanup.
+
+Every panel use, native entry and frame conversation entry requires localized `names`.
+Entries appear in the application menu by default. Set `inMenu: false` to hide an entry from the menu.

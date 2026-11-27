@@ -628,7 +628,8 @@
         "tools.emptySelected": "No external tools selected.",
         "tools.loading": "Loading external tools…",
         "tools.loadError": "Failed to load external tools.",
-        "tools.searchPlaceholder": "Search external tools"
+        "tools.searchPlaceholder": "Search external tools",
+        "capabilities.preloadColumn": "Load at start"
       },
       "zh-CN": {
         "action.cancel": "取消",
@@ -734,7 +735,8 @@
         "tools.emptySelected": "尚未选择外部工具。",
         "tools.loading": "正在加载外部工具…",
         "tools.loadError": "加载外部工具失败。",
-        "tools.searchPlaceholder": "搜索外部工具"
+        "tools.searchPlaceholder": "搜索外部工具",
+        "capabilities.preloadColumn": "开局加载"
       },
       "zh-TW": {
         "action.cancel": "取消",
@@ -840,7 +842,8 @@
         "tools.emptySelected": "尚未選擇外部工具。",
         "tools.loading": "正在載入外部工具…",
         "tools.loadError": "載入外部工具失敗。",
-        "tools.searchPlaceholder": "搜尋外部工具"
+        "tools.searchPlaceholder": "搜尋外部工具",
+        "capabilities.preloadColumn": "開局載入"
       },
       "ja": {
         "action.cancel": "キャンセル",
@@ -946,7 +949,8 @@
         "tools.emptySelected": "外部ツールが選択されていません。",
         "tools.loading": "外部ツールを読み込み中…",
         "tools.loadError": "外部ツールの読み込みに失敗しました。",
-        "tools.searchPlaceholder": "外部ツールを検索"
+        "tools.searchPlaceholder": "外部ツールを検索",
+        "capabilities.preloadColumn": "開始時に読み込む"
       },
       "ar": {
         "action.cancel": "إلغاء",
@@ -1052,7 +1056,8 @@
         "tools.emptySelected": "لم يتم اختيار أدوات خارجية.",
         "tools.loading": "جارٍ تحميل الأدوات الخارجية…",
         "tools.loadError": "تعذر تحميل الأدوات الخارجية.",
-        "tools.searchPlaceholder": "البحث في الأدوات الخارجية"
+        "tools.searchPlaceholder": "البحث في الأدوات الخارجية",
+        "capabilities.preloadColumn": "التحميل عند البدء"
       },
       "fr": {
         "action.cancel": "Annuler",
@@ -1158,7 +1163,8 @@
         "tools.emptySelected": "Aucun outil externe sélectionné.",
         "tools.loading": "Chargement des outils externes…",
         "tools.loadError": "Échec du chargement des outils externes.",
-        "tools.searchPlaceholder": "Rechercher des outils externes"
+        "tools.searchPlaceholder": "Rechercher des outils externes",
+        "capabilities.preloadColumn": "Charger au démarrage"
       },
       "de": {
         "action.cancel": "Abbrechen",
@@ -1264,7 +1270,8 @@
         "tools.emptySelected": "Keine externen Werkzeuge ausgewählt.",
         "tools.loading": "Externe Werkzeuge werden geladen…",
         "tools.loadError": "Externe Werkzeuge konnten nicht geladen werden.",
-        "tools.searchPlaceholder": "Externe Werkzeuge suchen"
+        "tools.searchPlaceholder": "Externe Werkzeuge suchen",
+        "capabilities.preloadColumn": "Beim Start laden"
       },
       "it": {
         "action.cancel": "Annulla",
@@ -1370,7 +1377,8 @@
         "tools.emptySelected": "Nessuno strumento esterno selezionato.",
         "tools.loading": "Caricamento strumenti esterni…",
         "tools.loadError": "Impossibile caricare gli strumenti esterni.",
-        "tools.searchPlaceholder": "Cerca strumenti esterni"
+        "tools.searchPlaceholder": "Cerca strumenti esterni",
+        "capabilities.preloadColumn": "Carica all’avvio"
       }
     }
   }

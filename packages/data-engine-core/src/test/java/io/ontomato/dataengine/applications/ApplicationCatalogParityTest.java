@@ -50,9 +50,9 @@ class ApplicationCatalogParityTest {
     @Test
     void panelReverseReadsSelectOnlyTheRequestedPanelInTheVerifiedDomain() {
         var use = new ApplicationPanelUse("one", "one", "target", "/applications/local/one",
-            null, null, null, null, null, null, null, null);
+            null, Map.of("en", "One"), null, null, null, null, null, null, false);
         var other = new ApplicationPanelUse("two", "two", "different", "/applications/local/two",
-            null, null, null, null, null, null, null, null);
+            null, Map.of("en", "Two"), null, null, null, null, null, null, false);
         var local = domainApp("local", "domain-a", "alice", "Local");
         local.put("panelUses", List.of(use, other));
         var foreign = domainApp("foreign", "domain-b", "bob", "Foreign");
@@ -170,7 +170,7 @@ class ApplicationCatalogParityTest {
         var app = domainApp("app-java-owner", "1", "admin", "Java-owned app");
         app.getJSONObject("entry").put("renderer", "panels");
         app.put("panelUses", List.of(new ApplicationPanelUse("main", "app-java-owner:main", "panel-main",
-            "/applications/app-java-owner/main", new DefaultAgentTarget("id", "agent-main", null), null)));
+            "/applications/app-java-owner/main", new DefaultAgentTarget("id", "agent-main", null), Map.of("en", "Main"))));
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class),
             mock(ApplicationAccess.class), "{}", mock(PanelResources.class), mock(IdentityPrincipalDirectory.class), authorization));
         doReturn(List.of(app)).when(catalog).all();
@@ -186,7 +186,7 @@ class ApplicationCatalogParityTest {
         var values = form.getJSONObject("values");
         assertEquals("/applications/app-java-owner/updated", values.getJSONObject("entry").getString("path"));
         assertEquals("agent-main", values.getJSONArray("panelUses").getJSONObject(0).getJSONObject("defaultAgent").getString("id"));
-        assertTrue(form.getJSONArray("errors").isEmpty());
+        assertTrue(form.getJSONArray("errors").isEmpty(), () -> form.getJSONArray("errors").toJSONString());
 
         var rowsHandler = new ApplicationController(catalog, null, null).applicationPanelEntryRows().handler();
         var rows = (JSONObject) rowsHandler.read(subject, Map.of("primaryKey", "app-java-owner"));
@@ -213,9 +213,9 @@ class ApplicationCatalogParityTest {
         shared.getJSONObject("entry").put("renderer", "panels");
         shared.put("panelUses", List.of(
                 new ApplicationPanelUse("main", "shared/main", "panel-shared", "/applications/app-shared/main",
-                        new DefaultAgentTarget("id", "agent-public", null), Map.of()),
+                        new DefaultAgentTarget("id", "agent-public", null), Map.of("en", "Main")),
                 new ApplicationPanelUse("private", "shared/private", "panel-private", "/applications/app-shared/private",
-                        new DefaultAgentTarget("id", "agent-private", null), Map.of())));
+                        new DefaultAgentTarget("id", "agent-private", null), Map.of("en", "Private"))));
         var unrelated = domainApp("app-unrelated", "domain-b", "reader", "Other domain");
         unrelated.put("panelSettings", JSONObject.of("framePanelId", "frame-owned"));
         var names = mock(IdentityPrincipalDirectory.class);

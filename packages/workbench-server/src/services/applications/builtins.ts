@@ -96,6 +96,17 @@ export const workbenchApplications: BuiltinApplication[] = [
       }, {
         "id": "home-object-detail-body",
         "pageKey": "home-object-detail-body",
+        "names": {
+          "en": "Object detail body",
+          "zh-CN": "对象详情内容",
+          "zh-TW": "物件詳情內容",
+          "ja": "オブジェクト詳細本体",
+          "de": "Objektdetail-Inhalt",
+          "fr": "Contenu du détail d'objet",
+          "it": "Corpo dettaglio oggetto",
+          "ar": "محتوى تفاصيل الكائن"
+        },
+        "inMenu": false,
         "panelId": "builtin-product-object-detail-body",
         "defaultAgent": { "kind": "preset", "agentKind": "regular" },
         "path": "/home/object-detail",
@@ -130,12 +141,34 @@ export const workbenchApplications: BuiltinApplication[] = [
       "panelUses": [{
         "id": "agents-agent-settings",
         "pageKey": "agents-agent-settings",
+        "names": {
+          "en": "Agent settings",
+          "zh-CN": "智能体设置",
+          "zh-TW": "智慧體設定",
+          "ja": "エージェント設定",
+          "de": "Agent-Einstellungen",
+          "fr": "Paramètres des agents",
+          "it": "Impostazioni agenti",
+          "ar": "إعدادات الوكيل"
+        },
+        "inMenu": false,
         "panelId": "builtin-product-agent-settings",
         "path": "/agents/settings",
         "inputs": { "detailPath": { "literal": "/agents/settings/detail" } },
       }, {
         "id": "agents-agent-detail",
         "pageKey": "agents-agent-detail",
+        "names": {
+          "en": "Agent detail",
+          "zh-CN": "智能体详情",
+          "zh-TW": "智慧體詳情",
+          "ja": "エージェント詳細",
+          "de": "Agent-Details",
+          "fr": "Détail de l'agent",
+          "it": "Dettaglio agente",
+          "ar": "تفاصيل الوكيل"
+        },
+        "inMenu": false,
         "panelId": "builtin-product-agent-detail",
         "path": "/agents/settings/detail",
         "inputs": { "catalogPath": { "literal": "/agents/settings" } },
@@ -286,6 +319,16 @@ export const workbenchApplications: BuiltinApplication[] = [
       "panelUses": [{
         "id": "ops-diagnosis",
         "pageKey": "ops-diagnosis",
+        "names": {
+          "en": "New chat",
+          "zh-CN": "新对话",
+          "zh-TW": "新對話",
+          "ja": "新しいチャット",
+          "de": "Neuer Chat",
+          "fr": "Nouvelle discussion",
+          "it": "Nuova chat",
+          "ar": "محادثة جديدة"
+        },
         "kind": "frame-conversation",
         "path": "/ops/diagnosis",
       }, {
@@ -356,6 +399,17 @@ export const workbenchApplications: BuiltinApplication[] = [
       }, {
         "id": "ops-autotest-case-artifact",
         "pageKey": "ops-autotest-case-artifact",
+        "names": {
+          "en": "Autotest case artifact",
+          "zh-CN": "自动测试产物",
+          "zh-TW": "自動測試產物",
+          "ja": "自動テスト成果物",
+          "de": "Autotest-Fallartefakt",
+          "fr": "Artefact de test automatique",
+          "it": "Artefatto caso di autotest",
+          "ar": "مخرجات حالة الاختبار الآلي"
+        },
+        "inMenu": false,
         "panelId": "builtin-product-ops-autotest-case-artifact",
         "path": "/ops/autotest/case",
         "groupKey": "autotest",

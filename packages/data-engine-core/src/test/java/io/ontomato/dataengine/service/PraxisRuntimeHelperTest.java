@@ -53,6 +53,19 @@ class PraxisRuntimeHelperTest {
         )
         q.praxis_assign_step("step-1", "xg.chencong")
         q.praxis_decide_step("step-1", "approve", "ok")
+        q.praxis_list_runs(
+            status="waiting",
+            limit=2,
+            target_class="school_task",
+            target_id="task-1",
+        )
+        q.praxis_subjects("DEPT_LEADER")
+        q.praxis_assign_step("step-1", None)
+        try:
+            q.praxis_list_runs(target_class="school_task")
+            raise AssertionError("one-sided target filter must fail")
+        except ValueError:
+            pass
 
         assert run["id"] == "run-1"
         assert calls[0]["method"] == "POST"
@@ -65,6 +78,14 @@ class PraxisRuntimeHelperTest {
         assert calls[1]["body"]["assignedBy"] == "xg.pangchao"
         assert calls[2]["body"]["decider"] == "xg.pangchao"
         assert calls[2]["body"]["verdict"] == "approve"
+        assert calls[3]["params"] == {
+            "status": "waiting",
+            "limit": 2,
+            "targetClass": "school_task",
+            "targetId": "task-1",
+        }
+        assert calls[4]["params"] == {"role": "DEPT_LEADER"}
+        assert calls[5]["body"]["principal"] is None
         print("ok")
         """, StandardCharsets.UTF_8);
 
