@@ -77,7 +77,7 @@ class OwnerListQueryBudgetTest {
   @BeforeEach
   void allowPublishedDefinitions() {
     when(subjects.resolveRoles(DOMAIN, AUTHOR))
-        .thenReturn(new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false));
+        .thenReturn(new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false));
     when(subjects.objectEntitlement(eq(AUTHOR), any(), any())).thenReturn(true);
     when(policies.policies(DOMAIN, Set.of())).thenReturn(List.of());
   }

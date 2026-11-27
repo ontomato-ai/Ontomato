@@ -11,7 +11,7 @@ class AnonymousAgentExecutionIdentityTest {
   @Test void anonymousEditionHasOnlyTheExistingInitiatorAndNeverPreparesAKey() throws Exception {
     var identity = new AnonymousAgentExecutionIdentity();
     var credentials=mock(UserCredentials.class);
-    var settings=new AgentExecutionSettings(identity,credentials);
+    var settings=new AgentExecutionSettings(identity, credentials, new AnonymousAuthorization(null));
     var request=new MockHttpServletRequest();
     var options=settings.options(request,"",1,20,"unknown");
     assertNull(options.selected());

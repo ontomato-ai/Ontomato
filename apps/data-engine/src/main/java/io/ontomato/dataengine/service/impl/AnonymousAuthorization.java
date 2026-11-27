@@ -44,7 +44,7 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
 
     @Override
     public RoleResolution resolveRoles(String domainId, String userId) {
-        return new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false);
+        return new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false);
     }
 
     @Override public boolean entryEntitlement(ObjectTarget entry) { return true; }

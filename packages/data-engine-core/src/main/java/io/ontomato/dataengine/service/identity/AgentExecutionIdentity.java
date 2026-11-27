@@ -12,7 +12,6 @@ public interface AgentExecutionIdentity {
       @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String reason) {}
   Actor operator(HttpServletRequest request);
   void requireInitiator(Actor actor);
-  boolean administrator(Actor actor);
   List<Option> options(String domainId, String keyword, int pageNum, int pageSize);
   Selected selected(String domainId, String userId);
   User requireTarget(String domainId, String userId);

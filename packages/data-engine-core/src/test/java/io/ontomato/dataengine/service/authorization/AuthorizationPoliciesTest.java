@@ -42,13 +42,13 @@ class AuthorizationPoliciesTest {
     void setUp() {
         var identity = new VerifiedIdentity(DOMAIN, "admin", CredentialLimit.UNRESTRICTED);
         when(subjects.resolveRoles(DOMAIN, "admin")).thenReturn(
-                new RoleResolution(Set.of("admin-role"), Set.of("admin-role"), List.of(), Set.of(), Map.of(), true, false));
+                new RoleResolution(Set.of("admin-role"), Set.of("admin-role"), List.of(), Set.of(), Map.of(), true));
         when(store.policies(DOMAIN, Set.of("admin-role"))).thenReturn(List.of());
         adminCtx = authorization.resolveSubject(identity);
 
         var viewerIdentity = new VerifiedIdentity(DOMAIN, "viewer", CredentialLimit.UNRESTRICTED);
         when(subjects.resolveRoles(DOMAIN, "viewer")).thenReturn(
-                new RoleResolution(Set.of("viewer-role"), Set.of("viewer-role"), List.of(), Set.of(), Map.of(), false, false));
+                new RoleResolution(Set.of("viewer-role"), Set.of("viewer-role"), List.of(), Set.of(), Map.of(), false));
         when(store.policies(DOMAIN, Set.of("viewer-role"))).thenReturn(
                 List.of(new PolicyRef("viewer-role", "mgmt-read", PolicyKind.MANAGEMENT)));
         when(store.managementOperations(DOMAIN, Set.of("mgmt-read"))).thenReturn(Set.of(AuthorizationPolicies.READ));

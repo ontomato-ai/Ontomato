@@ -502,7 +502,7 @@ class AuthorizationPolicyGovernanceControllerTest {
     }
 
     private static RoleResolution roles(Set<String> ids) {
-        return new RoleResolution(ids, ids, List.of(), Set.of(), Map.of(), false, false);
+        return new RoleResolution(ids, ids, List.of(), Set.of(), Map.of(), false);
     }
 
     private static ObjectGrant grant(ObjectTarget target, Verb verb, GrantScope scope) {
