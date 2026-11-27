@@ -122,8 +122,7 @@ public class RuntimeCodeClient {
             "path",
             "retriever-ref.json",
             "content",
-            JSONObject.of("ref", OntologyAgentStore.retrieverRef(), "contextSchema",
-                io.ontomato.dataengine.service.agent.AgentDirectory.retrieverContextSchema()).toJSONString()));
+            OntologyAgentStore.retrieverRef().toJSONString()));
     return runtime.publishSkill("ontology-assistant-skill-registration", ASSISTANT_SKILL, files);
   }
 

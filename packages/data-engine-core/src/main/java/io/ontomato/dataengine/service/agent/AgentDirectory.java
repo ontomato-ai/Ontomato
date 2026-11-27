@@ -7,9 +7,6 @@ import org.springframework.stereotype.Service;
 /** Definition owners authorize their own entries; the directory stores no definition or permission copy. */
 @Service
 public class AgentDirectory {
-  public static JSONObject retrieverContextSchema() {
-    return JSONObject.of("type", "object", "properties", JSONObject.of("queryIntent", QueryIntent.schema()), "additionalProperties", false);
-  }
   private final AgentCaller callers;
   private final OntologyAgentLabels labels;
   private final ActionCreationService actions;
@@ -27,8 +24,7 @@ public class AgentDirectory {
       agents.add(JSONObject.of(
           "ref", OntologyAgentStore.retrieverRef(),
           "name", "Data retrieval",
-          "description", "Answer data questions with retrieval results",
-          "contextSchema", retrieverContextSchema()
+          "description", "Answer data questions with retrieval results"
       ));
     }
     try {

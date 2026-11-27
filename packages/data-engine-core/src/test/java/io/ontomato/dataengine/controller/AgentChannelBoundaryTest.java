@@ -260,7 +260,6 @@ class AgentChannelBoundaryTest {
     var listed = new AgentDirectory(agentCallers, actions, labels, retrieverAccess).list(actor, "a", "en");
     var entry = listed.getJSONArray("agents").getJSONObject(0);
     var descriptor = JSONObject.parseObject(files.get("retriever-ref.json"));
-    assertEquals(entry.getJSONObject("ref"), descriptor.getJSONObject("ref"));
-    assertEquals(entry.getJSONObject("contextSchema"), descriptor.getJSONObject("contextSchema"));
+    assertEquals(entry.getJSONObject("ref"), descriptor);
   }
 }

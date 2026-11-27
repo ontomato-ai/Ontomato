@@ -76,7 +76,6 @@ public class OntologyRetrievalService {
     AgentJson.fields(
         body,
         "question",
-        "queryIntent",
         "userQuotes",
         "classNames",
         "previousDatasetIds",
@@ -84,10 +83,6 @@ public class OntologyRetrievalService {
         "timeoutSeconds");
     var result = AgentJson.copy(body);
     result.put("question", AgentJson.text(body, "question").trim());
-    if (body.containsKey("queryIntent")) {
-      if (!(body.get("queryIntent") instanceof Map)) throw AgentHttpException.invalid("queryIntent must be an object");
-      result.put("queryIntent",QueryIntent.accept(body.getJSONObject("queryIntent"),result.getString("question")));
-    }
     for (String key : List.of("userQuotes", "previousDatasetIds"))
       result.putIfAbsent(key, new JSONArray());
     result.putIfAbsent("interaction", "resumable");
@@ -215,7 +210,7 @@ public class OntologyRetrievalService {
       boolean continuation=!records.isEmpty();
       var inputBody=continuation?records.getFirst().getJSONObject("input"):JSONObject.of("question",AgentJson.text(message,"content"));
       if (!continuation && parameters!=null) {
-        AgentJson.fields(parameters,"classNames","previousDatasetIds","timeoutSeconds","interaction","queryIntent");
+        AgentJson.fields(parameters,"classNames","previousDatasetIds","timeoutSeconds","interaction");
         inputBody.putAll(parameters);
       }
       if(context.callerId()==null) {
@@ -342,7 +337,6 @@ public class OntologyRetrievalService {
               record.get("decisions"),
               "answer",
               row.getJSONObject("request").getString("message"));
-     if(input.containsKey("queryIntent")) user.put("queryIntent",input.get("queryIntent"));
      return AgentJson.json(user);
   }
   private JSONObject runtimeRequest(String id,String runId,JSONObject message,OntologyAgentAccess.Context context) throws Exception {
@@ -610,9 +604,6 @@ public class OntologyRetrievalService {
     DatasetFileContract.preparation(body);
     body.put("schema", "workbench.dataset.v2");
     var recipe = body.getJSONObject("recipe");
-    var intent=acceptedInput.getJSONObject("input").getJSONObject("queryIntent");
-    if(body.containsKey("conditionBindings") && intent==null) throw AgentHttpException.invalid("Condition bindings require an admitted query intent");
-    if(intent!=null) QueryIntent.bind(intent,body.get("conditionBindings"));
     var executionAccess = store.transaction(
         () -> {
           store.gate(id, runId, context.owner());
@@ -754,11 +745,6 @@ public class OntologyRetrievalService {
     data.putAll(result);
     data.putIfAbsent("schema", "workbench.dataset.v1");
     data.put("execution", execution);
-    var intent=store.retrieval(id,owner).getJSONObject("input").getJSONObject("queryIntent");
-    if(intent!=null) {
-      data.put("queryIntent",intent);
-      data.put("queryCoverage",QueryIntent.coverage(QueryIntent.bind(intent,data.get("conditionBindings")),data.getJSONObject("recipe"),data.get("truncation")));
-    }
     validateDataset(data);
     store.transaction(
         () -> {
