@@ -704,5 +704,6 @@ export async function declaredDirectOperation(
     ...(bound.binding.params ? { bindingParams: bound.binding.params } : {}),
     use,
     projection: { id: placement.projection.id, binding: current.handler.binding },
+    projectionDefinition: placement.projection,
   };
 }

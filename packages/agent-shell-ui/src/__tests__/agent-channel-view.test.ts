@@ -23,18 +23,20 @@ it("keeps the original receipt identity and never unconsumes an input on a late 
   expect(state.messages[inputId].message.role).toBe("notification");
 });
 
-it("places a consumed user insertion inside one response using consumption order",()=>{
+it("places a consumed user answer inside one response using consumption order, with its question",()=>{
   const state=emptyConversation(sessionId);
   const assistant=(text:string,timestamp:number)=>({role:"assistant" as const,content:[{type:"text" as const,text}],timestamp,api:null,provider:null,model:null,usage:null,origin:"runtime" as const,stopReason:"stop" as const});
   applyNotifications(state,[
     {id:"first",runId,messageSeq:1,contextSeq:1,message:{role:"user",content:"Question",timestamp:1}},
-    {id:"insert",runId,messageSeq:2,contextSeq:3,message:{role:"user",content:"Use current year",timestamp:2}},
-    {id:"before",runId,messageSeq:3,contextSeq:2,message:assistant("Before insertion",3)},
-    {id:"after",runId,messageSeq:4,contextSeq:4,message:assistant("After insertion",4)},
+    {id:"before",runId,messageSeq:2,contextSeq:2,message:assistant("Before insertion",2)},
+    {id:"asked",runId,messageSeq:3,contextSeq:3,message:{role:"notification",kind:"agent-question",source:{session:{providerId:"ontology",sessionId},runId},content:"Which fiscal year?",timestamp:3}},
+    {id:"insert",runId,messageSeq:4,contextSeq:4,message:{role:"notification",kind:"agent-answer",source:{kind:"user"},replyTo:"asked",content:"2024",timestamp:4}},
+    {id:"after",runId,messageSeq:5,contextSeq:5,message:assistant("After insertion",5)},
   ]);
   const items=conversationItems(state),responses=items.filter(item=>item.kind==="response");
   expect(responses).toHaveLength(1);
-  expect(responses[0].process.map(block=>[block.kind,"text" in block?block.text:""])).toEqual([["note","Before insertion"],["input","Use current year"],["note","After insertion"]]);
+  expect(responses[0].process.map(block=>[block.kind,"text" in block?block.text:""])).toEqual([["note","Before insertion"],["input","2024"],["note","After insertion"]]);
+  expect(responses[0].process[1]).toMatchObject({kind:"input",question:"Which fiscal year?"});
 });
 
 it("hides a delegated agent's model-directed question across live, history, and reconnect while keeping preparation failures", () => {
@@ -87,7 +89,7 @@ it("hides a delegated agent's model-directed question across live, history, and 
   expect(conversationItems(reconnect)).toEqual([]);
 });
 
-it("keeps explicit user questions, current-session questions, user answers, and readable task processes", () => {
+it("keeps user answers with their questions while questions wait only in the panel, and keeps readable task processes", () => {
   const explicitUserQuestionId = "66666666-6666-4666-8666-666666666666";
   const ownQuestionId = "77777777-7777-4777-8777-777777777777";
   const answerId = "88888888-8888-4888-8888-888888888888";
@@ -139,9 +141,7 @@ it("keeps explicit user questions, current-session questions, user answers, and 
   ]);
 
   expect(conversationItems(state)).toEqual([
-    { kind: "notification", key: explicitUserQuestionId, text: "Approve execution?", markdownRunId: childRunId },
-    { kind: "notification", key: ownQuestionId, text: "Which fiscal year?", markdownRunId: runId },
-    { kind: "user", key: answerId, text: "2024", answer: true },
+    { kind: "user", key: answerId, text: "2024", answer: true, question: "Which fiscal year?" },
   ]);
 
   const taskProcess = emptyConversation();

@@ -15,7 +15,7 @@ const { response } = useTaskProcess(props.port, props.sessionId, props.taskId, p
   <div v-if="response" class="task-process">
     <template v-for="block in response.process" :key="block.key">
       <ShellProcess v-if="block.kind === 'steps'" :steps="block.steps" :active="block.active" />
-      <ProcessInput v-else-if="block.kind === 'input'" :text="block.text" :answer="block.replyTo !== undefined" />
+      <ProcessInput v-else-if="block.kind === 'input'" :text="block.text" :answer="block.replyTo !== undefined" :question="block.question" />
       <ProcessDetail v-else-if="block.kind === 'detail'" :detail="block.detail" :running="response.running" />
       <div v-else-if="block.kind === 'note'" class="task-note">
         <TaskMarkdown :content="block.text" :final="block.final" />

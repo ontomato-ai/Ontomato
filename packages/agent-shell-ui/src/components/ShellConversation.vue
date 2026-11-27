@@ -10,8 +10,8 @@ import type { ComposerEntry } from "../page-composer-entry";
 import { writtenText } from "../page-context";
 import ShellQuestions from "./ShellQuestions.vue";
 import ShellResponse from "./ShellResponse.vue";
-import ShellMarkdown from "./ShellMarkdown.vue";
 import AgentAvatar from "./AgentAvatar.vue";
+import QuestionAnswer from "./QuestionAnswer.vue";
 
 const props = defineProps<{
   items: ConversationItem[];
@@ -291,13 +291,16 @@ async function send(text: string) {
           </div>
           <template v-for="item in items" :key="item.key">
             <div v-if="item.kind === 'user'" class="user-turn" :class="{ queued: item.queued }" :data-pin="item.key === pinTarget || undefined">
-              <div class="user-bubble">{{ item.answer ? labels.answered(written(item.text)) : written(item.text) }}</div>
+              <div class="user-bubble">
+                <QuestionAnswer v-if="item.answer" :text="written(item.text)" :question="item.question" />
+                <template v-else>{{ written(item.text) }}</template>
+              </div>
               <div v-if="item.queued" class="user-queued" role="status" aria-live="polite">
                 <Clock :size="12" aria-hidden="true" />
                 <span>{{ labels.queuedWaiting }}</span>
               </div>
             </div>
-            <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><ShellMarkdown v-if="item.markdownRunId" class="notification-markdown" :content="item.text" final :run-id="item.markdownRunId" /><span v-else>{{ item.text }}</span></div>
+            <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><span>{{ item.text }}</span></div>
             <template v-else>
               <ShellResponse :item="item" :session-id="sessionId" :feedback="feedback" />
               <slot name="message-actions" :item="item" :run-id="item.runId" />
@@ -335,7 +338,6 @@ async function send(text: string) {
 
 <style scoped>
 .agent-notification { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; margin: 12px 0; border-left: 2px solid var(--el-color-info); color: var(--el-text-color-secondary); font-size: var(--text-sm); white-space: pre-wrap; }
-.agent-notification .notification-markdown { min-width: 0; white-space: normal; }
 .agent-notification.failed { border-color: var(--el-color-danger); color: var(--el-color-danger); }
 .agent-notification svg { flex-shrink: 0; margin-top: 3px; }
 .conversation {
