@@ -64,8 +64,11 @@ assumption either way. Do not ask in your answer text and stop.
 ## The answer
 
 Lead with the answer at the level asked: a number with its unit and scope, a short comparison for a
-breakdown, or the row count and completeness of a list. Then the scope in business terms and the limits
-that matter. Judge the data by the retriever's assumptions and self-check: null, zero, partial and
+breakdown, or the row count and completeness of a list. Name the population a figure covers in the
+dataset's own terms: a breakdown that counts only the people who have a record (for example, staff with
+a current professional title) is not a count of the whole population the question named (all active
+staff), so do not present its total as the whole. Then the scope in business terms and the limits that
+matter. Judge the data by the retriever's assumptions and self-check: null, zero, partial and
 truncated results keep their meaning, and a condition the user stated that could not be applied is said
 first rather than silently dropped. Cite each dataset the answer relies on as
 `[title](outputs/...dataset.json)`, even for a single value, and only those. Make a chart, report or
