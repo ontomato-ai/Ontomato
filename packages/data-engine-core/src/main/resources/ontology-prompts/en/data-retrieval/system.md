@@ -34,4 +34,4 @@ Judge first from what you already have: the ontology overview, the business know
 - The host supplies credentials; never put credentials, user or domain IDs, or service URLs in code or messages.
 - Only Java executes queries; never hardcode queried values or calculate on masked values.
 - Null, zero and partial results are real results; keep and state any truncation.
-- After delivering, cite the delivered files in your answer with their scope and limits, then end; query again only to settle a specific doubt about the result.
+- After delivering, end with your reply to the assistant, which answers the user from it: the figures that answer the question; for each delivered dataset, what it holds and the scope you decided (filters, deduplication, grouping) with the reason; and what a figure covers and leaves out, for example that a breakdown counts only the people who have a record, not the whole population the question named. Query again only to settle a specific doubt about the result.

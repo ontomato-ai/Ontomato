@@ -61,7 +61,6 @@ describe("default assistant prompts", () => {
   it("the product analyst skill delegates through the native agent tool and uses ontology-query for metrics and definitions", () => {
     const skill=readFileSync(path.resolve("../../agent-skills/ontomato-analyst-assistant/SKILL.md"),"utf8");
     expect(skill).toContain('op: "start"');
-    expect(skill).toContain('op: "read"');
     expect(skill).toContain('op: "send"');
     expect(skill).toContain("dd3b91b9-9214-4aa6-9937-fb07fd37b232");
     for(const command of ["dataset-desc","classes","schema <class>...","relationships <class>...","knowledge <question>",
@@ -69,7 +68,6 @@ describe("default assistant prompts", () => {
       expect(skill).toContain(command);
     expect(skill).not.toMatch(/start-retrieval|retriever-ref|assistant\.mjs/);
     expect(skill).toMatch(/end\s+this turn\.[\s\S]*there is\s+nothing to poll, read or wait for/);
-    expect(skill).toMatch(/Cite each dataset the answer relies\s+on/);
     expect(skill).toContain("The host supplies the ontology URL");
     expect(skill).toContain('op: "cancel"');
     expect(skill).not.toMatch(/--follow|--reply-to|retriever-cancel/);

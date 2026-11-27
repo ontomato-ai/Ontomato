@@ -1,6 +1,6 @@
 ---
 name: ontomato-analyst-assistant
-description: "Answer business data questions: hand the user's question to the data retriever with the native agent tool, use a published metric when one fits, and explain the dataset the answer relies on."
+description: "Answer business data questions: hand the user's question to the data retriever with the native agent tool, use a published metric when one fits, and present the dataset the answer relies on."
 ---
 
 # Ontomato assistant analyst
@@ -12,9 +12,9 @@ choice as an assumption, and delivers datasets. Keeping scope with the retriever
 in one place, made by the one who sees the data; scope you add would be a guess it must either follow
 or contradict. This skill does not modify ontology definitions, permissions or business records.
 
-This skill has no script. Delegation uses the native `agent` tool. Metric commands are
-`node /skills/ontology-query/scripts/ontomato.mjs <command>` from the workspace root; the files they write,
-such as `outputs/metrics/...`, are relative to the workspace root. The host supplies the ontology URL,
+This skill has no script. Delegation uses the native `agent` tool. Ontology commands come from the
+ontology-query skill: `node /skills/ontology-query/scripts/ontomato.mjs <command>`, run from the workspace
+root; the files they write, such as `outputs/metrics/...`, are relative to the workspace root. The host supplies the ontology URL,
 credentials, language and run context; do not ask the user to configure them or print credentials.
 
 ## A data question
@@ -23,12 +23,16 @@ Your context already holds the ontology overview: the classes and relationships 
 That is enough to recognise a data question. You do not need schema, fields or business knowledge
 to hand it over.
 
-1. Start the retriever once with native `agent`, `op: "start"`,
-   `agent: {"providerId":"ontology","agentId":"dd3b91b9-9214-4aa6-9937-fb07fd37b232"}` and the question
-   in `message`; run `node /skills/ontology-query/scripts/ontomato.mjs recall-metrics "<question>"` for published metrics. Use the user's own words,
-   adding only what this conversation established: what "it" or "that college" refers to, a time or
-   scope the user already set, or the earlier dataset being continued. Keep one calculation together
-   (a numerator with its denominator, a total with its breakdown) so it is computed over one population.
+1. In one turn, make both calls:
+   - start the retriever once with native `agent`, `op: "start"`,
+     `agent: {"providerId":"ontology","agentId":"dd3b91b9-9214-4aa6-9937-fb07fd37b232"}` and the
+     question in `message`. Use the user's own words, adding only what this conversation established:
+     what "it" or "that college" refers to, a time or scope the user already set, or the earlier
+     dataset being continued. Keep one calculation together (a numerator with its denominator, a total
+     with its breakdown) so it is computed over one population;
+   - recall published metrics with
+     `node /skills/ontology-query/scripts/ontomato.mjs recall-metrics "<question>"`.
+
    The start returns `taskId`, `sessionRef` and `status`; recall returns `items` or an error.
 2. A recalled metric fits only when it answers the question as asked, over the same population: a
    metric over all organisations does not answer a question about colleges unless one of its
@@ -36,15 +40,16 @@ to hand it over.
    use it, it does not fit; leave the question to the retriever. When one fits, run it:
    `node /skills/ontology-query/scripts/ontomato.mjs run-metric <id> --revision <revision> --question "<question>"`, with `--binding <preset id>` to use
    its preset unchanged or `--params @values.json` with every value when you change one. It writes
-   `outputs/metrics/<id>.dataset.json` and prints `{path,title,rowCount,columns,truncation}`. Read the
-   values from that file, cancel the retriever (native `agent`, `op: "cancel"`, its `taskId`) and
-   answer. If the run fails or does not answer the question, leave the retriever running.
+   `outputs/metrics/<id>.dataset.json` and prints `{path,title,rowCount,columns,truncation}`. Only when
+   the run succeeds and answers the question as asked, read the values from that file, cancel the
+   retriever (native `agent`, `op: "cancel"`, its `taskId`) and answer. Otherwise leave the retriever
+   running.
 3. Otherwise end this turn. The retriever's result arrives as a notification and wakes you; there is
    nothing to poll, read or wait for. One short line telling the user the retriever is on it is enough.
-4. On the notification, take the files with native `agent`, `op: "read"`, `files: true`.
-   `downloaded[].dataset` already holds a small table with its scope, assumptions and truncation:
-   answer from it and cite the returned `downloaded[].path` without opening the file. Open a file only
-   when the answer needs a calculation or rows the summary does not hold.
+4. The notification carries the retriever's final reply and lists its delivered files, already mapped
+   read-only beneath `outputs/agents/<taskId>/`. The reply states the result, the scope it used and
+   what to keep in mind: answer from it, keep its scope as stated, and show the listed files. Open a
+   file only when the answer needs rows or calculations the reply does not give.
 
 A follow-up that needs new data is a new retrieval start; one that can be answered from data already
 delivered reuses it.
@@ -71,8 +76,12 @@ breakdown, or the row count and completeness of a list. Name the population a fi
 dataset's own terms: a breakdown that counts only the people who have a record (for example, staff with
 a current professional title) is not a count of the whole population the question named (all active
 staff), so do not present its total as the whole. Then the scope in business terms and the limits that
-matter. Judge the data by the retriever's assumptions and self-check: null, zero, partial and
+matter. Judge the data by the retriever's reply, assumptions and self-check: null, zero, partial and
 truncated results keep their meaning, and a condition the user stated that could not be applied is said
-first rather than silently dropped. Cite each dataset the answer relies on as
-`[title](outputs/...dataset.json)`, even for a single value, and only those. Make a chart, report or
-presentation only when the user asks for one.
+first rather than silently dropped.
+
+Show each dataset the answer relies on, and only those, inline with image syntax:
+`![title](outputs/agents/<taskId>/<file>.dataset.json)`, or `![title](outputs/metrics/<file>.dataset.json)`
+for a metric. The page renders it as a table the reader can sort and filter, so do not retype its rows
+as a Markdown table; a single value is stated in the text and its dataset is still shown. Make a chart,
+report or presentation only when the user asks for one.
