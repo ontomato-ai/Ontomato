@@ -60,7 +60,7 @@ describe("default assistant prompts", () => {
 
   it("the product analyst skill starts retrieval and metric recall concurrently, reuses a fitting metric and rests while the retriever works", () => {
     const skill=readFileSync(path.resolve("../../agent-skills/ontomato-analyst-assistant/SKILL.md"),"utf8");
-    expect(skill).toContain('op: "read"');expect(skill).toContain('op: "send"');
+    expect(skill).toContain('op: "send"');
     expect(skill).toContain("notification");
     for(const command of ["dataset-desc","classes","schema <class>...","relationships <class>...","knowledge <question>",
       "start-retrieval \"<question>\"","run-metric <id> --revision"])

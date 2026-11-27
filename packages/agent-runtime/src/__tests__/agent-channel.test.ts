@@ -8,9 +8,8 @@ import { AgentRuntime } from "../runtime";
 import { openSkillCallback } from "../skill-callback";
 import { SessionEngines } from "../session-engines";
 import { createRuntimeHttp } from "../http";
-import { ArtifactFiles } from "../files";
 import { canonical, RuntimeStore, type MessageRow } from "../store";
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { RuntimeRun, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
@@ -25,11 +24,11 @@ const notification: AgentNotification = { role: "notification", kind: "agent-ans
 afterEach(() => { vi.unstubAllGlobals(); });
 function channel() {
   let locked = false;
-  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined) },
-    importAgentFile: vi.fn(async () => "outputs/agents/delivered.dataset.json"),
+  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined), finalReply: vi.fn(async () => ({ role: "assistant", content: [{ type: "text", text: "Saved final reply" }], timestamp: 1 })) },
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
     publishSessionRun: vi.fn(),
+    linkAgentFiles: vi.fn(async () => [{ id: inputId, name: "delivered.dataset.json", path: `outputs/agents/${inputId}/${inputId}-delivered.dataset.json` }]),
   } as unknown as AgentRuntime;
   const port = new AgentChannel(runtime);
   port.remember(context,{token:"initiating-token",apiKey:null});
@@ -201,7 +200,7 @@ it("cannot prepare a bound run again after its delivery has settled", async () =
   const finished = settled.intents.get(runId)!;
   finished.status = "completed";
   vi.spyOn(settled.port, "callback").mockResolvedValue({
-    status: "completed", settled: true, summary: "", process: { mode: "none" }, results: [], files: [],
+    status: "completed", settled: true, process: { mode: "none" }, results: [], files: [],
   });
   await settled.port.stopped(scope, { ...run, channel: humanChannel });
   await expect(settled.port.prepare(finished)).rejects.toMatchObject({ code: "CALLER_CREDENTIAL_INVALID" });
@@ -304,7 +303,7 @@ it("a later parent run can read work its conversation delegated in an earlier ru
   const { channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId, sessionId: inputId }, channel: { ...context, root: { ...source,runId: "44444444-4444-4444-8444-444444444444" }, requestedBy: { ...source, runId: "44444444-4444-4444-8444-444444444444" } }, inputId, status: "completed" as const, language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false };
   vi.spyOn(port.facts, "task").mockResolvedValue({ scope,intent: child });
-  vi.spyOn(port, "callback").mockResolvedValue({ status: "completed", summary: "Saved", process: { mode: "none" }, results: [],files:[],settled:true });
+  vi.spyOn(port, "callback").mockResolvedValue({ status: "completed", process: { mode: "none" }, results: [],files:[],settled:true });
   await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId,status: "completed" });
 });
 
@@ -329,12 +328,15 @@ it("wakes the idle delegating execution on its original chain after a later run 
   vi.spyOn(port.facts, "latest").mockResolvedValue(later);
   vi.spyOn(port.facts, "binding").mockResolvedValue({ agent: context.agent, actor: context.actor, parent: null });
   vi.spyOn(port.facts, "delivered").mockResolvedValue(undefined);
-  vi.spyOn(port.facts, "receive").mockImplementation(async (_scope, _session, message) =>
-    ({ id: inputId, runId: null, messageSeq: 3, contextSeq: null, message }));
+  let deliveredNotification: AgentNotification | undefined;
+  vi.spyOn(port.facts, "receive").mockImplementation(async (_scope, _session, message) => {
+    deliveredNotification = message as AgentNotification;
+    return { id: inputId, runId: null, messageSeq: 3, contextSeq: null, message };
+  });
   vi.spyOn(port.facts, "reserve").mockImplementation(async (_scope, _session, id, inputId, channel, options) =>
     ({ ...origin, id, inputId, channel, status: "starting", ...options }));
   vi.spyOn(port, "callback").mockResolvedValue({
-    status: "completed", summary: "Saved", process: { mode: "none" }, results: [], files: [], settled: true,
+    status: "completed", process: { mode: "none" }, results: [], files: [], settled: true,
   });
   const prepare = vi.spyOn(port, "prepare").mockResolvedValue();
 
@@ -348,21 +350,24 @@ it("wakes the idle delegating execution on its original chain after a later run 
     executionUserId: delegatingRun.executionUserId, context: delegatingRun.context,
   });
   expect(port.credential(wake.channel)).toEqual({ token: "initiating-token", apiKey: null });
+  expect(runtime.linkAgentFiles).not.toHaveBeenCalled();
+  expect(deliveredNotification?.content).toBe("Saved final reply");
+  expect(deliveredNotification?.files).toEqual([]);
 });
 
 it("message reads expose conversation progress without transferring the child's system prompt", async () => {
   const { runtime,channel: port } = channel();
   const child = { id: inputId, session: { providerId: source.session.providerId,sessionId: inputId },channel: { ...context,requestedBy: source },inputId,language: "en",status: "completed" as const,createdAt: new Date(0).toISOString(),error: null,cancelled: false };
   vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],files:[{id:inputId,name:"delivered.dataset.json",mediaType:"application/json",href:"/file"}],settled:true });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",process: { mode: "none" },results: [],files:[{id:inputId,name:"delivered.dataset.json",mediaType:"application/json",href:"/file"}],settled:true });
   vi.spyOn(port,"file").mockResolvedValue(new Response("original dataset"));
   vi.spyOn(runtime.store,"messages").mockResolvedValue([
     { id: runId,runId: inputId,messageSeq: 1, contextSeq: null,message: { role: "system",content: "Private host instructions",timestamp: 1 } },
     { id: inputId,runId: inputId,messageSeq: 2, contextSeq: null,message: notification },
   ]);
-  const result = await port.execute(scope,run,{ op: "read",taskId: inputId,view: "messages",files:true }) as { messages: Array<{ id: string }>;downloaded:unknown[] };
+  const result = await port.execute(scope,run,{ op: "read",taskId: inputId,view: "messages" }) as { messages: Array<{ id: string }>;files: unknown[] };
   expect(result.messages.map(message => message.id)).toEqual([inputId]);
-  expect(result.downloaded).toEqual([{id:inputId,path:"outputs/agents/delivered.dataset.json",taskId:inputId}]);
+  expect(result.files).toEqual([{id:inputId,name:"delivered.dataset.json",mediaType:"application/json",href:"/file"}]);
 });
 
 it("does not prepare a child intent cancelled concurrently with its admission", async () => {
@@ -381,7 +386,7 @@ it("authorizes a deep task by reading only the requested intent and its ancestor
   const child = { ...middle,id: inputId,session: { ...middle.session,sessionId: inputId },channel: { ...context,requestedBy: { session: middle.session,runId: middleId } } };
   const task = vi.spyOn(port.facts,"task").mockResolvedValue({ scope,intent: child });
   vi.mocked(port.facts.intent).mockResolvedValue(middle);
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],files:[],settled:true });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",process: { mode: "none" },results: [],files:[],settled:true });
   await expect(port.execute(scope,run,{ op: "read",taskId: inputId })).resolves.toMatchObject({ taskId: inputId });
   expect(task).toHaveBeenCalledWith(scope.domainId,inputId);
   expect(port.facts.intent).toHaveBeenCalledTimes(1);
@@ -418,7 +423,7 @@ it("projects only the conversation subtree returned by the store, retaining its 
   runtime.store.session = vi.fn(async () => ({ id: sessionId,domainId: scope.domainId,activeRunId: null,latestRunId: runId,createdAt: new Date(0).toISOString(),updatedAt: new Date(0).toISOString() }));
   const descendants = vi.spyOn(port.facts,"descendants").mockResolvedValue([{ scope,intent: middle,rootRunId: runId },{ scope,intent: child,rootRunId: runId }]);
   vi.spyOn(port.facts,"preparationFailures").mockResolvedValue([]);
-  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",summary: "Saved",process: { mode: "none" },results: [],files:[],settled:true });
+  vi.spyOn(port,"callback").mockResolvedValue({ status: "completed",process: { mode: "none" },results: [],files:[],settled:true });
   vi.spyOn(runtime.store,"messages").mockImplementation(async (_scope,id) => id === sessionId ? [] : [{ id,runId: id,messageSeq: 1, contextSeq: null,message: notification }]);
   const result = await port.tasks(scope,sessionId);
   expect(descendants).toHaveBeenCalledWith(scope.domainId,[source.session]);
@@ -471,7 +476,7 @@ it("retains only the root credential until delegated business attachments finish
   });
   expect(JSON.stringify(reserve.mock.calls)).not.toContain("initiating-token");
   vi.mocked(port.facts.intent).mockImplementation(async (_scope,id) => id===child.id ? {...child,status:"completed"} : {...child,id:runId,session:source.session,channel:context});
-  const projection={status:"completed",summary:"Done",process:{mode:"none"},results:[],files:[]};
+  const projection={status:"completed",process:{mode:"none"},results:[],files:[]};
   const read=vi.spyOn(port,"callback").mockResolvedValue({...projection,settled:false});
   vi.spyOn(port,"deliver").mockResolvedValue({messageId:inputId,taskId:null,sessionRef:source.session});
   await port.changed(scope,inputId,"delivery");expect(port.credential(context).token).toBe("initiating-token");
@@ -538,22 +543,6 @@ it.each(["native","external"])("forwards %s caller language to each provider wit
   });vi.stubGlobal("fetch",fetch);
   const caller=kind==="native"?{...run,language:"zh-CN"}:{kind:"external" as const,actor:context.actor,authority:context.authority,language:"zh-CN",credential:{token:"initiating-token",apiKey:null}};
   await expect(port.execute(scope,caller,{op:"list"})).resolves.toMatchObject({agents:[{name:"取数员",description:"提供方说明"}]});
-});
-
-it("imports provider dataset bytes into the caller's ordinary output snapshots",async()=>{
-  const workspace=await mkdtemp(path.join(os.tmpdir(),"agent-delivery-"));
-  try {
-    await mkdir(path.join(workspace,"outputs"));
-    const receiver={active:new Map([[canonical([scope.hostId,scope.domainId,runId]),{workspace}]])} as unknown as AgentRuntime;
-    const bytes=Buffer.from(JSON.stringify({schema:"workbench.dataset.v2",execution:{receiptId:inputId},rows:[[0,false,null]]}));
-    const delivered=await AgentRuntime.prototype.importAgentFile.call(receiver,scope,runId,inputId,{id:inputId,name:inputId+".dataset.json"},bytes);
-    const files=new ArtifactFiles(path.join(workspace,"blobs"));
-    const [snapshot]=await files.scan(workspace);
-    expect(snapshot.path).toBe(delivered);
-    expect(delivered).toMatch(/^outputs\/agents\/.*\.dataset\.json$/);
-    expect(await files.read(snapshot)).toEqual(bytes);
-    expect(await readFile(path.join(workspace,delivered))).toEqual(bytes);
-  } finally { await rm(workspace,{recursive:true,force:true}); }
 });
 
 it.each(["running","preparing"])("web input joins the %s execution and reaches the shared steer preparation",async phase=>{

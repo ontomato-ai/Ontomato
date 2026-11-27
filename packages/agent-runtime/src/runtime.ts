@@ -1,6 +1,6 @@
 import { AgentChannel, type AgentProvider } from "./channel";
 import { processLanguageInstruction } from "./process-language";
-import { agentChannelCommandSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
+import { agentChannelCommandSchema, type AgentDeliveredFile, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
 import type { RuntimePresentationCallback } from "@ontomato/contracts/agent-presentation";
 import { Workspaces } from "./workspaces";
@@ -13,7 +13,7 @@ import type { RuntimeBusinessCallbacks } from "@ontomato/contracts/agent-runtime
 import { SessionEngines, type SessionEngineSandboxFactory } from "./session-engines";
 import { defaultEngineId, type HarnessRegistry } from "./adapters/registry";
 import type { HarnessEvent, HarnessPlugin, HarnessSession } from "./adapters/contract";
-import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
+import { mkdir, chmod, readFile } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
@@ -52,6 +52,7 @@ import {
 import type { ResolvedChatModel } from "./model";
 import type { ModelGatewayClient } from "./gateway-client";
 import { RuntimeError, safeMessage } from "./errors";
+import { sessionSandboxDirectory } from "./sandbox";
 import { connectMcp } from "./tools";
 import { RuntimeMcpServices } from "./mcp";
 import { RuntimeModelSettings } from "./model-settings";
@@ -95,6 +96,15 @@ interface Active {
 class RunStop extends Error {}
 const stopMessage = (signal: AbortSignal) =>
   signal.reason instanceof RunStop ? signal.reason.message : "Run cancelled";
+
+const DELEGATED_TASK_PROMPT = `Delegated task
+
+Another agent started you to carry out a task for it. Your final reply in this run is handed to that agent verbatim as your result; the user does not see it directly. Write it for that agent:
+- the result itself, with the key figures or conclusions;
+- what it rests on: the assumptions and choices you made, and why;
+- what to keep in mind when using it, such as what a figure covers and what it leaves out;
+- what each file you leave in outputs/ contains. Those files are delivered with your reply.
+To ask the agent that started you something, use the agent tool with needsInput.`;
 /** Digits and whitespace are noise for a command that only drifts a line number or an ID. */
 const shape = (value: string) => value.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
 
@@ -349,12 +359,37 @@ export class AgentRuntime {
       return { run: accepted.run, replayed: false };
     });
   }
-  async importAgentFile(scope:Scope,runId:string,taskId:string,file:{id:string;name:string},data:Buffer) {
-    const workspace=this.active.get(key(scope,runId))!.workspace!;
-    const relative=path.posix.join("outputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(workspace,relative),temporary=destination+`.${randomUUID()}.download`;
-    await mkdir(path.dirname(destination),{recursive:true});
-    await writeFile(temporary,data);await rename(temporary,destination);
-    return relative;
+  /** Map a child delivery into the parent session workspace as read-only hard links and register resolvable references. */
+  async linkAgentFiles(parentScope: Scope, parentSessionId: string, childScope: Scope, childSessionId: string, taskId: string, files: Array<{ id: string; name: string }>): Promise<AgentDeliveredFile[]> {
+    const workspace = path.join(sessionSandboxDirectory(this.options.root, parentScope, parentSessionId), "workspace");
+    const outputs = path.join(workspace, "outputs");
+    const agents = path.join(outputs, "agents");
+    const taskDirectory = path.join(agents, taskId);
+    await mkdir(agents, { recursive: true });
+    await chmod(agents, 0o755);
+    await mkdir(taskDirectory, { recursive: true });
+    await chmod(taskDirectory, 0o755);
+    try {
+      const delivered: AgentDeliveredFile[] = [];
+      for (const file of files) {
+        const source = await this.store.artifact(childScope, file.id);
+        if (source.runId !== taskId || source.sessionId !== childSessionId)
+          throw new RuntimeError(502, "INVALID_PROVIDER_DELIVERY", "A provider must deliver artifacts of this runtime execution");
+        const relative = path.posix.join("outputs", "agents", taskId, `${file.id}-${file.name}`);
+        await this.files.link(source, path.join(workspace, relative));
+        const reference = await this.store.registerArtifactReference(parentScope, {
+          sessionId: parentSessionId,
+          taskId,
+          source,
+          path: relative,
+        });
+        delivered.push({ id: reference.id, name: file.name, path: relative });
+      }
+      return delivered;
+    } finally {
+      await chmod(taskDirectory, 0o555);
+      await chmod(agents, 0o555);
+    }
   }
   async updateHostContext(scope: Scope,runId: string,context: string) {
     const active=this.active.get(key(scope,runId))!;
@@ -688,6 +723,8 @@ export class AgentRuntime {
         onClose: mcp.close,
       });
       closeMcp = () => bound.close();
+      // The admission intent is the authority for delegation; run.channel is only the copy carried by this start request.
+      const delegated = (await this.channel.facts.findIntent(scope, run.id))?.channel.requestedBy != null;
       const engine = await this.sessionEngines.open(scope, run.sessionId, {
         plugin,
         config: () => config ? Promise.resolve(config) : this.models.resolve(scope.domainId, request.definition.modelId),
@@ -707,6 +744,7 @@ export class AgentRuntime {
               skill.skillDocument,
             )),
             request.definition.systemPrompt,
+            delegated ? DELEGATED_TASK_PROMPT : "",
             processLanguageInstruction(run.language),
           ].filter(Boolean).join("\n\n"),
         }),
@@ -833,7 +871,7 @@ export class AgentRuntime {
       this.locked(scope, id, async () => {
         const hashes = (
           await this.store.pool.query(
-            `SELECT DISTINCT sha256 FROM ${this.store.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
+            `SELECT DISTINCT sha256 FROM ${this.store.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 UNION SELECT DISTINCT sha256 FROM ${this.store.table("artifact_references")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
             [scope.hostId, scope.domainId, id],
           )
         ).rows;
@@ -841,7 +879,7 @@ export class AgentRuntime {
         for (const { sha256 } of hashes) {
           const referenced = (
             await this.store.pool.query(
-              `SELECT EXISTS(SELECT 1 FROM ${this.store.table("artifacts")} WHERE sha256=$1) OR EXISTS(SELECT 1 FROM ${this.store.table("code_executions")} c, jsonb_each(c.outputs) o WHERE o.value->>'sha256'=$1) AS present`,
+              `SELECT EXISTS(SELECT 1 FROM ${this.store.table("artifacts")} WHERE sha256=$1) OR EXISTS(SELECT 1 FROM ${this.store.table("artifact_references")} WHERE sha256=$1) OR EXISTS(SELECT 1 FROM ${this.store.table("code_executions")} c, jsonb_each(c.outputs) o WHERE o.value->>'sha256'=$1) AS present`,
               [sha256],
             )
           ).rows[0].present;

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { runtimeMessageRecordSchema } from "./agent-runtime";
 import { agentRefSchema, agentSessionRefSchema, agentExecutionRefSchema, agentNotificationSchema, agentPendingQuestionSchema } from "./agent-channel";
-import { agentTaskStatusSchema,agentTaskErrorSchema,qualityChecksSchema,qualityResultSchema,retrievalExtensionSchema } from "./agent-task-results";
+import { agentTaskStatusSchema,agentTaskErrorSchema,qualityChecksSchema,qualityResultSchema } from "./agent-task-results";
 export { agentTaskStatusSchema,agentTaskErrorSchema,qualityResultSchema } from "./agent-task-results";
 import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values";
 
@@ -41,7 +41,6 @@ export const channelAgentTaskSchema = z.object({
   agentRef: agentRefSchema, sessionRef: agentSessionRefSchema, runId: id,
   process: agentTaskProcessSchema,
   results: z.array(z.object({ kind: z.string(), href: z.string(), title: z.string() }).strict()),
-  retrieval: retrievalExtensionSchema.optional(),
 }).strict();
 export const agentTaskSchema = z.discriminatedUnion("kind", [qualityTaskSchema,channelAgentTaskSchema]);
 export const agentTasksSnapshotSchema = z.object({

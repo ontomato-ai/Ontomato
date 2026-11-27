@@ -284,7 +284,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       }
       if (req.url === "/read") {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ settled: true, status: "completed", summary: "Done", process: { mode: "none" }, results: [], files: [] }));
+        res.end(JSON.stringify({ settled: true, status: "completed", process: { mode: "none" }, results: [], files: [] }));
         return;
       }
       if (req.url === "/settle" || req.url === "/cancel") {
@@ -882,6 +882,11 @@ ${logs}`);
     const childPrepare = prepareCalls.find((call) => call.requestedBy?.runId === runId);
     expect(childPrepare?.root).toEqual({ session: sessionRef, runId });
     await settle(captured.body.taskId);
+    const userText = (message: any) => typeof message.content === "string" ? message.content : message.content.map((part: any) => part.text ?? "").join("");
+    const childRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message).includes("Child question")));
+    const parentRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message) === "channel-script"));
+    expect(childRequest.messages[0].content).toContain("Delegated task");
+    expect(parentRequest.messages[0].content).not.toContain("Delegated task");
     const late = await fetch(captured.url, {
       method: "POST",
       headers: {
