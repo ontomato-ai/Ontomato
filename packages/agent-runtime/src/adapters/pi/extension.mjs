@@ -87,10 +87,13 @@ export default function (pi) {
         spawnHook(context) {
           const env = { ...context.env };
           delete env.ONTOMATO_RUN_ID;
+          let runId = "";
           try {
-            const runId = readFileSync(join(directories.state, "ontomato-run-id"), "utf8").trim();
-            if (runId) env.ONTOMATO_RUN_ID = runId;
-          } catch {}
+            runId = readFileSync(join(directories.state, "ontomato-run-id"), "utf8").trim();
+          } catch {
+            runId = "";
+          }
+          if (runId) env.ONTOMATO_RUN_ID = runId;
           return { ...context, env };
         },
       }),
