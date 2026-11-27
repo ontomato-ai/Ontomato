@@ -45,7 +45,7 @@ long data, keyboard, dropdown/overlay and permission variants.
 | App / page | Route / variant | Source and layout | Implementation | Visual acceptance |
 |---|---|---|---|---|
 | Agent conversation | /agents/chat | BusinessWorkbench / AgentShell; tools, artifacts, composer | Implemented (shared) | Pending real conversation matrix |
-| Agent editor/new | /ontology/agents, /new, /:agentId | AgentSettingsRoute / AgentEditor; legacy addresses redirect here | Implemented | Pending 128 acceptance |
+| Agent editor/new | /ontology/agents, /new, /:agentId | AgentSettingsRoute / AgentEditor; legacy addresses redirect here | Implemented | Pending integration acceptance |
 | Skills | /ontology/skills, /ontology/skills/:skillId | SkillLibrary; card grid · SkillDetail; file tree and reader | Implemented | Pending |
 | External MCP services | /settings/external-mcp | ExternalMcpServices; table, service dialog | Implemented | Pending |
 | Ontology graph | /ontology/playground | OntologyPlayground; canvas/inspectors | Implemented | Pending graph matrix |
@@ -58,7 +58,7 @@ long data, keyboard, dropdown/overlay and permission variants.
 | Business knowledge | /ontology/knowledge | BusinessKnowledge; list/editor/dialog | In progress | Pending |
 | Object browser | /browser/data/:className? | DataBrowser + InstanceGraph; table/filter/graph | In progress | Pending |
 | Dashboards | /dashboards | DashboardView/Panel; board/chart/table/AI drawer | Implemented | Pending populated charts and editor |
-| Platform schedules | /schedules, ?app=, ?taskId=&runId= | PlatformSchedulesPage + ScheduleCard/ScheduleTaskDialog/ScheduleRunsDrawer; cards, one form, records drawer | Implemented | Pending 128 screenshots (both themes, both editions) |
+| Platform schedules | /schedules, ?app=, ?taskId=&runId= | PlatformSchedulesPage + ScheduleCard/ScheduleTaskDialog/ScheduleRunsDrawer; cards, one form, records drawer | Implemented | Pending integration screenshots (both themes, both editions) |
 | Agent schedules | /agents/schedules | Redirect to /schedules?app=agents | Implemented | Not applicable (redirect) |
 | Operations chat | /ops/diagnosis | ObserveLayout / AgentShell | Implemented (shared) | Pending |
 | Turn evidence | /ops/turn, /:turnKey | ListDetail/ArtifactDetail | Implemented | Pending real artifacts |

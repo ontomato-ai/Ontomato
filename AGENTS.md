@@ -60,8 +60,8 @@ implicitly fetch, pull or switch branches. Do not introduce a workspace manager.
 Use the `worktrees/<topic>/{ontomato,enterprise}` Git worktrees, parallel to the two
 repositories, only when the complete combination needs isolation, and keep the
 `../ontomato` relative reference unchanged; for independent work on this repository alone
-one worktree is enough, and the untouched side checks out an explicit mainline commit. Do
-not create a permanent upstream copy, a submodule or a source SHA lock.
+one worktree is enough, and the untouched side checks out an explicit mainline commit. Keep Git history and build configuration owned by this repository.
+See the [development collaboration guide](https://infohub.eloyzh.de/o/method-68293147) for coordinated integration.
 
 Before handing the main directory over for integration, each repository saves its commits
 and pauses editing, confirms there is nothing left to save and the relevant services are

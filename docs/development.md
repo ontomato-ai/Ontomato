@@ -7,10 +7,6 @@ builds. Deployment and usage are in the repository root [README](../README.md).
 - `packages/`: the shared implementation and contracts.
 - `deploy/`, `docker/`, `scripts/`: product deployment and the shared build tools.
 
-The enterprise extension is maintained in a separate private repository. This repository
-builds on its own, without enterprise source, a private license SDK or enterprise build
-credentials.
-
 ## Product build entry points
 
 `make build ARCH=amd64` (or `arm64`) builds four runnable images in order:
@@ -38,8 +34,7 @@ plus `latest`. Pushes to `develop` and pull requests into `develop` or `main` on
 checks, without publishing (see `.github/workflows/pr-checks.yml`).
 GitHub runners keep a BuildKit cache in the registry through `BUILD_CACHE_REF`: one
 dedicated `cache-<version>-<arch>` ref per image, imported and exported with
-`mode=max` so intermediate layers survive a fresh runner. The enterprise GitLab
-runner uses its persistent local BuildKit cache.
+`mode=max` so intermediate layers survive a fresh runner.
 `make tools-bundle ARCH=amd64` prepares the offline tool kit and
 `make bundle ARCH=amd64 VERSION=<version>` exports published images with oc-mirror v2;
 later runs reuse `MIRROR_STATE`. See [deployment](../deploy/README.md) for the offline workflow,
@@ -147,9 +142,7 @@ external MCP servers in the agent runtime.
 
 Ports: Node 3000, the unified web app 5173 are fixed; PG uses `POSTGRES_PORT`
 (default 5432), Java uses `SERVER_PORT` from `.env` (default 18087). When a port is taken by
-another process, `up` reports the error and exits without stopping other processes. Each
-product root needs one install in its own root, so one `pnpm install` in the enterprise
-assembly root already includes the adjacent public repository.
+another process, `up` reports the error and exits without stopping other processes.
 
 Existing checkouts: merge the values from `apps/data-engine/.env` into the root `.env` once, resolve duplicate keys, then remove the old file. Java now follows the same process-environment priority as Node. Rename old keys and site YAML placeholders as described in [deployment configuration](../deploy/README.md#configuration).
 

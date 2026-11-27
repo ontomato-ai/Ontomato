@@ -256,7 +256,7 @@ disposable PG/pgvector. The Linux PI tool probe runs current source in a disposa
 container with Node/Python; it does not build or accept the product image.
 
 Main-directory image builds, real full-stack/browser acceptance, Claude Code
-execution and authorized 128 comparison remain controller-owned. External steps
+execution and authorized integration-environment comparison remain controller-owned. External steps
 are in the retrieval design. Runtime/host legacy schemas are rejected explicitly
 until the separately owned pre-release conversion; no old protocol fallback or
 automatic deletion is installed. No unresolved architecture decision remains.
