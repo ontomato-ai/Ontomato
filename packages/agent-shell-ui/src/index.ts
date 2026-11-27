@@ -20,7 +20,7 @@ export { pageDockSpaceKey, pagePaneElementKey, useConversationContinuation, useP
 export { pageContextLine, pageLineAddress, pageMoved, samePageAddress, writtenText, type PageContext, type PageFormSnapshot, type PageHighlight, type PageLinePrompts, type PageSelection } from "./page-context";
 export { pageCounterKey, usePageCounter, type PageCounter } from "./page-counter";
 export { panelChatHostKey, usePanelChatHost, type PanelChatHost } from "./panel-chat";
-export { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand, type PageComposerRequest, type ServePageComposer } from "./page-composer-entry";
+export { entryAgent, servePageComposerKey, type ComposerEntry, type EntryAgentResolution, type PageComposerExpand, type PageComposerRequest, type ServePageComposer } from "./page-composer-entry";
 export {
   displayLink,
   useConversationDisplay,

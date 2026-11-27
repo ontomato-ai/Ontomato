@@ -40,8 +40,9 @@ const chosen = ref<string | null>(null);
 /** The page's registered default among its candidates, and which candidate is which preset: what an entry may name. */
 const pageDefault = ref<string | null>(null);
 const presets = shallowRef<Readonly<Record<string, string>> | undefined>(undefined);
-/** Whether the page's candidates are being read; a panel's entry that arrives meanwhile waits for them, the latest one counting. */
-const reading = ref(false);
+/** Candidate read lifecycle: loading, settled (possibly empty when no agent is permitted), or failed with a reason. */
+const candidatesState = ref<"loading" | "ready" | "error">("loading");
+const candidatesError = ref<string | null>(null);
 let waiting: PageComposerRequest | null = null;
 let load = 0;
 let newSession = false;
@@ -57,8 +58,8 @@ watch(
     presets.value = undefined;
     waiting = null;
     newSession = false;
-    reading.value = false;
-    reading.value = true;
+    candidatesError.value = null;
+    candidatesState.value = "loading";
     const candidates = skill
       ? counter.pageAgents(skill)
       : counter.agents().then((list) => ({ agents: list, defaultAgentId: undefined as string | undefined, presetAgentIds: undefined }));
@@ -73,19 +74,21 @@ watch(
         chosen.value = initial ?? null;
         pageDefault.value = defaultAgentId ?? null;
         presets.value = presetAgentIds;
-        reading.value = false;
+        candidatesState.value = "ready";
         const asked = waiting;
         waiting = null;
-        // Applied once the composer is drawn, so it opens with the entry's sentence in it.
-        if (asked && agents.value.length) void nextTick(() => expand(asked));
+        // Applied once the composer is drawn, so it opens with the entry's sentence or reports an unavailable target.
+        if (asked) void nextTick(() => expand(asked));
       })
-      // The page's own configuration keeps its own words and the service's reason; anything else is the service's error.
+      // The page's own configuration or permission refusal keeps its own words and the service's reason; anything else is the service's error.
       .catch((reason: unknown) => {
         if (seq !== load) return;
         // No candidates to open on: an entry that waited ends here, the page showing why.
-        reading.value = false;
+        const message = candidatesFailureReason(reason, props.labels.pageAgentUnavailable);
+        candidatesError.value = message;
+        candidatesState.value = "error";
         waiting = null;
-        emit("error", candidatesFailureReason(reason, props.labels.pageAgentUnavailable));
+        emit("error", message);
       });
   },
   { immediate: true },
@@ -94,14 +97,14 @@ watch(
 const agentId = computed(() => chosen.value ?? agents.value[0]?.id ?? null);
 
 /**
- * Why the page offered no agent. A page whose mapping or registered default is gone is the page's configuration — the
- * page's own sentence, with the service's reason for it; a network failure or a refused request is that error, word for
- * word, so the reader can tell a broken page from a broken connection.
+ * Why the page offered no agent. A page whose mapping or registered default is gone, or that refuses access, keeps the
+ * page's own sentence with the service's reason for it; a network failure or a service error is shown word for word,
+ * so the reader can tell a broken page from a broken connection.
  */
 function candidatesFailureReason(reason: unknown, own: string): string {
-  const code = (reason as { code?: unknown } | null)?.code;
+  const error = reason as { code?: unknown; status?: unknown } | null;
   const detail = reason instanceof Error ? reason.message : String(reason);
-  return code === "PAGE_DEFAULT_AGENT_UNAVAILABLE" ? `${own} ${detail}` : detail;
+  return error?.code === "PAGE_DEFAULT_AGENT_UNAVAILABLE" || error?.status === 403 ? `${own} ${detail}` : detail;
 }
 
 async function ask(text: string) {
@@ -116,20 +119,26 @@ async function ask(text: string) {
 }
 
 /**
- * A panel's conversation entry on this page (design U18): the composer opens, takes the agent the entry names when it is
- * one of this page's candidates, and applies the click's declared behavior.
+ * A panel's conversation entry on this page (design U18): the composer takes the agent the entry names when it is one
+ * of this page's candidates and applies the click's declared behavior. When the named target is unavailable, it refuses
+ * without switching agents, prefilling, or submitting, and reports the refusal through `error`.
  */
 const entry = shallowRef<ComposerEntry | null>(null);
 const expand: PageComposerExpand = async (request) => {
-  if (reading.value) {
+  if (candidatesState.value === "loading") {
     waiting = request;
     return;
   }
-  const named = entryAgent(request.target, agents.value, pageDefault.value, presets.value);
-  newSession = named !== null && request.newSession === true;
-  if (named) chosen.value = named;
+  const resolved = entryAgent(request.target, agents.value, pageDefault.value, presets.value);
+  if (!resolved.ok) {
+    emit("error", props.labels.pageAgentUnavailable);
+    return;
+  }
+  const named = resolved.agentId;
+  newSession = request.newSession === true;
+  chosen.value = named;
   const text = request.prefill?.trim();
-  if (named && request.submit && text) {
+  if (request.submit && text) {
     try {
       await counter.ask(named, text, props.page, { submit: true, newSession: request.newSession, pageSkill: props.pageSkill });
     } catch (reason) {
@@ -137,13 +146,13 @@ const expand: PageComposerExpand = async (request) => {
     }
     return;
   }
-  entry.value = { text: named ? request.prefill ?? null : null, seq: (entry.value?.seq ?? 0) + 1 };
+  entry.value = { text: request.prefill ?? null, seq: (entry.value?.seq ?? 0) + 1 };
 };
 /** The composer serves the page's entries while it is drawn or about to be: the page offers it an agent, or is being asked. */
 const serve = inject(servePageComposerKey, null);
 let withdraw: (() => void) | null = null;
 watch(
-  () => reading.value || agents.value.length > 0,
+  () => candidatesState.value === "loading" || agents.value.length > 0,
   (drawn) => {
     withdraw?.();
     withdraw = drawn && serve ? serve(expand) : null;
@@ -154,9 +163,10 @@ onBeforeUnmount(() => withdraw?.());
 </script>
 
 <template>
-  <div v-if="agents.length" class="page-ask">
-    <ShellComposer floating :busy="false" :labels="labels" :entry="entry" @send="ask">
-      <template #agent>
+  <div v-if="agents.length || candidatesError !== null" class="page-ask" :class="{ 'page-ask-failed': candidatesError !== null }">
+    <p v-if="candidatesError" class="page-ask-error" role="alert">{{ candidatesError }}</p>
+    <ShellComposer floating :busy="false" :disabled="!agentId" :labels="labels" :entry="entry" @send="ask">
+      <template v-if="agents.length" #agent>
         <AgentPicker variant="pill" :agents="agents" :agent-id="agentId" :label="labels.agent" @select="chosen = $event" />
       </template>
     </ShellComposer>
@@ -188,5 +198,22 @@ onBeforeUnmount(() => withdraw?.());
   height: 0;
   padding: 0;
   background: none;
+}
+/* Keep the failure message visible in place even when the floating composer was previously folded. */
+.page-ask.page-ask-failed {
+  height: auto;
+  padding: 0 0 var(--shell-composer-foot);
+}
+.page-ask-error {
+  pointer-events: auto;
+  width: min(760px, 100%);
+  margin: 0 auto var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  box-sizing: border-box;
+  border: 1px solid var(--el-color-danger-light-5, var(--el-color-danger));
+  border-radius: var(--radius-lg, 12px);
+  background: var(--el-color-danger-light-9, var(--el-bg-color));
+  color: var(--el-color-danger);
+  font-size: var(--text-sm);
 }
 </style>

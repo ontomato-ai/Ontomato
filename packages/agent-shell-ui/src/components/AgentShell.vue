@@ -335,8 +335,9 @@ async function selectRailAgent(id: string) {
 /**
  * A panel's conversation entry on the page beside this conversation (design U18): when the agent it names is this
  * conversation's, its sentence is filled here; when it is another of the page's candidates, a new conversation starts
- * with that agent and takes the sentence, the open one keeping its own agent and the page staying open. An agent it
- * cannot name, or a run still going, only opens the composer. Nothing is sent from here.
+ * with that agent and takes the sentence, the open one keeping its own agent and the page staying open. When the named
+ * agent is unavailable among current candidates, it refuses without switching agents, prefilling, or submitting, and
+ * reports the refusal through `error`. A run still going prevents switching and only opens the composer.
  */
 const entry = shallowRef<ComposerEntry | null>(null);
 function showEntry(text: string | null) {
@@ -349,8 +350,12 @@ const expandEntry: PageComposerExpand = async (request) => {
     waitingEntry = request;
     return;
   }
-  const named = entryAgent(request.target, nav.agents.value, nav.pageAgents.value?.defaultAgentId, nav.pageAgents.value?.presetAgentIds);
-  if (!named) return showEntry(null);
+  const resolved = entryAgent(request.target, nav.agents.value, nav.pageAgents.value?.defaultAgentId, nav.pageAgents.value?.presetAgentIds);
+  if (!resolved.ok) {
+    emit("error", props.labels.pageAgentUnavailable);
+    return;
+  }
+  const named = resolved.agentId;
   const startsNew = named !== agentId.value || request.newSession === true;
   if (startsNew && conversation.busy.value) {
     emit("error", props.labels.switchWhileRunning);
