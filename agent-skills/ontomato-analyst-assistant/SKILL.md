@@ -83,5 +83,4 @@ first rather than silently dropped.
 Show each dataset the answer relies on, and only those, inline with image syntax:
 `![title](outputs/agents/<taskId>/<file>.dataset.json)`, or `![title](outputs/metrics/<file>.dataset.json)`
 for a metric. The page renders it as a table the reader can sort and filter, so do not retype its rows
-as a Markdown table; a single value is stated in the text and its dataset is still shown. Make a chart,
-report or presentation only when the user asks for one.
+as a Markdown table; a single value is stated in the text and its dataset is still shown.
