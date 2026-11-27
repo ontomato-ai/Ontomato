@@ -272,7 +272,7 @@ export class AgentRuntime {
         answerMessageId: null,
         workspaceCommit: null,
         resolvedSkills: skills.map(
-          ({ directory: _directory, ...registered }) => registered,
+          ({ directory: _directory, skillDocument: _skillDocument, ...registered }) => registered,
         ),
       };
       const accepted = await this.store.admit(
@@ -698,7 +698,11 @@ export class AgentRuntime {
         signal,
         previousContext: () => this.previousContext(scope, run.sessionId),
         prompt: () => ({
-          system: [request.definition.systemPrompt, processLanguageInstruction(run.language)].filter(Boolean).join("\n\n"),
+          system: [
+            request.definition.systemPrompt,
+            ...skills.filter(skill => skill.preload).map(skill => skill.skillDocument),
+            processLanguageInstruction(run.language),
+          ].filter(Boolean).join("\n\n"),
         }),
       });
       active.workspace = engine.sandbox.hostWorkspace;

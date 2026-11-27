@@ -536,12 +536,23 @@ await mountPanel({
           label: option?.label || skill.name || key,
           description: option?.description || "",
           unavailable: option?.unavailable ?? null,
+          preload: skill.preload === true,
         }];
       });
     }
 
     function removeSkill(currentValue, key, set) {
       set((Array.isArray(currentValue) ? currentValue : []).filter((skill) => runtimeSkillKey(skill) !== key));
+    }
+
+    function setSkillPreload(currentValue, key, preload, set) {
+      set((Array.isArray(currentValue) ? currentValue : []).map((skill) => {
+        if (runtimeSkillKey(skill) !== key) return skill;
+        const next = { ...skill };
+        if (preload) next.preload = true;
+        else delete next.preload;
+        return next;
+      }));
     }
 
     function openSkillPicker(currentValue) {
@@ -864,6 +875,7 @@ await mountPanel({
       skillDiagnostics,
       selectedSkillRows,
       removeSkill,
+      setSkillPreload,
       openSkillPicker,
       onSkillPickerConfirm,
       toolsLoading,

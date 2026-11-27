@@ -396,6 +396,26 @@ describe("standard runtime real HTTP/PG/processes", () => {
     await pool.end();
     await removeWorkerFiles(root);
   });
+  it("preloads only marked skill bodies into the same fixed system prompt", async () => {
+    async function systemPrompt(preload: boolean) {
+      const before = inputs.length;
+      const sessionId = await session();
+      const request = input("MCP");
+      request.definition.skills = [{ ...skillVersion, ...(preload ? { preload: true } : {}) }];
+      const runId = randomUUID();
+      expect((await api(`/v1/sessions/${sessionId}/runs`, request, { "idempotency-key": runId })).status).toBe(202);
+      await settle(runId);
+      return inputs[before].messages[0].content;
+    }
+
+    const first = await systemPrompt(true);
+    const second = await systemPrompt(true);
+    const unmarked = await systemPrompt(false);
+    expect(first).toBe(second);
+    expect(first).toContain(skillBody);
+    expect(unmarked).not.toContain(skillBody);
+  });
+
   it("keeps scoped stable MCP selections across rename, masks edit responses and calls only selected services", async () => {
     const path = "/v1/mcp/services";
     const created = await api(path, { name: "Orders", url: base + "/mcp", headers: { Authorization: "fixture-secret", "X-Remove": "unused" } });

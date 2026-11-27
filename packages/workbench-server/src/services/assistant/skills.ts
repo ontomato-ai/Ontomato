@@ -1,7 +1,7 @@
 import { configuredAssistantSkills } from "./skill-selection";
 import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
-import { isPageOperatorSkill, runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
+import { isPageOperatorSkill, runtimeSkillKey, runtimeSkillRefFromSelection, type RuntimeSkillRef, type RuntimeSkillSelection, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import type { CurrentPageContext } from "@ontomato/contracts/page-context";
 import { assistantSkillCatalogSchema, type AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
 import { skillRegistryManager } from "../../core/skills/registry/manager";
@@ -120,18 +120,20 @@ export function loadedSkillVersion(ref: RuntimeSkillRef, loaded: readonly Runtim
   return actual ? { skill: actual.skill, digest: actual.digest } : null;
 }
 
-async function publishSelectedSkill(domainId: string, ref: RuntimeSkillRef, view: AssistantSkillView): Promise<RuntimeSkillVersion> {
+async function publishSelectedSkill(domainId: string, ref: RuntimeSkillSelection, view: AssistantSkillView): Promise<RuntimeSkillVersion> {
   const key = runtimeSkillKey(ref);
-  if (key === runtimeSkillKey(GOVERNANCE_SKILL)) return publishGovernanceSkill(domainId);
-  if (key === runtimeSkillKey(ANALYST_SKILL)) return publishOntologyAssistantSkill(domainId);
-
-  const entry = view.registry.getSkillByRef(ref);
-  if (!entry || entry.selectionRestricted || entry.source.kind === "generated")
-    throw new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
-  const { skill, digest } = entry.source.kind === "public"
-    ? await publishSkill(entry.source.path, ref)
-    : await publishSkillPackage(await entry.provide(), domainId);
-  return { skill, digest };
+  let version: RuntimeSkillVersion;
+  if (key === runtimeSkillKey(GOVERNANCE_SKILL)) version = await publishGovernanceSkill(domainId);
+  else if (key === runtimeSkillKey(ANALYST_SKILL)) version = await publishOntologyAssistantSkill(domainId);
+  else {
+    const entry = view.registry.getSkillByRef(ref);
+    if (!entry || entry.selectionRestricted || entry.source.kind === "generated")
+      throw new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
+    version = entry.source.kind === "public"
+      ? await publishSkill(entry.source.path, runtimeSkillRefFromSelection(ref))
+      : await publishSkillPackage(await entry.provide(), domainId);
+  }
+  return { ...version, ...(ref.preload ? { preload: true } : {}) };
 }
 
 async function validateCurrentPage(owner: AssistantOwner, credentials: AssistantCredentials, pageSkillContext?: CurrentPageContext) {

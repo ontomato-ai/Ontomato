@@ -61,4 +61,29 @@ class OntologyAgentDefinitionsTest {
             definitions.publishActionCreation()))
       assertTrue(names(skills).contains("ontomato-analyst"));
   }
+
+  @Test
+  void agentDefinitionsMarkOnlyTheirOwnPreloadSkills() {
+    var retrieval = definitions.definition("d", "en", 1000, List.of(new SkillVersion(OntologyAgentDefinitions.DATASET_SKILL, "a".repeat(64))));
+    var retrievalSkills = retrieval.getList("skills", SkillVersion.class);
+    assertTrue(retrievalSkills.getFirst().preload());
+    assertEquals(OntologyAgentDefinitions.RETRIEVAL_OPENING_KNOWLEDGE_LIMIT,
+        retrieval.getIntValue(OntologyAgentDefinitions.OPENING_KNOWLEDGE_LIMIT));
+
+    var generationSkills = List.of(
+        new SkillVersion(OntologyAgentDefinitions.DATASET_SKILL, "a".repeat(64)),
+        new SkillVersion(OntologyAgentDefinitions.GENERATION_SKILL, "b".repeat(64)));
+    var generation = definitions.generation("d", "action", "prompt", "en", 1000, generationSkills)
+        .getList("skills", SkillVersion.class);
+    assertFalse(generation.get(0).preload());
+    assertTrue(generation.get(1).preload());
+
+    var metric = definitions.metricView("d", "prompt", "en", 1000,
+        List.of(new SkillVersion(OntologyAgentDefinitions.METRICVIEW_SKILL, "c".repeat(64))))
+        .getList("skills", SkillVersion.class);
+    assertTrue(metric.getFirst().preload());
+    assertFalse(definitions.generation("d", "action", "prompt", "en", 1000, generationSkills)
+        .getString("systemPrompt").contains("name: ontology-generation"));
+  }
+
 }
