@@ -318,7 +318,7 @@ export async function resolveApplicationPreviewPath(
   const placement = await resolvePanelMemberPath(owner, credentials, rootPanel, memberPath, undefined, undefined, undefined, ({ kind, id }) => {
     const input = (kind === "panel" ? panels : projections).get(id);
     return input && { ...input, id, domainId: owner.domainId, ownerId: owner.userId,
-      revision: 0, createdAt: now, updatedAt: now, editable: true };
+      revision: 1, createdAt: now, updatedAt: now, editable: true };
   });
   return { ...placement, previewContext: { kind: "preview" as const } };
 }
