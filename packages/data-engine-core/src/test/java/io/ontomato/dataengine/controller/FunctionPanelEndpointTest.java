@@ -166,21 +166,6 @@ class FunctionPanelEndpointTest {
     assertEquals("FUNCTION_REFERENCED", deleted.getString("code"));
     assertEquals("Function.referencedByMetricView", deleted.getString("message"));
 
-    when(functionService.deleteRefusal("f1", "domain", "en")).thenReturn("Function.referencedByMetricView");
-    JSONObject reason = perform("/function/deleteRefusal", """
-        {"id":"f1"}""");
-    assertTrue(reason.getBooleanValue("success"));
-    assertEquals("Function.referencedByMetricView", reason.getJSONObject("data").getString("reason"));
-    when(functionService.deleteRefusal("f2", "domain", "en")).thenReturn(null);
-    JSONObject free = perform("/function/deleteRefusal", """
-        {"id":"f2"}""");
-    assertTrue(free.getJSONObject("data").containsKey("reason"));
-    assertNull(free.getJSONObject("data").get("reason"));
-    when(functionService.deleteRefusal("f9", "domain", "en"))
-        .thenThrow(new OwnerRefusal("FUNCTION_NOT_FOUND", "Function not found"));
-    assertEquals("FUNCTION_NOT_FOUND", perform("/function/deleteRefusal", """
-        {"id":"f9"}""").getString("code"));
-
     when(functionService.form(any(), eq("en"), any(SubjectContext.class)))
         .thenThrow(new OwnerRefusal("FUNCTION_NOT_FOUND", "Function not found"));
     JSONObject form = perform("/function/form", """

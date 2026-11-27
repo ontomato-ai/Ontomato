@@ -123,31 +123,6 @@ public class FunctionController {
 		return ret;
 	}
 	
-	/**
-	 * Why deleting this domain's Function would be refused, in the reader's language ({@code reason}, null when it may be
-	 * deleted). It reads the delete's own rule; the delete still refuses for itself.
-	 */
-	@PostMapping("/function/deleteRefusal")
-    @ResponseBody
-    public JSONObject deleteRefusal(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
-		JSONObject ret = new JSONObject();
-		try {
-			String reason = functionService.deleteRefusal(param.getString("id"), SystemUtils.getCurUser().getDomainId(), lang);
-			JSONObject data = new JSONObject();
-			data.put("reason", reason);
-			ret.put("data", data);
-			ret.put("success", true);
-		} catch (OwnerRefusal e) {
-			e.writeTo(ret);
-		} catch (org.springframework.web.server.ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-			log.error(e.getMessage(), e);
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		}
-		return ret;
-	}
 	@PostMapping("/function/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {

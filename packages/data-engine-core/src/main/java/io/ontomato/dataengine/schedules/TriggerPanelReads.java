@@ -31,7 +31,7 @@ class TriggerPanelReads {
   @Bean
   WorkbenchPanelRead ontologyTriggerCenter() {
     return new WorkbenchPanelRead(ONTOLOGY, "triggerCenter", (subject, parameters) ->
-        tasks.ontologyCenter(PlatformTasks.panelSubject(subject), required(parameters, "primaryKey"))
+        tasks.ontologyCenter(subject.asJavaUser(), required(parameters, "primaryKey"))
             .stream().map(TriggerPanelReads::neighborRow).toList());
   }
 
@@ -49,7 +49,7 @@ class TriggerPanelReads {
     return new WorkbenchPanelRead(ONTOLOGY, "trigger.targets-" + targetKind, (subject, parameters) -> {
       var scope = OntologyNeighborScope.parse(parameters, TYPE, targetClass);
       if (!scope.incoming()) throw bad("Expected a trigger target center");
-      return tasks.ontologyIncoming(PlatformTasks.panelSubject(subject), targetKind, scope.centerId())
+      return tasks.ontologyIncoming(subject.asJavaUser(), targetKind, scope.centerId())
           .stream().map(TriggerPanelReads::neighborRow).toList();
     });
   }
@@ -62,7 +62,7 @@ class TriggerPanelReads {
       if (!(parameters.get("targetKinds") instanceof List<?> kinds)
           || kinds.isEmpty() || kinds.stream().anyMatch(kind -> !"workflow".equals(kind) && !"action".equals(kind)))
         throw bad("Expected workflow or action target kinds");
-      var viewer = PlatformTasks.panelSubject(subject);
+      var viewer = subject.asJavaUser();
       var domain = viewer.identity().domainId();
       return tasks.ontologyCenter(viewer, id).stream().findFirst()
           .map(Trigger::definition)
@@ -91,7 +91,7 @@ class TriggerPanelReads {
   @Bean
   WorkbenchPanelRead triggerPanelCount() {
     return new WorkbenchPanelRead(TYPE, "count", (subject, parameters) -> {
-      var count = tasks.list(PlatformTasks.panelSubject(subject), null, null, null, false, true);
+      var count = tasks.list(subject.asJavaUser(), null, null, null, false, true);
       return object("rows", array(), "total", count.get("total"));
     });
   }
@@ -99,25 +99,25 @@ class TriggerPanelReads {
   @Bean
   WorkbenchPanelRead triggerPanelList() {
     return new WorkbenchPanelRead(TYPE, "list", (subject, parameters) ->
-        tasks.list(PlatformTasks.panelSubject(subject), null, null, null, false, false));
+        tasks.list(subject.asJavaUser(), null, null, null, false, false));
   }
 
   @Bean
   WorkbenchPanelRead triggerPanelStatus() {
     return new WorkbenchPanelRead(TYPE, "status", (subject, parameters) ->
-        tasks.list(PlatformTasks.panelSubject(subject), null, null, null, true, false));
+        tasks.list(subject.asJavaUser(), null, null, null, true, false));
   }
 
   @Bean
   WorkbenchPanelRead triggerPanelRecord() {
     return new WorkbenchPanelRead(TYPE, "record", (subject, parameters) ->
-        tasks.detail(PlatformTasks.panelSubject(subject), required(parameters, "primaryKey")));
+        tasks.detail(subject.asJavaUser(), required(parameters, "primaryKey")));
   }
 
   @Bean
   WorkbenchPanelRead triggerPanelForm() {
     return new WorkbenchPanelRead(TYPE, "form", (subject, parameters) ->
-        tasks.panelForm(PlatformTasks.panelSubject(subject), required(parameters, "primaryKey")));
+        tasks.panelForm(subject.asJavaUser(), required(parameters, "primaryKey")));
   }
 
   @Bean
@@ -127,21 +127,21 @@ class TriggerPanelReads {
 
   @Bean
   WorkbenchPanelRead triggerPanelTargets() {
-    return new WorkbenchPanelRead(TYPE, "targets", (subject, parameters) -> tasks.targets(PlatformTasks.panelSubject(subject)));
+    return new WorkbenchPanelRead(TYPE, "targets", (subject, parameters) -> tasks.targets(subject.asJavaUser()));
   }
 
   @Bean
   WorkbenchPanelRead triggerPanelRuns() {
     return new WorkbenchPanelRead(TYPE, "runs", (subject, parameters) -> {
       var cursor = optional(parameters, "cursor");
-      return tasks.history(PlatformTasks.panelSubject(subject), required(parameters, "primaryKey"), cursor, 20);
+      return tasks.history(subject.asJavaUser(), required(parameters, "primaryKey"), cursor, 20);
     });
   }
 
   @Bean
   WorkbenchPanelRead triggerPanelRun() {
     return new WorkbenchPanelRead(TYPE, "run", (subject, parameters) ->
-        tasks.detail(PlatformTasks.panelSubject(subject), required(parameters, "primaryKey"),
+        tasks.detail(subject.asJavaUser(), required(parameters, "primaryKey"),
             UUID.fromString(required(parameters, "runId"))));
   }
 
@@ -149,7 +149,7 @@ class TriggerPanelReads {
   WorkbenchPanelRead triggerPanelRunRecord() {
     return new WorkbenchPanelRead(TYPE, "runRecord", (subject, parameters) -> {
       var runId = optional(parameters, "runId");
-      return tasks.panelRunRecord(PlatformTasks.panelSubject(subject), required(parameters, "primaryKey"),
+      return tasks.panelRunRecord(subject.asJavaUser(), required(parameters, "primaryKey"),
           runId == null ? null : UUID.fromString(runId));
     });
   }

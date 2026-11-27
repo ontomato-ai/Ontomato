@@ -12,7 +12,6 @@ import io.ontomato.dataengine.service.PreviewExecution;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
-import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
@@ -92,12 +91,6 @@ public class PlatformTasks {
 
   private static ScheduleException missing() {
     return new ScheduleException(404, "TASK_NOT_FOUND", "Trigger or run not found");
-  }
-
-  static SubjectContext panelSubject(SubjectContext subject) {
-    var actor = new VerifiedIdentity(subject.identity().domainId(), subject.javaUserId(), subject.identity().limit());
-    return new SubjectContext(actor, subject.roles(), subject.policyRefsByRole(), subject.objectPolicyIds(),
-        subject.managementPolicyIds(), subject.liveDataPermission(), subject.javaUserId());
   }
 
   private Trigger accessible(String id, User user, Verb verb, boolean lock) {

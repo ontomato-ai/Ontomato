@@ -207,10 +207,6 @@ public class MetricViewController {
 		try {
 			String id = param.getString("id");
 			User user = SystemUtils.getCurUser();
-			if ("delete-availability".equals(param.getString("purpose"))) {
-				var reason = metricViewService.systemDeletionRefusal(id, user.getDomainId(), lang);
-				return JSONObject.of("success", true, "data", JSONObject.of("reason", reason));
-			}
 			ret.put("data", readMetric(id, lang, definitions.subject(user)));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {

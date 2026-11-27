@@ -229,9 +229,8 @@ const pilotOwnerRead: PanelFixtureRead = async (call, owner, viewer) => {
       target: name === "createForm" ? { kind: "draft" } : { kind: "object", objectType: type, primaryKey: key },
       changedField: parameters.changedField ?? null, values: parameters.values,
     }));
-    if (name === "deleteRefusal") return type === ACTION
-      ? ownerData(await owner.post("/action/queryById", { id: key, purpose: "delete-availability" }))
-      : ownerData(await owner.post(`/${root}/deleteRefusal`, { id: key }));
+    // The fixture owner's delete rules stand in for the Java delete refusal reads.
+    if (name === "deleteRefusal") return ownerData(await owner.post(`/fixture/${root}/deleteRefusal`, { id: key }));
   }
   return await customerOwnerRead(call, owner, viewer) ?? await modelOwnerRead(call, owner, viewer);
 };
@@ -507,12 +506,6 @@ beforeAll(async () => {
       if (endpoint === "queryList") {
         expect(req.body).toEqual({});
         res.json({ success: true, data: [action] });
-      } else if (endpoint === "queryById" && req.body.purpose === "delete-availability") {
-        expect(req.header("Accept-Language")).toBe("zh-CN");
-        expect([action.id, "system-review"]).toContain(req.body.id);
-        res.json({ success: true, data: {
-          reason: req.body.id === "system-review" ? "系统自带动作不能删除" : null,
-        } });
       } else if (endpoint === "queryById") {
         expect(req.body).toEqual({ id: action.id });
         res.json({ success: true, data: action });
@@ -567,8 +560,15 @@ beforeAll(async () => {
       } });
     });
   }
+  // The action owner's deletion rule: a system action cannot be deleted.
+  app.post("/fixture/action/deleteRefusal", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    expect(req.header("Accept-Language")).toBe("zh-CN");
+    expect(["review", "system-review"]).toContain(req.body.id);
+    res.json({ success: true, data: { reason: req.body.id === "system-review" ? "系统自带动作不能删除" : null } });
+  });
   // The function owner's deletion rule in the reader's language: the pilot function is referenced, any other is free.
-  app.post("/function/deleteRefusal", (req, res) => {
+  app.post("/fixture/function/deleteRefusal", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     const referenced: Record<string, string> = {
       "zh-CN": "被指标引用的函数不能修改或删除", en: "Function referenced by MetricView cannot be modified or deleted",

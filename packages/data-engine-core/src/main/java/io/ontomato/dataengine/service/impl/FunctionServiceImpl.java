@@ -210,21 +210,12 @@ public class FunctionServiceImpl implements FunctionService {
 	}
 
   @Override
-	public String deleteRefusal(String id, String domainId, String lang) {
-		return deleteRefusal(id, domainId, lang, () -> definitions.current());
-	}
-
-	@Override
 	public String deleteRefusal(String id, String lang, SubjectContext subject) {
-		return deleteRefusal(id, subject.identity().domainId(), lang, () -> subject);
-	}
-
-	private String deleteRefusal(String id, String domainId, String lang, java.util.function.Supplier<SubjectContext> subject) {
 		Function function = functionDao.queryById(id);
-		if (function == null || !domainId.equals(function.getDomainId()))
+		if (function == null || !subject.identity().domainId().equals(function.getDomainId()))
 			throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
 		if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
-            definitions.require(subject.get(), access(function, Verb.EDIT));
+            definitions.require(subject, access(function, Verb.EDIT));
         OwnerRefusal refusal = deletionRefusal(function, lang);
 		return refusal == null ? null : refusal.getMessage();
 	}
