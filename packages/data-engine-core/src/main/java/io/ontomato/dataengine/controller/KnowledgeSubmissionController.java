@@ -6,7 +6,6 @@ import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import io.ontomato.dataengine.service.agent.PendingKnowledgeService;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -44,8 +43,7 @@ public class KnowledgeSubmissionController {
     String title = text(body, "title"), text = text(body, "text"), quote = text(body, "quote");
     OntologyAgentStore.uuid(sessionId);
     OntologyAgentStore.uuid(runId);
-    var result = pending.save(null, title, text, List.of(), access.user());
-    pending.recordSubmission(result.knowledgeId(), access.user(), sessionId, runId, quote);
+    var result = pending.submit(title, text, access.user(), sessionId, runId, quote);
     return Map.of("id", result.knowledgeId(), "status", result.status(), "created", result.created());
   }
 }

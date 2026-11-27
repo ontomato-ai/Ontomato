@@ -42,6 +42,16 @@ public class PendingKnowledgeService {
     return new Result(id, true, 0);
   }
 
+
+  /** Adds or reuses the entry and records the user submission as one fact. */
+  public Result submit(String title, String text, User creator, String sessionId, String runId, String quote) {
+    return store.transaction(() -> {
+      var result = save(null, title, text, List.of(), creator);
+      recordSubmission(result.knowledgeId(), creator, sessionId, runId, quote);
+      return result;
+    });
+  }
+
   public Map<String, com.alibaba.fastjson2.JSONObject> submissions(String domainId) {
     return store.knowledgeSubmissions(domainId);
   }
