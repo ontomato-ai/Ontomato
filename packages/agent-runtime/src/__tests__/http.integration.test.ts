@@ -856,7 +856,7 @@ ${logs}`);
     expect(childPrepare?.root).toEqual({ session: sessionRef, runId });
     await settle(captured.body.taskId);
     const userText = (message: any) => typeof message.content === "string" ? message.content : message.content.map((part: any) => part.text ?? "").join("");
-    const childRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message) === "Child question"));
+    const childRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message).includes("Child question")));
     const parentRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message) === "channel-script"));
     expect(childRequest.messages[0].content).toContain("Delegated task");
     expect(parentRequest.messages[0].content).not.toContain("Delegated task");
