@@ -17,7 +17,8 @@ export interface SkillMeta {
 /** Where a catalogue entry comes from. Only file sources have a path. */
 export type SkillSource =
   | { kind: "public"; path: string }
-  | { kind: "domain"; path: string };
+  | { kind: "domain"; path: string }
+  | { kind: "generated" };
 
 /** One manageable skill, whatever its source. */
 export interface SkillEntry {
@@ -26,12 +27,14 @@ export interface SkillEntry {
   /** Provider-supplied display title when the package name is opaque. */
   displayTitle?: string;
   source: SkillSource;
+  /** System-agent-only skills stay visible in the catalogue but cannot be selected for ordinary agents. */
+  selectionRestricted?: boolean;
   provide(): Promise<SkillPackage>;
 }
 
 /** The single place that decides whether a skill's content may be changed here. */
 export function skillWriteRestriction(entry: Pick<SkillEntry, "source">): SkillWriteRestriction {
   const source = entry.source;
-  if (source.kind === "public") return { kind: "public" };
+  if (source.kind === "public" || source.kind === "generated") return { kind: "public" };
   return null;
 }

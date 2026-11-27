@@ -103,11 +103,12 @@ export function createSkillReadAdapter(
       const { skills, diagnostics } = await assistantSkillCatalog(owner.domainId, viewer);
       const messages = diagnosticText(diagnostics);
       return {
-        options: skills.map(({ skill, title, description }): PanelOption => ({
+        options: skills.map(({ skill, title, description, unavailable }): PanelOption => ({
           primaryKey: runtimeSkillKey(skill),
           value: skill,
           label: title,
           description,
+          ...(unavailable ? { unavailable } : {}),
         })),
         ...(messages ? { diagnostics: messages } : {}),
       };
@@ -121,7 +122,8 @@ export function createSkillReadAdapter(
           const skill = runtimeSkillRefSchema.parse(held);
           const visible = catalogue.get(runtimeSkillKey(skill));
           return visible
-            ? { primaryKey: runtimeSkillKey(skill), value: skill, label: visible.title, description: visible.description }
+            ? { primaryKey: runtimeSkillKey(skill), value: skill, label: visible.title, description: visible.description,
+              ...(visible.unavailable ? { unavailable: visible.unavailable } : {}) }
             : { primaryKey: runtimeSkillKey(skill), value: skill, label, unavailable: { reason } };
         }),
       };

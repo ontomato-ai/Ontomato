@@ -20,6 +20,7 @@ import { dashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
 import { panelAddress, productPanelReadRequestSchema } from "@ontomato/contracts/panel-host";
 import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
+import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { z } from "zod";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n, tForLocale } from "../../../i18n";
@@ -106,6 +107,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
+
+function generatedSkillEntry(skill: RuntimeSkillRef, description = "Generated skill") {
+  return {
+    skill,
+    manifest: { name: skill.name, description },
+    source: { kind: "generated" as const },
+    provide: async () => ({ skill, files: [{ path: "SKILL.md", content: `---\nname: ${skill.name}\ndescription: ${description}\n---\n` }] }),
+  };
+}
 
 const credentials = { token: "reader-token", locale: "en" };
 const viewer = { domainId: "tenant", userId: "reader" };
@@ -992,8 +1002,9 @@ it("describes agent deletion with the admitted EDIT decision and the existing sy
 
 it("reads AgentDefinition form and createForm from one admitted second batch", async () => {
   const { assistantStore } = await import("../../assistant/store");
-  mocks.skills.mockResolvedValue({ registry: { getSkills: () => [] } });
   const visible = { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" } as const;
+  const analystEntry = generatedSkillEntry(visible);
+  mocks.skills.mockResolvedValue({ registry: { getSkills: () => [analystEntry] } });
   const hidden = { namespace: { kind: "domain", domainId: viewer.domainId }, name: "removed-skill" } as const;
   const primaryKey = "20000000-0000-4000-8000-000000000009";
   const stored = vi.spyOn(assistantStore, "agent").mockResolvedValue({
@@ -4744,7 +4755,8 @@ it("uses the exact Trigger detail and the P1 library gate for platform browser r
     admitted, { status: "forbidden", error: "Skill library denied" },
     admitted, { status: "ready", payload: true },
   ] });
-  mocks.skills.mockResolvedValueOnce({ registry: { getSkills: () => [] } });
+  const analyst = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "ontomato-analyst-assistant" };
+  mocks.skills.mockResolvedValueOnce({ registry: { getSkills: () => [generatedSkillEntry(analyst)] } });
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
   const prepared = await prepareRegisteredDataReads(credentials, reads.map(() => request));
