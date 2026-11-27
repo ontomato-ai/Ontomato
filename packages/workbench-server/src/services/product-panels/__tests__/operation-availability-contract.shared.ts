@@ -27,11 +27,12 @@ function rowDependent(binding: NonNullable<BuiltinProductProjectionInput["operat
     || Object.values(binding.params ?? {}).some(param => "row" in param || "rowField" in param);
 }
 
-function sampleObject(objectType: string) {
+export function sampleObject(objectType: string) {
   const className = objectType === "@any" ? "platform:ObjectType" : objectType;
   const primaryKey = className === "platform:AutotestCaseArtifact" ? "contract-run::contract-case"
     : className === "platform:TurnEvidence" ? "turn.contract-thread.1"
-    : className === "platform:Attribute" || className === "platform:Relationship" ? "ContractType.contractField"
+    : className === "platform:Attribute" ? JSON.stringify(["ContractType", "contractField"])
+    : className === "platform:Relationship" ? "ContractType.contractField"
     : "contract-target";
   return { className, primaryKey };
 }
@@ -60,6 +61,25 @@ function sampleValue(type: DirectProjectionPorts["inputs"][string]): unknown {
 
 export function contractInputs(projection: BuiltinProductProjectionInput) {
   return Object.fromEntries(Object.entries(projection.inputs).map(([name, type]) => [name, sampleValue(type)]));
+}
+
+/** A list member's row-bound operations with its read, for every shipped projection that binds operations to rows. */
+export function rowAvailabilityCases({ panels, projections }: BuiltinProducts) {
+  const cases: (Omit<AvailabilityContractCase, "operationName" | "operationId"> & { dataName: string })[] = [];
+  for (const [panelId, panel] of panels) {
+    for (const [memberName, member] of Object.entries(panel.manifest.members)) {
+      if (!("target" in member) || !("projectionId" in member.target)) continue;
+      const definition = projections.get(member.target.projectionId);
+      if (!Object.values(definition?.operations ?? {}).some(binding =>
+        binding.operation.kind === "PlatformOperation" && rowDependent(binding))) continue;
+      const projection = { ...definition!, id: member.target.projectionId };
+      for (const dataName of Object.keys(projection.data)) cases.push({
+        panelId, memberName, dataName, inputs: contractInputs(projection),
+        placement: { panel: { ...panel, id: panelId }, projection, member, slot: memberName },
+      });
+    }
+  }
+  return cases;
 }
 
 export function fixedAvailabilityCases(
