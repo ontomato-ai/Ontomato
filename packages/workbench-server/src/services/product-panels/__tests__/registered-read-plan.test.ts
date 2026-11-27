@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
-  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, AGENT_SESSION, APPLICATION, APPLICATION_DELETE_DRAFT, APPROVE_KNOWLEDGE, ATTRIBUTE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET,
+  ACTION, ACTIVATE_WORKFLOW, ADD_ROLE_MEMBERS, ADD_ROLE_POLICIES, AGENT_DEFINITION, AGENT_SESSION, APPLICATION, APPLICATION_DELETE_DRAFT, APPROVE_KNOWLEDGE, ATTRIBUTE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET,
   APPLICATION_RESTART_BUILD_TEST, APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
   AUTOTEST_RUN, BUSINESS_KNOWLEDGE, CLEAR_OBJECT_DETAIL_PANEL, DASHBOARD, DASHBOARD_CARD, DATA_ADAPTER_CONFIG, DEACTIVATE_WORKFLOW,
   DELETE_ACTION, DELETE_AGENT, DELETE_ATTRIBUTE, DELETE_AUTOTEST_RUN, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_UNIT,
@@ -12,7 +12,7 @@ import {
   KEEP_TURN_EVIDENCE, METRIC_VIEW, MODEL_CONNECTION, MODEL_ENTRY, MODEL_OPTION, MODEL_USAGE, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, OPS_KNOWLEDGE, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
   PERMISSION_POLICY, PRODUCT_PANEL, PRODUCT_PROJECTION, PUBLISHED_MCP_SERVICE, RECENT_VISIT, REGENERATE_USER_API_KEY,
-  RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_USER, RESET_USER_PASSWORD, REVOKE_USER_API_KEY, ROLE, SDK_COMPONENT, SET_ACTION_STATUS,
+  RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_ROLE_MEMBERS, REMOVE_ROLE_POLICIES, REMOVE_USER, RESET_USER_PASSWORD, REVOKE_USER_API_KEY, ROLE, SDK_COMPONENT, SET_ACTION_STATUS,
   SET_PRIMARY_KEY, SKILL, TRIGGER, TURN_EVIDENCE, UNKEEP_AUTOTEST_RUN, UNKEEP_TURN_EVIDENCE, USER, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -3005,6 +3005,8 @@ it("describes fixed governance delete targets from the owner batch without reque
     { slot: "orgHeader", operation: DELETE_ORG_UNIT, type: ORG_UNIT, id: "team" },
     { slot: "deletePolicy", operation: DELETE_PERMISSION_POLICY, type: PERMISSION_POLICY, id: "outside" },
     { slot: "orgHeader", operation: DELETE_ORG_UNIT, type: ORG_UNIT, id: "denied" },
+    { slot: "removeMembership", operation: REMOVE_ORG_MEMBERSHIP, type: ORG_MEMBERSHIP, id: "org-member" },
+    { slot: "deletePosition", operation: DELETE_ORG_POSITION, type: ORG_POSITION, id: "org-position" },
   ];
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
@@ -3031,6 +3033,8 @@ it("describes fixed governance delete targets from the owner batch without reque
     { status: "ready", payload: { reason: null } },
     { status: "error", code: "POLICY_NOT_FOUND", error: "Policy not found" },
     { status: "forbidden", error: "Organization read denied" },
+    { status: "ready", payload: { reason: null } },
+    { status: "ready", payload: { reason: "Position has roles" } },
     { status: "ready" },
   ] });
 
@@ -3042,14 +3046,85 @@ it("describes fixed governance delete targets from the owner batch without reque
     { status: "ready", value: { delete: { handlerRef: DELETE_ORG_UNIT, inspectImpact: { handlerRef: `${DELETE_ORG_UNIT}.inspect-impact` } } } },
     { status: "error", code: "POLICY_NOT_FOUND", message: "Policy not found" },
     { status: "forbidden", reason: "Organization read denied" },
+    { status: "ready", value: { delete: { handlerRef: REMOVE_ORG_MEMBERSHIP } } },
+    { status: "ready", value: { delete: { handlerRef: DELETE_ORG_POSITION, unavailable: { reason: "Position has roles" } } } },
     { status: "ready", value: { deletePolicy: { target: { source: "row" } } } },
   ]);
   expect(results[1]).not.toHaveProperty("value.delete.unavailable");
+  expect(results[4]).not.toHaveProperty("value.delete.unavailable");
   const calls = mocks.read.mock.lastCall![1] as JavaPanelRead[];
   expect(calls.map(({ call }) => call)).toEqual([
     ...targets.map(({ type, id }) => ({ type, name: "deleteRefusal", parameters: { primaryKey: id } })), undefined,
   ]);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("describes the role detail delete operation using the selected role's delete refusal", async () => {
+  const selections = [
+    { primaryKey: "empty-role", reason: null },
+    { primaryKey: "assigned-role", reason: "Role still has members" },
+  ];
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  for (const { primaryKey } of selections) {
+    mocks.resolve.mockResolvedValueOnce({
+      panel: { manifest: { state: {}, members: {} } },
+      member: { inputs: { role: { literal: { className: ROLE, primaryKey } } } },
+      projection: {
+        inputs: { role: { kind: "object", objectType: ROLE } },
+        operations: { delete: { operation: { kind: "PlatformOperation", id: DELETE_ROLE }, target: { input: "role" } } },
+      },
+      inputs: {},
+    });
+  }
+  mocks.read.mockResolvedValueOnce({ viewer, results: selections.map(({ reason }) => ({ status: "ready", payload: { reason } })) });
+
+  const prepared = await prepareRegisteredDataReads(credentials, selections.map(() => ({
+    source, memberPath: [{ member: "deleteBtn" }], operations: true, inputs: {},
+  })));
+  const [deletable, assigned] = await runPreparedDataReads(credentials, prepared);
+  expect(deletable).toMatchObject({ status: "ready", value: { delete: { handlerRef: DELETE_ROLE } } });
+  expect(deletable).not.toHaveProperty("value.delete.unavailable");
+  expect(assigned).toHaveProperty("value.delete.unavailable.reason", "Role still has members");
+  expect((mocks.read.mock.lastCall![1] as JavaPanelRead[]).map(({ call }) => call))
+    .toEqual(selections.map(({ primaryKey }) => ({ type: ROLE, name: "deleteRefusal", parameters: { primaryKey } })));
+});
+
+it("describes all role assignment operations with the selected role's owner refusal", async () => {
+  const bindings = { addMembers: ADD_ROLE_MEMBERS, removeMembers: REMOVE_ROLE_MEMBERS,
+    addPolicies: ADD_ROLE_POLICIES, removePolicies: REMOVE_ROLE_POLICIES };
+  const selections = [
+    { primaryKey: "ordinary", result: { status: "ready", payload: { reason: null } } },
+    { primaryKey: "reserved", result: { status: "ready", payload: { reason: "Managed by domain membership" } } },
+    { primaryKey: "missing", result: { status: "error", code: "ROLE_NOT_FOUND", error: "Role not found" } },
+  ];
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  for (const { primaryKey } of selections) {
+    mocks.resolve.mockResolvedValueOnce({
+      panel: { manifest: { state: {}, members: {} } },
+      member: { inputs: { role: { literal: { className: ROLE, primaryKey } } } },
+      projection: {
+        inputs: { role: { kind: "object", objectType: ROLE } },
+        operations: Object.fromEntries(Object.entries(bindings).map(([name, id]) =>
+          [name, { operation: { kind: "PlatformOperation", id }, target: { input: "role" } }])),
+      },
+      inputs: {},
+    });
+  }
+  mocks.read.mockResolvedValueOnce({ viewer, results: selections.map(({ result }) => result) });
+
+  const prepared = await prepareRegisteredDataReads(credentials, selections.map(() => ({
+    source, memberPath: [{ member: "roleAssignments" }], operations: true, inputs: {},
+  })));
+  const [ordinary, reserved, missing] = await runPreparedDataReads(credentials, prepared);
+  expect(ordinary).toMatchObject({ status: "ready", value: Object.fromEntries(Object.entries(bindings)
+    .map(([name, handlerRef]) => [name, { handlerRef }])) });
+  for (const name of Object.keys(bindings)) {
+    expect(ordinary).not.toHaveProperty(`value.${name}.unavailable`);
+    expect(reserved).toHaveProperty(`value.${name}.unavailable.reason`, "Managed by domain membership");
+  }
+  expect(missing).toEqual({ status: "error", code: "ROLE_NOT_FOUND", message: "Role not found" });
+  expect((mocks.read.mock.lastCall![1] as JavaPanelRead[]).map(({ call }) => call))
+    .toEqual(selections.map(({ primaryKey }) => ({ type: ROLE, name: "assignRefusal", parameters: { primaryKey } })));
 });
 
 it("keeps application entries and a masked missing application as separate batch items", async () => {
