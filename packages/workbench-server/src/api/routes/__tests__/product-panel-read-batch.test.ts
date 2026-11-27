@@ -309,7 +309,8 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
   const cardRead = kind === "card result" ? "result" : kind === "card form" ? "form" : kind === "card metric source" ? "metricSource" : undefined;
   const runId = "11111111-1111-4111-8111-111111111111";
   const sessionId = "22222222-2222-4222-8222-222222222222";
-  const run = { status: "running", sessionId, channel: { authority: { executionKind: "live" } } };
+  // A preview run that no page presents reads as any run does: the preview adds no refusal to a read.
+  const run = { status: "running", sessionId, channel: { authority: { executionKind: kind === "metric" ? "preview" : "live" } } };
   const use = { id: source.useId, pageKey: "list", panelId: "panel-content", path: "/ontology/list" };
   mocks.run.mockResolvedValue(run);
   mocks.get.mockImplementation(async (_endpoint, url: string, options) => {

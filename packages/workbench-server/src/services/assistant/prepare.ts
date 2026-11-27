@@ -13,7 +13,9 @@ import {assistantOntologyContext} from "./context";
 import { executionBusinessCallbacks, governanceBusinessCallback } from "./execution-callback";
 import {executionCallerCredentials} from "./execution";
 import { resolveLocale } from "../../i18n";
-import { recentUserMessages } from "./user-quotes";
+import { ofIdentity, recentUserMessages } from "./user-quotes";
+import { sessionRunIdentities } from "../agent-host/run-identity";
+import type { AgentRunContext } from "@ontomato/contracts/agent-channel";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { getQueryTimeoutMs } from "../../config/query-settings";
 import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
@@ -25,11 +27,13 @@ export interface AssistantPreparation {
   a: AgentRow; session: SessionRow; turn: TurnRow; message: string; input: AgentInput; inputId: string; ontologyContext: string | null;
   owner: AssistantOwner; credentials: AssistantCredentials;
   executionUserId:string|null; executionCredentials:AssistantCredentials;
+  /** The identity this run is prepared with: it continues and quotes only what runs of the same identity did. */
+  lane: AgentRunContext["authority"]["executionKind"];
   externalVariables?: Record<string, unknown>;
   pageSkillContext?: PageSkillContext;
   reader?: AgentVisibilityReader;
 }
-export async function prepareAnalystRun({ a, session, turn, input, inputId, ontologyContext, owner, credentials, executionUserId, executionCredentials, externalVariables, pageSkillContext, reader }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
+export async function prepareAnalystRun({ a, session, turn, input, inputId, ontologyContext, owner, credentials, executionUserId, executionCredentials, externalVariables, pageSkillContext, reader, lane }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
   const sessionId = session.id, id = turn.id;
   const started = performance.now();
   let lastStage = started;
@@ -48,12 +52,13 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const skillRefs=skills.map(({skill})=>skill);
   const retrieval=needsRetrievalScope(skillRefs);
   const continuationIds=new Set<string>();
+  const identities=retrieval ? await sessionRunIdentities(owner,sessionId) : new Map<string,string>();
   if(retrieval)for(const previous of await assistantStore.turns(sessionId)) {
-    if(previous.id===id || !previous.retrieval_scope_id)continue;
+    if(previous.id===id || !previous.retrieval_scope_id || identities.get(previous.id)!==lane)continue;
     for(const link of await new OntologyRetrievalClient(owner,previous.retrieval_scope_id).links())continuationIds.add(link.retrievalId);
   }
   if (retrieval) mark("previous-retrievals");
-  const userMessages=retrieval?recentUserMessages((await client.session(sessionId)).messages,inputId):[];
+  const userMessages=retrieval?recentUserMessages(ofIdentity((await client.session(sessionId)).messages,identities,lane),inputId):[];
   if (retrieval) mark("session-context");
   const opened=await new OntologyRetrievalClient(owner,id).open({classNames:turn.class_names,continuationIds:[...continuationIds].sort(),
     deadlineAt:new Date(new Date(turn.created_at).getTime()+getQueryTimeoutMs()).toISOString(),recentUserMessages:userMessages,executionUserId},credentials);

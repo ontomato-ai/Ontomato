@@ -21,7 +21,7 @@ vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://o
 vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>900_000}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench"})}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;status=mocks.status;finalReply=async()=>null;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
+vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=(path:string,...rest:unknown[])=>path.endsWith("/run-identities")?Promise.resolve({runs:[]}):mocks.request(path,...rest);run=mocks.run;status=mocks.status;finalReply=async()=>null;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",runId:null,messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
 vi.mock("../../../platform/agent-runtime/runtime",()=>({messageText:(message:{content:string})=>message.content,answerText:()=>"",runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
 import { assistantService } from "../service";
 import { assistantScheduleApplication } from "../scheduling";

@@ -232,4 +232,3 @@ it("refuses a candidate member after looking up its same-domain projection facts
   expect(calls).toEqual([`grant:alice:use:${projectionId}`]);
   expect(productQuery.mock.calls.map(([, params]) => params)).toEqual([[scope.domainId, projectionId]]);
 });
-

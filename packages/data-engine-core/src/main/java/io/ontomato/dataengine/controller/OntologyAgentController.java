@@ -133,7 +133,16 @@ public class OntologyAgentController {
   @DeleteMapping("/sessions/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void delete(@PathVariable String id, HttpServletRequest req) throws Exception {
-    host.delete(AgentJson.id(id), access.reader(req, id, null));
+    var owner = access.reader(req, id, null);
+    // Deleting cancels, closes and removes the conversation's runs: a preview deletes only one that holds no live run,
+    // judged by the runs' own identities before anything is closed.
+    if (io.ontomato.dataengine.service.PreviewExecution.isPreview(req)) {
+      var runs = runtime.json(owner.domainId(), id, "/v1/channel/sessions/"+AgentJson.id(id)+"/run-identities", "GET", null, null).getJSONArray("runs");
+      for (int index = 0; index < runs.size(); index++)
+        if (!"preview".equals(runs.getJSONObject(index).getString("executionKind")))
+          throw new AgentHttpException(422, io.ontomato.dataengine.service.PreviewExecution.WRITE_CODE, io.ontomato.dataengine.service.PreviewExecution.WRITE_MESSAGE);
+    }
+    host.delete(AgentJson.id(id), owner);
   }
   @org.springframework.web.bind.annotation.PatchMapping("/sessions/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -150,6 +159,8 @@ public class OntologyAgentController {
       @RequestBody JSONObject body,
       HttpServletRequest req)
       throws Exception {
+    // A run messages another conversation only through its own agent channel, never as its user.
+    OntologyAgentAccess.refuseAgentExecution(req);
     AgentJson.fields(body, "message", "replyTo", "selectedOption");
     if(body.containsKey("selectedOption") && (!(body.get("selectedOption") instanceof Integer) || body.getIntValue("selectedOption")<0 || !body.containsKey("replyTo"))) throw AgentHttpException.invalid("selectedOption requires a question and a nonnegative integer");
     if(body.containsKey("replyTo")) AgentJson.id(body.getString("replyTo"));

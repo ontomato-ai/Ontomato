@@ -38,7 +38,7 @@ import {
   storedDataset,
 } from "@ontomato/contracts/data-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { requirePreviewMayStop } from "../agent-host/preview-stop";
+import { requirePreviewMayRemove, requirePreviewMayStop } from "../agent-host/run-identity";
 import { withDomainSkills } from "../skills/operations";
 import {
   getPostgresPool,
@@ -318,6 +318,9 @@ export const assistantService = {
     const { row: session } = await assistantStore.create(sessionId, owner, a.id, "delegated", project?.workspaceId, true, authority.executionKind === "preview");
     const message = input.content;
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
+    // A run keeps the identity it was started or delegated with: an App Builder run is always the preview's, any other
+    // agent's when its caller's run was or its conversation was opened as the preview's.
+    const preview = isAppBuilderKind(a.kind) || authority.executionKind === "preview" || session.preview;
     const request = await withDomainSkills(owner.domainId,async () => {
       const prepare = isAppBuilderKind(a.kind)
         ? prepareAppBuilderRun
@@ -330,12 +333,9 @@ export const assistantService = {
       const reader = visibilityReader(body);
       const pageSkillContext = reader === "user" && input.role === "user" && body.root.runId === id
         ? pageSkillContextSchema.optional().parse(body.context?.pageSkillContext) : undefined;
-      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader }, appId);
+      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader,lane:preview ? "preview" : "live" }, appId);
     });
     await assistantStore.admitted(id,message);
-    // A run keeps the identity it was started or delegated with: an App Builder run is always the preview's, any other
-    // agent's when its caller's run was or its conversation was opened as the preview's.
-    const preview = isAppBuilderKind(a.kind) || authority.executionKind === "preview" || session.preview;
     return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: preview ? "preview" : "live" } };
   },
   async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
@@ -482,10 +482,11 @@ export const assistantService = {
       `SELECT id,owner_id FROM ${table("assistant_sessions")} WHERE domain_id=$1 AND workspace_id=$2`,
       [domainId, workspaceId],
     );
-    for (const row of rows) await this.delete(row.id, { domainId, userId: row.owner_id });
+    for (const row of rows) await this.delete(row.id, { domainId, userId: row.owner_id }, {});
   },
-  async delete(sessionId: string, owner: AssistantOwner) {
+  async delete(sessionId: string, owner: AssistantOwner, credentials: AssistantCredentials) {
     await assistantStore.session(sessionId, owner);
+    await requirePreviewMayRemove(owner, sessionId, credentials);
     const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     let snapshot;
     try {

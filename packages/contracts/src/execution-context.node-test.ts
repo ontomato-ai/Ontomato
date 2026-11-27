@@ -35,9 +35,13 @@ test("a preview identity is carried to the entries that run something and to no 
     ["", "/panel-operations/intents/i-1/cancel"],
     ["", "/panel-operations/questions/q-1/cancel-if-pending"],
     ["", "/panel-operations/local-confirmations/q-1/claim"],
+    ["", "/panel-operations/intents"],
+    ["", "/panel-operations/local-confirmations"],
   );
   for (const [service, path] of running) assert.ok(carriesPreviewIdentity(service, "POST", path), `${service}${path}`);
   assert.ok(carriesPreviewIdentity("", "DELETE", "/observe/autotest/runs/r-1"));
+  for (const [service, path] of [["", "/assistant/sessions/s-1"], ["", "/observe/agent/sessions/s-1"], ["/data-query", "/ontology/ai/sessions/s-1"]] as const)
+    assert.ok(carriesPreviewIdentity(service, "DELETE", path), `DELETE ${service}${path}`);
   const building: [string, string, string][] = [
     ["/data-query", "POST", "/writeFunctionOperation/query"],
     ["/data-query", "POST", "/action/trial"],
@@ -50,8 +54,8 @@ test("a preview identity is carried to the entries that run something and to no 
     ["", "GET", "/praxis/runs/r-1/case"],
     ["", "GET", "/praxis/inbox"],
     ["", "POST", "/assistant/agent-definitions"],
-    ["", "POST", "/panel-operations/intents"],
-    ["", "POST", "/panel-operations/local-confirmations"],
+    ["", "PATCH", "/assistant/sessions/s-1"],
+    ["", "GET", "/assistant/sessions/s-1"],
     ["", "POST", "/observe/autotest/case-sets"],
     ["", "GET", "/observe/autotest/runs/r-1"],
     // The same path at the other service is another owner's.

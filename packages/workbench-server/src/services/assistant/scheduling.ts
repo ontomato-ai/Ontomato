@@ -67,7 +67,7 @@ export const assistantScheduleApplication: ScheduleApplication = {
         await assistantService.send(sessionId, input.runId, {message:input.content.instruction}, context.owner, context.credentials, "background");
       } catch (error) {
         if (!created.replayed && (await assistantStore.turns(sessionId)).length === 0)
-          await assistantService.delete(sessionId, context.owner);
+          await assistantService.delete(sessionId, context.owner, context.credentials);
         throw error;
       }
     });

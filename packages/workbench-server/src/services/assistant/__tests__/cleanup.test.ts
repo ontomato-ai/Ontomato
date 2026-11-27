@@ -11,7 +11,7 @@ beforeEach(() => {
 it("continues to local deletion when the runtime session was removed by an earlier attempt", async () => {
   mocks.snapshot.mockRejectedValue(new HttpError(404, "missing"));
   await deleteUserAssistantSessions("alice");
-  expect(mocks.delete).toHaveBeenCalledWith("session", { userId: "alice", domainId: "domain" });
+  expect(mocks.delete).toHaveBeenCalledWith("session", { userId: "alice", domainId: "domain" }, {});
 });
 it("does not treat an unavailable runtime as a missing session", async () => {
   mocks.snapshot.mockRejectedValue(new HttpError(503, "unavailable"));

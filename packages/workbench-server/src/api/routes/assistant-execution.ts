@@ -1,4 +1,3 @@
-import { isLivePresentationEligibleRun } from "../../services/agent-host/presentation";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import {
   directPanelMemberPathSchema, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema, productPanelReadRequestSchema,
@@ -60,9 +59,6 @@ async function panelReader(req: Request, runId: string, source: ProductPanelRead
   const run = await runForOwner(owner, runId);
   if (!run.channel || run.status !== "running")
     throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
-  if (run.channel.authority.executionKind === "preview"
-      && !isLivePresentationEligibleRun({ host: "workbench", owner, runId, sessionId: run.sessionId, channel: run.channel }))
-    throw new HttpError(422, "Page operation reads are available only in a live-presented preview", "PREVIEW_WRITE_FORBIDDEN");
   if (source.kind === "frame")
     throw new HttpError(403, "The application frame is not a page operation target", "PANEL_FRAME_SKILL_REQUIRED");
   const { use } = await requirePanelUseEntry(credentials, source, owner);

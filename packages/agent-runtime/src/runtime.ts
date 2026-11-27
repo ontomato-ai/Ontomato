@@ -41,7 +41,7 @@ import type {
   RuntimeToolResult,
 } from "@ontomato/contracts/agent-runtime-events";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import { RuntimeStore, digest, canonical, type Scope } from "./store";
+import { RuntimeStore, digest, canonical, runLane, type ExecutionLane, type Scope } from "./store";
 import {
   SkillRegistry,
   type RuntimeHost,
@@ -236,9 +236,9 @@ export class AgentRuntime {
       // Read-only checks for unusable dependencies belong before admission, so a new run fails with
       // 422/503 instead of starting and reporting the same problem as a stopped run.
       if (!admitted.rowCount || reserved) {
-        const binding = await this.store.sessionEngine(scope, sessionId);
+        const binding = await this.store.sessionEngine(scope, sessionId, runLane(request));
         plugin = this.sessionEngines.plugin(binding.engine ?? request.definition.engine ?? defaultEngineId);
-        if (this.sessionEngines.needsOpen(scope, sessionId))
+        if (this.sessionEngines.needsOpen(scope, sessionId, runLane(request)))
           config = await this.models.resolve(scope.domainId, request.definition.modelId);
         skills = await Promise.all(
           request.definition.skills.map((version) =>
@@ -286,7 +286,7 @@ export class AgentRuntime {
         updateServiceLogContext({ correlationId: accepted.run.correlationId, runId: accepted.run.id, sessionId: accepted.run.sessionId });
         return accepted;
       }
-      this.sessionEngines.admitted(scope, sessionId);
+      this.sessionEngines.admitted(scope, sessionId, runLane(run));
       // The admission is committed and this is not a retry: the session has a new run.
       this.publishSessionRun(scope, { type: "run_started", sessionId, runId });
       const logContext = { correlationId: run.correlationId, domainId: scope.domainId,
@@ -599,14 +599,18 @@ export class AgentRuntime {
     });
   }
 
-  private async previousContext(scope: Scope, sessionId: string) {
-    const rows = await this.store.contextMessages(scope, sessionId);
+  /**
+   * What a run of one identity is told the conversation said so far: only what runs of that identity consumed. The
+   * stored compaction summaries are live runs' (a preview never had one), so only a live run reads them.
+   */
+  private async previousContext(scope: Scope, sessionId: string, lane: ExecutionLane) {
+    const rows = (await this.store.contextMessages(scope, sessionId)).filter(row => row.lane === lane);
     if (!rows.length) return null;
-    const { rows: [summary] } = await this.store.pool.query(
+    const { rows: [summary] } = lane === "live" ? await this.store.pool.query(
       `SELECT covered_seq,summary FROM ${this.store.table("compactions")}
        WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 ORDER BY covered_seq DESC LIMIT 1`,
       [scope.hostId, scope.domainId, sessionId],
-    );
+    ) : { rows: [] };
     const messages = await Promise.all(rows
       .filter(row => row.contextSeq! > Number(summary?.covered_seq ?? 0) && row.message.role !== "system")
       .map(row => this.channel.modelMessage(scope.domainId, row.message)));
@@ -658,7 +662,7 @@ export class AgentRuntime {
         onClose: mcp.close,
       });
       closeMcp = () => bound.close();
-      const engine = await this.sessionEngines.open(scope, run.sessionId, {
+      const engine = await this.sessionEngines.open(scope, run.sessionId, runLane(run), {
         plugin,
         config: () => config ? Promise.resolve(config) : this.models.resolve(scope.domainId, request.definition.modelId),
         skills: skills.map(skill => ({ name: skill.skill.name, directory: skill.directory })),
@@ -667,7 +671,7 @@ export class AgentRuntime {
         tools: bound.declarations,
         engineTools: bound.engineTools,
         signal,
-        previousContext: () => this.previousContext(scope, run.sessionId),
+        previousContext: () => this.previousContext(scope, run.sessionId, runLane(run)),
         prompt: () => ({
           system: [request.definition.systemPrompt, processLanguageInstruction(run.language)].filter(Boolean).join("\n\n"),
         }),
@@ -678,7 +682,7 @@ export class AgentRuntime {
       signal.throwIfAborted();
       const input = await this.channel.modelMessage(scope.domainId, request.input);
       active.sentInputs.set(openingInputId, { message: request.input, context: null });
-      this.sessionEngines.beginRun(scope, run.sessionId, run.id);
+      this.sessionEngines.beginRun(scope, run.sessionId, runLane(run), run.id);
       const pending = engine.handle.startTurn({
         runId: run.id,
         context: run.definition.context ?? null,
@@ -701,7 +705,7 @@ export class AgentRuntime {
     } finally {
       active.sealed = true;
       active.steering.abort();
-      this.sessionEngines.endRun(scope, run.sessionId);
+      this.sessionEngines.endRun(scope, run.sessionId, runLane(run));
     }
     const cleanup = async () => {
       try {
@@ -710,7 +714,7 @@ export class AgentRuntime {
         await closeMcp?.();
       } finally {
         if (reason === "aborted" || reason === "error")
-          await this.sessionEngines.release(scope, run.sessionId);
+          await this.sessionEngines.release(scope, run.sessionId, runLane(run));
       }
     };
     try {
@@ -748,7 +752,7 @@ export class AgentRuntime {
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
       await this.store.finish(scope, run.id, reason, failure, workspaceCommit);
-      this.sessionEngines.idle(scope, run.sessionId);
+      this.sessionEngines.idle(scope, run.sessionId, runLane(run));
       // The lifecycle notice follows the finish commit, independently of subsequent intent preparation.
       this.publishSessionRun(scope, { type: "run_stopped", sessionId: run.sessionId, runId: run.id });
       const stopped = (await this.store.run(scope, run.id)).run;

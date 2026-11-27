@@ -1,5 +1,6 @@
 import {needsRetrievalScope} from "../assistant/skills";
-import { recentUserMessages } from "../assistant/user-quotes";
+import { ofIdentity, recentUserMessages } from "../assistant/user-quotes";
+import { sessionRunIdentities } from "./run-identity";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import path from "node:path";
@@ -56,7 +57,8 @@ export const agentChannelService = {
         const client=new RuntimeClient(owner.domainId,undefined,owner.userId);
         const current=await client.status(body.runId);
         if (turn.retrieval_scope_id && needsRetrievalScope(current.resolvedSkills.map(entry=>entry.skill))) {
-          const messages=(await client.session(body.sessionId)).messages;
+          // The run's own identity decides which of the conversation's messages it may quote.
+          const messages=ofIdentity((await client.session(body.sessionId)).messages,await sessionRunIdentities(owner,body.sessionId),body.authority.executionKind);
           await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).updateUserQuotes(recentUserMessages(messages,body.inputId),credentials);
         }
       }

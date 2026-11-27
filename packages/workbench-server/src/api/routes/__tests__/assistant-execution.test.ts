@@ -124,7 +124,8 @@ it("marks a preview only where its request writes business data", async () => {
  expect(await marked("ontology/action/trial")).toBeNull();
  expect(await marked("workbench/api/assistant/agent-definitions")).toBeNull();
  expect(await marked("workbench/api/product-panels/read")).toBeNull();
- expect(await marked("workbench/api/panel-operations/intents")).toBeNull();
+ // Preparing a page operation carries the identity so the operation is recorded as the preview's.
+ expect(await marked("workbench/api/panel-operations/intents")).toBe('{"kind":"preview"}');
 });
 
 it('restores the initiator before resolving the executor and forwards only ordinary business authentication',async()=>{

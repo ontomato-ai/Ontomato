@@ -33,9 +33,13 @@ type PlatformService = "" | "/data-query";
  *   `/assistant/sessions`, `/observe/agent/sessions` and `/observe/diagnoses` conversations and their `/runs`, DataRAG's
  *   `/ontology/ai/sessions/{id}/runs` and the agent channel's `/platform/agent-channel/commands`.
  * - Stopping an agent run (`/assistant|observe/agent/sessions/{id}/runs/{run}/cancel`,
- *   `/ontology/ai/sessions/{id}/runs/{run}/cancel`), and deciding whether an agent's pending page operation still goes
- *   ahead (`/panel-operations/intents/{id}/cancel`, `/panel-operations/questions/{id}/cancel-if-pending`,
- *   `/panel-operations/local-confirmations/{id}/claim`), carry the identity too: a preview decides only a preview run's.
+ *   `/ontology/ai/sessions/{id}/runs/{run}/cancel`) or deleting a conversation (`DELETE /assistant/sessions/{id}`,
+ *   `DELETE /observe/agent/sessions/{id}`, `DELETE /ontology/ai/sessions/{id}`) carries the identity too: a preview
+ *   stops only a preview's run and deletes only a conversation that holds no live run.
+ * - A pending page operation is the preview's when a preview prepared it (`/panel-operations/intents`,
+ *   `/panel-operations/local-confirmations`), and dispatching, cancelling or claiming one
+ *   (`/panel-operations/intents/{id}/dispatch|cancel`, `/panel-operations/questions/{id}/cancel-if-pending`,
+ *   `/panel-operations/local-confirmations/{id}/claim`) carries the identity: a preview decides only a preview's.
  *
  * `/action/trial`, `/metricView/test` and `/ontology/ai/generation/…` write only inside the run's own sandbox.
  */
@@ -49,7 +53,10 @@ const previewEntries: readonly (readonly [service: PlatformService, method: stri
   ["/data-query", "POST", /^\/ontology\/ai\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],
   ["", "POST", /^\/praxis\/(?:runs|runs\/[^/]+\/(?:tick|acts-on|case\/(?:submit|fill|close))|steps\/[^/]+\/(?:decide|assign))$/iu],
   ["", "POST", /^\/panel-operations\/intents\/[^/]+\/dispatch$/iu],
+  ["", "POST", /^\/panel-operations\/(?:intents|local-confirmations)$/iu],
   ["", "POST", /^\/panel-operations\/(?:intents\/[^/]+\/cancel|questions\/[^/]+\/cancel-if-pending|local-confirmations\/[^/]+\/claim)$/iu],
+  ["/data-query", "DELETE", /^\/ontology\/ai\/sessions\/[^/]+$/iu],
+  ["", "DELETE", /^\/(?:assistant|observe\/agent)\/sessions\/[^/]+$/iu],
   ["", "POST", /^\/assistant\/sessions$/iu],
   ["", "POST", /^\/assistant\/sessions\/[^/]+\/runs$/iu],
   ["", "POST", /^\/(?:assistant|observe\/agent)\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],

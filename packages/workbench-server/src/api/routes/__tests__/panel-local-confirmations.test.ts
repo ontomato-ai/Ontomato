@@ -118,6 +118,13 @@ it("lets a preview claim or cancel only a confirmation a preview run asked for, 
   expect(await (await post(`${endpoint}/${previews.questionId}/claim`, {}, preview)).json()).toEqual({ ok: true, intentId: previews.intentId });
 });
 
+it("refuses a preview asking for confirmation of a live run's operation before the question is published", async () => {
+  askingRun("live");
+  await refused(await post(endpoint, { agentRun: { sessionId, runId, toolCallId: "discard" }, operationLabel: "Discard",
+    targetLabel: "Task", requireConfirmation: true }, preview));
+  expect(mocks.runtimeRequest).not.toHaveBeenCalled();
+});
+
 it("lets a preview cancel only a pending page operation a preview run prepared, before the intent is changed", async () => {
   const intentId = "33333333-3333-4333-8333-333333333333";
   const questionId = "44444444-4444-4444-8444-444444444444";

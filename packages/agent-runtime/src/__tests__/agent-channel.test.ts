@@ -696,7 +696,7 @@ it("authenticates the session command, uses its active run, delegates a preview 
     channel: port,
     active: new Map([[canonical([scope.hostId, scope.domainId, runId]), active]]),
     sessionEngines: Object.assign(Object.create(SessionEngines.prototype), {
-      live: new Map([[canonical([scope.hostId, scope.domainId, sessionId]), session]]),
+      live: new Map([[canonical([scope.hostId, scope.domainId, sessionId, "live"]), session]]),
     }),
   }) as AgentRuntime;
   const listener = await openSkillCallback({
@@ -972,6 +972,35 @@ describe("an input runs with its sender's identity, never its recipient's", () =
       { ...notification, source: { kind: "user" }, answerId: inputId }, { steer: true, targetRunId: runId, senderAuthority: humanChannel.authority });
     expect(delivered.taskId).toBeNull();
     expect(runtime.inputReceived).toHaveBeenCalledWith(scope, runId, expect.anything());
+  });
+
+  it("starts a run for a child's message with the child's authority, root and account, never its creator's wider ones", async () => {
+    const fixture = live();
+    const creator = fixture.intents.get(runId)!;
+    creator.channel = { ...creator.channel, authority: { classNames: [], executionKind: "live" } };
+    creator.executionUserId = "creator-account";
+    const childRoot = { session: source.session, runId: previewRunId };
+    const child = { ...fixture.childRun, executionUserId: "child-account",
+      channel: { ...fixture.childRun.channel, authority: { classNames: ["Orders"], executionKind: "live" as const }, root: childRoot } };
+    const sent = await fixture.port.execute(scope, child, { op: "send", session: "parent", message: "Progress", steer: true });
+    const queued = (sent as { taskId: string | null }).taskId;
+    expect(queued).not.toBeNull();
+    expect(fixture.runtime.inputReceived).not.toHaveBeenCalled();
+    const started = fixture.intents.get(queued!)!;
+    expect(started.channel.authority).toEqual({ classNames: ["Orders"], executionKind: "live" });
+    expect(started.channel.root).toEqual(childRoot);
+    expect(started.executionUserId).toBe("child-account");
+  });
+
+  it("merges a child's message into its creator's run only when that run reaches no further than the child", async () => {
+    const fixture = live();
+    const creator = fixture.intents.get(runId)!;
+    creator.executionUserId = "child-account";
+    const child = { ...fixture.childRun, executionUserId: "child-account",
+      channel: { ...fixture.childRun.channel, authority: humanChannel.authority } };
+    const sent = await fixture.port.execute(scope, child, { op: "send", session: "parent", message: "Progress", steer: true });
+    expect((sent as { taskId: string | null }).taskId).toBeNull();
+    expect(fixture.runtime.inputReceived).toHaveBeenCalledWith(scope, runId, expect.anything());
   });
 
   it("follows up left-over input as the run it was given to, not as the run that just stopped", async () => {

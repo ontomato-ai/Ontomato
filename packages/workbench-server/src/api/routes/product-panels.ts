@@ -16,7 +16,7 @@ import {
 import {
   cancelHumanPanelOperation, cancelPendingAgentPageQuestion, claimPendingLocalConfirmation,
   dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
-  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, registerPendingLocalConfirmation, stagePanelUpload,
+  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, refusePreviewDeciding, registerPendingLocalConfirmation, stagePanelUpload,
 } from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
 import { Router, type RequestHandler } from "express";
@@ -377,6 +377,8 @@ panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (
     throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
   }
   const preview = run.channel.authority.executionKind === "preview";
+  // Before a question is asked: a preview asks for confirmation only for a preview run's operation.
+  refusePreviewDeciding(credentials, preview);
   if (preview && (!isLivePresentationEligibleRun({
     host: "workbench", owner, runId: input.agentRun.runId, sessionId: run.sessionId, channel: run.channel,
   }) || !hasActivePresentationForRun("workbench", owner, input.agentRun.runId))) {

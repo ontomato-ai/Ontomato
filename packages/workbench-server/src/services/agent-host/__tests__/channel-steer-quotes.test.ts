@@ -67,6 +67,7 @@ it("excludes queued unclaimed unattended messages when updating retrieval user q
     pendingQuestions: [],
     latestRun: null,
   });
+  vi.spyOn(RuntimeClient.prototype, "request").mockResolvedValue({ runs: [{ runId, executionKind: "live" }] });
   const updateUserQuotes = vi.spyOn(OntologyRetrievalClient.prototype, "updateUserQuotes").mockResolvedValue();
 
   await expect(

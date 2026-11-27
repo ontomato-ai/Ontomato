@@ -21,7 +21,7 @@ export async function deleteUserAssistantSessions(userId: string) {
     }
     if (snapshot?.latestRun?.run.status === "running")
       await assistantService.cancel(s.id, snapshot.latestRun.run.id, owner, {});
-    await assistantService.delete(s.id, owner);
+    await assistantService.delete(s.id, owner, {});
   }
   const auxiliary = (
     await getPostgresPool().query(

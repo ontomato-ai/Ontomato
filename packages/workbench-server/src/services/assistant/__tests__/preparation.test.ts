@@ -1,6 +1,6 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 import {defaultAssistantSkills} from '../../../config/assistant-defaults';
-const mocks=vi.hoisted(()=>({record:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),overview:vi.fn()}));
+const mocks=vi.hoisted(()=>({record:vi.fn(),skills:vi.fn(),environment:vi.fn(),open:vi.fn(),callback:vi.fn(),overview:vi.fn(),session:vi.fn(),identities:vi.fn(),turns:vi.fn(),links:vi.fn()}));
 vi.mock('../../../utils/backend-client',()=>({backendPost:vi.fn(),buildBackendHeaders:(_token:unknown,_user:unknown,_locale:unknown,_key:unknown,headers:unknown)=>headers??({})}));
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://ontology.test'}}}));
 vi.mock('../prompts',()=>({effectiveSystemPrompt:()=> 'Instructions'}));
@@ -8,18 +8,19 @@ vi.mock('../../../i18n',()=>({resolveLocale:(locale:string)=>locale}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({callbackUrl:'http://workbench.test'})}}));
 vi.mock('../skills',()=>({needsRetrievalScope:(skills:unknown[])=>skills.length>0,hasGovernanceSkill:()=>false,prepareAssistantSkills:mocks.skills}));
 vi.mock('../context',()=>({assistantOntologyContext:mocks.overview}));
-vi.mock('../store',()=>({assistantStore:{turns:async()=>[],recordRetrievalScope:mocks.record}}));
-vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=async()=>({messages:[{id:'input',messageSeq:1,message:{role:'user',content:'Question',timestamp:1}}]});}}));
+vi.mock('../store',()=>({assistantStore:{turns:mocks.turns,recordRetrievalScope:mocks.record}}));
+vi.mock('../../../infrastructure/agent-runtime/client',()=>({RuntimeClient:class{session=mocks.session;request=mocks.identities;}}));
 vi.mock('../../../platform/agent-runtime/runtime',()=>({messageText:(message:{content:string})=>message.content,runDefinition:(systemPrompt:string,_model:unknown,skills:unknown,_locale:unknown,externalMcp:unknown)=>({systemPrompt,skills,externalMcp})}));
-vi.mock('../ontology-retrieval',()=>({OntologyRetrievalClient:class{open=mocks.open;}}));
+vi.mock('../ontology-retrieval',()=>({OntologyRetrievalClient:class{constructor(_owner:unknown,readonly scope:string){} open=mocks.open; links=()=>mocks.links(this.scope);}}));
 vi.mock('../../agent-runtime/callback-credential',()=>({callbackCredential:mocks.callback}));
 import {prepareAnalystRun,type AssistantPreparation} from '../prepare';
 const analyst = {name:'analyst',namespace:{kind:'provider' as const,provider:'ontology'}};
 const digest = 'a'.repeat(64);
 function request(executionUserId:string|null=null):AssistantPreparation {
- return {a:{id:'agent',kind:'regular',skills:[analyst],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'run',class_names:['Person']},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'},executionUserId,executionCredentials:executionUserId===null?{token:'human-secret',locale:'en'}:{apiKey:'executor-key',locale:'en',executionUserId}} as unknown as AssistantPreparation;
+ return {lane:'live',a:{id:'agent',kind:'regular',skills:[analyst],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'run',class_names:['Person']},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'},executionUserId,executionCredentials:executionUserId===null?{token:'human-secret',locale:'en'}:{apiKey:'executor-key',locale:'en',executionUserId}} as unknown as AssistantPreparation;
 }
-beforeEach(()=>{vi.resetAllMocks();mocks.open.mockResolvedValue({id:"run"});mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:true});mocks.callback.mockReturnValue({value:'wbc2.sealed-callback'});mocks.overview.mockResolvedValue('Ontology');});
+beforeEach(()=>{vi.resetAllMocks();mocks.open.mockResolvedValue({id:"run"});mocks.turns.mockResolvedValue([]);mocks.identities.mockResolvedValue({runs:[]});
+ mocks.session.mockResolvedValue({messages:[{id:'input',runId:null,messageSeq:1,message:{role:'user',content:'Question',timestamp:1}}]});mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:true});mocks.callback.mockReturnValue({value:'wbc2.sealed-callback'});mocks.overview.mockResolvedValue('Ontology');});
 it('keeps the initiator identity for caller ownership and native skills in self mode',async()=>{
  const input=request();const run=await prepareAnalystRun(input);
  expect(run.definition.engine).toBe('pi');
@@ -87,4 +88,16 @@ it('tells a run for the user that the page line only locates, so attributes are 
  // A delegated run is not read by the user and has no page beside it.
  const delegated=await prepareAnalystRun({...request(),reader:'delegated'});
  expect(delegated.definition.systemPrompt).not.toContain('that line only locates');
+});
+it('continues and quotes only what runs of its own identity did in a conversation holding both',async()=>{
+ const live='11111111-1111-4111-8111-111111111111',preview='22222222-2222-4222-8222-222222222222';
+ const user=(id:string,runId:string|null,seq:number,content:string)=>({id,runId,messageSeq:seq,contextSeq:runId?seq:null,message:{role:'user',content,timestamp:seq}});
+ mocks.session.mockResolvedValue({messages:[user('m1',live,1,'Live question'),user('m2',preview,2,'Preview question'),user('input',null,3,'Question')]});
+ mocks.identities.mockResolvedValue({runs:[{runId:live,executionKind:'live'},{runId:preview,executionKind:'preview'}]});
+ mocks.turns.mockResolvedValue([{id:live,retrieval_scope_id:'live-scope'},{id:preview,retrieval_scope_id:'preview-scope'}]);
+ mocks.links.mockImplementation(async(scope:string)=>[{retrievalId:scope+'-retrieval'}]);
+ await prepareAnalystRun(request());
+ expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({continuationIds:['live-scope-retrieval'],recentUserMessages:['Live question','Question']}),expect.anything());
+ await prepareAnalystRun({...request(),lane:'preview'});
+ expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({continuationIds:['preview-scope-retrieval'],recentUserMessages:['Preview question','Question']}),expect.anything());
 });

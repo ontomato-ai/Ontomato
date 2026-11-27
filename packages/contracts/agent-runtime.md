@@ -441,6 +441,16 @@ recipient's; an answer to a preview's question is that preview's input. It joins
 waiting run only with the same identity, otherwise it queues as a run of its own; a preview's
 answer to a live run's question is refused before anything is written. The authority a provider
 settles at prepare is stored with the intent, so stopping and queueing read it.
+Results and answers are addressed by contract and continue the run they report or answer to. Any
+other input is bounded by its sender: it joins a run only when that run reaches no further than the
+sender (identity, execution context, classes within the sender's, execution account), and a run it
+starts takes the sender's authority, root, human recipient and execution account.
+A run's identity is also its lane in the session: runs of one identity share a native engine,
+process space (`sessions/<digest>` for live, `sessions/<digest>-preview` for preview) and resume
+reference (`sessions.engine_ref`, `sessions.preview_engine_ref`); an engine opened afresh is given
+only what runs of its identity consumed, and only live runs read stored compaction summaries.
+`GET /v1/channel/sessions/:sessionId/run-identities` returns each run's identity for hosts that read
+or close the conversation.
 See `execution-context.md`.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 

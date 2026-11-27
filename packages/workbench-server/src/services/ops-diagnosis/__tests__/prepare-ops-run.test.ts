@@ -101,6 +101,7 @@ it("prepares a diagnosis run on assistant_sessions using the agent row model and
     credentials: { token: "secret-token", locale: "en" },
     executionUserId: null,
     executionCredentials: { token: "secret-token", locale: "en" },
+    lane: "live",
   }));
 
   expect(prepared.definition.agentId).toBe(agentId);
@@ -130,6 +131,7 @@ it("validates and narrates the current placement when invoked from an operations
     credentials: { token: "secret-token", locale: "en" },
     executionUserId: null,
     executionCredentials: { token: "secret-token", locale: "en" },
+    lane: "live",
     pageSkillContext: {
       applicationId: "operations", entryKey: "ops-turn-evidence", pageKey: "ops-turn-evidence",
       useId: "ops-turn-evidence", panelId: "builtin-product-ops-turn-evidence", path: "/operations/turn-evidence", memberPath: [],

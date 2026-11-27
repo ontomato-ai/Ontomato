@@ -219,15 +219,48 @@ class AgentChannelBoundaryTest {
     String create=JSONObject.of("agentId",OntologyAgentStore.RETRIEVER).toJSONString();
     mvc.perform(post("/ontology/ai/sessions").header(OntologyAgentAccess.AGENT_EXECUTION_HEADER,RUN).header("Idempotency-Key",SESSION)
         .contentType(MediaType.APPLICATION_JSON).content(create)).andExpect(status().isForbidden());
+    String send=JSONObject.of("message","Count the orders").toJSONString();
+    mvc.perform(post("/ontology/ai/sessions/"+SESSION+"/runs").header(OntologyAgentAccess.AGENT_EXECUTION_HEADER,RUN).header("Idempotency-Key",RUN)
+        .contentType(MediaType.APPLICATION_JSON).content(send)).andExpect(status().isForbidden());
     verify(callers,never()).open(anyString(),any(OntologyAgentAccess.Context.class));
     verify(runtime,never()).json(anyString(),anyString(),anyString(),anyString(),any(),any());
     verify(host,never()).create(any(),any(),any());
+    verify(host,never()).send(any(),any(),any(),any(),any(),any(),anyBoolean());
     // A person outside the product, without it, starts an agent and opens a conversation as before.
     mvc.perform(post("/platform/agent-channel/commands").contentType(MediaType.APPLICATION_JSON).content(start)).andExpect(status().isOk());
     mvc.perform(post("/ontology/ai/sessions").header("Idempotency-Key",SESSION).contentType(MediaType.APPLICATION_JSON).content(create))
         .andExpect(status().isCreated());
     verify(runtime).json(eq("a"),eq(RUN),eq("/v1/channel/commands"),eq("POST"),any(),isNull());
     verify(host).create(SESSION,OntologyAgentStore.RETRIEVER,owner);
+    when(access.forSessionUse(any(),eq(SESSION))).thenReturn(new OntologyAgentAccess.Context(owner,null,"tk",null,"en",null,null));
+    mvc.perform(post("/ontology/ai/sessions/"+SESSION+"/runs").header("Idempotency-Key",RUN).contentType(MediaType.APPLICATION_JSON).content(send))
+        .andExpect(status().isAccepted());
+    verify(host).send(eq(SESSION),eq(RUN),eq("Count the orders"),isNull(),isNull(),any(),eq(false));
+  }
+
+  @Test void aPreviewDeletesOnlyAConversationThatHoldsNoLiveRun() throws Exception {
+    var runtime=mock(AgentRuntimeClient.class);
+    var access=mock(OntologyAgentAccess.class);
+    var host=mock(OntologyAgentHost.class);
+    var owner=new OntologyAgentStore.Owner("U","a");
+    when(access.reader(any(),eq(SESSION),isNull())).thenReturn(owner);
+    String path="/v1/channel/sessions/"+SESSION+"/run-identities";
+    var identities=(java.util.function.Function<List<String>,JSONObject>)kinds->JSONObject.of("runs",kinds.stream()
+        .map(kind->JSONObject.of("runId",RUN,"executionKind",kind)).toList());
+    when(runtime.json("a",SESSION,path,"GET",null,null)).thenReturn(identities.apply(List.of("preview","live")));
+    var mvc=MockMvcBuilders.standaloneSetup(new OntologyAgentController(host,access,runtime,mock(OntologyRetrievalService.class)))
+        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    String preview="{\"kind\":\"preview\"}";
+    var refused=mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION).header(io.ontomato.dataengine.service.PreviewExecution.HEADER,preview))
+        .andExpect(status().isUnprocessableEntity()).andReturn().getResponse().getContentAsString();
+    assertTrue(refused.contains(io.ontomato.dataengine.service.PreviewExecution.WRITE_CODE), refused);
+    // Nothing is cancelled, closed or removed.
+    verify(host,never()).delete(any(),any());
+    when(runtime.json("a",SESSION,path,"GET",null,null)).thenReturn(identities.apply(List.of("preview")));
+    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION).header(io.ontomato.dataengine.service.PreviewExecution.HEADER,preview)).andExpect(status().isNoContent());
+    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION)).andExpect(status().isNoContent());
+    verify(host,times(2)).delete(SESSION,owner);
+    verify(runtime,times(2)).json("a",SESSION,path,"GET",null,null);
   }
 
   @Test void aPreviewStopsOnlyAPreviewsRun() throws Exception {

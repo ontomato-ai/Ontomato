@@ -275,7 +275,11 @@ const humanIntentFactsSchema = commonIntentFactsSchema.extend({
   ...currentOperationFields,
   redactedSecretFields: panelOwnerOperationDescriptorSchema.shape.secretFields,
   source: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("human") }).strict(),
+    z.object({
+      kind: z.literal("human"),
+      /** Present when a person prepared it in a preview: whoever dispatches it, its business-data write is refused. */
+      executionKind: z.literal("preview").optional(),
+    }).strict(),
     z.object({
       kind: z.literal("agent-page"),
       sessionId: runtimeIdSchema,

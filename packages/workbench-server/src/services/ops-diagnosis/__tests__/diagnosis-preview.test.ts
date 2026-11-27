@@ -22,6 +22,7 @@ vi.mock("../../../infrastructure/postgres", () => ({
   getPostgresPool: () => ({ query: async (sql: string, params: unknown[]) => {
     if (sql.startsWith("SELECT * FROM ops_sessions")) return { rows: state.rows.has(String(params[0])) ? [state.rows.get(String(params[0]))] : [] };
     if (sql.startsWith("SELECT session_id FROM ops_run_intents")) return { rows: [{ session_id: sessionId }] };
+    if (sql.startsWith("DELETE FROM ops_sessions")) { state.rows.delete(String(params[0])); return { rowCount: 1 }; }
     throw new Error(sql);
   } }),
   qualifiedTable: (name: string) => name,
@@ -73,6 +74,7 @@ beforeEach(() => {
   vi.spyOn(RuntimeClient.prototype, "request").mockImplementation(async (path: string, _method?: string, body?: unknown) => {
     sent.push({ path, body });
     if (path.includes("/intents/")) return { channel: { authority: { classNames: [], executionKind: runIdentity } } };
+    if (path.endsWith("/run-identities")) return { runs: [{ runId, executionKind: runIdentity }] };
     if (path.endsWith("/runs")) throw Object.assign(new Error("captured"), { status: 418 });
     return {};
   });
@@ -123,4 +125,19 @@ it("lets a preview stop only a preview's run", async () => {
   runIdentity = "preview";
   expect((await post(`/sessions/${sessionId}/runs/${runId}/cancel`, preview)).status).toBe(200);
   expect(sent.some(entry => entry.path.endsWith(`/run-intents/${runId}/cancel`))).toBe(true);
+});
+
+it("lets a preview delete only a diagnosis conversation that holds no live run, before anything is removed", async () => {
+  const remove = vi.spyOn(RuntimeClient.prototype, "deleteSession").mockResolvedValue(undefined as never);
+  await post("/sessions", {}, { agentId: DIAGNOSIS_AGENT_ID });
+  const drop = (headers: Record<string, string>) => fetch(`${base}/sessions/${sessionId}`, { method: "DELETE", headers });
+  const refused = await drop(preview);
+  expect(refused.status).toBe(422);
+  expect(await refused.json()).toMatchObject({ error: { code: PREVIEW_WRITE_FORBIDDEN } });
+  expect(remove).not.toHaveBeenCalled();
+  expect(state.rows.has(sessionId)).toBe(true);
+  runIdentity = "preview";
+  expect((await drop(preview)).status).toBe(204);
+  expect(remove).toHaveBeenCalledOnce();
+  expect(state.rows.has(sessionId)).toBe(false);
 });

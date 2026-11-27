@@ -129,7 +129,8 @@ router.get(
 router.delete(
   "/sessions/:sessionId",
   wrap(async (req, res) => {
-    await service.delete(id(req, "sessionId"), context(req).owner);
+    const { owner, credentials } = context(req);
+    await service.delete(id(req, "sessionId"), owner, credentials);
     res.sendStatus(204);
   }),
 );
@@ -140,6 +141,8 @@ router.patch("/sessions/:sessionId", wrap(async (req, res) => {
 router.post(
   "/sessions/:sessionId/runs",
   wrap(async (req, res) => {
+    // A run messages another conversation only through its own agent channel, never as its user.
+    refuseAgentExecution(req);
     const c = context(req);
     res
       .status(202)

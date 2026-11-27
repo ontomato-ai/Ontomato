@@ -47,10 +47,31 @@ it("rejects deleting a session with a preparing runtime turn before touching ont
   );
   const closeScope = vi.spyOn(OntologyRetrievalClient.prototype, "closeScope").mockResolvedValue();
 
-  await expect(assistantService.delete(sessionId, owner)).rejects.toMatchObject({
+  await expect(assistantService.delete(sessionId, owner, {})).rejects.toMatchObject({
     status: 409,
     code: "SESSION_BUSY",
   });
+  expect(closeScope).not.toHaveBeenCalled();
+  expect(query).not.toHaveBeenCalled();
+});
+
+it("refuses a preview deleting a conversation that holds a live run, before anything is closed or removed", async () => {
+  const query = vi.fn();
+  vi.mocked(getPostgresPool).mockReturnValue({ query } as unknown as ReturnType<typeof getPostgresPool>);
+  vi.spyOn(assistantStore, "session").mockResolvedValue({ id: sessionId } as Awaited<ReturnType<typeof assistantStore.session>>);
+  const identities = vi.spyOn(RuntimeClient.prototype, "request").mockResolvedValue({ runs: [
+    { runId: "22222222-2222-4222-8222-222222222222", executionKind: "preview" },
+    { runId: "33333333-3333-4333-8333-333333333333", executionKind: "live" },
+  ] });
+  const read = vi.spyOn(RuntimeClient.prototype, "session");
+  const remove = vi.spyOn(RuntimeClient.prototype, "deleteSession");
+  const closeScope = vi.spyOn(OntologyRetrievalClient.prototype, "closeScope");
+  await expect(assistantService.delete(sessionId, owner, { executionKind: "preview" })).rejects.toMatchObject({
+    status: 422, code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验",
+  });
+  expect(identities).toHaveBeenCalledWith(`/v1/channel/sessions/${sessionId}/run-identities`);
+  expect(read).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
   expect(closeScope).not.toHaveBeenCalled();
   expect(query).not.toHaveBeenCalled();
 });

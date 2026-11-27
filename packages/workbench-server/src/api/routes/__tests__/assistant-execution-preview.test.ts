@@ -85,7 +85,7 @@ beforeAll(async () => {
   });
   workbench.use("/api/praxis", createPraxisRouter(praxis));
   workbench.use("/api", panelOperationsRouter);
-  const conversations = { create: opened } as unknown as AgentHostService<[AssistantCredentials]>;
+  const conversations = { create: opened, send: opened } as unknown as AgentHostService<[AssistantCredentials]>;
   workbench.use("/api/assistant", createAgentHostRouter(conversations));
   workbench.use("/api/observe/agent", createAgentHostRouter(conversations));
   state.workbench = await listen(workbench);
@@ -185,22 +185,22 @@ it("keeps a malformed path an ordinary request that its owner refuses, not a pro
   expect(reached.filter(entry => entry.marker !== null)).toEqual([]);
 });
 
-it("keeps a run from acting as its user at agent entries: they see the run's callback, and new conversations are refused", async () => {
+it("keeps a run from acting as its user at agent entries: they see the run's callback, and conversations refuse it", async () => {
   // DataRAG refuses its external agent entry and a new conversation for a request carrying the run's execution header,
   // which the proxy always sets: a run cannot drop or replace it.
   const attempts: Record<string, string>[] = [{}, { [AGENT_EXECUTION_HEADER]: "" }, { [AGENT_EXECUTION_HEADER]: "another-run" }];
   for (const headers of attempts) {
-    for (const path of ["ontology/platform/agent-channel/commands", "ontology/ontology/ai/sessions"]) {
+    for (const path of ["ontology/platform/agent-channel/commands", "ontology/ontology/ai/sessions", `ontology/ontology/ai/sessions/${intent}/runs`]) {
       await callback(path, "POST", headers);
       expect(reached.map(entry => entry.execution), path).toEqual([run]);
     }
   }
   // The workbench's own new top-level conversations refuse it before opening anything.
-  for (const path of ["workbench/api/assistant/sessions", "workbench/api/observe/agent/sessions"]) {
+  for (const path of ["workbench/api/assistant/sessions", "workbench/api/observe/agent/sessions",
+    `workbench/api/assistant/sessions/${intent}/runs`, `workbench/api/observe/agent/sessions/${intent}/runs`]) {
     const response = await send(path, "POST", { "Idempotency-Key": intent });
     expect(response.status, path).toBe(403);
     expect(await response.json()).toMatchObject({ error: { code: "FORBIDDEN", message: "A run starts agents through its own agent channel" } });
   }
   expect(opened).not.toHaveBeenCalled();
 });
-

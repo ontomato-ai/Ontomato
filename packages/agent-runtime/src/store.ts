@@ -27,6 +27,14 @@ export interface Scope {
   hostId: string;
   domainId: string;
 }
+/**
+ * A run's identity, which is also the lane of its session it runs in: runs of one identity share their model context,
+ * native engine and its resume reference, and never see another identity's.
+ */
+export type ExecutionLane = "live" | "preview";
+export function runLane(run: { channel?: { authority: { executionKind: ExecutionLane } } | null }): ExecutionLane {
+  return run.channel?.authority.executionKind ?? "live";
+}
 export interface MessageRow {
   id: string;
   runId: string | null;
@@ -157,7 +165,7 @@ export class RuntimeStore {
       // Additive changes to version 2, applied to fresh and existing schemas alike.
       await c.query(`ALTER TABLE ${this.table("runs")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
       await c.query(`ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS engine text,
-        ADD COLUMN IF NOT EXISTS engine_ref text`);
+        ADD COLUMN IF NOT EXISTS engine_ref text, ADD COLUMN IF NOT EXISTS preview_engine_ref text`);
       await c.query(`CREATE TABLE IF NOT EXISTS ${this.table("code_executions")} (
         host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
         fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
@@ -517,20 +525,21 @@ export class RuntimeStore {
       return { run, replayed: false, inputId: messageId };
     });
   }
-  async sessionEngine(scope: Scope, id: string) {
+  /** The session's engine, and the native reference its runs of one identity resume: each identity has its own. */
+  async sessionEngine(scope: Scope, id: string, lane: ExecutionLane) {
     const { rows: [row] } = await this.pool.query(
-      `SELECT engine,engine_ref,latest_run_id FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+      `SELECT engine,engine_ref,preview_engine_ref,latest_run_id FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
       [...values(scope), id],
     );
     if (!row) missing();
     return {
       engine: (row.engine ?? (row.latest_run_id ? defaultEngineId : null)) as string | null,
-      engineRef: row.engine_ref as string | null,
+      engineRef: (lane === "preview" ? row.preview_engine_ref : row.engine_ref) as string | null,
     };
   }
-  async saveEngineRef(scope: Scope, id: string, engineRef: string) {
+  async saveEngineRef(scope: Scope, id: string, lane: ExecutionLane, engineRef: string) {
     await this.pool.query(
-      `UPDATE ${this.table("sessions")} SET engine_ref=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+      `UPDATE ${this.table("sessions")} SET ${lane === "preview" ? "preview_engine_ref" : "engine_ref"}=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
       [...values(scope), id, engineRef],
     );
   }
@@ -591,9 +600,21 @@ export class RuntimeStore {
     return rows.map(row=>({id:row.id,runId:row.run_id,messageSeq:Number(row.seq),contextSeq:Number(row.context_seq),message:row.message}));
   }
   /** Model order follows safe consumption, independently of receipt order in the visible transcript. */
-  async contextMessages(scope: Scope, sessionId: string): Promise<MessageRow[]> {
-    const { rows } = await this.pool.query(`SELECT id,run_id,context_seq,message FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND context_seq IS NOT NULL ORDER BY context_seq`, [...values(scope),sessionId]);
-    return rows.map(row => ({ id: row.id, runId: row.run_id, messageSeq: Number(row.context_seq), contextSeq: Number(row.context_seq), message: row.message }));
+  /** The session's model context, each message with the identity of the run that consumed it. */
+  async contextMessages(scope: Scope, sessionId: string): Promise<Array<MessageRow & { lane: ExecutionLane }>> {
+    const { rows } = await this.pool.query(`SELECT m.id,m.run_id,m.context_seq,m.message,COALESCE(r.run->'channel'->'authority'->>'executionKind','live') AS lane
+      FROM ${this.table("messages")} m JOIN ${this.table("runs")} r ON r.host_id=m.host_id AND r.domain_id=m.domain_id AND r.id=m.run_id
+      WHERE m.host_id=$1 AND m.domain_id=$2 AND m.session_id=$3 AND m.context_seq IS NOT NULL ORDER BY m.context_seq`, [...values(scope),sessionId]);
+    return rows.map(row => ({ id: row.id, runId: row.run_id, messageSeq: Number(row.context_seq), contextSeq: Number(row.context_seq), message: row.message, lane: row.lane }));
+  }
+  /** The identity of every run the session holds or has queued (a queued one's is its intent's). */
+  async sessionRunLanes(scope: Scope, sessionId: string): Promise<Array<{ runId: string; lane: ExecutionLane }>> {
+    const { rows } = await this.pool.query(`SELECT id AS run_id,COALESCE(run->'channel'->'authority'->>'executionKind','live') AS lane FROM ${this.table("runs")}
+        WHERE host_id=$1 AND domain_id=$2 AND session_id=$3
+      UNION SELECT key,intent->'channel'->'authority'->>'executionKind' FROM ${this.table("admissions")}
+        WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND intent IS NOT NULL AND NOT deleted
+      ORDER BY 1`, [...values(scope),sessionId]);
+    return rows.map(row => ({ runId: row.run_id, lane: row.lane }));
   }
   /** Select a bounded receipt range before loading bodies; a run can consume several user inputs. */
   async historyWindow(scope: Scope, sessionId: string, query: SessionHistoryQuery) {
