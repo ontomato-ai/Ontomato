@@ -135,7 +135,7 @@ function entryTextOf(description: PanelFormDescription): EntryText {
 }
 
 /** One entry as the list and the detail read it, named and labelled in the reader's language. */
-function entryRow(entry: KnowledgeEntry, text: EntryText, terms: readonly string[] = []): PanelRecord {
+function entryRow(entry: KnowledgeEntry, text: EntryText, terms: readonly string[] = [], locale?: string): PanelRecord {
   const label = entry.knowledgeTitle;
   const subtitle = contentSummary(entry.knowledgeText, terms);
   const tags = entry.knowledgeTags ?? [];
@@ -143,6 +143,10 @@ function entryRow(entry: KnowledgeEntry, text: EntryText, terms: readonly string
     knowledgeText: entry.knowledgeText,
     knowledgeTags: tags.join(", "),
     status: entry.status === 1 ? text.approvedName : text.pendingName,
+    ...(entry.submission ? {
+      submissionConversation: `${entry.submission.sessionId} / ${entry.submission.runId}`,
+      submissionQuote: entry.submission.quote,
+    } : {}),
   };
   const highlights = terms.length && entryMatches(entry, terms) ? rowHighlights(label, subtitle, fields, terms) : undefined;
   return {
@@ -153,6 +157,10 @@ function entryRow(entry: KnowledgeEntry, text: EntryText, terms: readonly string
       knowledgeText: text.fieldLabels.knowledgeText,
       knowledgeTags: text.fieldLabels.knowledgeTags,
       status: text.fieldLabels.status,
+      ...(entry.submission ? {
+        submissionConversation: tForLocale(locale, "panels.knowledge.submissionConversation"),
+        submissionQuote: tForLocale(locale, "panels.knowledge.submissionQuote"),
+      } : {}),
     },
     fields,
     tones: { status: entry.status === 1 ? "success" : "warning" },
@@ -166,10 +174,10 @@ const countsFactsSchema = z.object({ entries: z.array(searchableEntrySchema), la
 const recordFactsSchema = z.object({ entry: knowledgeEntrySchema, text: entryTextSchema });
 
 /** The owner returns the complete filtered list even when the declaration supplies cursor or size. */
-function knowledgeQuery(entries: KnowledgeEntry[], text: EntryText, { search, status }: z.infer<typeof queryInputSchema>) {
+function knowledgeQuery(entries: KnowledgeEntry[], text: EntryText, { search, status }: z.infer<typeof queryInputSchema>, locale?: string) {
   const terms = searchTerms(search);
   const kept = statusFiltered(searchedEntries(entries, terms), status ?? "all");
-  return { rows: kept.map(entry => entryRow(entry, text, terms)), total: kept.length };
+  return { rows: kept.map(entry => entryRow(entry, text, terms, locale)), total: kept.length };
 }
 
 function knowledgeCounts(entries: SearchableEntry[], text: StatusLabels, search: string | undefined, locale?: string) {
@@ -191,7 +199,7 @@ export function createBusinessKnowledgePanelReadPresenter(locale?: string) {
   return {
     query(payload: unknown, { primaryKey: _key, ...params }: Record<string, unknown>) {
       const { entries, text } = queryFactsSchema.parse(payload);
-      return knowledgeQuery(Object.values(entries), text, queryInputSchema.parse(params));
+      return knowledgeQuery(Object.values(entries), text, queryInputSchema.parse(params), locale);
     },
     counts(payload: unknown, { primaryKey: _key, ...params }: Record<string, unknown>) {
       const { entries, labels } = countsFactsSchema.parse(payload);
@@ -199,7 +207,7 @@ export function createBusinessKnowledgePanelReadPresenter(locale?: string) {
     },
     record(payload: unknown, { primaryKey: _key, ...params }: Record<string, unknown>) {
       const { entry, text } = recordFactsSchema.parse(payload);
-      return entryRow(entry, text, searchTerms(recordInputSchema.parse(params).search));
+      return entryRow(entry, text, searchTerms(recordInputSchema.parse(params).search), locale);
     },
     form: presentKnowledgeForm,
     createForm: presentKnowledgeForm,
@@ -262,7 +270,7 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
     async query(params: Record<string, unknown>) {
       const query = queryInputSchema.parse(params);
       const [entries, text] = await Promise.all([ownerEntries(), ownerEntryText()]);
-      return knowledgeQuery(entries, text, query);
+      return knowledgeQuery(entries, text, query, viewer.locale);
     },
     /** The status counts over the searched entries, in tab order. */
     async counts(params: Record<string, unknown>) {
@@ -275,7 +283,7 @@ export function createBusinessKnowledgeReadAdapter(viewer: AssistantCredentials,
       const { search } = recordInputSchema.parse(params);
       const found = (await ownerEntries()).find(entry => entry.knowledgeID === primaryKey);
       if (!found) throw new HttpError(404, `Business knowledge ${primaryKey} is not in this domain`, "KNOWLEDGE_UNAVAILABLE");
-      return entryRow(found, await ownerEntryText(), searchTerms(search));
+      return entryRow(found, await ownerEntryText(), searchTerms(search), viewer.locale);
     },
     /** The form for a target: a draft's blank one, or one entry's with submitted values and a changed field. */
     async form(primaryKey: string | undefined, params: Record<string, unknown>) {

@@ -87,7 +87,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
             null, java.util.Map.of(), Set.of(), Set.of()));
     when(authorization.decide(any(), any())).thenReturn(new Decision(true, null, null));
     governance=new KnowledgeGovernanceService(store,new AgentRuntimeClient(url,"ontology","http://ontology"),
-      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),mock(AdminService.class),executions,identities,language,authorization);
+      new GovernanceRuntimeClient(url,"service"),definitions,grants,mock(KnowledgeService.class),new PendingKnowledgeService(mock(KnowledgeService.class), store),mock(AdminService.class),executions,identities,language,authorization);
     governance.initialize();
     var access=new OntologyAgentAccess(mock(QueryAccessService.class),identity,grants,store);
     var filter=new io.ontomato.dataengine.controller.QueryGrantFilter(grants, executions, identity);

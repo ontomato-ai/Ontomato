@@ -24,6 +24,7 @@ import io.ontomato.dataengine.service.authorization.AuthorizationService.Decisio
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
+import io.ontomato.dataengine.service.agent.PendingKnowledgeService;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.service.impl.AdminServiceImpl;
 import io.ontomato.dataengine.util.SpringBeanUtil;
@@ -61,6 +62,9 @@ class AdminCountBoundaryTest {
         controller = new AdminController();
         ReflectionTestUtils.setField(controller, "adminService", admin);
         ReflectionTestUtils.setField(controller, "knowledgeService", knowledge);
+        var submissions = mock(PendingKnowledgeService.class);
+        when(submissions.submissions("current-domain")).thenReturn(Map.of());
+        ReflectionTestUtils.setField(controller, "pendingKnowledgeService", submissions);
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     }

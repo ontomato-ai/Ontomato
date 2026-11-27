@@ -4,7 +4,7 @@ import type { AgentInput } from "@ontomato/contracts/agent-channel";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
 import { ASSISTANT_INTERACTION_CONTEXT } from "./interaction-context";
-import { prepareAssistantSkills, needsRetrievalScope, hasGovernanceSkill } from "./skills";
+import { prepareAssistantSkills, needsRetrievalScope, needsKnowledgeSubmit, hasGovernanceSkill } from "./skills";
 import { assistantStore, type AgentRow, type AssistantOwner, type SessionRow, type TurnRow } from "./store";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { runDefinition, type AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -51,6 +51,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const { skills, currentPage, pageControl } = prepared;
   const skillRefs=skills.map(({skill})=>skill);
   const retrieval=needsRetrievalScope(skillRefs);
+  const knowledgeSubmit=needsKnowledgeSubmit(skillRefs);
   const continuationIds=new Set<string>();
   const identities=retrieval ? await sessionRunIdentities(owner,sessionId) : new Map<string,string>();
   if(retrieval)for(const previous of await assistantStore.turns(sessionId)) {
@@ -88,7 +89,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
     reader ? agentVisibilityPrompt(reader) : "",
   ].filter(Boolean).join("\n\n");
   const businessCallbacks = {
-    ...executionBusinessCallbacks(owner, credentials, id, { pageControl, retrieval }),
+    ...executionBusinessCallbacks(owner, credentials, id, { pageControl, retrieval, knowledgeSubmit }),
     ...(governance && {
       governance: governanceBusinessCallback(
         session.id,
