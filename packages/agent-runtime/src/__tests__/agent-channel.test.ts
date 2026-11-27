@@ -448,12 +448,6 @@ it("a question without a creator is output on its own run and does not stop it",
   await expect(port.execute(scope,run,{op:"send",session:"parent",message:"Which period?",needsInput:true,defaultAssumption:"Current year"})).resolves.toMatchObject({questionId:inputId,taskId:runId,recipient:"caller"});
   expect(receive).toHaveBeenCalledWith(scope,sessionId,expect.objectContaining({kind:"agent-question",defaultAssumption:"Current year"}),{outputRunId:runId});
 });
-it("native commands refuse preview authority before contacting a provider",async()=>{
-  const {channel:port}=channel();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
-  await expect(port.execute(scope,{...run,channel:{...context,authority:{...context.authority,executionKind:"preview"}}},{op:"list"})).rejects.toMatchObject({status:422,code:"PREVIEW_WRITE_FORBIDDEN"});
-  expect(fetch).not.toHaveBeenCalled();
-});
-
 it("fails explicitly after runtime memory is lost and never passes a missing credential to prepare",async()=>{
   const {runtime}=channel(),port=new AgentChannel(runtime);
   vi.spyOn(port.facts,"intent").mockResolvedValue({id:runId,session:source.session,channel:context,inputId,status:"running",language:"en",createdAt:new Date(0).toISOString(),error:null,cancelled:false});
@@ -691,7 +685,7 @@ it("parses a task-stream notification with no invented pending-question property
  }]}).notifications?.[0].message).toEqual(notification);
 });
 
-it("authenticates the session command, uses its active run and refuses preview-marked and late calls", async () => {
+it("authenticates the session command, uses its active run, delegates a preview run as itself and refuses late calls", async () => {
   const { channel: port } = channel();
   const workspace = await mkdtemp(path.join(os.tmpdir(), "channel-cmd-"));
   const activeRun: RuntimeRun = { ...run, status: "running", executionUserId: "exec-user", channel: humanChannel };
@@ -722,7 +716,6 @@ it("authenticates the session command, uses its active run and refuses preview-m
     expect((await post(commandUrl(scope.hostId, "other-domain"), credential)).status).toBe(401);
     expect((await post(commandUrl(), { "X-Ontomato-Callback-Credential": "wrong-secret" })).status).toBe(401);
     expect((await post(commandUrl(), credential, { op: "list", caller: "forged" })).status).toBe(400);
-    expect((await post(commandUrl(), { ...credential, "X-Ontomato-Execution-Context": "{\"kind\":\"preview\"}" })).status).toBe(422);
 
     // 6. Live run start via script channel inherits requestedBy/root/userRecipient and can be read/cancelled natively
     const childId = inputId;
@@ -739,9 +732,11 @@ it("authenticates the session command, uses its active run and refuses preview-m
     };
     const reserve = vi.spyOn(port.facts, "reserve").mockResolvedValue(childIntent);
     vi.spyOn(port, "prepare").mockResolvedValue();
+    // What a caller says about its execution context is not its identity: the run's channel is.
     const started = await post(commandUrl(), {
       "X-Ontomato-Callback-Credential": secret,
       "X-Ontomato-Run-Id": runId,
+      "X-Ontomato-Execution-Context": "{\"kind\":\"preview\"}",
     }, { op: "start", agent: context.agent, message: "Count active rows" });
     expect(started.status).toBe(200);
     const startedBody = await started.json();
@@ -766,17 +761,16 @@ it("authenticates the session command, uses its active run and refuses preview-m
     await port.execute(scope, activeRun, { op: "cancel", taskId: childId });
     expect(cancel).toHaveBeenCalledWith(scope, childIntent);
 
-    // 7. Preview authority on the active run is refused with 422
-    active.run = {
-      ...activeRun,
-      channel: { ...humanChannel, authority: { ...humanChannel.authority, executionKind: "preview" } },
-    };
-    const previewRun = await post(commandUrl(), {
+    // 7. A preview run delegates as itself: the agent it starts inherits the same preview authority
+    const previewAuthority = { ...humanChannel.authority, executionKind: "preview" as const };
+    active.run = { ...activeRun, channel: { ...humanChannel, authority: previewAuthority } };
+    reserve.mockClear();
+    const previewStart = await post(commandUrl(), {
       "X-Ontomato-Callback-Credential": secret,
       "X-Ontomato-Run-Id": runId,
-    });
-    expect(previewRun.status).toBe(422);
-    expect(await previewRun.json()).toMatchObject({ error: { code: "PREVIEW_WRITE_FORBIDDEN" } });
+    }, { op: "start", agent: context.agent, message: "Count active rows" });
+    expect(previewStart.status).toBe(200);
+    expect(reserve.mock.calls[0]?.[4]).toMatchObject({ requestedBy: source, authority: previewAuthority });
 
     active.sealed = true;
     expect((await post(commandUrl(), credential)).status).toBe(409);
@@ -850,6 +844,20 @@ it("queues unattended requests and keeps subsequent human input in the running h
 
   await port.prepare((await finish())!);
   expect(prepares[0]).toMatchObject({ runId: nextRunId, input: unattended, userRecipient: null });
+});
+
+it("queues a preview's message as its own preview run instead of steering a running live turn", async () => {
+  const { port, send, finish, prepares } = currentRun(humanChannel, "running");
+  const preview = { ...humanChannel, authority: { ...humanChannel.authority, executionKind: "preview" as const } };
+  expect((await send(nextRunId, preview, userInput)).delivery).toMatchObject({ runId: nextRunId, delivery: "run", status: "starting" });
+  // A live message from the same person still steers the live turn.
+  expect((await send(followUpId, humanChannel, { ...userInput, content: "And last month?" })).delivery)
+    .toMatchObject({ runId, delivery: "steer", status: "running" });
+  const prepare = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) =>
+    JSON.parse(String(init.body)).mode === "steer" ? Response.json({ accepted: true }) : prepare(url, init));
+  await port.prepare((await finish())!);
+  expect(prepares[0]).toMatchObject({ runId: nextRunId, input: userInput, authority: preview.authority });
 });
 
 it("keeps the original human message when the background turn is still preparing", async () => {

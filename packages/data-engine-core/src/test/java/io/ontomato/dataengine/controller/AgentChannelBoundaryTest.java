@@ -155,13 +155,49 @@ class AgentChannelBoundaryTest {
     var admitted=new OntologyAgentAccess.Context(owner,dataAccess,null,null,"en",null,null,"V");
     when(callers.retrieval(any(),eq("a"),eq("en"),any(),isNull(),any(),eq(executorRef))).thenReturn(admitted);
     var retrieval=mock(OntologyRetrievalService.class);
-    when(retrieval.prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),eq(admitted))).thenReturn(JSONObject.of("input",JSONObject.of("role","user","content","Question")));
+    when(retrieval.prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),eq(admitted),eq("live"))).thenReturn(JSONObject.of("input",JSONObject.of("role","user","content","Question")));
     var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class),mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
     var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     var body=JSONObject.parseObject(input("run","user"));body.getJSONObject("agent").put("agentId",OntologyAgentStore.RETRIEVER);body.put("executionActor",executorRef);
     var response=mvc.perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(body.toJSONString())).andExpect(status().isOk()).andReturn().getResponse();
     assertEquals("V",JSONObject.parseObject(response.getContentAsString()).getJSONObject("executionActor").getString("userId"));
-    verify(retrieval).prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),argThat(context->context.owner().userId().equals("U")&&context.access().user().getId().equals("V")));
+    verify(retrieval).prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),argThat(context->context.owner().userId().equals("U")&&context.access().user().getId().equals("V")),eq("live"));
+  }
+
+  @Test void aRetrieverAPreviewRunDelegatesToIsAdmittedAndRunsAsThatPreview() throws Exception {
+    var owner=new OntologyAgentStore.Owner("U","a");
+    var permission=new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission();permission.setFullData(true);
+    var admitted=new OntologyAgentAccess.Context(owner,new io.ontomato.dataengine.service.QueryAccessService.Access(
+        new io.ontomato.dataengine.service.QueryAccessService.GrantUser("U","a"),permission,null,null,null),null,null,"en",null,null);
+    when(callers.retrieval(any(),eq("a"),eq("en"),any(),any(),any(),isNull())).thenReturn(admitted);
+    var retrieval=mock(OntologyRetrievalService.class);
+    when(retrieval.prepareRun(eq(SESSION),eq(RUN),any(),eq(RUN),isNull(),eq(RUN),eq(admitted),eq("preview")))
+        .thenReturn(JSONObject.of("definition",JSONObject.of("systemPrompt","Retrieve"),
+            "authority",JSONObject.of("classNames",List.of(),"executionKind","preview")));
+    var controller=new AgentChannelController(callers,directory,store,mock(AgentRuntimeClient.class),mock(WorkbenchServiceAuthentication.class),retrieval,mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),mock(OntologyAgentAccess.class),mock(io.ontomato.dataengine.service.LangService.class),mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
+    var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var body=JSONObject.parseObject(input("run","user"));body.getJSONObject("agent").put("agentId",OntologyAgentStore.RETRIEVER);
+    body.put("authority",JSONObject.of("classNames",List.of(),"executionKind","preview"));
+    body.put("requestedBy",JSONObject.of("session",JSONObject.of("providerId","workbench","sessionId",SESSION),"runId",RUN));
+    var response=mvc.perform(post("/platform/agent-channel/prepare").header("X-Domain-Id","a").contentType(MediaType.APPLICATION_JSON).content(body.toJSONString())).andExpect(status().isOk()).andReturn().getResponse();
+    assertEquals("preview",JSONObject.parseObject(response.getContentAsString()).getJSONObject("authority").getString("executionKind"));
+  }
+
+  @Test void anAgentAPreviewStartsThroughTheChannelRunsAsThePreview() throws Exception {
+    var runtime=mock(AgentRuntimeClient.class);
+    var access=mock(OntologyAgentAccess.class);
+    var owner=new OntologyAgentStore.Owner("U","a");
+    when(access.authenticated(any())).thenReturn(new OntologyAgentAccess.Context(owner,null,"tk",null,"en",null,null));
+    when(callers.open(anyString(),any(OntologyAgentAccess.Context.class))).thenReturn(JSONObject.of("id",RUN,"domainId","a"));
+    var controller=new AgentChannelController(callers,directory,store,runtime,mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),access,mock(io.ontomato.dataengine.service.LangService.class),mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
+    var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    String start=JSONObject.of("op","start","agent",JSONObject.of("providerId","workbench","agentId","analyst"),"message","How many orders?").toJSONString();
+    mvc.perform(post("/platform/agent-channel/commands").header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"{\"kind\":\"preview\"}")
+        .contentType(MediaType.APPLICATION_JSON).content(start)).andExpect(status().isOk());
+    mvc.perform(post("/platform/agent-channel/commands").contentType(MediaType.APPLICATION_JSON).content(start)).andExpect(status().isOk());
+    var sent=org.mockito.ArgumentCaptor.forClass(JSONObject.class);
+    verify(runtime,times(2)).json(eq("a"),eq(RUN),eq("/v1/channel/commands"),eq("POST"),sent.capture(),isNull());
+    assertEquals(List.of("preview","live"),sent.getAllValues().stream().map(request->request.getJSONObject("authority").getString("executionKind")).toList());
   }
 
   @Test void callerRestorationUsesTheExecutorPermissionWithoutReplacingTheInitiator() {

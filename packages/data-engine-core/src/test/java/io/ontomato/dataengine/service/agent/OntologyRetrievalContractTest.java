@@ -291,7 +291,7 @@ class OntologyRetrievalContractTest {
     var context=new OntologyAgentAccess.Context(owner,new QueryAccessService.Access(new QueryAccessService.GrantUser(owner.userId(),owner.domainId()),permission,null,null,null,List.of()),"fixture-user",null,"en",Instant.now().plusSeconds(60).toEpochMilli(),caller);
     var parameters=new JSONObject(value);parameters.remove("question");
     inputs.computeIfAbsent(session,ignored->new JSONArray()).add(JSONObject.of("id",run,"message",input));
-    var prepared=retrieval.prepareRun(session,run,input,run,answer?null:parameters,caller==null?run:caller,context);
+    var prepared=retrieval.prepareRun(session,run,input,run,answer?null:parameters,caller==null?run:caller,context,"live");
     runtime.json(owner.domainId(),run,"/v1/sessions/"+session+"/runs","POST",prepared,run);
     retrieval.recover();
     for(int attempt=0;attempt<200 && !store.run(session,run,owner).getBooleanValue("runtime_admitted");attempt++) Thread.sleep(10);
@@ -689,7 +689,7 @@ class OntologyRetrievalContractTest {
     assertEquals(run,decision.getString("runId"));assertEquals("Current year",decision.getString("text"));assertEquals("task",decision.getString("scope"));assertEquals("user",decision.getString("source"));assertNull(decision.get("supersedesId"));
     runs.get(run).getJSONObject("run").put("status","stopped");runs.get(run).getJSONObject("run").put("stopReason","stop");
     retrieval.reconcile(session,run,owner,runtime.run(owner.domainId(),run));
-    String next=id();input.put("content","Active employees only");inputs.get(session).add(JSONObject.of("id",next,"message",input));retrieval.prepareRun(session,next,input,next,null,next,context);
+    String next=id();input.put("content","Active employees only");inputs.get(session).add(JSONObject.of("id",next,"message",input));retrieval.prepareRun(session,next,input,next,null,next,context,"live");
     assertEquals(2,store.run(session,next,owner).getIntValue("decision_revision"));
     assertEquals("Active employees only",store.retrieval(session,owner).getJSONArray("decisions").getJSONObject(1).getString("text"));
   }
@@ -945,7 +945,7 @@ class OntologyRetrievalContractTest {
         ExecutionTarget.LIVE, executor.getId(), owner.userId());
     var context = new OntologyAgentAccess.Context(owner, selected, null, null, "en", deadline, caller, executor.getId());
     var message = JSONObject.of("role", "user", "content", "U delegated question", "timestamp", 1);
-    var prepared = retrieval.prepareRun(session, run, message, id(), null, run, context);
+    var prepared = retrieval.prepareRun(session, run, message, id(), null, run, context, "live");
     var originalContext = JSON.parseObject(prepared.getJSONObject("definition").getString("context"));
     assertEquals(List.of("U original words"), originalContext.getList("userQuotes", String.class));
     var answer = JSONObject.of("role", "notification", "kind", "agent-answer", "source", JSONObject.of("kind", "user"),

@@ -10,6 +10,15 @@ test("a preview identity is carried to the entries that run something and to no 
     ["/data-query", "/vectorResource/upload"],
     ["/data-query", "/platform/triggers/t-1/runs"],
     ["", "/praxis/runs"],
+    ["", "/praxis/runs/r-1/tick"],
+    ["", "/praxis/runs/r-1/acts-on"],
+    ["", "/praxis/runs/r-1/case/submit"],
+    ["", "/praxis/runs/r-1/case/fill"],
+    ["", "/praxis/runs/r-1/case/close"],
+    ["", "/praxis/steps/s-1/decide"],
+    ["", "/praxis/steps/s-1/assign"],
+    ["/data-query", "/platform/agent-channel/commands"],
+    ["/data-query", "/ontology/ai/sessions/s-1/runs"],
     ["", "/panel-operations/intents/i-1/dispatch"],
     ["", "/assistant/sessions"],
     ["", "/assistant/sessions/s-1/runs"],
@@ -23,8 +32,9 @@ test("a preview identity is carried to the entries that run something and to no 
     ["/data-query", "POST", "/platform/triggers"],
     ["/data-query", "GET", "/platform/triggers/t-1/runs"],
     ["/data-query", "GET", "/action/execute"],
-    ["", "POST", "/praxis/runs/r-1/tick"],
     ["", "GET", "/praxis/runs"],
+    ["", "GET", "/praxis/runs/r-1/case"],
+    ["", "GET", "/praxis/inbox"],
     ["", "POST", "/assistant/agent-definitions"],
     ["", "POST", "/panel-operations/intents"],
     // The same path at the other service is another owner's.
@@ -39,4 +49,9 @@ test("a running entry is recognised however its owner would still route the spel
     assert.ok(carriesPreviewIdentity("/data-query", "post", path), path);
   for (const path of ["/PRAXIS/runs", "/praxis/runs/", "/assistant/sessions/a%2Fb/runs"])
     assert.ok(carriesPreviewIdentity("", "POST", path), path);
+});
+
+test("a malformed percent-encoding is read as it is spelled, without failing the caller", () => {
+  assert.ok(!carriesPreviewIdentity("/data-query", "POST", "/action/%E0%A4%A"));
+  assert.ok(carriesPreviewIdentity("", "POST", "/praxis/runs/%E0%A4%A/tick"));
 });

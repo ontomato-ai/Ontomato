@@ -244,7 +244,8 @@ function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageCom
   const declared=projectionId===undefined?undefined:panel!.conversationEntries.get(projectionId);
   // Both sides are parsed by the same schema, so their keys come in the same order.
   if(!declared||JSON.stringify(declared)!==JSON.stringify(asked))throw new Error('This conversation entry is not declared by the panel');
-  return expandDeclaredComposer({ ...declared, slot });
+  // A preview frame's entry opens the preview's own conversation, whichever composer on the page takes it.
+  return expandDeclaredComposer({ ...declared, slot, ...(executionContext(source).kind==='preview'&&{preview:true as const}) });
 }
 /**
  * Expands the page's composer, the one shown last, with a conversation entry a panel's member declares: a frame's once

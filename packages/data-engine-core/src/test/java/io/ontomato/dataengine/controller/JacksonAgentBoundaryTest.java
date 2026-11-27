@@ -157,7 +157,7 @@ class JacksonAgentBoundaryTest {
   @Test
   void retrievalPreparePreservesAnExplicitlyUnknownConditionMapping() throws Exception {
     var retrieval = mock(OntologyRetrievalService.class);
-    when(retrieval.prepareRun(anyString(), anyString(), any(), anyString(), any(), anyString(), any()))
+    when(retrieval.prepareRun(anyString(), anyString(), any(), anyString(), any(), anyString(), any(), anyString()))
         .thenAnswer(call -> {
           var input = call.getArgument(2, JSONObject.class);
           var context = call.getArgument(4, JSONObject.class);

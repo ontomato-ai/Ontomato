@@ -16,17 +16,20 @@ export const previewExecutionContextHeader = JSON.stringify(previewExecutionCont
 type PlatformService = "" | "/data-query";
 
 /**
- * The entries a preview identity is carried to, by service, method and path below the API root, and the only ones. Building
- * is never here: saving, publishing or deleting a definition, a model, a panel, an application or a trigger is judged by
- * its owner against the caller's permission. Running is: an entry that writes business data, or that starts on the spot
- * an execution which does, refuses a preview with PREVIEW_WRITE_FORBIDDEN.
+ * The entries a preview identity is carried to, by service, method and path below the API root, and the only ones. In a
+ * preview, writing formal business data, and starting or advancing a formal run, are refused with
+ * PREVIEW_WRITE_FORBIDDEN; only reads, and the writes that build (saving a definition, registering, workspace files), go
+ * through, judged by their owner against the caller's permission.
  *
  * - DataRAG writes business data at `/action/execute`, the `/writeFunctionOperation/…` writes (`query` reads) and
- *   `/vectorResource/upload|delete`; `/platform/triggers/{id}/runs` runs a trigger now, whatever it targets.
- * - Node starts a workflow run at Praxis through `/praxis/runs` and carries a prepared panel operation out as the caller
- *   at `/panel-operations/intents/{id}/dispatch`.
- * - Node's `/assistant/sessions` and `/assistant/sessions/{id}/runs` make a conversation and its runs the preview's, so
- *   what those runs execute is refused at the entries above.
+ *   `/vectorResource/upload|delete`, and runs a trigger now at `/platform/triggers/{id}/runs`, whatever it targets.
+ * - Praxis, through Node's `/praxis`, starts a workflow run (`/runs`), advances one (`/runs/{id}/tick`), changes its case
+ *   (`/runs/{id}/case/submit|fill|close`) or its business target (`/runs/{id}/acts-on`), and decides or reassigns a step
+ *   (`/steps/{id}/decide|assign`).
+ * - Node carries a prepared panel operation out as the caller at `/panel-operations/intents/{id}/dispatch`.
+ * - Agent runs a preview starts are the preview's, so what they execute is refused at the entries above: Node's
+ *   `/assistant/sessions` and `/assistant/sessions/{id}/runs`, DataRAG's `/ontology/ai/sessions/{id}/runs` and the
+ *   agent channel's `/platform/agent-channel/commands`.
  *
  * `/action/trial`, `/metricView/test` and `/ontology/ai/generation/…` write only inside the run's own sandbox.
  */
@@ -35,11 +38,23 @@ const previewEntries: readonly (readonly [service: PlatformService, method: stri
   ["/data-query", "POST", /^\/writeFunctionOperation\/(?:insert|update|delete|createEdge|deleteEdge|appendVector|updateVector|deleteVector)$/iu],
   ["/data-query", "POST", /^\/vectorResource\/(?:upload|delete)$/iu],
   ["/data-query", "POST", /^\/platform\/triggers\/[^/]+\/runs$/iu],
-  ["", "POST", /^\/praxis\/runs$/iu],
+  ["/data-query", "POST", /^\/ontology\/ai\/sessions\/[^/]+\/runs$/iu],
+  ["/data-query", "POST", /^\/platform\/agent-channel\/commands$/iu],
+  ["", "POST", /^\/praxis\/(?:runs|runs\/[^/]+\/(?:tick|acts-on|case\/(?:submit|fill|close))|steps\/[^/]+\/(?:decide|assign))$/iu],
   ["", "POST", /^\/panel-operations\/intents\/[^/]+\/dispatch$/iu],
   ["", "POST", /^\/assistant\/sessions$/iu],
   ["", "POST", /^\/assistant\/sessions\/[^/]+\/runs$/iu],
 ];
+
+/** A path's percent-decoded spelling, or none when its encoding is malformed: no owner routes such a path. */
+function decodedSpellings(path: string): string[] {
+  try {
+    return [decodeURIComponent(path)];
+  } catch (error) {
+    if (error instanceof URIError) return [];
+    throw error;
+  }
+}
 
 /**
  * Whether a preview's request to this service carries its identity. The path is read as loosely as any owner routes it,
@@ -48,7 +63,7 @@ const previewEntries: readonly (readonly [service: PlatformService, method: stri
  */
 export function carriesPreviewIdentity(service: string, method: string, path: string): boolean {
   const raw = path.split("?")[0]!;
-  const spellings = [raw, decodeURIComponent(raw)].map(spelling => spelling.replace(/\/{2,}/gu, "/").replace(/(?<=.)\/$/u, ""));
+  const spellings = [raw, ...decodedSpellings(raw)].map(spelling => spelling.replace(/\/{2,}/gu, "/").replace(/(?<=.)\/$/u, ""));
   return previewEntries.some(([entryService, entryMethod, pattern]) => entryService === service
     && entryMethod === method.toUpperCase() && spellings.some(spelling => pattern.test(spelling)));
 }

@@ -91,7 +91,7 @@ describe("product Praxis route", () => {
     expect(upstreamCalls).toBe(0);
   });
 
-  it("passes a preview's identity to Praxis only when it starts a workflow run", async () => {
+  it("passes a preview's identity to Praxis only when it starts or advances a formal run", async () => {
     const seen: string[] = [];
     const upstream = express();
     upstream.use((request, response) => {
@@ -113,10 +113,14 @@ describe("product Praxis route", () => {
     });
 
     await send("runs", "POST", previewExecutionContextHeader);
+    await send("steps/s-1/decide", "POST", previewExecutionContextHeader);
     await send("runs", "POST", '{"kind":"live"}');
     await send("runs", "GET", previewExecutionContextHeader);
-    await send("runs/r-1/tick", "POST", previewExecutionContextHeader);
-    expect(seen).toEqual([`POST /runs ${previewExecutionContextHeader}`, "POST /runs -", "GET /runs -", "POST /runs/r-1/tick -"]);
+    await send("runs/r-1/case", "GET", previewExecutionContextHeader);
+    expect(seen).toEqual([
+      `POST /runs ${previewExecutionContextHeader}`, `POST /steps/s-1/decide ${previewExecutionContextHeader}`,
+      "POST /runs -", "GET /runs -", "GET /runs/r-1/case -",
+    ]);
   });
 });
 

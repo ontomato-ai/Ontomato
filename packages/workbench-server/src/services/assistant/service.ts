@@ -302,7 +302,7 @@ export const assistantService = {
   },
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
     const { sessionId, runId: id, input, authority } = body;
-    const { agent: a } = await this.admitAgent(body.agent.agentId,owner,credentials,authority,body.requestedBy);
+    const { agent: a } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
     // When a logged-in user is present (direct chat or delegated sub-agent under a user chat),
     // both reads and writes inherit that user's permissions. `execution_user_id` is only for unattended automation.
     const executionUserId = isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
@@ -332,19 +332,14 @@ export const assistantService = {
       return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader }, appId);
     });
     await assistantStore.admitted(id,message);
-    // A run the preview started keeps its identity: an App Builder run is always one, any other agent's when its run was.
+    // A run keeps the identity it was started or delegated with: an App Builder run is always the preview's, any other
+    // agent's when its caller's run was.
     const preview = isAppBuilderKind(a.kind) || authority.executionKind === "preview";
     return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: preview ? "preview" : "live" } };
   },
-  /**
-   * `requestedBy` names the run that delegates to this agent. A preview run never delegates to an agent that would run
-   * live. A person's own run in a preview's conversation delegates nothing: it is admitted and runs as the preview.
-   */
-  async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"],
-    requestedBy?: AgentRunContext["requestedBy"]) {
+  async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
     const a = await assistantStore.agent(id,owner);
     if (!a.enabled) throw new HttpError(409,"Agent disabled","AGENT_DISABLED");
-    if (authority?.executionKind === "preview" && requestedBy && !isAppBuilderKind(a.kind)) throw new HttpError(403,"Preview runs cannot delegate to a live agent","PREVIEW_EXECUTION_FORBIDDEN");
     if (authority?.classNames.length) {
       a.class_names = a.class_names.length ? a.class_names.filter(name => authority.classNames.includes(name)) : authority.classNames;
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");

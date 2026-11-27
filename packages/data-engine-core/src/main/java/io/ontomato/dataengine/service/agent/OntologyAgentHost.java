@@ -186,14 +186,16 @@ public class OntologyAgentHost {
     return publicSnapshot(runtime.run(owner.domainId(), run));
   }
 
+  /** `preview` makes the run the preview's: what it executes is refused where it would run. */
   public JSONObject send(
-      String session, String key, String message, String replyTo, Integer selectedOption, OntologyAgentAccess.Context context)
+      String session, String key, String message, String replyTo, Integer selectedOption, OntologyAgentAccess.Context context,
+      boolean preview)
       throws Exception {
     if (message == null || message.isBlank())
       throw AgentHttpException.invalid("Message is required");
     var accepted = isRetrieval(session, context.owner())
-      ? retrieval.send(session,key,message,replyTo,selectedOption,context)
-      : actionCreation.send(session,key,message,replyTo,selectedOption,context);
+      ? retrieval.send(session,key,message,replyTo,selectedOption,context,preview)
+      : actionCreation.send(session,key,message,replyTo,selectedOption,context,preview);
     var delivery=accepted.getJSONObject("delivery");
     accepted.put("snapshot","run".equals(delivery.getString("delivery")) && "running".equals(delivery.getString("status")) ? run(session,delivery.getString("runId"),context.owner()) : null);
     return accepted;

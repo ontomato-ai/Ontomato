@@ -41,7 +41,6 @@ export const agentChannelService = {
     const owner = restored.owner, credentials = { ...restored.credentials,locale: body.language };
     const provider = body.agent.providerId;
     if (provider !== "workbench" && provider !== "observe") throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
-    if (body.authority.executionKind === "preview" && body.requestedBy) throw new HttpError(422,"Agent delegation is not available in a preview execution","PREVIEW_WRITE_FORBIDDEN");
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
@@ -49,7 +48,7 @@ export const agentChannelService = {
         await requireDiagnosisAgent(owner, credentials);
       } else {
         const session = await assistantStore.session(body.sessionId, owner);
-        await assistantService.admitAgent(session.agent_id, owner, credentials, body.authority, body.requestedBy);
+        await assistantService.admitAgent(session.agent_id, owner, credentials, body.authority);
       }
       if (body.agent.providerId === "workbench" &&
         (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {
@@ -66,7 +65,7 @@ export const agentChannelService = {
     let prepared;
     // Legacy "observe" provider compatibility layer for `/api/observe/agent/*` and pre-migration ops_sessions.
     if (provider === "observe") {
-      if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "PREVIEW_EXECUTION_FORBIDDEN");
+      if (body.agent.agentId !== DIAGNOSIS_AGENT_ID) throw new HttpError(404, "Agent not found", "NOT_FOUND");
       await createDiagnosis(body.sessionId, owner, credentials, null, true);
       prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body));
     } else {

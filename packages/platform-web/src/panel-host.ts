@@ -742,7 +742,8 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         use: null,
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
         confirmOperation: () => Promise.reject(Object.assign(new Error(PREVIEW_WRITE_MESSAGE), { code: PREVIEW_WRITE_FORBIDDEN })),
-        expandPageComposer: expandDeclaredComposer,
+        // Its conversation entries open the preview's own conversation, whichever composer on the page takes them.
+        expandPageComposer: entry => expandDeclaredComposer({ ...entry, preview: true }),
         navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},
         locale: global.locale,
@@ -802,7 +803,8 @@ export function appCandidatePanelHost(
         use: null,
         read: request => readPanelData({ source: { kind: "app-candidate", app: source.app }, ...request }),
         confirmOperation: () => Promise.reject(Object.assign(new Error(PREVIEW_WRITE_MESSAGE), { code: PREVIEW_WRITE_FORBIDDEN })),
-        expandPageComposer: expandDeclaredComposer,
+        // Its conversation entries open the preview's own conversation, whichever composer on the page takes them.
+        expandPageComposer: entry => expandDeclaredComposer({ ...entry, preview: true }),
         navigate: panelNavigator(platformRouter()),
         messages: source.panel.content.messages ?? {},
         locale: global.locale,

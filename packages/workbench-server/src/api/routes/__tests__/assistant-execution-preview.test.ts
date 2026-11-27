@@ -118,8 +118,13 @@ it("carries a preview run's identity to every running entry, however the request
   expect(await callback("ontology/writeFunctionOperation/insert")).toEqual([`java POST /writeFunctionOperation/insert ${marked}`]);
   expect(await callback("ontology/vectorResource/upload")).toEqual([`java POST /vectorResource/upload ${marked}`]);
   expect(await callback("ontology/platform/triggers/trigger-1/runs")).toEqual([`java POST /platform/triggers/trigger-1/runs ${marked}`]);
-  // Through the workbench: Praxis's run start, and a dispatched panel operation's Action, in any letter case Node routes.
-  expect(await callback("workbench/api/praxis/runs")).toEqual([`praxis POST /runs ${marked}`]);
+  expect(await callback("ontology/platform/agent-channel/commands")).toEqual([`java POST /platform/agent-channel/commands ${marked}`]);
+  expect(await callback("ontology/ontology/ai/sessions/s-1/runs")).toEqual([`java POST /ontology/ai/sessions/s-1/runs ${marked}`]);
+  // Through the workbench: every Praxis entry that starts, advances or changes a formal run, in any letter case Node
+  // routes, and a dispatched panel operation's Action.
+  for (const entry of ["runs", "runs/r-1/tick", "runs/r-1/acts-on", "runs/r-1/case/submit", "runs/r-1/case/fill",
+    "runs/r-1/case/close", "steps/s-1/decide", "steps/s-1/assign"])
+    expect(await callback(`workbench/api/praxis/${entry}`)).toEqual([`praxis POST /${entry} ${marked}`]);
   expect(await callback("workbench/API/Praxis/runs")).toEqual([`praxis POST /runs ${marked}`]);
   expect(await callback(`workbench/api/panel-operations/intents/${intent}/dispatch`)).toEqual([`java POST /action/execute ${marked}`]);
   expect(await callback(`workbench/api/Panel-Operations/intents/${intent}/dispatch/`)).toEqual([`java POST /action/execute ${marked}`]);
@@ -134,8 +139,8 @@ it("leaves a preview run's reads, building and other workflow calls unmarked, an
   expect(await callback("ontology/function/save", "POST", { [EXECUTION_CONTEXT_HEADER]: '{"kind":"live"}' }))
     .toEqual(["java POST /function/save -"]);
   expect(await callback("ontology/platform/triggers")).toEqual(["java POST /platform/triggers -"]);
-  expect(await callback("workbench/api/praxis/runs", "GET")).toEqual(["praxis GET /runs -"]);
-  expect(await callback("workbench/api/praxis/runs/r-1/tick")).toEqual(["praxis POST /runs/r-1/tick -"]);
+  for (const read of ["runs", "runs/r-1", "runs/r-1/case", "inbox", "subjects", "steps/s-1/candidates", "workflows/w-1/template"])
+    expect(await callback(`workbench/api/praxis/${read}`, "GET")).toEqual([`praxis GET /${read} -`]);
 });
 
 it("refuses a caller's different identity at a running entry, and marks nothing for a live run", async () => {
@@ -151,5 +156,17 @@ it("refuses a caller's different identity at a running entry, and marks nothing 
   state.kind = "live";
   expect(await callback("ontology/action/execute")).toEqual(["java POST /action/execute -"]);
   expect(await callback("workbench/api/praxis/runs")).toEqual(["praxis POST /runs -"]);
+  expect(await callback("workbench/api/praxis/steps/s-1/decide")).toEqual(["praxis POST /steps/s-1/decide -"]);
   expect(await callback(`workbench/api/panel-operations/intents/${intent}/dispatch`)).toEqual(["java POST /action/execute -"]);
+});
+
+it("keeps a malformed path an ordinary request that its owner refuses, not a proxy failure", async () => {
+  const token = callbackCredential({
+    scope: { purpose: "execution", capability: "ontology" }, runId: run, expiresAt: Date.now() + 60000, token: "initiator-token", apiKey: "",
+  }).value;
+  const response = await fetch(`${proxy}/api/assistant/executions/${run}/ontology/action/%E0%A4%A`, {
+    method: "POST", headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": token, "X-Ontomato-Run-Id": run }, body: "{}",
+  });
+  expect(response.status).toBeLessThan(500);
+  expect(reached.filter(entry => entry.marker !== null)).toEqual([]);
 });

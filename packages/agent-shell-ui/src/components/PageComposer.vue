@@ -45,6 +45,8 @@ const reading = ref(false);
 let waiting: PageComposerRequest | null = null;
 let load = 0;
 let newSession = false;
+/** The entry being written is a preview's: it goes to a new conversation opened as the preview's. */
+let preview = false;
 
 watch(
   () => (props.pageSkill ? JSON.stringify(props.pageSkill) : null),
@@ -57,6 +59,7 @@ watch(
     presets.value = undefined;
     waiting = null;
     newSession = false;
+    preview = false;
     reading.value = false;
     reading.value = true;
     const candidates = skill
@@ -107,9 +110,11 @@ function candidatesFailureReason(reason: unknown, own: string): string {
 async function ask(text: string) {
   if (!agentId.value) return;
   try {
-    if (newSession) await counter.ask(agentId.value, text, props.page, { submit: true, newSession: true, pageSkill: props.pageSkill });
+    if (preview) await counter.ask(agentId.value, text, props.page, { submit: true, newSession: true, pageSkill: props.pageSkill, preview: true });
+    else if (newSession) await counter.ask(agentId.value, text, props.page, { submit: true, newSession: true, pageSkill: props.pageSkill });
     else await counter.ask(agentId.value, text, props.page);
     newSession = false;
+    preview = false;
   } catch (reason) {
     emit("error", reason instanceof Error ? reason.message : String(reason));
   }
@@ -127,11 +132,15 @@ const expand: PageComposerExpand = async (request) => {
   }
   const named = entryAgent(request.target, agents.value, pageDefault.value, presets.value);
   newSession = named !== null && request.newSession === true;
+  preview = request.preview === true;
   if (named) chosen.value = named;
   const text = request.prefill?.trim();
   if (named && request.submit && text) {
     try {
-      await counter.ask(named, text, props.page, { submit: true, newSession: request.newSession, pageSkill: props.pageSkill });
+      await counter.ask(named, text, props.page, {
+        submit: true, newSession: request.newSession || preview, pageSkill: props.pageSkill, ...(preview && { preview: true as const }),
+      });
+      preview = false;
     } catch (reason) {
       emit("error", reason instanceof Error ? reason.message : String(reason));
     }

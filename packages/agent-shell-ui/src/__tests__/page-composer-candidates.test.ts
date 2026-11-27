@@ -342,3 +342,12 @@ it("hands a declared submission and its fresh-session choice to the counter on c
     submit: true, newSession: true, pageSkill: dashboardSkill,
   });
 });
+
+it("hands a preview's entry to the counter as a new conversation of the preview's own", async () => {
+  const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant")], defaultAgentId: "assistant" }) });
+  await new Promise((resolve) => setTimeout(resolve));
+  await drawn.served.at(-1)!({ target: { kind: "page-default" }, prefill: "Check the current selection", submit: true, preview: true });
+  expect(drawn.ask).toHaveBeenCalledWith("assistant", "Check the current selection", "/dashboards?dashboardId=board-a", {
+    submit: true, newSession: true, pageSkill: dashboardSkill, preview: true,
+  });
+});

@@ -6,7 +6,14 @@ import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversat
  * panel's own declaration before it gets here; the composer then only opens, picks the target among this page's current
  * candidates and applies the declared click behavior.
  */
-export type PageComposerRequest = PanelConversationEntry & { slot?: string };
+export type PageComposerRequest = PanelConversationEntry & {
+  slot?: string;
+  /**
+   * Set by the host when the entry is a preview's: the conversation it opens is the preview's, so every run in it runs as
+   * the preview. It never continues a conversation the reader already has.
+   */
+  preview?: true;
+};
 export type PageComposerExpand = (request: PageComposerRequest) => void | Promise<void>;
 
 /**

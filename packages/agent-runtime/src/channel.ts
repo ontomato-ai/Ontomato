@@ -361,16 +361,20 @@ export class AgentChannel {
       if(queued && input.role==="notification" && input.kind==="agent-message" && !steer) throw new RuntimeError(409,"SESSION_BUSY","Use steer to insert an ordinary message into a running session");
       if(web && input.role==="notification" && input.replyTo && !(await this.facts.pendingQuestions(scope,target.sessionId)).some(question=>question.requestId===input.replyTo)) throw new RuntimeError(400,"INVALID_REPLY","replyTo must identify a pending question for this conversation's user");
       const openRun=session.activeRunId && this.runtime.acceptsInput(scope,session.activeRunId) ? session.activeRunId : null;
+      // An input joins a run only when it would run with the same identity: a preview's input never steers a live run,
+      // nor a live input a preview's; it queues as its own run instead.
       const sameSource = (candidate: AgentRunIntent) => {
         if (web) {
           return Boolean(web.channel.userRecipient) === Boolean(candidate.channel.userRecipient)
             && Boolean(web.channel.requestedBy) === Boolean(candidate.channel.requestedBy)
-            && web.channel.actor.domainId === candidate.channel.actor.domainId;
+            && web.channel.actor.domainId === candidate.channel.actor.domainId
+            && web.channel.authority.executionKind === candidate.channel.authority.executionKind;
         }
         if (external) {
           return !candidate.channel.userRecipient
             && !candidate.channel.requestedBy
-            && external.actor.domainId === candidate.channel.actor.domainId;
+            && external.actor.domainId === candidate.channel.actor.domainId
+            && external.authority.executionKind === candidate.channel.authority.executionKind;
         }
         return true;
       };
@@ -519,7 +523,6 @@ export class AgentChannel {
     const current=external?null:run as RuntimeRun;
     const channel=external?{actor:external.actor,authority:external.authority,root:null,agent:null}:current!.channel;
     if (!channel) throw new RuntimeError(403, "ACTOR_REQUIRED", "The host did not supply an agent caller");
-    if (channel.authority.executionKind === "preview") throw new RuntimeError(422,"PREVIEW_WRITE_FORBIDDEN","The agent channel is not available in a preview execution");
     const source:AgentExecutionRef|undefined=current?{session:{providerId:channel.agent!.providerId,sessionId:current.sessionId},runId:current.id}:undefined;
     if (command.op === "list") {
       const directories = await Promise.all((this.runtime.options.agentProviders ?? []).map(async provider => {

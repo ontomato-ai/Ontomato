@@ -86,13 +86,11 @@ it("runs a message a preview sends as the preview, and a live conversation sent 
 const authority = { classNames: [], executionKind: "preview" as const };
 const parent = { session: { providerId: "workbench", sessionId: "55555555-5555-4555-8555-555555555555" }, runId: "66666666-6666-4666-8666-666666666666" };
 
-it("admits a person's own preview run of any agent, and still refuses a preview run delegating to a live one", async () => {
+it("admits any agent for a preview run, whether a person starts it or a preview run delegates to it", async () => {
   await expect(assistantService.admitAgent(agentId, owner, live, authority)).resolves.toMatchObject({ agent: { id: agentId } });
-  await expect(assistantService.admitAgent(agentId, owner, live, authority, parent))
-    .rejects.toMatchObject({ status: 403, code: "PREVIEW_EXECUTION_FORBIDDEN" });
 });
 
-it("prepares a person's preview run as the preview, so the runtime never sees it turn live", async () => {
+it("prepares a preview run, a person's own or a delegated one, as the same preview, so the runtime never sees it turn live", async () => {
   vi.spyOn(assistantStore, "reserve").mockResolvedValue({ row: { id: runId } } as never);
   vi.spyOn(assistantStore, "admitted").mockResolvedValue(undefined as never);
   vi.spyOn(assistantStore, "create").mockResolvedValue({ row: { id: sessionId, workspace_id: null }, replayed: true } as never);
@@ -103,6 +101,9 @@ it("prepares a person's preview run as the preview, so the runtime never sees it
     root: { session: { providerId: "workbench", sessionId }, runId }, userRecipient: null,
   } as unknown as AgentPrepareRequest;
   expect((await assistantService.prepare(body, owner, live)).authority).toMatchObject({ executionKind: "preview" });
+  // The agent a preview run delegates to inherits its identity: it reads as usual, and what it runs is refused.
+  const delegated = { ...body, requestedBy: parent, root: parent } as unknown as AgentPrepareRequest;
+  expect((await assistantService.prepare(delegated, owner, live)).authority).toMatchObject({ executionKind: "preview" });
   const liveBody = { ...body, authority: { classNames: [], executionKind: "live" as const } };
   expect((await assistantService.prepare(liveBody, owner, live)).authority).toMatchObject({ executionKind: "live" });
 });
