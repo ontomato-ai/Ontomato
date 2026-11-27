@@ -21,7 +21,7 @@ class PrincipalDirectoryControllerTest {
         var directory = mock(IdentityPrincipalDirectory.class);
         var handler = new PrincipalDirectoryController(identity, directory).principalDirectoryPanelRead(new ObjectMapper()).handler();
         var subject = new SubjectContext(new VerifiedIdentity("domain", "reader", CredentialLimit.UNRESTRICTED),
-                new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false), Map.of(), Set.of(), Set.of());
+                new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false), Map.of(), Set.of(), Set.of());
         var ids = IntStream.range(0, 125).mapToObj(index -> "author-" + index).toList();
         var submitted = new java.util.ArrayList<>(ids);
         submitted.add(ids.getFirst());

@@ -2,6 +2,7 @@ package io.ontomato.dataengine.service.identity;
 
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Objects;
@@ -11,10 +12,12 @@ import org.springframework.stereotype.Service;
 public class AgentExecutionSettings {
   private final AgentExecutionIdentity identity;
   private final UserCredentials credentials;
+  private final AuthorizationSubjects subjects;
 
-  public AgentExecutionSettings(AgentExecutionIdentity identity, UserCredentials credentials) {
+  public AgentExecutionSettings(AgentExecutionIdentity identity, UserCredentials credentials, AuthorizationSubjects subjects) {
     this.identity = identity;
     this.credentials = credentials;
+    this.subjects = subjects;
   }
   public record Setting(String domainId, String operatorId, String oldExecutionUserId, String executionUserId) {}
   public record Resolution(String domainId, String agentId, String executionUserId, String initiatorId) {}
@@ -25,24 +28,20 @@ public class AgentExecutionSettings {
 
   public Options options(HttpServletRequest request, String keyword, int pageNum, int pageSize, String selected) {
     var actor = identity.operator(request);
-    boolean effectiveDomainAdministrator = identity.administrator(actor);
-    return new Options(effectiveDomainAdministrator,
-      selectableUsers(actor.domainId(), effectiveDomainAdministrator, keyword, pageNum, pageSize),
+    boolean administrator = subjects.resolveRoles(actor.domainId(), actor.userId()).administrator();
+    return new Options(administrator,
+      selectableUsers(actor.domainId(), administrator, keyword, pageNum, pageSize),
       selected == null ? null : identity.selected(actor.domainId(), selected));
   }
 
   public List<AgentExecutionIdentity.Option> options(SubjectContext subject, String keyword, int pageNum, int pageSize) {
-    return selectableUsers(subject.identity().domainId(), canSetExecutionUser(subject),
+    return selectableUsers(subject.identity().domainId(), subject.roles().administrator(),
       keyword, pageNum, pageSize);
   }
 
-  public static boolean canSetExecutionUser(SubjectContext subject) {
-    return subject.roles().effectiveDomainAdministrator();
-  }
-
-  private List<AgentExecutionIdentity.Option> selectableUsers(String domainId, boolean effectiveDomainAdministrator,
+  private List<AgentExecutionIdentity.Option> selectableUsers(String domainId, boolean administrator,
       String keyword, int pageNum, int pageSize) {
-    return effectiveDomainAdministrator ? identity.options(domainId, keyword, pageNum, pageSize) : List.of();
+    return administrator ? identity.options(domainId, keyword, pageNum, pageSize) : List.of();
   }
 
   public List<AgentExecutionIdentity.Selected> selected(SubjectContext subject, List<String> ids) {
@@ -53,13 +52,13 @@ public class AgentExecutionSettings {
     var actor = identity.operator(request);
     if (!Objects.equals(actor.userId(), setting.operatorId()) || !Objects.equals(actor.domainId(), setting.domainId()))
       throw new AgentHttpException(403, "FORBIDDEN", "Operator identity does not match");
-    boolean administrator = identity.administrator(actor);
+    boolean administrator = subjects.resolveRoles(actor.domainId(), actor.userId()).administrator();
     validateTarget(actor.domainId(), administrator, setting.oldExecutionUserId(), setting.executionUserId());
     return administrator;
   }
 
   public void validate(SubjectContext subject, String oldExecutionUserId, String executionUserId) {
-    validateTarget(subject.identity().domainId(), canSetExecutionUser(subject), oldExecutionUserId, executionUserId);
+    validateTarget(subject.identity().domainId(), subject.roles().administrator(), oldExecutionUserId, executionUserId);
   }
 
   private void validateTarget(String domainId, boolean administrator, String oldExecutionUserId, String executionUserId) {

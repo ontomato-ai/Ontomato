@@ -232,7 +232,7 @@ class BuildTestPostgresIntegrationTest {
       ReflectionTestUtils.setField(metrics, "subjectValues", new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
       var metricSubjects = mock(AuthorizationSubjects.class);
       when(metricSubjects.resolveRoles(owner.getDomainId(), owner.getId())).thenReturn(
-          new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false));
+          new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false));
       var metricPolicies = mock(AuthorizationStore.class);
       when(metricPolicies.policies(owner.getDomainId(), Set.of())).thenReturn(List.of());
       var metricAuthorization = new AuthorizationService(metricSubjects, metricPolicies,

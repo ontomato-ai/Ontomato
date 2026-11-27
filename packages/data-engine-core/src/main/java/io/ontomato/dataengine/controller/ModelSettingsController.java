@@ -238,7 +238,7 @@ public class ModelSettingsController {
         return JSONObject.of("retriever", readVisibleRetriever(subject));
       }
       var facts = JSONObject.of("editable", agentDefinitionEditable(authorization, subject, definition),
-          "canSetExecutionUser", AgentExecutionSettings.canSetExecutionUser(subject));
+          "canSetExecutionUser", subject.roles().administrator());
       addAgentFormValidation(facts, subject, parameters, execution);
       return facts;
     });
@@ -249,7 +249,7 @@ public class ModelSettingsController {
     return new WorkbenchPanelRead("platform:AgentDefinition", "createForm", (subject, parameters) -> {
       var create = authorization.decide(subject, new Create(Kind.AGENT));
       if (!create.allowed()) throw new AgentHttpException(403, create.code(), create.reason());
-      var facts = JSONObject.of("canSetExecutionUser", AgentExecutionSettings.canSetExecutionUser(subject));
+      var facts = JSONObject.of("canSetExecutionUser", subject.roles().administrator());
       addAgentFormValidation(facts, subject, parameters, execution);
       return facts;
     });

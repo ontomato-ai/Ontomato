@@ -286,7 +286,7 @@ class ObjectAuthorizationControllerTest {
 
     private void roles(boolean manager) {
         when(subjects.resolveRoles("domain", "user")).thenReturn(
-                new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), manager, false));
+                new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), manager));
     }
 
     private static String publication(String facts, String access) {

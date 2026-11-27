@@ -57,7 +57,7 @@ class FunctionCountBoundaryTest {
         var subjects = mock(AuthorizationSubjects.class);
         var roles = Set.of("member");
         when(subjects.resolveRoles("domain-a", "reader"))
-                .thenReturn(new RoleResolution(roles, roles, List.of(), Set.of(), Map.of(), false, false));
+                .thenReturn(new RoleResolution(roles, roles, List.of(), Set.of(), Map.of(), false));
         when(policies.policies("domain-a", roles)).thenReturn(List.of(new PolicyRef("member", "p1", PolicyKind.OBJECT)));
         var authorization = new AuthorizationService(subjects, policies, null, null, null);
         subject = authorization.resolveSubject(new VerifiedIdentity("domain-a", "reader", CredentialLimit.UNRESTRICTED));

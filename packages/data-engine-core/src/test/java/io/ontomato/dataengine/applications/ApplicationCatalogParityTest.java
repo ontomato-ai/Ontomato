@@ -62,7 +62,7 @@ class ApplicationCatalogParityTest {
         doReturn(List.of(local, foreign)).when(catalog).all();
         var controller = new ApplicationController(catalog, null, null);
         var subject = new SubjectContext(new VerifiedIdentity("domain-a", "alice", CredentialLimit.UNRESTRICTED),
-                new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false), Map.of(), Set.of(), Set.of());
+                new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false), Map.of(), Set.of(), Set.of());
         var expected = List.of(new ApplicationCatalog.PanelUseLocation("local", Map.of("en", "Local"), "one", "/applications/local/one"));
         for (var registration : List.of(controller.productPanelUsedByRows(), controller.productPanelReferenceGraph())) {
             assertEquals(expected, registration.handler().read(subject, Map.of("primaryKey", "target", "domainId", "domain-b")));
@@ -117,7 +117,7 @@ class ApplicationCatalogParityTest {
         var subjects = mock(AuthorizationSubjects.class);
         var store = mock(AuthorizationStore.class);
         when(subjects.resolveRoles("1", "system"))
-                .thenReturn(new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false));
+                .thenReturn(new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false));
         when(subjects.entryEntitlement(any())).thenReturn(true);
         var authorization = spy(new AuthorizationService(subjects, store, null, null, null));
 
@@ -165,7 +165,7 @@ class ApplicationCatalogParityTest {
     void registeredPartialEntryTableKeepsSavedEntriesAndUsesTheJavaOwner() {
         var subjects = mock(AuthorizationSubjects.class);
         when(subjects.resolveRoles("1", "system"))
-                .thenReturn(new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false, false));
+                .thenReturn(new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false));
         var authorization = new AuthorizationService(subjects, mock(AuthorizationStore.class), null, null, null);
         var app = domainApp("app-java-owner", "1", "admin", "Java-owned app");
         app.getJSONObject("entry").put("renderer", "panels");

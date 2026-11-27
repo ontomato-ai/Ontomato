@@ -62,7 +62,7 @@ class JacksonAgentBoundaryTest {
     var roles = Set.of("member");
     var policy = "action-policy";
     when(subjects.resolveRoles(caller.domainId(), caller.userId()))
-        .thenReturn(new RoleResolution(roles, roles, List.of(), Set.of(), Map.of(), false, false));
+        .thenReturn(new RoleResolution(roles, roles, List.of(), Set.of(), Map.of(), false));
     when(policies.policies(caller.domainId(), roles))
         .thenReturn(List.of(new PolicyRef("member", policy, PolicyKind.OBJECT)));
     var createTarget = new ObjectTarget(caller.domainId(), Kind.ACTION, "");

@@ -65,7 +65,7 @@ class ModelSettingsControllerTest {
   }
 
   @Test void agentDefinitionFormsUseTheCurrentCreateViewEditAndExecutionIdentityFacts() {
-    var roles = new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), true, false);
+    var roles = new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), true);
     var admin = new SubjectContext(viewer, roles, Map.of(), Set.of(), Set.of());
     var createGate = new Create(Kind.AGENT);
     var create = controller.agentDefinitionPanelCreateForm(authorization, mock(AgentExecutionSettings.class));
@@ -103,10 +103,10 @@ class ModelSettingsControllerTest {
   }
 
   @Test void agentFormValidationUsesTheSameIdentityAndModelOwnersInOrder() throws Exception {
-    var roles = new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), true, false);
+    var roles = new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), true);
     var admin = new SubjectContext(viewer, roles, Map.of(), Set.of(), Set.of());
     var executions = mock(AgentExecutionIdentity.class);
-    var settings = new AgentExecutionSettings(executions, null);
+    var settings = new AgentExecutionSettings(executions, null, null);
     when(authorization.decide(admin, new Create(Kind.AGENT))).thenReturn(new Decision(true, null, null));
     when(executions.requireTarget("verified-domain", "invalid"))
         .thenThrow(new AgentHttpException(403, "EXECUTION_USER_INVALID", "Member no longer active"));
