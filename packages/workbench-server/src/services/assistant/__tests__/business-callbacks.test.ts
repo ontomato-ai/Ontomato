@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   overview: vi.fn(),
   hasGovernance: vi.fn(),
-  authorize: vi.fn(),
 }));
 
 
@@ -43,11 +42,11 @@ vi.mock("../context", () => ({ assistantOntologyContext: mocks.overview }));
 vi.mock("../store", () => ({ assistantStore: { turns: async () => [], recordRetrievalScope: mocks.record } }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: class {
-    session = async () => ({ messages: [{ id: "input", messageSeq: 1, message: { role: "user", content: "Question", timestamp: 1 } }] });
+    session = async () => ({ messages: [{ id: "input", runId: null, messageSeq: 1, message: { role: "user", content: "Question", timestamp: 1 } }] });
+    request = async () => ({ runs: [] });
   },
 }));
 vi.mock("../ontology-retrieval", () => ({ OntologyRetrievalClient: class { open = mocks.open; } }));
-vi.mock("../../app-builder/build-tests", () => ({ WorkspaceBuildTests: class { authorize = mocks.authorize; } }));
 vi.mock("../../app-builder/sdk", () => ({ currentAppSdk: async () => ({ version: "sdk" }) }));
 vi.mock("../../agent-runtime/skills", () => ({
   workbenchBuiltinSkillRoot: () => "/skills",
@@ -119,6 +118,7 @@ function basePreparation(executionUserId: string | null = null): AssistantPrepar
       ? { token: "human-secret", locale: "en" }
       : { apiKey: "executor-key", locale: "en", executionUserId },
     externalVariables: { step: "1" },
+    lane: "live",
   } as unknown as AssistantPreparation;
 }
 

@@ -2,7 +2,6 @@ import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
 import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
-import { BUILD_TEST_HEADER, BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
@@ -58,21 +57,15 @@ export async function resolveReadMember(
   const { source, memberPath } = request;
   if (source.kind === "candidate") {
     const { resolvePanelCandidateMember } = await import("../workspaces/panel-candidate");
-    const { panel, member, projection, previewContext } = await resolvePanelCandidateMember(owner, viewer, source.workspace, memberPath);
-    const headers = { ...viewer.headers, [BUILD_TEST_HEADER]: JSON.stringify({
-      kind: "build-test", contextId: previewContext.test?.contextId ?? null,
-    }) };
-    return { member, projection, panel, inputs: request.inputs, viewer: { ...viewer, headers }, javaPath: undefined };
+    const { panel, member, projection } = await resolvePanelCandidateMember(owner, viewer, source.workspace, memberPath);
+    return { member, projection, panel, inputs: request.inputs, viewer, javaPath: undefined };
   }
   if (source.kind === "app-candidate") {
     const { resolveApplicationPreviewMember } = await import("../app-builder/preview-service");
-    const { panel, member, projection, previewContext } = await resolveApplicationPreviewMember(
+    const { panel, member, projection } = await resolveApplicationPreviewMember(
       owner, viewer, source.app.id, { ref: source.app.ref, entryId: source.app.entryId }, memberPath,
     );
-    const headers = { ...viewer.headers, [BUILD_TEST_HEADER]: JSON.stringify({
-      kind: "build-test", contextId: previewContext.test?.contextId ?? null,
-    }) };
-    return { member, projection, panel, inputs: request.inputs, viewer: { ...viewer, headers }, javaPath: undefined };
+    return { member, projection, panel, inputs: request.inputs, viewer, javaPath: undefined };
   }
 
   const { uses, collect } = panelReadUseCollector(owner.domainId);
@@ -272,8 +265,6 @@ export async function readResolvedPanelOwner(
     ? await preparePanelMetricQuery(owner, projection, { selection, params }, viewer.locale) : undefined;
   if (!isGraph && !ownerRead && !scopedFavorites && !metric) return readSelectedPanelOwner(reader, selection, params, projection);
   const headers = new Headers(viewer.headers);
-  if (headers.has(BUILD_TEST_HEADER))
-    throw new HttpError(422, (isGraph || metric) ? "Page skill reads do not support test data" : "这个接口不支持测试数据", BUILD_TEST_UNSUPPORTED);
   const readLabel = isGraph ? "The product graph read" : metric ? "The metric read"
     : modelRead ? "The model read" : "The customer read";
   // Only the callback's stored caller reference may carry scope to the owner.
@@ -325,7 +316,7 @@ export async function readPanelMemberOperationDescriptions(
   const inputs = effectiveInputs(placement.projection, placement.member, submittedInputs);
   const { readAdmittedProjectionOperations } = await import("./direct-operations");
   const headers = new Headers(actor.credentials.headers);
-  const scoped = headers.has(BUILD_TEST_HEADER) || headers.has(AGENT_EXECUTION_HEADER) || isQueryRuntimeGrant(actor.credentials.token)
+  const scoped = headers.has(AGENT_EXECUTION_HEADER) || isQueryRuntimeGrant(actor.credentials.token)
     ? undefined : actionScope;
   const value = await readAdmittedProjectionOperations(actor, placement, inputs, scoped);
   return { status: "ready", value: runtimeJsonObjectSchema.parse(value) };
@@ -408,9 +399,9 @@ export async function readScopedPanelData(
     if ("operations" in request)
       return await readPanelMemberOperationDescriptions(actor, placement, submittedInputs);
     const readScopeKey = request.source.kind === "candidate"
-      ? JSON.stringify(["candidate", request.source.workspace.id, request.source.workspace.ref, readViewer.headers?.[BUILD_TEST_HEADER] ?? null])
+      ? JSON.stringify(["candidate", request.source.workspace.id, request.source.workspace.ref])
       : request.source.kind === "app-candidate"
-        ? JSON.stringify(["app-candidate", request.source.app.id, request.source.app.ref, request.source.app.entryId ?? null, readViewer.headers?.[BUILD_TEST_HEADER] ?? null])
+        ? JSON.stringify(["app-candidate", request.source.app.id, request.source.app.ref, request.source.app.entryId ?? null])
         : "registered";
     const { outcome, inputs } = await executeProjectionDataRead(
       owner, readViewer, placement, request.dataName, submittedInputs, request.runtimeParams, callerUserName, location,
@@ -430,11 +421,9 @@ export async function readScopedPanelData(
 
 export async function readScopedPanelDataBatch(
   owner: ProductOwner, credentials: AssistantCredentials, requests: readonly ProductPanelReadRequest[],
-  { previewHeader, callerUserName, location }: { previewHeader?: string; callerUserName?: string; location?: McpRequestLocation } = {},
+  { callerUserName, location }: { callerUserName?: string; location?: McpRequestLocation } = {},
 ): Promise<ProductPanelReadResponse[]> {
-  const registeredViewer = previewHeader === undefined ? credentials
-    : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: previewHeader } };
-  const batchCache = new PanelReadBatchCache(owner, registeredViewer);
+  const batchCache = new PanelReadBatchCache(owner, credentials);
   const registered = requests.flatMap(({ source, memberPath }) =>
     source.kind === "candidate" || source.kind === "app-candidate" ? [] : [{ source, memberPath }],
   );
@@ -445,7 +434,7 @@ export async function readScopedPanelDataBatch(
     entry.status === "fulfilled" && entry.value !== undefined ? [{ kind: "panel", id: entry.value }] : []));
 
   const members = await Promise.allSettled(registered.map(async ({ source, memberPath }) => {
-    const { panel } = await requireRegisteredPanelRoot(owner, registeredViewer, source, { batchCache });
+    const { panel } = await requireRegisteredPanelRoot(owner, credentials, source, { batchCache });
     const first = memberPath[0];
     if (first.selection || first.member.startsWith("$state.")) return;
     const target = panel.manifest.members[first.member]?.target;
@@ -458,7 +447,7 @@ export async function readScopedPanelDataBatch(
 
   return Promise.all(requests.map(request => readScopedPanelData(
     owner,
-    request.source.kind === "candidate" || request.source.kind === "app-candidate" ? credentials : registeredViewer,
+    credentials,
     request, callerUserName, location, batchCache,
   )));
 }

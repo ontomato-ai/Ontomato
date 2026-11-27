@@ -78,7 +78,7 @@ public class QueryGrantService {
         "initiatorUserId", authority.initiatorUserId());
     if (target.contextId() != null) {
       binding.put("contextId", target.contextId());
-      binding.put("executionKind", target.actionTrial() ? "action-trial" : "build-test");
+      binding.put("executionKind", "action-trial");
       binding.put("contextSandboxId", target.sandboxId());
     }
     return binding;
@@ -194,7 +194,7 @@ public class QueryGrantService {
     if (target.contextId() != null) {
       binding.put("contextId", target.contextId());
       binding.put("contextSandboxId", target.sandboxId());
-      binding.put("executionKind", "build-test");
+      binding.put("executionKind", "action-trial");
       expiresAt = Math.min(expiresAt, requireContext(
           binding, access.user().getId(), access.user().getDomainId(), access.classNames()).expiresAt());
     }
@@ -318,10 +318,10 @@ public class QueryGrantService {
   private ExecutionTarget requireContext(JSONObject binding, String user, String domain, List<String> classes) {
     String context = binding.getString("contextId");
     boolean trial = "action-trial".equals(binding.getString("executionKind"));
-    var owner = binding.getString("initiatorUserId");
-    var target = trial ? contexts.requireActionTrial(context, user, domain)
-        : contexts.require(context, owner == null ? user : owner, domain);
-    if (!classes.isEmpty() || !trial) target.requireClasses(classes);
+    if (!trial) throw forbidden();
+    var initiator = binding.getString("initiatorUserId");
+    var target = contexts.requireActionTrial(context, initiator == null ? user : initiator, domain);
+    if (!classes.isEmpty()) target.requireClasses(classes);
     if (!target.sandboxId().equals(binding.getString("contextSandboxId"))) throw forbidden();
     return target;
   }

@@ -1,6 +1,5 @@
 import {expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({definition:vi.fn((..._args:unknown[])=>({})),authorize:vi.fn(),callback:vi.fn(()=>({value:'wbc1.sealed'}))}));
-vi.mock('../build-tests',()=>({WorkspaceBuildTests:class{authorize=mocks.authorize;}}));
+const mocks=vi.hoisted(()=>({definition:vi.fn((..._args:unknown[])=>({})),callback:vi.fn(()=>({value:'wbc1.sealed'}))}));
 vi.mock('../sdk',()=>({currentAppSdk:async()=>({version:'sdk'})}));
 vi.mock('../../../platform/agent-runtime/runtime',()=>({runDefinition:mocks.definition}));
 vi.mock('../../agent-runtime/skills',()=>({workbenchBuiltinSkillRoot:()=>'/skills',publishSkill:async(_root:string,skill:unknown)=>({skill,digest:'a'.repeat(64)})}));

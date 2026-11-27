@@ -9,7 +9,7 @@ import {
 import { PANEL_UPLOAD_MAX_BYTES, PANEL_UPLOADS_PATH, panelUploadReceiptSchema } from "@ontomato/contracts/panel-upload";
 import { panelDownloadFileSchema } from "@ontomato/contracts/panel-download";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN } from "@ontomato/contracts/execution-context";
 import {
   PANEL_MEMBER_RENDER_HEADER, PANEL_NESTED_READ_PATH, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema,
 } from "@ontomato/contracts/panel-host";
@@ -292,10 +292,7 @@ panelOperationsRouter.get("/panel-operations/descriptor", wrap(async (req, res) 
 panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const input = readPanelOperationRequestSchema.parse(req.body);
-  const preview = req.header(BUILD_TEST_HEADER);
-  const reader = preview === undefined
-    ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
-  const result = await readPanelOperation(owner, reader, input);
+  const result = await readPanelOperation(owner, credentials, input);
   if (result.kind !== "file") {
     res.json(readPanelOperationResponseSchema.parse(result));
     return;
@@ -379,14 +376,14 @@ panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (
   if (!root) {
     throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
   }
-  const buildTest = run.channel.authority.executionKind === "build-test";
-  if (buildTest && (!isLivePresentationEligibleRun({
+  const preview = run.channel.authority.executionKind === "preview";
+  if (preview && (!isLivePresentationEligibleRun({
     host: "workbench", owner, runId: input.agentRun.runId, sessionId: run.sessionId, channel: run.channel,
   }) || !hasActivePresentationForRun("workbench", owner, input.agentRun.runId))) {
-    throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
+    throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
   }
   const settings = await panelOperationStore.settings(owner, root);
-  const autoMode = !buildTest && !input.requireConfirmation && !settings.confirmBeforeExecute;
+  const autoMode = !preview && !input.requireConfirmation && !settings.confirmBeforeExecute;
   const intentId = randomUUID();
   const questionId = autoMode ? null : randomUUID();
   if (!autoMode && questionId) {

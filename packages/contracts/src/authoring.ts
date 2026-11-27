@@ -11,10 +11,7 @@ export type AuthoringKind = z.infer<typeof authoringKindSchema>;
 export const authoringRunRefSchema = runtimeArtifactSchema.pick({ sessionId: true, runId: true });
 export const authoringArtifactRefSchema = authoringRunRefSchema.extend({ artifactId: runtimeArtifactSchema.shape.id });
 
-export const authoringTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("live") }).strict(),
-  z.object({ kind: z.literal("build-test"), contextId: runtimeIdSchema }).strict(),
-]);
+export const authoringTargetSchema = z.object({ kind: z.literal("live") }).strict();
 
 /** The authenticated Workbench host supplies this context independently of author operation bodies. */
 export const authoringHostRunSchema = authoringRunRefSchema.extend({

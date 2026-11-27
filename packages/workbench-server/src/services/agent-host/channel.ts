@@ -1,5 +1,6 @@
 import {needsRetrievalScope} from "../assistant/skills";
-import { recentUserMessages } from "../assistant/user-quotes";
+import { ofIdentity, recentUserMessages } from "../assistant/user-quotes";
+import { sessionRunIdentities } from "./run-identity";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import path from "node:path";
@@ -40,7 +41,6 @@ export const agentChannelService = {
     const owner = restored.owner, credentials = { ...restored.credentials,locale: body.language };
     const provider = body.agent.providerId;
     if (provider !== "workbench" && provider !== "observe") throw new HttpError(404, "Agent provider not found", "NOT_FOUND");
-    if (body.authority.executionKind === "build-test" && body.requestedBy) throw new HttpError(422,"Agent delegation is not available in a build-test execution","BUILD_TEST_UNSUPPORTED");
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
@@ -56,7 +56,8 @@ export const agentChannelService = {
         const client=new RuntimeClient(owner.domainId,undefined,owner.userId);
         const current=await client.status(body.runId);
         if (turn.retrieval_scope_id && needsRetrievalScope(current.resolvedSkills.map(entry=>entry.skill))) {
-          const messages=(await client.session(body.sessionId)).messages;
+          // The run's own identity decides which of the conversation's messages it may quote.
+          const messages=ofIdentity((await client.session(body.sessionId)).messages,await sessionRunIdentities(owner,body.sessionId),body.authority.executionKind);
           await new OntologyRetrievalClient(owner,turn.retrieval_scope_id).updateUserQuotes(recentUserMessages(messages,body.inputId),credentials);
         }
       }
@@ -65,9 +66,11 @@ export const agentChannelService = {
     let prepared;
     // Legacy "observe" provider compatibility layer for `/api/observe/agent/*` and pre-migration ops_sessions.
     if (provider === "observe") {
-      if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
-      await createDiagnosis(body.sessionId, owner, credentials, null, true);
-      prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body));
+      if (body.agent.agentId !== DIAGNOSIS_AGENT_ID) throw new HttpError(404, "Agent not found", "NOT_FOUND");
+      await createDiagnosis(body.sessionId, owner, credentials, null, true, body.authority.executionKind === "preview");
+      // A preview's diagnosis run keeps the account the runtime binds it to; a live one runs as its initiator, as before.
+      prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body), body.authority,
+        body.authority.executionKind === "preview" ? body.executionActor : undefined);
     } else {
       prepared = await assistantService.prepare(body,owner,credentials);
     }

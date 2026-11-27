@@ -41,6 +41,8 @@ export function useAgentConversation(
   presentation: () => PresentationBinding | null = () => null,
   pageSkill: () => PageSkillContext | null = () => null,
   sessionContext: () => Record<string, RuntimeJsonValue> | undefined = () => undefined,
+  /** Whether the conversation this send opens is a preview's, which every run in it then runs as. */
+  opensPreview: () => boolean = () => false,
 ) {
   const state = reactive<ConversationState>(emptyConversation());
   const loading = ref(false);
@@ -305,7 +307,8 @@ export function useAgentConversation(
       const page = pageSkill();
       if (!state.sessionId) {
         const context = sessionContext();
-        createdSession = await client.createSession(context === undefined ? agentId : { agentId, context });
+        const input = context === undefined ? agentId : { agentId, context };
+        createdSession = await (opensPreview() ? client.createSession(input, { preview: true }) : client.createSession(input));
       }
       if (current !== token) return null;
       if (createdSession) {

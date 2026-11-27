@@ -16,6 +16,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
@@ -60,7 +61,6 @@ class ActionPanelEndpointTest {
   private final CaseExecutionGuard caseExecutionGuard = new CaseExecutionGuard("");
   private final ActionAuthorization authorization = mock(ActionAuthorization.class);
   private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
-  private final DataSandboxService buildTests = mock(DataSandboxService.class);
   private final io.ontomato.dataengine.service.SandboxPermissionService sandboxPermissions =
       mock(io.ontomato.dataengine.service.SandboxPermissionService.class);
   private final IdentityService identityService = mock(IdentityService.class);
@@ -137,7 +137,6 @@ class ActionPanelEndpointTest {
     BusinessConfig config = new BusinessConfig();
     config.setDslCookerTimeout(60000L);
     when(businessConfigService.get("domain")).thenReturn(config);
-    when(buildTests.resolve(any())).thenReturn(ExecutionTarget.LIVE);
     when(agentExecutionScope.target(any(), any(), any(), any())).thenAnswer(call -> call.getArgument(3));
     GenericApplicationContext context = new GenericApplicationContext();
     context.registerBean(IdentityService.class, () -> identityService);
@@ -150,7 +149,6 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "authorization", authorization);
     when(authorization.subject(user)).thenReturn(subject("domain", "user-1"));
     ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
-    ReflectionTestUtils.setField(controller, "buildTests", buildTests);
     ReflectionTestUtils.setField(controller, "sandboxPermissions", sandboxPermissions);
     when(sandboxPermissions.read("domain")).thenReturn(JSONObject.of("status", "unchecked"));
     SubjectDirectory subjects = mock(SubjectDirectory.class);
@@ -160,6 +158,37 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "actionTrialStore", actionTrialStore);
     when(actionTrialStore.statusCode(isNull())).thenReturn("notRun");
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
+  }
+
+  @Test
+  void executeRefusesPreviewRequestsBeforeTheActionStarts() throws Exception {
+    var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var response = mvc.perform(post("/action/execute")
+            .header("X-Ontomato-Execution-Context", "{\"kind\":\"preview\"}")
+            .header(ControllerConst.LANG_HEADER_KEY, "en")
+            .param("id", "a1").param("param", "{}"))
+        .andExpect(status().isUnprocessableEntity()).andReturn().getResponse();
+    var body = JSON.parseObject(response.getContentAsString());
+    assertFalse(body.getBooleanValue("success"));
+    assertEquals("PREVIEW_WRITE_FORBIDDEN", body.getString("code"));
+    assertEquals("预览里不执行写操作，动作的对错用动作试跑验", body.getString("message"));
+    verifyNoInteractions(actionService);
+  }
+
+  @Test
+  void executeWithoutThePreviewHeaderKeepsTheOrdinaryPath() throws Exception {
+    when(actionService.execute(eq("a1"), any(), eq("en"), any(), any(), anyInt(), any(), any(), any()))
+        .thenReturn(new PythonExecuteResult());
+    var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var response = mvc.perform(post("/action/execute")
+            .header(ControllerConst.LANG_HEADER_KEY, "en")
+            .param("id", "a1").param("param", "{}"))
+        .andReturn().getResponse();
+    var body = JSON.parseObject(response.getContentAsString());
+    assertTrue(body.getBooleanValue("success"));
+    verify(actionService).execute(eq("a1"), any(), eq("en"), any(), any(), anyInt(), any(), any(), any());
   }
 
   @Test

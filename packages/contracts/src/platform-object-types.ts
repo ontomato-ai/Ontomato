@@ -59,7 +59,6 @@ export const APPLICATION_RESTORE_SOURCE_COMMIT = "applications.restoreSourceComm
 export const APPLICATION_SYNC_BUILDER_SOURCE = "applications.syncBuilderSource";
 export const APPLICATION_PUBLISH_BUILDER_SOURCE = "applications.publishBuilderSource";
 export const APPLICATION_ROLLBACK_BUILDER_RELEASE = "applications.rollbackBuilderRelease";
-export const APPLICATION_RESTART_BUILD_TEST = "applications.restartBuildTest";
 export const APPLICATION_PANEL_USE = "platform:ApplicationPanelUse";
 export const ONTOLOGY_TYPE = "platform:OntologyType";
 export const ONTOLOGY_RELATION_KIND = "platform:OntologyRelationKind";
@@ -947,10 +946,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           driftCount: { kind: "scalar", type: "number" },
           hasConflicts: { kind: "scalar", type: "boolean" },
           conflictCount: { kind: "scalar", type: "number" },
-          buildTestStatus: { kind: "scalar", type: "string" },
-          buildTestSampleName: { kind: "scalar", type: "string" },
-          buildTestExpiresAt: { kind: "scalar", type: "string" },
-          buildTestCanRestart: { kind: "scalar", type: "boolean" },
           canEditEntries: { kind: "scalar", type: "boolean" },
           currentReleaseId: { kind: "scalar", type: "string" },
           activeRunId: { kind: "scalar", type: "string" },
@@ -1022,7 +1017,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       APPLICATION_CREATE_DRAFT, APPLICATION_UPDATE_BUILDER_META, APPLICATION_DELETE_DRAFT,
       APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_SYNC_BUILDER_SOURCE,
       APPLICATION_PUBLISH_BUILDER_SOURCE, APPLICATION_ROLLBACK_BUILDER_RELEASE,
-      APPLICATION_RESTART_BUILD_TEST,
       RENEW_TRIGGER_CREDENTIAL,
     ],
   },

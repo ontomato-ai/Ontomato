@@ -39,7 +39,7 @@ export async function prepareBuilderSourceFacts(
   const describeRows = Object.keys(operations).length > 0;
   const rollback = method === "sourceReleases" && describeRows;
   const project = await prepareBuilderProjectFacts(owner, appId, {
-    live: method === "sourceFiles" || method === "sourceFile" || rollback, status: rollback,
+    live: method === "sourceFiles" || method === "sourceFile" || rollback,
   });
 
   async function withRows<T>(
@@ -87,8 +87,7 @@ export async function prepareBuilderSourceFacts(
           const rows = adapter.presentSourceReleases(releases);
           if (!rollback || !rows.length) return rows;
           // The original rollback description uses project detail, which also requires query admission.
-          project.test(results);
-          const { busy } = await readBuilderProjectStatus(ctx, credentials.locale);
+              const { busy } = await readBuilderProjectStatus(ctx, credentials.locale);
           const state = { busy, drift: readBuilderProjectDrift(ctx, credentials.locale),
             currentReleaseId: ctx.published && ctx.project ? releases[0]?.id ?? null : null };
           return withRows(rows, rows, input => builderRollbackBlock(state, input.releaseId));

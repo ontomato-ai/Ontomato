@@ -18,6 +18,7 @@ import { getApiConfig } from "../../config/data-query-api";
 import { combineResultTruncation, parseQueryAnswerPayloads } from "../../utils/query-answer-protocol";
 import { HttpError } from "../../utils/errors";
 import { requireManagement } from "../../identity/management";
+import { refuseAgentExecution } from "../../utils/request-identity";
 
 const router: ReturnType<typeof Router> = Router();
 // Legacy `/api/observe/agent/*` and `/api/observe/diagnoses` compatibility layer for MCP and historical `ops_sessions`
@@ -28,6 +29,7 @@ router.get("/agent/agents", wrap(async (req, res) => {
 }));
 router.use("/agent", createAgentHostRouter(diagnosisService));
 router.post("/diagnoses", requireManagement(workbenchManagement.opsDiagnosisCreate), wrap(async (req, res) => {
+  refuseAgentExecution(req);
   const { owner, credentials } = context(req), { target } = z.object({ target: diagnosisTargetSchema }).strict().parse(req.body);
   await resolveDiagnosisEvidence(target, { ...owner, ...credentials });
   res.status(201).json(await createDiagnosis(z.string().uuid().parse(req.header("Idempotency-Key")), owner, credentials, target));

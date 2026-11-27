@@ -3,8 +3,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, s
 import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
 import { ElDrawer } from "@ontomato/foundation-ui/overlay";
 import { conversationQuestions, displayQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
-import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
-import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
+import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand, type PageComposerRequest } from "../page-composer-entry";
 import {
   CLOSED_TARGET,
   carriedTargetIn,
@@ -148,9 +147,16 @@ watch([sessionId, () => display.page.value?.featureId], () => closeNav(true));
  * in this conversation; and a stream that is ready again has the page read everything it shows.
  */
 const sessionStream = inject(pageSessionStream, null);
+/**
+ * The conversation about to be opened is a preview's, for a preview's entry: it is opened as the preview's, and every run
+ * in it runs as the preview. It stops applying once a conversation is open, the new one or another the reader picks.
+ */
+const opensPreview = ref(false);
 const conversation = useAgentConversation(
   () => props.client, () => agentId.value, () => sessionStream?.binding ?? null, () => pageSkill.value,
+  undefined, () => opensPreview.value,
 );
+watch(() => conversation.state.sessionId, (id) => { if (id) opensPreview.value = false; });
 if (sessionStream) {
   onBeforeUnmount(
     sessionStream.attach(conversationStreamShell(display, () => conversation.state.sessionId)),
@@ -360,7 +366,7 @@ function showEntry(text: string | null) {
   entry.value = { text, seq: (entry.value?.seq ?? 0) + 1 };
 }
 /** An entry that arrived while the page's agents were being read; it waits for them, the latest one counting. */
-let waitingEntry: PanelConversationEntry | null = null;
+let waitingEntry: PageComposerRequest | null = null;
 const expandEntry: PageComposerExpand = async (request) => {
   if (nav.agentsState.value === "loading") {
     waitingEntry = request;
@@ -372,7 +378,8 @@ const expandEntry: PageComposerExpand = async (request) => {
     return;
   }
   const named = resolved.agentId;
-  const startsNew = named !== agentId.value || request.newSession === true;
+  // A preview's entry never goes on in the conversation that is open: it starts the preview's own.
+  const startsNew = named !== agentId.value || request.newSession === true || request.preview === true;
   if (startsNew && conversation.busy.value) {
     emit("error", props.labels.switchWhileRunning);
     return showEntry(null);
@@ -381,6 +388,7 @@ const expandEntry: PageComposerExpand = async (request) => {
     nav.beginWith(named);
     await nextTick();
   }
+  opensPreview.value = request.preview === true;
   const text = request.prefill?.trim();
   if (request.submit && text) {
     await display.setView("side");

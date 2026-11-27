@@ -8,7 +8,6 @@ import {
   APPLICATION_CREATE_DRAFT,
   APPLICATION_DELETE_DRAFT,
   APPLICATION_PUBLISH_BUILDER_SOURCE,
-  APPLICATION_RESTART_BUILD_TEST,
   APPLICATION_RESTORE_SOURCE_COMMIT,
   APPLICATION_ROLLBACK_BUILDER_RELEASE,
   APPLICATION_SYNC_BUILDER_SOURCE,
@@ -25,7 +24,6 @@ import type {
   PanelWriteServerOperation,
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
-import { WorkspaceBuildTests } from "./build-tests";
 import { appWorkspaceSlot } from "./project-store";
 import {
   authorizeBuilderProject,
@@ -410,51 +408,6 @@ export const applicationBuilderServerOperations = [
         const { releaseId } = releaseInput.parse(input);
         const release = await rollbackApplicationBuilderRelease(executor.owner, executor.credentials, primaryKey, releaseId);
         return success(primaryKey, release);
-      });
-    },
-  },
-  {
-    ...appActionBase,
-    handlerRef: APPLICATION_RESTART_BUILD_TEST,
-    binding: binding(APPLICATION_RESTART_BUILD_TEST),
-    labelKey: "panels.appBuilder.restartBuildTest",
-    inputSchema: empty,
-    resultSchema: empty,
-    async unavailable(host, target) {
-      if (!target) return;
-      const locale = host.locale ?? host.initiator.credentials.locale;
-      const ctx = await authorizeBuilderProject(host.initiator.owner, host.initiator.credentials, target.primaryKey, { skipLiveRead: true });
-      if (!ctx.project) return { reason: text(locale, "restartUnavailable") };
-      const test = await new WorkspaceBuildTests(
-        host.initiator.owner,
-        host.initiator.credentials,
-        ctx.project.workspaceId,
-        appWorkspaceSlot(target.primaryKey),
-      ).current();
-      if (!test || (test.status !== "EXPIRED" && test.status !== "CLOSED") || !test.sampleSummary?.name) {
-        return { reason: text(locale, "restartUnavailable") };
-      }
-    },
-    async execute({ executor }: PanelOperationHost, target: PanelOperationTarget) {
-      return execute(async () => {
-        const { primaryKey } = appTarget.parse(target);
-        const ctx = await authorizeBuilderProject(executor.owner, executor.credentials, primaryKey, { skipLiveRead: true });
-        const locale = executor.credentials.locale;
-        if (!ctx.project) {
-          throw new HttpError(409, text(locale, "restartUnavailable"), "BUILD_TEST_RESTART_UNAVAILABLE");
-        }
-        const tests = new WorkspaceBuildTests(
-          executor.owner,
-          executor.credentials,
-          ctx.project.workspaceId,
-          appWorkspaceSlot(primaryKey),
-        );
-        const current = await tests.current();
-        if (!current || (current.status !== "EXPIRED" && current.status !== "CLOSED") || !current.sampleSummary?.name) {
-          throw new HttpError(409, text(locale, "restartUnavailable"), "BUILD_TEST_RESTART_UNAVAILABLE");
-        }
-        await tests.start(current.sampleSummary.name);
-        return success(primaryKey);
       });
     },
   },

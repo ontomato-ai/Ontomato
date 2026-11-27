@@ -2,8 +2,8 @@ import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import {
-  buildTestSdkUpgradeDetailsSchema,
-} from "@ontomato/contracts/build-tests";
+  sdkUpgradeDetailsSchema,
+} from "@ontomato/contracts/execution-context";
 import type { PageContext, PageSelection } from "@ontomato/contracts/page-context";
 import { appCandidatePanelSourceSchema, panelAddressState, type AppCandidatePanelSource } from "@ontomato/contracts/panel-host";
 import type {
@@ -19,7 +19,7 @@ import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import { appCandidatePanelHost } from "./panel-host";
 
 const LEGACY_SDK_ERROR_CODES = new Set([
-  "BUILD_TEST_SDK_UPGRADE_REQUIRED",
+  "PREVIEW_SDK_UPGRADE_REQUIRED",
   "LEGACY_SDK",
   "PREVIEW_LEGACY_SDK",
   "SDK_UPGRADE_REQUIRED",
@@ -94,12 +94,12 @@ function extractDetailsObject(payload: Record<string, unknown>): unknown {
 
 /**
  * Detects legacy SDK / SDK upgrade errors returned by the backend or host (such as HTTP 409
- * `BUILD_TEST_SDK_UPGRADE_REQUIRED` with `BuildTestSdkUpgradeDetails`).
+ * `PREVIEW_SDK_UPGRADE_REQUIRED` with `SdkUpgradeDetails`).
  */
 export function detectLegacySdkError(failure: unknown): LegacySdkDetection | null {
   if (failure instanceof ApiRequestError) {
     const code = failure.code?.toUpperCase();
-    const parsedDetails = buildTestSdkUpgradeDetailsSchema.safeParse(extractDetailsObject(failure.payload));
+    const parsedDetails = sdkUpgradeDetailsSchema.safeParse(extractDetailsObject(failure.payload));
     if (parsedDetails.success) {
       return {
         requiredVersion: parsedDetails.data.requiredVersion,
@@ -114,7 +114,7 @@ export function detectLegacySdkError(failure: unknown): LegacySdkDetection | nul
 
   if (failure && typeof failure === "object") {
     const candidate = failure as { code?: unknown; message?: unknown; details?: unknown };
-    const parsedDetails = buildTestSdkUpgradeDetailsSchema.safeParse(candidate.details);
+    const parsedDetails = sdkUpgradeDetailsSchema.safeParse(candidate.details);
     if (parsedDetails.success) {
       return {
         requiredVersion: parsedDetails.data.requiredVersion,

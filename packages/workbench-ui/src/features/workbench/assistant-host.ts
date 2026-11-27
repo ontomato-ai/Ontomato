@@ -9,6 +9,7 @@ import {
   type ShellPanelOperationsPort,
 } from "@ontomato/agent-shell-ui";
 import { agentHostErrorSchema } from "@ontomato/contracts/agent-host";
+import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { panelOperationSettingsSchema } from "@ontomato/contracts/panel-agent";
 import {
   assistantDatasetSourceSchema,
@@ -61,6 +62,16 @@ export function createAssistantClient(
     readVectorResource: vectorResourceReader(request),
     tasks: true,
   });
+}
+
+/**
+ * The client of the conversations a preview drawn in this document opens: the requests that open one or start its run
+ * carry the preview's identity, so every run in it runs as the preview. Every other request is the reader's, as live.
+ */
+export function createPreviewAssistantClient() {
+  return createAssistantClient((path, init) => workbenchRequest(path, carriesPreviewIdentity("", init.method ?? "GET", path)
+    ? { ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } }
+    : init));
 }
 
 /** The same client with its conversations bound to one workspace (the app builder's): made in it, listed from it. */

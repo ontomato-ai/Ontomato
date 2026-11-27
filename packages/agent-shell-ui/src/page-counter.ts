@@ -25,11 +25,12 @@ export interface PageCounter {
   preferredAgentId: Readonly<Ref<string | null>>;
   /**
    * Sends the page's message to the counter, optionally carrying the page's address so the same page opens beside the
-   * conversation. Omitting `page` opens the conversation directly without docking a side page.
+   * conversation. Omitting `page` opens the conversation directly without docking a side page. `entry.preview` sends it
+   * in a new conversation opened as the preview's.
    */
   ask(
     agentId: string, text: string, page?: string,
-    entry?: { submit: true; newSession?: boolean; pageSkill?: PageSkillContext },
+    entry?: { submit: true; newSession?: boolean; pageSkill?: PageSkillContext; preview?: true },
   ): void | Promise<void>;
 }
 

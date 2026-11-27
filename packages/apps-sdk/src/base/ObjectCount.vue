@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { directReadDeclaration, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import { ReadFailureMark } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberOutput } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
@@ -200,11 +201,7 @@ const badgeAccessibleLabel = computed<string | undefined>(() => {
       data-appearance="badge"
       data-state="error"
     >
-      <svg class="sdk-object-count-failure" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-        <path d="M12 9v4" />
-        <path d="M12 17h.01" />
-      </svg>
+      <ReadFailureMark />
     </span>
   </UnavailableTooltip>
   <span
@@ -275,9 +272,5 @@ const badgeAccessibleLabel = computed<string | undefined>(() => {
   font-weight: inherit;
   gap: 0;
   line-height: var(--leading-xs);
-}
-.sdk-object-count-failure {
-  color: var(--el-color-warning);
-  flex-shrink: 0;
 }
 </style>

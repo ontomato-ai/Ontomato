@@ -14,7 +14,7 @@ import { candidatePanelHost } from "../panel-host";
  * its query as on any panel page.
  *
  * Node answers the candidate only to the workspace's author; anyone else is refused there and the refusal is shown. The
- * frame runs on the workspace's build-test context, so no request it makes is live.
+ * frame carries the preview execution identity, so writes it attempts are refused.
  */
 const props = defineProps<{
   workspaceId: string;

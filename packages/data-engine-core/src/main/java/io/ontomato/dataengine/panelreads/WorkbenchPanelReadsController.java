@@ -128,7 +128,7 @@ public final class WorkbenchPanelReadsController {
     }
 
     private User verifiedUser(HttpServletRequest request) {
-        if (request.getAttribute(QueryGrantService.ATTRIBUTE) != null || request.getHeader(DataSandboxService.HEADER) != null)
+        if (request.getAttribute(QueryGrantService.ATTRIBUTE) != null)
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Ordinary user authentication is required");
         var user = identity.verifyWorkbenchPanelViewer();
         if (user == null || !user.isEnable() || blank(user.getId()))

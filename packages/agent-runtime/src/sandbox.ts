@@ -2,12 +2,12 @@ import { chmod } from "node:fs/promises";
 import path from "node:path";
 import { openSessionSandbox } from "./sandbox/launch";
 import type { SessionEngineSandboxFactory } from "./session-engines";
-import { digest, type RuntimeStore, type Scope } from "./store";
+import { digest, type ExecutionLane, type RuntimeStore, type Scope } from "./store";
 import { allocateUid, assertWorkerPolicy } from "./worker";
 import { workspaceDirectory } from "./workspaces";
 
-export function sessionSandboxDirectory(root: string, scope: Scope, sessionId: string) {
-  return path.join(root, "sessions", digest([scope, sessionId]));
+export function sessionSandboxDirectory(root: string, scope: Scope, sessionId: string, lane: ExecutionLane) {
+  return path.join(root, "sessions", digest([scope, sessionId]) + (lane === "preview" ? "-preview" : ""));
 }
 
 export function createSessionEngineSandboxFactory(store: RuntimeStore, root: string): SessionEngineSandboxFactory {

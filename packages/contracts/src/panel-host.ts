@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
-import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
 import { panelUseRefSchema } from "./panel-agent";
 import {
@@ -44,11 +43,7 @@ export const candidatePanelSourceSchema = z.object({
   panel: panelDefinitionContentSchema,
   /** Author-registered components declared in `panel.manifest.components`, bundled for preview rendering. */
   domainComponents: z.record(domainComponentIdSchema, domainComponentRuntimeSchema).optional(),
-  previewContext: z.object({
-    kind: z.literal("build-test"),
-    /** Null is the existing build-test NONE state; it never denotes live execution. */
-    test: buildTestContextSchema.nullable(),
-  }).strict(),
+  previewContext: z.object({ kind: z.literal("preview") }).strict(),
 }).strict();
 
 /** Application-scoped preview source (materialized workspace or unmaterialized live definition). */
@@ -61,10 +56,7 @@ export const appCandidatePanelSourceSchema = z.object({
   }).strict(),
   panel: panelDefinitionContentSchema,
   domainComponents: z.record(domainComponentIdSchema, domainComponentRuntimeSchema).optional(),
-  previewContext: z.object({
-    kind: z.literal("build-test"),
-    test: buildTestContextSchema.nullable(),
-  }).strict(),
+  previewContext: z.object({ kind: z.literal("preview") }).strict(),
 }).strict();
 
 export const panelHostSourceSchema = z.discriminatedUnion("kind", [

@@ -5,11 +5,11 @@ import { panelDefinitionContentSchema, productPanelContentSchema } from "@ontoma
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { assertAppBuilderAccess } from "../app-builder/access";
-import { WorkspaceBuildTests } from "../app-builder/build-tests";
 import type { AssistantOwner } from "../assistant/store";
 import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../product-panels/current";
 import { readPanelDomainComponents } from "../product-panels/component-catalogue";
 import { resolvePanelMemberPath } from "../product-panels/member-path";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 
 const descriptorSchema = z.object({
   manifest: panelManifestSchema,
@@ -21,13 +21,13 @@ export async function loadWorkspacePanel(
   owner: AssistantOwner, credentials: AssistantCredentials, { id, ref }: CandidatePanelSource["workspace"],
 ) {
   await assertAppBuilderAccess(credentials);
-  const tests = new WorkspaceBuildTests(owner, credentials, id, owner.userId);
   const workspace = `/v1/workspaces/${id}`;
   const revision: Record<string, string> = ref === "working" ? {} : { commit: ref };
   // Runtime checks the author and, for a commit, membership in the workspace history.
-  const tree = treeSchema.parse(await tests.runtime.request(`${workspace}/tree?${new URLSearchParams(revision)}`));
+  const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId);
+  const tree = treeSchema.parse(await runtime.request(`${workspace}/tree?${new URLSearchParams(revision)}`));
   const read = async (path: string) =>
-    (await tests.runtime.bytes(`${workspace}/files/content?${new URLSearchParams({ ...revision, path })}`)).toString("utf8");
+    (await runtime.bytes(`${workspace}/files/content?${new URLSearchParams({ ...revision, path })}`)).toString("utf8");
   const readOptional = (path: string) => tree.files.some(file => file.path === path) ? read(path) : undefined;
   const [html, module, descriptorText, recipes] = await Promise.all([
     read("panel.html"), readOptional("panel.mjs"), read("panel.json"), readOptional("recipes.md"),
@@ -41,13 +41,13 @@ export async function loadWorkspacePanel(
   }
   const { manifest, content } = descriptorSchema.parse(descriptor);
   const panel = panelDefinitionContentSchema.parse({ manifest, content: { html, module, recipes, ...content } });
-  return { panel, tests };
+  return { panel };
 }
 
 export async function readPanelCandidate(
   owner: AssistantOwner, credentials: AssistantCredentials, workspace: CandidatePanelSource["workspace"],
 ): Promise<CandidatePanelSource> {
-  const { panel, tests } = await loadWorkspacePanel(owner, credentials, workspace);
+  const { panel } = await loadWorkspacePanel(owner, credentials, workspace);
   const projectionIds = new Set<string>();
   const panelIds = new Set<string>();
   for (const { target } of Object.values(panel.manifest.members)) {
@@ -58,16 +58,13 @@ export async function readPanelCandidate(
     ...[...projectionIds].map(id => readCurrentProjectionRecord(owner, credentials, id)),
     ...[...panelIds].map(id => readCurrentPanelRecord(owner, credentials, id)),
   ]);
-  const [test, domainComponents] = await Promise.all([
-    tests.current(),
-    readPanelDomainComponents({ domainId: owner.domainId, credentials }, panel.manifest.components),
-  ]);
+  const domainComponents = await readPanelDomainComponents({ domainId: owner.domainId, credentials }, panel.manifest.components);
   return {
     kind: "candidate",
     workspace,
     panel,
     ...(domainComponents && { domainComponents }),
-    previewContext: { kind: "build-test", test },
+    previewContext: { kind: "preview" },
   };
 }
 
@@ -75,11 +72,11 @@ export async function resolvePanelCandidateMember(
   owner: AssistantOwner, credentials: AssistantCredentials, workspace: CandidatePanelSource["workspace"],
   memberPath: DirectPanelMemberPath,
 ) {
-  const { panel, tests } = await loadWorkspacePanel(owner, credentials, workspace);
+  const { panel } = await loadWorkspacePanel(owner, credentials, workspace);
   const placement = await resolvePanelMemberPath(owner, credentials, panel, memberPath);
   if (placement.kind !== "projection")
     throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
-  const previewContext: CandidatePanelSource["previewContext"] = { kind: "build-test", test: await tests.current() };
+  const previewContext: CandidatePanelSource["previewContext"] = { kind: "preview" };
   return { ...placement, previewContext };
 }
 

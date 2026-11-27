@@ -429,13 +429,42 @@ Inside the platform, delivered files already appear read-only beneath the parent
 sending any request because deliveries and questions notify the caller session.
 No external provider registration endpoint is introduced.
 
-Both channel command routes (`/v1/channel/commands` and
-`/v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands`), task events/files and
-provider callbacks have no BuildTestAccess declaration or Node build-test route registration.
-Requests carrying an execution-context header (`X-Ontomato-Execution-Context`) are refused with
-422 `BUILD_TEST_UNSUPPORTED` before side effects. Native agent commands and run-scoped script
-commands also refuse build-test authority (`422 BUILD_TEST_UNSUPPORTED`). Existing host prepare
-restrictions remain in force; no test context becomes live delegation.
+Channel commands never read an execution-context header: a command runs with its caller's
+channel authority. A preview run delegates as itself (the agent it starts inherits the same preview
+authority, classes and delegation); an external caller's authority is the one its host states.
+A run's own commands enter only through its session command route with its callback credential,
+which binds them to the session's active run. Its business callbacks carry `X-Ontomato-Agent-Execution`, and
+DataRAG's external entry (`/platform/agent-channel/commands`) and the routes that open a new
+top-level conversation refuse such a request (403 `FORBIDDEN`), so a run cannot start agents as its
+user outside its classes and delegation. Stopping a run (`cancel`) is not a business write: any
+caller in its delegation tree stops it, a preview included.
+An input runs with its sender's identity (a web input's channel, otherwise the sending run's, the
+external caller's, the answering human's or the reporting child's settled authority), never its
+recipient's; an answer to a preview's question is that preview's input. It joins a running or
+waiting run only with the same identity, otherwise it queues as a run of its own; a preview's
+answer to a live run's question is refused before anything is written. The authority a provider
+settles at prepare is stored with the intent, so queueing and delegation read it.
+Results and answers are addressed by contract and continue the run they report or answer to. Any
+other input runs with its sender's identity; a run it starts takes the sender's authority, root and
+human recipient (within a preview also its execution account, and it joins a preview run only when
+that run reaches no further than the sender).
+A run's identity is also its lane in the session: runs of one identity share a native engine,
+process space (`sessions/<digest>` for live, `sessions/<digest>-preview` for preview) and resume
+reference (`sessions.engine_ref`, `sessions.preview_engine_ref`); an engine opened afresh is given
+only what runs of its identity consumed, and only live runs read stored compaction summaries.
+`GET /v1/channel/sessions/:sessionId/run-identities` returns each run's identity, so a host
+continues and quotes only what runs of the same identity did.
+A preview's run, delegated or continued, is bound to the execution account it inherits (the one its
+intent holds, else the delegating run's; `null` for the initiator's own): `/prepare` receives it as
+`executionActor` and the runtime refuses to start the run with 403 `EXECUTION_ACCOUNT_CHANGED` if the
+provider returns any other. A live run is not bound: its provider is offered the inherited account as
+before and chooses (DataRAG's agents run delegated work as it; Workbench's assistant and legacy
+`observe` agents choose from their current configuration), and the run records what it chose. A live
+run's new conversation input continues that conversation's own account; a preview's continues its
+sender's. Within a preview, an ordinary input joins a running or waiting run only when that run
+reaches no further than its sender; live inputs of the same identity join as they always have. Workbench's providers run a bound preview run as that account and
+return it; the legacy diagnosis evidence callback carries that account's credential.
+See `execution-context.md`.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 
 Failed preparations are projected from the existing admission intent in `preparationFailures`.

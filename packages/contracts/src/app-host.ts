@@ -1,5 +1,5 @@
 import type { PanelThemeOverrides } from "./panel-manifest";
-import type { AppExecutionContext } from "./build-tests";
+import type { AppExecutionContext } from "./execution-context";
 import type { RequestIdentity } from "./identity";
 
 /*

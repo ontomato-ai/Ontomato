@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
+import { PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { productPanelInputSchema, productProjectionInputSchema, type ProductProjection } from "@ontomato/contracts/product-panels";
@@ -38,7 +39,7 @@ function candidate(): CandidatePanelSource {
     kind: "candidate",
     workspace: { id: WORKSPACE, ref: "working" },
     panel: { manifest, content: { html: files["panel.html"]!, module: files["panel.mjs"], recipes: files["recipes.md"], ...content } },
-    previewContext: { kind: "build-test", test: null },
+    previewContext: { kind: "preview" },
   };
 }
 
@@ -146,7 +147,7 @@ const formSave = () => [...document.querySelectorAll<HTMLButtonElement>(".panel-
   .find(button => button.textContent?.trim() === "Save" || button.textContent?.trim() === "Create")!;
 const reads = (sent: Sent[]) => sentPanelReadItems(sent).map(request => request.body as Read);
 
-const PREVIEW_REFUSAL = "A panel preview runs no operations; they run in the panel's application";
+const PREVIEW_REFUSAL = PREVIEW_WRITE_MESSAGE;
 /** A write of a definition, or any operation sent through the platform's coordinator. */
 const isWrite = (request: Sent) => request.path.startsWith("/api/panel-operation")
   || ["POST", "PUT", "DELETE"].includes(request.method) && request.path.startsWith("/api/assistant/");

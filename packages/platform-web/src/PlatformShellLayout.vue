@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
-import {readHomeState,HOME_PREFERENCES_CHANGED} from './features/home/api';
+import { HOME_PREFERENCES_CHANGED, readHomeState } from "./features/home/api";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import {
@@ -58,9 +58,28 @@ const route = useRoute();
 const router = useRouter();
 
 const catalog = useApplicationCatalog();
-const pinnedAppIds=ref<string[]>([]);
+const pinnedAppIds = ref<string[] | null>(null);
+const shortcutReadError = ref<string | null>(null);
 const dynamicAppIds=computed(()=>catalog.mergedApplications.value.filter(app=>['connected','link'].includes(app.kind)).map(app=>app.id));
-async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).favorites.filter(item=>item.kind==='application').map(item=>item.id);}catch(error){console.error(error);/* Shortcut discovery must not prevent opening the platform. */}}
+
+async function readShortcuts() {
+  try {
+    const { favorites } = await readHomeState();
+    pinnedAppIds.value = favorites.filter(item => item.kind === "application").map(item => item.id);
+    shortcutReadError.value = null;
+  } catch (error) {
+    console.error(error);
+    if (pinnedAppIds.value === null) {
+      shortcutReadError.value = (error instanceof Error ? error.message : String(error)).trim();
+    }
+  }
+}
+
+const shortcutReadFailure = computed(() => shortcutReadError.value === null ? undefined : {
+  reason: shortcutReadError.value || t("platform.dataUnreachable"),
+  label: `${t("home.favorites")} · ${t("common.retry")}`,
+  retry: readShortcuts,
+});
 const railVisible = ref(false);
 let railDataLoaded = false;
 function loadRailData() {
@@ -334,7 +353,8 @@ const blocked = computed(() => {
   <PlatformLayout
     :apps="railDeclarations"
     :dynamic-app-ids="dynamicAppIds"
-    :pinned-app-ids="pinnedAppIds"
+    :pinned-app-ids="pinnedAppIds ?? undefined"
+    :shortcut-read-failure="shortcutReadFailure"
     :loading="railLoading"
     :shown-page="shownPage"
     :account="account"

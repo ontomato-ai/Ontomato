@@ -2,6 +2,7 @@ import { readSseData } from "@ontomato/contracts/sse";
 import { agentHostSessionHistorySchema } from "@ontomato/contracts/agent-host";
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { randomId } from "@ontomato/contracts/random-id";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import type {
   AgentHostAgent,
   AgentHostAgentList,
@@ -113,8 +114,11 @@ export interface AgentHostClient {
   listPageAgents(page: PageSkillContext): Promise<PageAgents>;
   /** The agent's conversations, or those of the client's workspace when it has one. */
   listSessions(agentId: string, cursor: string | null): Promise<AgentHostSessionPage>;
-  /** A new conversation with the agent, inside the client's workspace when it has one. */
-  createSession(input: string | AgentHostCreateSession): Promise<AgentHostSession>;
+  /**
+   * A new conversation with the agent, inside the client's workspace when it has one. `preview` opens it as a preview's:
+   * every run in it then runs as the preview, wherever it is sent from.
+   */
+  createSession(input: string | AgentHostCreateSession, options?: { preview?: true }): Promise<AgentHostSession>;
   readHistory(sessionId: string, query?: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   deleteSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
@@ -297,10 +301,12 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       if (options.workspace) return options.workspace.listSessions(cursor);
       return json<AgentHostSessionPage>(`/sessions?${query({ agentId, ...(cursor ? { cursor } : {}) })}`);
     },
-    async createSession(input) {
+    async createSession(input, opening) {
       const body = typeof input === "string" ? { agentId: input } : input;
       const workspaceId = body.workspaceId ?? options.workspace?.id ?? options.workspaceIdForAgent?.(body.agentId);
-      return (await json<AgentHostCreateSessionResponse>("/sessions", send("POST", { ...body, ...(workspaceId ? { workspaceId } : {}) }, true))).session;
+      const init = send("POST", { ...body, ...(workspaceId ? { workspaceId } : {}) }, true);
+      if (opening?.preview) init.headers = { ...init.headers as Record<string, string>, [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader };
+      return (await json<AgentHostCreateSessionResponse>("/sessions", init)).session;
     },
     async readHistory(sessionId, input = {}) {
       return agentHostSessionHistorySchema.parse(await json(`${session(sessionId)}/history?${new URLSearchParams(input)}`));

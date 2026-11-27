@@ -1,4 +1,3 @@
-import { WorkspaceBuildTests } from "../../services/app-builder/build-tests";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
 import path from "node:path";
@@ -31,15 +30,6 @@ workspaceRouter.get('/applications/:appId/policy',wrap(async(req,res)=>{
   if(listed?.kind!=='connected')throw new HttpError(403,'Application use permission required','PRODUCT_FORBIDDEN');
   res.json({messageBridge:0});
 }));
-for (const method of ["get", "post", "delete"] as const) {
-  workspaceRouter[method]("/:id/build-tests", wrap(async (req,res) => {
-    const c=context(req);await assertAppBuilderAccess(c.credentials);
-    const tests=new WorkspaceBuildTests(c.owner,c.credentials,id(req,"id"));
-    const result=method==="get" ? await tests.current() : method==="delete" ? await tests.stop()
-      : await tests.start(z.object({samplePath:z.string().optional()}).strict().parse(req.body).samplePath);
-    res.json(result);
-  }));
-}
 workspaceRouter.get("/:id/panel-candidate", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const { ref } = panelCandidateQuerySchema.parse(req.query);
@@ -51,7 +41,6 @@ workspaceRouter.get("/:id/sessions", wrap(async (req, res) => {
 }));
 workspaceRouter.delete("/:id", wrap(async (req, res) => {
   const c=context(req), owner = c.owner;
-  await new WorkspaceBuildTests(owner,c.credentials,id(req,"id")).stop();
   const deleted = z.object({ sessionIds: z.array(workspaceIdSchema) }).parse(await runtime(owner).request(`/v1/workspaces/${id(req, "id")}`, "DELETE"));
   for (const sessionId of deleted.sessionIds) await assistantService.delete(sessionId, owner);
   res.sendStatus(204);

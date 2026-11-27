@@ -16,11 +16,15 @@ class AgentChannelRunsTest {
     when(runtime.json(anyString(),anyString(),endsWith("/runs"),eq("POST"),any(),any())).thenAnswer(call->call.getArgument(4));
     var host=new AgentChannelRuns(callers,runtime);
     var input=JSONObject.of("role","notification","kind","agent-answer","source",JSONObject.of("kind","user"),"content","Execute","selectedOption",1,"replyTo",ID,"timestamp",1);
-    var human=host.send("retriever",ID,ID,input,null,context,true);
+    var human=host.send("retriever",ID,ID,input,null,context,null,true,false);
     assertEquals(actor,human.getJSONObject("channel").getJSONObject("userRecipient").getJSONObject("actor"));
     assertEquals(actor,human.getJSONObject("input").getJSONObject("respondent"));
     assertEquals(1,human.getJSONObject("input").getIntValue("selectedOption"));
-    var background=host.send("retriever",ID,ID,JSONObject.of("role","user","content","Scheduled"),null,context,false);
+    var background=host.send("retriever",ID,ID,JSONObject.of("role","user","content","Scheduled"),null,context,null,false,false);
     assertNull(background.getJSONObject("channel").get("userRecipient"));
+    assertEquals("live",human.getJSONObject("channel").getJSONObject("authority").getString("executionKind"));
+    // A run a preview starts here runs as the preview: what it executes, and what it delegates, is refused where it runs.
+    var preview=host.send("retriever",ID,ID,JSONObject.of("role","user","content","How many orders?"),null,context,null,true,true);
+    assertEquals("preview",preview.getJSONObject("channel").getJSONObject("authority").getString("executionKind"));
   }
 }

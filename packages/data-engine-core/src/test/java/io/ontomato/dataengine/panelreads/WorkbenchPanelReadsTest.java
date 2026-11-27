@@ -146,7 +146,6 @@ class WorkbenchPanelReadsTest {
                 WorkbenchPanelRead.liveData("customer:ObjectType", "query", customer),
                 WorkbenchPanelRead.callerScopedLiveData("customer:Relationship", "neighbors", relationship),
                 WorkbenchPanelRead.callerScopedMetadata("customer:ObjectType", "createForm", customerCreate),
-                new WorkbenchBuildTestMetadata().workbenchBuilderTestStatus(sandboxes),
                 new WorkbenchMetricMetadata().workbenchMetricDescription(ontology),
                 WorkbenchPanelRead.Query.callerScoped("platform:MetricView", "parameterForm", WorkbenchPanelRead.QueryExecution.METADATA, metricForm),
                 WorkbenchPanelRead.Query.callerScoped("platform:MetricView", "result", WorkbenchPanelRead.QueryExecution.REQUEST_THREAD, metricResult)));
@@ -286,8 +285,6 @@ class WorkbenchPanelReadsTest {
             http.perform(request(batch).header(AgentExecutionScope.CALLER_HEADER, CALLER)).andExpect(status().isForbidden());
         http.perform(request(batch(relationshipRead())).header(AgentExecutionScope.CALLER_HEADER, CALLER)
                 .requestAttr(QueryGrantService.ATTRIBUTE, new JSONObject())).andExpect(status().isUnauthorized());
-        http.perform(request(batch(relationshipRead())).header(AgentExecutionScope.CALLER_HEADER, CALLER)
-                .header(DataSandboxService.HEADER, "{}")).andExpect(status().isUnauthorized());
         verifyNoInteractions(callers, relationship, handler, dataPermissions);
     }
 
@@ -635,54 +632,6 @@ class WorkbenchPanelReadsTest {
         verify(identity).getCurrentCredentialExpiresAt();
     }
 
-    @Test
-    void builderTestStatusDistinguishesMissingFromDeniedAndSharesMetricQueryAccess() throws Exception {
-        authenticated();
-        registration();
-        when(authorization.decide(same(subject), any())).thenReturn(new Decision(true, null, null));
-        var path = read("registered", "panel", "frame", "registered");
-        var status = path.replace("example:type", "platform:Application").replace("\"query\"", "\"builderTestStatus\"")
-            .replace("\"parameters\":{\"selected\":\"registered\"}", "\"parameters\":{\"workspaceId\":\"workspace\"}");
-        var metric = path.replace("example:type", "platform:MetricView").replace("\"query\"", "\"parameterForm\"");
-
-        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Query access denied")).when(identity).requireQueryAccess("u", "d");
-        http.perform(request(batch(status))).andExpect(status().isOk())
-            .andExpect(jsonPath("$.results[0].status").value("forbidden"))
-            .andExpect(jsonPath("$.results[0].error").value("Query access denied"));
-        verifyNoInteractions(sandboxes, dataPermissions);
-
-        clearInvocations(identity);
-        doNothing().when(identity).requireQueryAccess("u", "d");
-        when(dataPermissions.getDataPermission("u", "d")).thenReturn(new UserDataPermission());
-        when(identity.getCurrentCredentialExpiresAt())
-            .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Expired credential"));
-        http.perform(request(batch(status))).andExpect(status().isOk())
-            .andExpect(jsonPath("$.results[0].status").value("error"))
-            .andExpect(jsonPath("$.results[0].code").value("UNAUTHENTICATED"));
-        verifyNoInteractions(sandboxes);
-
-        clearInvocations(identity, dataPermissions);
-        doReturn(123L).when(identity).getCurrentCredentialExpiresAt();
-        var captured = new java.util.concurrent.atomic.AtomicReference<QueryAccessService.Access>();
-        when(sandboxes.currentStatusFact(eq("workspace"), any())).thenAnswer(call -> {
-            var access = call.<QueryAccessService.Access>getArgument(1);
-            assertEquals("u", access.user().getId());
-            assertEquals("d", access.user().getDomainId());
-            assertEquals(123L, access.expiresAt());
-            captured.set(access);
-            return null;
-        });
-        when(metricForm.read(any(), any(), any())).thenAnswer(call -> {
-            assertSame(captured.get(), call.getArgument(0));
-            return Map.of("metric", "ready");
-        });
-        http.perform(request(batch(status, metric))).andExpect(status().isOk())
-            .andExpect(jsonPath("$.results[0].status").value("empty"))
-            .andExpect(jsonPath("$.results[1].payload.metric").value("ready"));
-        verify(identity).requireQueryAccess("u", "d");
-        verify(identity).getCurrentCredentialExpiresAt();
-        verify(dataPermissions).getDataPermission("u", "d");
-    }
 
     @Test
     void executionUserReadsReuseEffectiveAdministrationAndResolveSelectionsWithoutReauthentication() throws Exception {
@@ -761,7 +710,6 @@ class WorkbenchPanelReadsTest {
         http.perform(unauthenticated).andExpect(status().isForbidden());
         verifyNoInteractions(identity, authorization);
         http.perform(unauthenticated.header(WorkbenchServiceAuthentication.HEADER, "service")).andExpect(status().isUnauthorized());
-        http.perform(unauthenticated.header(DataSandboxService.HEADER, "sandbox")).andExpect(status().isUnauthorized());
         verify(identity).verifyWorkbenchPanelViewer();
         verifyNoInteractions(authorization, applications, handler);
     }

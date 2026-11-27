@@ -5,7 +5,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import express from "express";
 import pg from "pg";
@@ -16,7 +16,6 @@ import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
-import { buildTestAccess } from "../build-test-access";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "" }));
 vi.mock("../../infrastructure/postgres", () => ({
@@ -32,13 +31,8 @@ const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 const workspaceId = randomUUID();
 const projectionId = "candidate-action";
-const context = {
-  contextId: "workspace-context", workspaceId, status: "READY", expiresAt: Date.now() + 60_000,
-  classNames: [], sampleSummary: { name: null, classes: 0, sha256: null }, resources: [],
-};
 const previousQueryUrl = config.dataQuery.baseUrl;
-const ownerContexts: unknown[] = [];
-let issuedContext: typeof context | null;
+let ownerReads = 0;
 let canUseProjection: boolean;
 let server: Server;
 let root: string;
@@ -83,12 +77,6 @@ beforeAll(async () => {
     rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder", renderer: "app-builder", entryKey: "app-builder" },
     scheduleAdapter: null, releaseId: null,
   }] }));
-  app.get("/java/ontology/build-tests/current", (req, res) => {
-    expect(req.header("tk")).toBe("alice");
-    expect(req.header(BUILD_TEST_HEADER)).toBeUndefined();
-    expect(req.query.workspaceId).toBe(workspaceId);
-    res.json(issuedContext);
-  });
   mountCurrentProductDecisions(app, {
     prefix: "/java", token: "fixture-service", domain: "domain",
     allow: ({ target, ownerFacts, verb }, caller) =>
@@ -107,7 +95,9 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("alice");
     expect(req.header("Accept-Language")).toBe("en");
     expect(req.body).toEqual({ id: "review" });
-    ownerContexts.push(JSON.parse(req.header(BUILD_TEST_HEADER)!));
+    // A candidate's read is the reader's own live read: it carries no preview identity.
+    expect(req.header(EXECUTION_CONTEXT_HEADER)).toBeUndefined();
+    ownerReads += 1;
     res.json({ success: true, data: { id: "review", name: "Review candidate" } });
   });
   const authenticate: express.RequestHandler = (req, _res, next) => {
@@ -117,7 +107,7 @@ beforeAll(async () => {
   };
   const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
   app.use("/api", createProductPanelReadRouter(authenticate));
-  app.use("/api", authenticate, buildTestAccess);
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   server = app.listen(0, "127.0.0.1");
@@ -142,9 +132,8 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  issuedContext = context;
   canUseProjection = true;
-  ownerContexts.length = 0;
+  ownerReads = 0;
 });
 
 afterAll(async () => {
@@ -160,8 +149,7 @@ afterAll(async () => {
 async function readCandidate(member = "result", caller = "alice") {
   const response = await fetch(`${base}/api/product-panels/read`, {
     method: "POST",
-    headers: { tk: caller, "Content-Type": "application/json",
-      [BUILD_TEST_HEADER]: JSON.stringify({ kind: "build-test", contextId: "untrusted-client-context" }) },
+    headers: { tk: caller, "Content-Type": "application/json" },
     body: JSON.stringify({
       source: { kind: "candidate", workspace: { id: workspaceId, ref: "working" } },
       memberPath: [{ member }], dataName: "record", inputs: {},
@@ -171,13 +159,8 @@ async function readCandidate(member = "result", caller = "alice") {
   return productPanelReadResponseSchema.parse(await response.json());
 }
 
-it("reads an authored candidate member using the workspace's actual build-test context", async () => {
+it("reads an authored candidate member live", async () => {
   expect(await readCandidate()).toMatchObject({ status: "ready", value: { primaryKey: "review", label: "Review candidate" } });
-  issuedContext = null;
-  expect(await readCandidate()).toMatchObject({ status: "ready" });
-  expect(ownerContexts).toEqual([
-    { kind: "build-test", contextId: "workspace-context" }, { kind: "build-test", contextId: null },
-  ]);
 });
 
 it("refuses a missing member, an off-workspace caller and a projection without use", async () => {
@@ -185,5 +168,5 @@ it("refuses a missing member, an off-workspace caller and a projection without u
   expect(await readCandidate("result", "bob")).toMatchObject({ status: "error", message: "Workspace not found" });
   canUseProjection = false;
   expect(await readCandidate()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
-  expect(ownerContexts).toEqual([]);
+  expect(ownerReads).toBe(0);
 });

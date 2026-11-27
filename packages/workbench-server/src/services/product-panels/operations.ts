@@ -1,3 +1,4 @@
+import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import { isLivePresentationEligibleRun } from "../agent-host/presentation";
 import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import type { z } from "zod";
@@ -480,9 +481,12 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
       return humanPreparation(existing.intent);
     }
     const { run, channel, root } = await requireActivePageRun(owner, input.agentRun);
-    const buildTest = channel.authority.executionKind === "build-test";
-    if (buildTest && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
-      throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
+    const runPreview = channel.authority.executionKind === "preview";
+    if (runPreview && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
+      throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
+    // The operation is the preview's when either the run it is for or the trusted request preparing it is one: whoever
+    // confirms it later, the write it executes reaches its entry as the preview.
+    const preview = runPreview || credentials.executionKind === "preview";
     const { use, framePanelId } = await requireAgentPanelUse(owner, credentials, input);
     const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
     const current = writeOperation(await declaredOperation(owner, credentials, panel, use.panelId, use, input, invocationTarget(input), {
@@ -500,7 +504,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     const host = operationHost({ owner, credentials });
     const confirmation = await humanConfirmation(current.handler, host, prepared);
     const settings = await store.settings(owner, root);
-    const autoMode = !buildTest && !settings.confirmBeforeExecute;
+    const autoMode = !preview && !settings.confirmBeforeExecute;
     const questionId = autoMode ? null : randomUUID();
     let questionPrompt: Awaited<ReturnType<typeof panelConfirmation>> | null = null;
     if (!autoMode) {
@@ -537,6 +541,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
         rootSession: root,
         autoMode,
         questionId,
+        ...(preview && { executionKind: "preview" as const }),
       },
       initiator: owner,
       use: { applicationId: input.applicationId, useId: input.useId },
@@ -579,7 +584,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
   const confirmation = await humanConfirmation(current.handler, operationHost({ owner, credentials }), staged.invocation, staged.upload?.file);
   const intent: PanelHumanOperationIntent = {
     intentId: randomUUID(),
-    source: { kind: "human" },
+    source: { kind: "human", ...(credentials.executionKind === "preview" && { executionKind: "preview" as const }) },
     initiator: owner,
     use: { applicationId: input.applicationId, useId: input.useId },
     ...(input.root && { root: input.root }),
@@ -676,7 +681,10 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   // An expired or missing file refuses before the intent is claimed, so nothing is spent.
   const staged = await withStagedFile(owner, ref, current.handler, prepared, credentials.locale);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
-  const host = operationHost({ owner, credentials }, view);
+  // An intent a preview prepared (a preview run, or a person in a preview) stays the preview's: the person confirming it
+  // does not lift the preview's refusal at the entry it reaches.
+  const executor = intent.source.executionKind === "preview" ? { ...credentials, executionKind: "preview" as const } : credentials;
+  const host = operationHost({ owner, credentials: executor }, view);
   const result = await claimAndExecutePanel(owner, host, claimedIntent, current.handler, staged.invocation);
   const outcome = result?.persistedOutcome;
   if (outcome?.kind === "success" && intent.source.kind === "agent-page" && intent.source.rootSession && "call" in staged.invocation) {

@@ -298,6 +298,19 @@ describe("executing an action on a customer object", () => {
     expect(JSON.parse(String(body.get("param")))).toEqual({ order_id: "00123", amount: 12.5 });
   });
 
+  it("keeps the owner's preview refusal of /action/execute as it answered", async () => {
+    const { host } = hostWith({
+      "/api/data-query/action/form": ok({ ...openedForm, parameters: { order_id: "00123" } }),
+      "/api/data-query/action/execute": () => Response.json({
+        success: false, code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验",
+      }, { status: 422 }),
+    });
+
+    expect(await operation.execute(host, target, { values: {} }, "intent-1")).toEqual({
+      kind: "refusal", code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验",
+    });
+  });
+
   it("forwards explicit empty string and JSON null clear values to /action/form and /action/execute without dropping them", async () => {
     const { host, sent } = hostWith({
       "/api/data-query/action/form": ok({

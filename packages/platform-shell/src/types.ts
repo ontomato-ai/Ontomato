@@ -33,6 +33,12 @@ export interface PlatformApp {
 /** The rail's sections, top to bottom; a divider separates them and none carries a group name. */
 export type PlatformRailSection = "top" | "builders" | "apps" | "bottom";
 
+export interface PlatformShortcutReadFailure {
+  reason: string;
+  label: string;
+  retry(): void;
+}
+
 /** The signed-in account in the rail's footer; null in editions without sign-in. */
 export interface PlatformAccount {
   userName: string;

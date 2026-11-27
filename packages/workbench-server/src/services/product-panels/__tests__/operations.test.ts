@@ -12,7 +12,7 @@ import { type CreatePanelHumanOperationIntentRequest, type PanelOperationIntent 
 import { agentHostObjectChangedFrameSchema } from "@ontomato/contracts/agent-host";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { AGENT_DEFINITION, APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
-import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
@@ -265,15 +265,88 @@ it("session settings compare the authenticated owner even when a session is read
  await expect(ownPanelSettings(owner,root)).rejects.toMatchObject({code:"FORBIDDEN"});
  expect((await panelOperationStore.settings(owner,root)).confirmBeforeExecute).toBe(true);
 });
-it("requires the human root and confirmation for build-test page operations",async()=>{
- current.channel!.authority.executionKind="build-test";
- await expect(prepareLiveAction(action())).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});
+it("requires the human root and confirmation for preview page operations",async()=>{
+ current.channel!.authority.executionKind="preview";
+ await expect(prepareLiveAction(action())).rejects.toMatchObject({code:"PREVIEW_WRITE_FORBIDDEN"});
  current.channel!.root = { session, runId: current.id };
  current.channel!.userRecipient = { session, actor: current.channel!.actor };
  automatic = true;
  const preparation = await prepareLiveAction(action());
  expect(preparation).toMatchObject({ autoMode: false, questionId: expect.any(String) });
  expect(ownerWrites()).toHaveLength(0);
+});
+
+it("carries a preview run's identity into the business write its page operation dispatches, whoever confirms it",async()=>{
+ current.channel!.authority.executionKind="preview";
+ current.channel!.root = { session, runId: current.id };
+ current.channel!.userRecipient = { session, actor: current.channel!.actor };
+ const { intentId } = await prepareLiveAction(action());
+ expect(intents.get(intentId)).toMatchObject({ source: { kind: "agent-page", executionKind: "preview" } });
+ const owner422 = vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   const marked = new Headers(init.headers).get(EXECUTION_CONTEXT_HEADER);
+   if ((init.method ?? "GET") === "GET") {
+     expect(marked).toBeNull();
+     return Response.json({...task,title:"Inventory summary"});
+   }
+   expect(url).toMatch(/\/platform\/triggers\/[^/]+\/runs$/u);
+   expect(marked).toBe('{"kind":"preview"}');
+   return Response.json({error:{code:"PREVIEW_WRITE_FORBIDDEN",message:"预览里不执行写操作，动作的对错用动作试跑验"},correlationId:"test"},{status:422});
+ });
+ vi.stubGlobal("fetch",owner422);
+ // The person confirming in the page dispatches with their own credentials, which carry no preview of their own.
+ expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({ kind: "dispatched", outcome: {
+   kind: "refusal", code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验",
+ } });
+ expect(ownerWrites()).toHaveLength(1);
+});
+
+it.each([
+ { request: "preview", run: "live" },
+ { request: "live", run: "preview" },
+] as const)("records a $request request's page operation for a $run run as the preview's, so a live page's confirmation still reaches the write as the preview",async({ request, run })=>{
+ current.channel!.authority.executionKind=run;
+ current.channel!.root = { session, runId: current.id };
+ current.channel!.userRecipient = { session, actor: current.channel!.actor };
+ mocks.projection.mockImplementation(async(_o:unknown,_c:unknown,id:string)=>({id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"triggers.runNow"}:{kind:"PlatformObjectType",id:"platform:Trigger"},inputs:{task:{kind:"object",objectType:"platform:Trigger"}}}));
+ const { intentId: toolCallId, ...operation } = action();
+ const caller = request === "preview" ? { ...credentials, executionKind: "preview" as const } : credentials;
+ const { intentId } = await prepareHumanPanelOperation(owner, caller,
+   { ...operation, agentRun: { runId: current.id, sessionId: current.sessionId, toolCallId } }, "Alice");
+ expect(intents.get(intentId)).toMatchObject({ source: { kind: "agent-page", executionKind: "preview" } });
+ vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   const marked = new Headers(init.headers).get(EXECUTION_CONTEXT_HEADER);
+   if ((init.method ?? "GET") === "GET") return Response.json({...task,title:"Inventory summary"});
+   expect(url).toMatch(/\/platform\/triggers\/[^/]+\/runs$/u);
+   expect(marked).toBe('{"kind":"preview"}');
+   return Response.json({error:{code:"PREVIEW_WRITE_FORBIDDEN",message:"预览里不执行写操作，动作的对错用动作试跑验"},correlationId:"test"},{status:422});
+ }));
+ // The person on the live page confirms with their own, unmarked credentials.
+ expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({ kind: "dispatched", outcome: {
+   kind: "refusal", code: "PREVIEW_WRITE_FORBIDDEN",
+ } });
+ expect(ownerWrites()).toHaveLength(1);
+});
+
+it("carries a preview's identity into the business write when it confirms a live run's page operation",async()=>{
+ const { intentId } = await prepareLiveAction(action());
+ expect(intents.get(intentId)!.source).not.toHaveProperty("executionKind");
+ mocks.projection.mockImplementation(async(_o:unknown,_c:unknown,id:string)=>({id,name:"Run now",componentId:id,binding:{kind:"PlatformOperation",id:"triggers.runNow"},inputs:{task:{kind:"object",objectType:"platform:Trigger"}}}));
+ const owner422 = vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   const marked = new Headers(init.headers).get(EXECUTION_CONTEXT_HEADER);
+   if ((init.method ?? "GET") === "GET") {
+     expect(marked).toBeNull();
+     return Response.json({...task,title:"Inventory summary"});
+   }
+   expect(url).toMatch(/\/platform\/triggers\/[^/]+\/runs$/u);
+   expect(marked).toBe('{"kind":"preview"}');
+   return Response.json({error:{code:"PREVIEW_WRITE_FORBIDDEN",message:"预览里不执行写操作，动作的对错用动作试跑验"},correlationId:"test"},{status:422});
+ });
+ vi.stubGlobal("fetch",owner422);
+ // Confirming a pending operation is platform state; the write it executes is refused at its entry, never let through live.
+ expect(await dispatchHumanPanelOperation(owner, { ...credentials, executionKind: "preview" }, intentId)).toMatchObject({ kind: "dispatched", outcome: {
+   kind: "refusal", code: "PREVIEW_WRITE_FORBIDDEN", message: "预览里不执行写操作，动作的对错用动作试跑验",
+ } });
+ expect(ownerWrites()).toHaveLength(1);
 });
 
 it("rejects a declaration whose target type does not match its platform operation",async()=>{
@@ -802,13 +875,13 @@ it("freezes a localized input schema and dispatches the batch in the same locale
   expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ locale: "fr" }), input.calls, intentId);
 });
 
-it("runs a registered read using the reader and preview context without creating an intent", async () => {
+it("runs a registered read for a preview reader live and unmarked, without creating an intent", async () => {
   const binding = { kind: "PlatformOperation" as const, id: "metricViews.testExecute" };
   const input = { applicationId: "A", useId: "tasks", operationId: "run.testExecute", call: {
     target: { kind: "draft" as const },
     input: { draft: { name: "Unsaved metric" }, parameters: { amount: 3 }, bindingId: "sample" },
   } };
-  const preview = { ...credentials, headers: { [BUILD_TEST_HEADER]: "build-preview" } };
+  const preview = { ...credentials, executionKind: "preview" as const };
   const execute = vi.fn(async (host: serverOperations.PanelOperationHost, call: typeof input.call) => {
     await host.request("/api/data-query/metricView/testExecute", { method: "POST", body: JSON.stringify(call.input) });
     return { kind: "json" as const, value: [{ amount: 3 }] };
@@ -831,7 +904,8 @@ it("runs a registered read using the reader and preview context without creating
   const ownerRead = vi.fn(async (url, init) => {
     expect(url).toBe("http://owner.test/metricView/testExecute");
     expect(new Headers(init.headers).get("tk")).toBe("U-token");
-    expect(new Headers(init.headers).get(BUILD_TEST_HEADER)).toBe("build-preview");
+    // A read reaches its owner as the reader does: the preview identity is no part of a read.
+    expect(new Headers(init.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
     expect(JSON.parse(init.body)).toEqual(input.call.input);
     return Response.json({});
   });

@@ -98,4 +98,5 @@ export type {
   PlatformPreferences,
   PlatformRailSection,
   PlatformShellLabels,
+  PlatformShortcutReadFailure,
 } from "./types";

@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { afterEach, describe, expect, it } from "vitest";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { createPraxisRouter } from "../praxis";
 
 const servers: Server[] = [];
@@ -88,6 +89,38 @@ describe("product Praxis route", () => {
     const hidden = await fetch(`${base}/api/praxis/health`);
     expect(hidden.status).toBe(404);
     expect(upstreamCalls).toBe(0);
+  });
+
+  it("passes a preview's identity to Praxis only when it starts or advances a formal run", async () => {
+    const seen: string[] = [];
+    const upstream = express();
+    upstream.use((request, response) => {
+      seen.push(`${request.method} ${request.path} ${request.header(EXECUTION_CONTEXT_HEADER) ?? "-"}`);
+      response.json({});
+    });
+    const upstreamBase = await listen(upstream);
+    const app = express();
+    app.use(express.json());
+    app.use((request: Request, _response: Response, next: NextFunction) => {
+      Object.assign(request, { userId: "user-a", domainId: "domain-a", roles: ["user"], token: "token-a", apiKey: "", locale: "en" });
+      next();
+    });
+    app.use("/api/praxis", createPraxisRouter(upstreamBase));
+    const base = await listen(app);
+    const send = (path: string, method: string, marker: string) => fetch(`${base}/api/praxis/${path}`, {
+      method, headers: { tk: "token-a", "Content-Type": "application/json", [EXECUTION_CONTEXT_HEADER]: marker },
+      ...(method === "GET" ? {} : { body: "{}" }),
+    });
+
+    await send("runs", "POST", previewExecutionContextHeader);
+    await send("steps/s-1/decide", "POST", previewExecutionContextHeader);
+    await send("runs", "POST", '{"kind":"live"}');
+    await send("runs", "GET", previewExecutionContextHeader);
+    await send("runs/r-1/case", "GET", previewExecutionContextHeader);
+    expect(seen).toEqual([
+      `POST /runs ${previewExecutionContextHeader}`, `POST /steps/s-1/decide ${previewExecutionContextHeader}`,
+      "POST /runs -", "GET /runs -", "GET /runs/r-1/case -",
+    ]);
   });
 });
 

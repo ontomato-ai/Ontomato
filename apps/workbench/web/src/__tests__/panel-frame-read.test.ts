@@ -1,6 +1,5 @@
 import { afterEach, expect, it } from "vitest";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { registerCandidateFrame } from "../../../../../packages/platform-web/src/app-host";
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
@@ -64,7 +63,7 @@ it("reads a candidate preview's member data as its workspace, for Node to answer
   const sent = installPlatform(answer);
   const frame = panelFrame();
   const workspace = { id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", ref: "working" };
-  registerCandidateFrame(frame, buildExecutionContext(workspace.id, null), workspace,
+  registerCandidateFrame(frame, workspace,
     { pageKey: "candidate", manifest: panelP.manifest }, true);
   writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), useOfP.path, {});
   inside(frame);

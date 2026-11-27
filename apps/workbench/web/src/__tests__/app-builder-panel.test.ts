@@ -13,7 +13,6 @@ import {
   APPLICATION_CREATE_DRAFT,
   APPLICATION_DELETE_DRAFT,
   APPLICATION_PUBLISH_BUILDER_SOURCE,
-  APPLICATION_RESTART_BUILD_TEST,
   APPLICATION_RESTORE_SOURCE_COMMIT,
   APPLICATION_ROLLBACK_BUILDER_RELEASE,
   APPLICATION_SYNC_BUILDER_SOURCE,
@@ -56,7 +55,6 @@ const applicationTypeEntry = platformTypeTableEntrySchema.parse({
     { id: APPLICATION_DELETE_DRAFT, kind: "action", effect: "write", batch: false, inputSchema: { type: "object" }, target: { source: "input", input: "target" } },
     { id: "applications.delete", kind: "action", effect: "write", batch: false, inputSchema: { type: "object" }, target: { source: "input", input: "target" } },
     { id: APPLICATION_SYNC_BUILDER_SOURCE, kind: "action", effect: "write", batch: false, inputSchema: { type: "object" }, target: { source: "input", input: "target" } },
-    { id: APPLICATION_RESTART_BUILD_TEST, kind: "action", effect: "write", batch: false, inputSchema: { type: "object" }, target: { source: "input", input: "target" } },
     { id: APPLICATION_RESTORE_SOURCE_COMMIT, kind: "action", effect: "write", batch: false, inputSchema: { type: "object", properties: { commit: { type: "string" } } }, target: { source: "input", input: "target" } },
     { id: APPLICATION_CREATE_DRAFT, kind: "action", effect: "write", batch: false, inputSchema: { type: "object" }, target: { source: "none" } },
     { id: APPLICATION_UPDATE_BUILDER_META, kind: "action", effect: "write", batch: false, inputSchema: { type: "object" }, target: { source: "input", input: "target" } },
@@ -234,8 +232,6 @@ describe("builtin-product-app-builder three-column panel", () => {
               fields: {
                 shortHeadCommit: "abc1234",
                 busyLabel: "Idle",
-                buildTestStatusLabel: "Ready",
-                buildTestSampleName: "sample-orders.json",
               },
               outputs: {
                 name: "Orders Portal",
@@ -252,9 +248,6 @@ describe("builtin-product-app-builder three-column panel", () => {
                 conflictCount: 0,
                 conflictFilesJson: "[]",
                 previewEntriesJson: JSON.stringify([{ id: "main", label: "Main" }]),
-                buildTestStatus: "READY",
-                buildTestSampleName: "sample-orders.json",
-                buildTestCanRestart: true,
               },
             },
           });
@@ -544,7 +537,7 @@ describe("builtin-product-app-builder three-column panel", () => {
               className: APPLICATION,
               primaryKey: "app-orders",
               label: "Orders Portal",
-              fields: { shortHeadCommit: "abc1234", busyLabel: "Idle", buildTestStatusLabel: "Ready", buildTestSampleName: "" },
+              fields: { shortHeadCommit: "abc1234", busyLabel: "Idle" },
               outputs: {
                 name: "Orders Portal",
                 icon: "package",
@@ -560,9 +553,6 @@ describe("builtin-product-app-builder three-column panel", () => {
                 conflictCount: 0,
                 conflictFilesJson: "[]",
                 previewEntriesJson: "[]",
-                buildTestStatus: "NONE",
-                buildTestSampleName: "",
-                buildTestCanRestart: false,
               },
             },
           });

@@ -6,10 +6,8 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { BUILD_TEST_HEADER, BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
 import { candidatePanelSourceSchema } from "@ontomato/contracts/panel-host";
 import { WorkspaceGit } from "../../../../../agent-runtime/src/workspace-git";
-import { buildTestAccess } from "../../build-test-access";
 import { errorHandler } from "../../middleware";
 import { installContentLayout } from "../../../content/layout";
 import { installWorkbenchIdentity } from "../../../identity/installed";
@@ -36,13 +34,8 @@ const messages = {
   en: { "settings.title": "Settings for {name}" },
   "zh-CN": { "settings.title": "{name} 的设置" },
 };
-const currentTest = {
-  contextId: "context-a", workspaceId, status: "READY", expiresAt: Date.now() + 60_000,
-  classNames: [], sampleSummary: { name: "test-data/sample.json", classes: 0, sha256: null }, resources: [],
-};
 const calls: string[] = [];
 let allowProjection: boolean;
-let issuedTest: typeof currentTest | null;
 let server: Server;
 let root: string;
 let base: string;
@@ -97,10 +90,6 @@ beforeAll(async () => {
     icon: "Hammer", rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder", renderer: "app-builder", entryKey: "app-builder" },
     scheduleAdapter: null, releaseId: null,
   }] }));
-  app.get("/java/ontology/build-tests/current", (req, res) => {
-    calls.push(`test:${req.header("tk")}:${req.query.workspaceId}`);
-    res.json(issuedTest);
-  });
   app.post("/java/authorization/objects/decide-batch", (req, res) => {
     res.json(objectDecisions(req.body, request => {
       if (!("target" in request)) return false;
@@ -115,7 +104,6 @@ beforeAll(async () => {
     Object.assign(req, { userId: req.header("tk"), domainId: scope.domainId, token: req.header("tk") });
     next();
   });
-  app.use("/api", buildTestAccess);
   app.use("/api/workspaces", workspaceRouter);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
@@ -134,7 +122,6 @@ beforeEach(() => {
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture");
   calls.length = 0;
   allowProjection = true;
-  issuedTest = currentTest;
   productQuery.mockReset().mockResolvedValue({ rows: [{
     id: projectionId, domainId: scope.domainId, ownerId: "settings-owner", revision: 1,
     definition: {
@@ -154,11 +141,11 @@ afterAll(async () => {
 
 function preview(ref: string, user = "alice") {
   return fetch(`${base}/api/workspaces/${workspaceId}/panel-candidate?${new URLSearchParams({ ref })}`, {
-    headers: { tk: user, [BUILD_TEST_HEADER]: JSON.stringify({ kind: "build-test", contextId: "client-context" }) },
+    headers: { tk: user },
   });
 }
 
-it("loads a commit under the author, uses the workspace's current test context and only reads the registered projection", async () => {
+it("loads a commit under the author and only reads the registered projection", async () => {
   const response = await preview(commit);
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("no-store");
@@ -168,14 +155,13 @@ it("loads a commit under the author, uses the workspace's current test context a
       content: { html: vuePanelContent("form").html, module: 'throw new Error("The server must not execute the module");', recipes: "Committed recipes", messages },
       manifest,
     },
-    previewContext: { kind: "build-test", test: currentTest },
+    previewContext: { kind: "preview" },
   });
-  expect(calls).toEqual(expect.arrayContaining([`test:alice:${workspaceId}`, `grant:alice:use:${projectionId}`]));
+  expect(calls).toEqual(expect.arrayContaining([`grant:alice:use:${projectionId}`]));
   expect(productQuery.mock.calls).toEqual([[expect.stringMatching(/^SELECT .*product_projections/), [scope.domainId, projectionId]]]);
 });
 
-it("reads the Vue panel from the working tree and preserves NONE as build-test", async () => {
-  issuedTest = null;
+it("reads the Vue panel from the working tree", async () => {
   const response = await preview("working");
   expect(response.status).toBe(200);
   const source = candidatePanelSourceSchema.parse(await response.json());
@@ -183,7 +169,7 @@ it("reads the Vue panel from the working tree and preserves NONE as build-test",
   expect(source.panel.content).toMatchObject(vuePanelContent("form"));
   expect(source.panel.content).not.toHaveProperty("recipes");
   expect(source.panel.content).not.toHaveProperty("messages");
-  expect(source.previewContext).toEqual({ kind: "build-test", test: null });
+  expect(source.previewContext).toEqual({ kind: "preview" });
 });
 
 it("rejects a non-author before any context or projection read", async () => {
@@ -220,16 +206,15 @@ it("resolves a coded candidate's member from its commit and scopes the projectio
   expect(result.panel.content.module).toBe('throw new Error("The server must not execute the module");');
   expect(result.member).toEqual(manifest.members.form);
   expect(result.projection).toMatchObject({ id: projectionId, ownerId: "settings-owner" });
-  expect(result.previewContext).toEqual({ kind: "build-test", test: currentTest });
-  expect(calls).toEqual([`grant:alice:use:${projectionId}`, `test:alice:${workspaceId}`]);
+  expect(result.previewContext).toEqual({ kind: "preview" });
+  expect(calls).toEqual([`grant:alice:use:${projectionId}`]);
   expect(productQuery.mock.calls).toEqual([[expect.stringMatching(/^SELECT .*product_projections/), [scope.domainId, projectionId]]]);
 });
 
-it("resolves a working candidate without a test as build-test NONE", async () => {
-  issuedTest = null;
+it("resolves a working candidate", async () => {
   const result = await candidateMember("working");
   expect(result.panel.content.module).toBe(vuePanelContent("form").module);
-  expect(result.previewContext).toEqual({ kind: "build-test", test: null });
+  expect(result.previewContext).toEqual({ kind: "preview" });
 });
 
 it.each([
@@ -246,14 +231,4 @@ it("refuses a candidate member after looking up its same-domain projection facts
   await expect(candidateMember(commit)).rejects.toMatchObject({ code: "OBJECT_FORBIDDEN" });
   expect(calls).toEqual([`grant:alice:use:${projectionId}`]);
   expect(productQuery.mock.calls.map(([, params]) => params)).toEqual([[scope.domainId, projectionId]]);
-});
-
-it.each(["product-panels", "product-projections"])("refuses a build-test management write at %s before changing product records", async (collection) => {
-  const response = await fetch(`${base}/api/${collection}/${projectionId}`, {
-    method: "PUT", headers: { tk: "alice", [BUILD_TEST_HEADER]: JSON.stringify({ kind: "build-test", contextId: null }) },
-  });
-  expect(response.status).toBe(422);
-  expect(await response.json()).toMatchObject({ code: BUILD_TEST_UNSUPPORTED });
-  expect(calls).toEqual([]);
-  expect(productQuery).not.toHaveBeenCalled();
 });

@@ -1,6 +1,5 @@
 package io.ontomato.dataengine.applications;
 
-import io.ontomato.dataengine.controller.BuildTestAccess;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -253,7 +252,6 @@ public class ApplicationController {
     }
 
     @GetMapping("/platform/applications/resolve-entry")
-    @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<JSONObject> resolveEntry(@RequestParam(required = false) String path,
             @RequestParam(required = false) String applicationId, @RequestParam(required = false) String useId) {
         if (path != null && applicationId == null && useId == null)
@@ -264,7 +262,6 @@ public class ApplicationController {
     }
 
     @GetMapping("/platform/applications/registered-entry")
-    @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<JSONObject> registeredEntry(HttpServletRequest request, @RequestParam String applicationId,
             @RequestParam String useId) {
         authentication.authenticate(request);
@@ -272,7 +269,6 @@ public class ApplicationController {
     }
 
     @GetMapping("/platform/applications/{id}/panel-uses")
-    @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
     public R<JSONObject> panelUses(@PathVariable String id) { return R.of(catalog.panelUses(id, current())); }
     @GetMapping(value = "/platform/applications/{id}/panel-uses", params = "purpose=management")
     public R<JSONObject> managePanelUses(@PathVariable String id) {
@@ -336,7 +332,6 @@ public class ApplicationController {
         catalog.reconcileBuiltins(service, batch.applications());
         return R.of(Map.of("serviceId", service, "applicationIds", batch.applications().stream().map(ApplicationCatalog.Builtin::id).toList()));
     }
-    @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping(value = "/platform/applications", params = "purpose=navigation")
     public R<?> navigation(@RequestParam(defaultValue = "false") boolean countOnly) {
         var user = current();

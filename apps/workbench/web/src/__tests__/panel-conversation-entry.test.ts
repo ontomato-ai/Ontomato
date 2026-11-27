@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, inject } from "vue";
 import { servePageComposerKey, type PageComposerExpand } from "../../../../../packages/agent-shell-ui/src/page-composer-entry";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
+import { installProductEmbedding, registerCandidateFrame } from "../../../../../packages/platform-web/src/app-host";
 import { ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelUse, registered, type Sent } from "./panel-frame";
 import { codePanelRecord, connectBridge, projectionRecord } from "./host-bridge-records";
 
@@ -84,6 +84,19 @@ describe("a panel's conversation entry", () => {
     // A send command is not part of the message at all.
     await expect(invoke("expand-page-composer", { slot: "governance", ...declared, send: true })).rejects.toThrow();
     expect(expand).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands a candidate preview's entry to the composer as the preview's, so the conversation it opens is the preview's", async () => {
+    const expand = vi.fn();
+    stopServing = servePageComposer(expand);
+    installPlatform(answer);
+    const frame = panelFrame();
+    registerCandidateFrame(frame, { id: "workspace-1", ref: "working" }, { pageKey: "knowledge", manifest: panel.manifest }, true);
+    inside(frame);
+    const invoke = connectBridge();
+    await readProjection(invoke);
+    await expect(invoke("expand-page-composer", { slot: "governance", ...declared })).resolves.toBeNull();
+    expect(expand).toHaveBeenLastCalledWith({ slot: "governance", ...declared, preview: true });
   });
 
   it("refuses when no composer is shown, or the frame's page is not the reader's", async () => {
