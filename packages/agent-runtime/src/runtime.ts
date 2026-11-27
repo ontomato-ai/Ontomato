@@ -65,6 +65,8 @@ interface Active {
   done: Promise<void>;
   frames: RuntimeEventEnvelope[];
   lostThrough: number;
+  streamId: string;
+  nextSeq: number;
   pending: Map<string, RuntimeMessage>;
   messageIds: Map<string, string>;
   turnMessage?: RuntimeMessage;
@@ -300,6 +302,8 @@ export class AgentRuntime {
         done: Promise.resolve(),
         frames: [],
         lostThrough: 0,
+        streamId: accepted.streamId,
+        nextSeq: accepted.seq + 1,
         pending: new Map(),
         messageIds: new Map(),
         turnToolResults: [],
@@ -398,14 +402,14 @@ export class AgentRuntime {
       const session=await this.store.session(scope,sessionId);
       if(!session.activeRunId) return;
       const active=this.active.get(key(scope,session.activeRunId))!;
-      const envelope=await this.store.append(scope,session.activeRunId,{type:"pending_questions_changed",pendingQuestions:await this.channel.facts.pendingQuestions(scope,sessionId)});
+      const envelope=await this.store.append(scope,session.activeRunId,{type:"pending_questions_changed",pendingQuestions:await this.channel.facts.pendingQuestions(scope,sessionId)},false,this.allocateSeq(active));
       this.publish(active,envelope);
     });
   }
   async inputReceived(scope: Scope, runId: string, row: Pick<import("./store").MessageRow, "id" | "messageSeq"> & { message: RuntimeRunInput }) {
     const active = this.active.get(key(scope, runId));
     if (!active || active.sealed) return;
-    const envelope = await this.store.append(scope, runId, { type: "input_received", messageId: row.id, messageSeq: row.messageSeq, message: row.message });
+    const envelope = await this.store.append(scope, runId, { type: "input_received", messageId: row.id, messageSeq: row.messageSeq, message: row.message }, false, this.allocateSeq(active));
     this.publish(active, envelope);
     this.pushInputs(active);
   }
@@ -427,12 +431,32 @@ export class AgentRuntime {
     for (const subscriber of this.sessionRunSubscribers.get(id) ?? [])
       subscriber(frame);
   }
+  private allocateSeq(active: Active) {
+    return active.nextSeq++;
+  }
+  private publishVolatile(active: Active, event: RuntimeAgentEvent) {
+    const envelope: RuntimeEventEnvelope = {
+      sessionId: active.run.sessionId,
+      cursor: { runId: active.run.id, seq: this.allocateSeq(active), streamId: active.streamId },
+      timestamp: new Date().toISOString(),
+      event,
+    };
+    this.publish(active, envelope);
+    return envelope;
+  }
+  private async emitVolatile(active: Active, event: RuntimeAgentEvent) {
+    return this.locked(active.scope, active.run.sessionId, async () =>
+      this.publishVolatile(active, event),
+    );
+  }
   private async emit(active: Active, event: RuntimeAgentEvent) {
     return this.locked(active.scope, active.run.sessionId, async () => {
       const envelope = await this.store.append(
         active.scope,
         active.run.id,
         event,
+        false,
+        this.allocateSeq(active),
       );
       if (event.type === "message_end") active.pending.delete(event.messageId);
       this.publish(active, envelope);
@@ -461,7 +485,7 @@ export class AgentRuntime {
       const message = structuredClone(event.message);
       if (message.role === "assistant" && message.stopReason === "pending") message.content = [];
       await this.locked(active.scope, active.run.sessionId, async () => {
-        const envelope = await this.store.append(active.scope, active.run.id, { type: "message_start", messageId: id, message });
+        const envelope = await this.store.append(active.scope, active.run.id, { type: "message_start", messageId: id, message }, false, this.allocateSeq(active));
         active.pending.set(id, structuredClone(message));
         this.publish(active, envelope);
       });
@@ -478,9 +502,6 @@ export class AgentRuntime {
         ...("reason" in change ? { reason: change.reason } : {}),
       });
       await this.locked(active.scope, active.run.sessionId, async () => {
-        const envelope = await this.store.append(active.scope, active.run.id, {
-          type: "message_update", messageId: id, assistantMessageEvent: wire,
-        });
         const partial = active.pending.get(id);
         if (partial?.role === "assistant" && "contentIndex" in change) {
           const index = change.contentIndex;
@@ -498,7 +519,9 @@ export class AgentRuntime {
             case "toolcall_end": partial.content[index] = change.toolCall; break;
           }
         }
-        this.publish(active, envelope);
+        this.publishVolatile(active, {
+          type: "message_update", messageId: id, assistantMessageEvent: wire,
+        });
       });
       return;
     }
@@ -511,6 +534,10 @@ export class AgentRuntime {
       if (message.role === "assistant") active.turnMessage = message;
       if (message.role === "toolResult") active.turnToolResults.push(message);
       await this.emit(active, { type: "message_end", messageId: id, messageSeq: 0, contextSeq: null, message });
+      return;
+    }
+    if (event.type === "tool_execution_update") {
+      await this.emitVolatile(active, event);
       return;
     }
     if (event.type === "tool_execution_end") {
@@ -594,7 +621,7 @@ export class AgentRuntime {
       if (!input) throw new Error("Engine acknowledged an input that was not sent");
       const envelope = await this.store.append(scope, run.id, {
         type: "message_end", messageId: inputId, messageSeq: 0, contextSeq: null, message: input.message,
-      }, true);
+      }, true, this.allocateSeq(active));
       active.sentInputs.delete(inputId);
       if (input.context !== null) await this.updateHostContext(scope, run.id, input.context);
       this.publish(active, envelope);
@@ -749,7 +776,7 @@ export class AgentRuntime {
       active.sealed = true;
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
-      await this.store.finish(scope, run.id, reason, failure, workspaceCommit);
+      await this.store.finish(scope, run.id, reason, failure, workspaceCommit, () => this.allocateSeq(active));
       this.sessionEngines.idle(scope, run.sessionId);
       // The lifecycle notice follows the finish commit, independently of subsequent intent preparation.
       this.publishSessionRun(scope, { type: "run_stopped", sessionId: run.sessionId, runId: run.id });
@@ -779,6 +806,7 @@ export class AgentRuntime {
             active.run.id,
             toolCallId,
             file,
+            this.allocateSeq(active),
           );
           if (event.event.type !== "artifact_registered")
             throw new Error("Invalid artifact event");
@@ -858,7 +886,7 @@ export class AgentRuntime {
     return {
       run: state.run,
       pendingQuestions: await this.channel.facts.pendingQuestions(scope,state.run.sessionId),
-      cursor: { runId, seq: state.seq, streamId: state.streamId },
+      cursor: { runId, seq: active ? active.nextSeq - 1 : state.seq, streamId: state.streamId },
       messages: includeHistory ? await this.store.messages(scope, state.run.sessionId, undefined, runId) : await this.store.consumedInputs(scope,state.run.sessionId,runId),
       pendingMessages: active
         ? [...active.pending].map(([id, message]) => ({
@@ -979,6 +1007,13 @@ export class AgentRuntime {
     return this.locked(scope, run.sessionId, async () => {
       const state = await this.store.run(scope, runId);
       const active = this.active.get(key(scope, runId));
+      const currentSeq = active ? active.nextSeq - 1 : state.seq;
+      if (afterSeq > currentSeq)
+        throw new RuntimeError(
+          400,
+          "INVALID_REQUEST",
+          "Cursor is in the future",
+        );
       if (
         streamId !== state.streamId ||
         (!active && afterSeq < state.seq) ||

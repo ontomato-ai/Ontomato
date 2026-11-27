@@ -303,6 +303,7 @@ it("shows built-in skill explanations, reads file-backed instructions, and lists
   expect(operatorFiles.some(file => file.primaryKey === "SKILL.md")).toBe(true);
   const instructions = panelRecordSchema.parse(await adapter.file("ontomato-page-operator", { path: "SKILL.md" }));
   expect(instructions.fields.content).toContain("Discover applications and pages");
+  expect(instructions.fields.content).toContain("Never substitute data taken from another endpoint");
 
   const governanceRecord = panelRecordSchema.parse(await adapter.record("knowledge-governance"));
   expect(governanceRecord).toMatchObject({

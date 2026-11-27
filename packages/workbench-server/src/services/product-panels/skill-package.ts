@@ -338,7 +338,7 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
     "### Read current data",
     "Before answering what is on this page or what is selected, read the relevant named data below and answer from the result. Use the page context to identify the entry and selected object, then read its current data.",
     "Use `node /skills/ontomato-page-operator/client.mjs read '<json>'`. The JSON shape is `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`; copy the registered source, member path, exact Named data key, and declared inputs from this description or current page context.",
-    "A ready result carries the current owner data in `value`. If the result is forbidden, check the current entry and member path. For an error, use its message to correct the request.",
+    "A ready result carries the current owner data in `value`. If the result is forbidden, check the current entry and member path. For an error, use its message to correct the request. If the read still fails or remains forbidden, tell the user that the page data could not be read and give the reason; never substitute data from another endpoint, prior knowledge, or a guess as the page's current data.",
     ...(hasPlacedMembers ? [
       "A selection's `memberPath` identifies the child panel that supplied it. To inspect the mounted child's declared state and members, POST `{source,memberPath}` to `$ONTOMATO_PANEL_OPERATIONS_URL/nested` with the same callback headers.",
     ] : []),

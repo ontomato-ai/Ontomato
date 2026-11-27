@@ -41,7 +41,7 @@ it("writes the same image-bearing opening input that a client reads from the SSE
   const runtime = Object.assign(Object.create(AgentRuntime.prototype) as AgentRuntime, {
     store,
     options: { hosts: [{ id: scope.hostId, token: "test-host-token" }] },
-    active: new Map([[canonical([scope.hostId, scope.domainId, runId]), { frames, lostThrough: 0, subscribers: new Set() }]]),
+    active: new Map([[canonical([scope.hostId, scope.domainId, runId]), { frames, lostThrough: 0, streamId: frames[0].cursor.streamId, nextSeq: frames.length + 1, subscribers: new Set() }]]),
     locks: new Map(),
   });
   const server = createRuntimeHttp(runtime).listen(0, "127.0.0.1");

@@ -72,6 +72,13 @@ it.each(['regular','analysis'])('prepares the default %s with reusable chart pro
  expect(run.definition.systemPrompt).toContain('Do not hand-write ECharts options');
  expect(run.definition.systemPrompt).not.toContain('containing an ECharts option object as plain JSON');
 });
+it('opens a retrieval caller even when the run carries only the page operator',async()=>{
+ const input=request();input.a.skills=[];mocks.skills.mockResolvedValue({skills:[],pageControl:true});
+ await prepareAnalystRun(input);
+ expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({classNames:['Person'],executionUserId:null}),input.credentials);
+ expect(mocks.record).toHaveBeenCalledWith('run',input.owner,'run');
+});
+
 it('withholds page tools and panel callbacks when the assistant does not carry the page operator',async()=>{
  const input=request();input.a.kind='analysis';input.a.skills=[analyst];
  mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:false});

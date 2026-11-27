@@ -17,6 +17,19 @@ node <this-skill>/scripts/dataset.mjs deliver @work/q.json --meta @work/delivery
 `--active` delivers into the retrieval the platform started for you; leave it out only outside the
 product (see the end of this file).
 
+## Query commands
+
+Inspect structure and data with `node <this-skill>/scripts/ontomato.mjs <command>`, from the workspace root;
+`@file` arguments are relative to it. Each runs under the user's permissions.
+
+| Command | Result |
+| --- | --- |
+| `schema <class>...` | Enabled fields with their types, and the declared relationships, of the named classes |
+| `dsl-reference <class>...` | The DSL rules for those classes and an example query object |
+| `distinct-values <class> <attribute> [--like text] [--limit n]` | Stored values of a text field, with a completeness marker |
+| `execute-dsl @work/q.json` | Runs one DSL object and returns its rows |
+| `knowledge <question> [--limit n]` | Business knowledge entries for a term, rule or calculation |
+
 ## The query logic package
 
 What you deliver is a query logic package. It has one of two shapes, delivered the same way:
