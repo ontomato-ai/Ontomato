@@ -214,7 +214,7 @@ class AuthorizationPolicyGovernanceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.entries[*].entryId", containsInAnyOrder("app/main", "shared/main", "agents/settings", "agents/agents")))
                 .andExpect(jsonPath("$.entries[?(@.entryId == 'app/main')].label", containsInAnyOrder("工作台")))
-                .andExpect(jsonPath("$.entries[?(@.entryId == 'agents/settings')].label", containsInAnyOrder("")))
+                .andExpect(jsonPath("$.entries[?(@.entryId == 'agents/settings')].label", containsInAnyOrder("Settings")))
                 .andExpect(jsonPath("$.entries[1].panelIds", containsInAnyOrder("same")))
                 .andExpect(jsonPath("$.existingGrants").isEmpty())
                 .andExpect(jsonPath("$.targetPolicyRoleIds").isEmpty());
