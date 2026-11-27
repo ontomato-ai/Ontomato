@@ -450,14 +450,14 @@ public class PlatformTasks {
   }
 
   /**
-   * Starts one run now as the caller. A preview caller is refused before anything is admitted when the target is an
-   * Action: that run writes business data as this request.
+   * Starts one run now as the caller. A preview caller is refused before anything is admitted, whatever the target: the
+   * run executes it on the spot, and an Action, a workflow or an application all go on to write business data. Saving
+   * the trigger and its scheduled runs are not this.
    */
   public JsonNode manual(String id, UUID runId, String locale, boolean preview) {
     var user = current();
     var task = accessible(id, user, Verb.USE, false);
-    if (preview && "action".equals(task.definition().targetKind()))
-      throw new ScheduleException(422, PreviewExecution.WRITE_CODE, PreviewExecution.WRITE_MESSAGE);
+    if (preview) throw new ScheduleException(422, PreviewExecution.WRITE_CODE, PreviewExecution.WRITE_MESSAGE);
     var old = store.run(runId);
     if (old != null) return replayRun(id, old, user);
     prepare(task.definition(), user, user.getId(), locale, true);

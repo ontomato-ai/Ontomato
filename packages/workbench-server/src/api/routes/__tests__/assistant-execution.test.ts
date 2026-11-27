@@ -68,12 +68,15 @@ it("rejects a caller-supplied execution context that differs from the run author
  });
  expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"live"}' })).status).toBe(403);
  expect(upstream).not.toHaveBeenCalled();
- // A read carries no preview identity of its own, so a caller does not get to declare one on it either.
- expect((await call("ontology/dsl/executeV1", { "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(403);
- expect(upstream).not.toHaveBeenCalled();
  expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": '{"kind":"preview"}' })).status).toBe(200);
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
    .toBe('{"kind":"preview"}');
+ // A read or a definition write carries no identity: whatever the caller said about it is dropped, not refused.
+ for (const stated of ['{"kind":"preview"}', '{"kind":"live"}']) {
+   upstream.mockClear();
+   expect((await call("ontology/dsl/executeV1", { "X-Ontomato-Execution-Context": stated })).status).toBe(200);
+   expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context")).toBeNull();
+ }
 });
 
 it("marks a preview only where its request writes business data", async () => {
@@ -96,6 +99,10 @@ it("marks a preview only where its request writes business data", async () => {
  expect(await marked("ontology/platform/triggers/trigger-1/runs")).toBe('{"kind":"preview"}');
  // The workbench dispatch carries a prepared operation out as this run, so the Action it executes is refused too.
  expect(await marked("workbench/api/panel-operations/intents/8f5df4a4-e30b-48cb-831a-33b759144f76/dispatch")).toBe('{"kind":"preview"}');
+ // Starting a workflow run, and a conversation with its runs, which then run as the preview.
+ expect(await marked("workbench/api/praxis/runs")).toBe('{"kind":"preview"}');
+ expect(await marked("workbench/api/assistant/sessions")).toBe('{"kind":"preview"}');
+ expect(await marked("workbench/api/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs")).toBe('{"kind":"preview"}');
  // A read, a definition write and a platform write travel as they do live: their owner judges the caller's permission.
  expect(await marked("ontology/writeFunctionOperation/query")).toBeNull();
  expect(await marked("ontology/ontology/query/execute-dsl")).toBeNull();

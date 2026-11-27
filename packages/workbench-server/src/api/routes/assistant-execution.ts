@@ -8,7 +8,7 @@ import { readAssistantPanelMember } from "../../services/assistant/registered-pa
 import { readNestedPanel, resolvePanelMemberPath } from "../../services/product-panels/member-path";
 import { requirePanelUseEntry } from "../../services/product-panels/application-use";
 import { readCurrentPanelRecord } from "../../services/product-panels/current";
-import { EXECUTION_CONTEXT_HEADER, entersBusinessDataWrite, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { PROJECTION_REUSE_PANEL_HEADER } from "@ontomato/contracts/product-panels";
 import { Router, type Request } from "express";
 import { AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE, bindingKey, panelClientReads } from "@ontomato/contracts/panel-client-requests";
@@ -37,16 +37,15 @@ export const assistantOwnerCallbackPath = "/:runId/:target(ontology|workbench)/*
 
 const governanceAction = /^\/ontology\/ai\/knowledge-governance\/[^/]+\/runs\/[^/]+\/actions\/[^/]+$/u;
 
-/** The workbench entry that carries out a prepared panel operation as its caller, the only one that writes business data. */
-const panelOperationDispatch = /^\/api\/panel-operations\/intents\/[^/]+\/dispatch$/u;
-
 /**
- * Whether a preview run's request reaches a business-data write entry: a DataRAG write of its own, or the workbench
- * dispatch whose operation then writes as this run. Anywhere else (a read, a definition or a model, a platform object)
- * the request travels exactly as a live one does.
+ * Whether a run's callback request reaches an entry its preview identity is carried to: an ontology path is DataRAG's,
+ * a workbench path Node's below `/api`, which Node routes in any letter case. Anywhere else (a read, a definition, a
+ * model, a platform object) the request travels exactly as a live one does.
  */
-function entersPreviewWrite(target: "ontology" | "workbench", method: string, path: string): boolean {
-  return target === "ontology" ? entersBusinessDataWrite(method, path) : method === "POST" && panelOperationDispatch.test(path);
+function carriesRunPreview(target: "ontology" | "workbench", method: string, path: string): boolean {
+  if (target === "ontology") return carriesPreviewIdentity("/data-query", method, path);
+  const api = /^\/api(?=\/)/iu.exec(path);
+  return api !== null && carriesPreviewIdentity("", method, path.slice(api[0].length));
 }
 
 // These existing reads and personal operations belong to the initiator, including on runs
@@ -200,8 +199,7 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
   const businessGrant = target === "ontology" && governanceAction.test(path) ? callback.businessGrant : undefined;
   let credentials: AssistantCredentials = initiatorCredentials;
   let retrievalScopeId: string | null = null;
-  const requestedContext = req.header(EXECUTION_CONTEXT_HEADER);
-  let executionContext: string | undefined;
+  let authority: { executionKind: string } | undefined;
   if (initiatorResourceRead || ownership || businessGrant) {
     if (target === "ontology") {
       const { turn, run } = await ownedRun(owner, runId);
@@ -209,21 +207,26 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
         throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
       }
       retrievalScopeId = turn?.retrieval_scope_id ?? null;
+      authority = run.channel?.authority;
     } else {
       const run = await runForOwner(owner, runId);
       if (initiatorResourceRead && (!run.channel || run.status !== "running")) {
         throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
       }
+      authority = run.channel?.authority;
     }
   } else {
     const resolved = await credentialsForRun(owner, runId, initiatorCredentials);
     credentials = resolved.credentials;
     retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
-    const authority = resolved.run.channel?.authority;
-    if (authority?.executionKind === "preview" && entersPreviewWrite(target, req.method, path))
-      executionContext = previewExecutionContextHeader;
+    authority = resolved.run.channel?.authority;
   }
-  if (requestedContext !== undefined && requestedContext !== executionContext)
+  const previewEntry = carriesRunPreview(target, req.method, path);
+  const executionContext = previewEntry && authority?.executionKind === "preview" ? previewExecutionContextHeader : undefined;
+  // At those entries the run's own identity is the only one a caller may state; elsewhere what the caller said about it
+  // is dropped and the request travels as a live one does. Values are never merged.
+  const requestedContext = req.header(EXECUTION_CONTEXT_HEADER);
+  if (previewEntry && requestedContext !== undefined && requestedContext !== executionContext)
     throw new HttpError(403, "Execution context differs from the run's bound target", "PREVIEW_EXECUTION_FORBIDDEN");
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
   if (businessGrant) {

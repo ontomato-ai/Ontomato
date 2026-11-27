@@ -1,4 +1,4 @@
-import { EXECUTION_CONTEXT_HEADER, entersBusinessDataWrite, previewExecutionContextHeader, type AppExecutionContext } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader, type AppExecutionContext } from "@ontomato/contracts/execution-context";
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import { createActionsClient } from "./clients/actions";
@@ -243,7 +243,7 @@ export function createManagerRequest(
         "Accept-Language": context.locale,
         "X-Requested-With": "XMLHttpRequest",
         ...credentialHeaders(credential),
-        ...(service === "/data-query" && execution?.kind === "preview" && entersBusinessDataWrite(init.method ?? "GET", path)
+        ...(execution?.kind === "preview" && carriesPreviewIdentity(service, init.method ?? "GET", path)
           ? { [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } : {}),
       },
     };

@@ -12,27 +12,45 @@ export type AppExecutionContext = { kind: "live" } | { kind: "preview" };
 export const previewExecutionContextValue = { kind: "preview" } as const;
 export const previewExecutionContextHeader = JSON.stringify(previewExecutionContextValue);
 
+/** Where a request goes below the platform's API root: Node at `""`, DataRAG at `"/data-query"`. */
+type PlatformService = "" | "/data-query";
+
 /**
- * The DataRAG entries that write business object data, by method and path below the DataRAG root. A preview request is
- * marked at these entries and at no others; their owner refuses it. A definition, a model, a trigger's registration, a
- * workflow, an environment import and the platform's own objects are writes their owner judges against the caller's
- * permission, and a preview asks for them like any other caller.
+ * The entries a preview identity is carried to, by service, method and path below the API root, and the only ones. Building
+ * is never here: saving, publishing or deleting a definition, a model, a panel, an application or a trigger is judged by
+ * its owner against the caller's permission. Running is: an entry that writes business data, or that starts on the spot
+ * an execution which does, refuses a preview with PREVIEW_WRITE_FORBIDDEN.
  *
- * A trigger's manual run is here because an Action target runs as that request. `/writeFunctionOperation/query` is
- * absent because it reads; `/action/trial`, `/metricView/test` and `/ontology/ai/generation/…` are absent because they
- * write only inside the run's own sandbox.
+ * - DataRAG writes business data at `/action/execute`, the `/writeFunctionOperation/…` writes (`query` reads) and
+ *   `/vectorResource/upload|delete`; `/platform/triggers/{id}/runs` runs a trigger now, whatever it targets.
+ * - Node starts a workflow run at Praxis through `/praxis/runs` and carries a prepared panel operation out as the caller
+ *   at `/panel-operations/intents/{id}/dispatch`.
+ * - Node's `/assistant/sessions` and `/assistant/sessions/{id}/runs` make a conversation and its runs the preview's, so
+ *   what those runs execute is refused at the entries above.
+ *
+ * `/action/trial`, `/metricView/test` and `/ontology/ai/generation/…` write only inside the run's own sandbox.
  */
-const businessDataWriteEntries: readonly (readonly [method: string, path: RegExp])[] = [
-  ["POST", /^\/action\/execute$/u],
-  ["POST", /^\/writeFunctionOperation\/(?:insert|update|delete|createEdge|deleteEdge|appendVector|updateVector|deleteVector)$/u],
-  ["POST", /^\/vectorResource\/(?:upload|delete)$/u],
-  ["POST", /^\/platform\/triggers\/[^/]+\/runs$/u],
+const previewEntries: readonly (readonly [service: PlatformService, method: string, path: RegExp])[] = [
+  ["/data-query", "POST", /^\/action\/execute$/iu],
+  ["/data-query", "POST", /^\/writeFunctionOperation\/(?:insert|update|delete|createEdge|deleteEdge|appendVector|updateVector|deleteVector)$/iu],
+  ["/data-query", "POST", /^\/vectorResource\/(?:upload|delete)$/iu],
+  ["/data-query", "POST", /^\/platform\/triggers\/[^/]+\/runs$/iu],
+  ["", "POST", /^\/praxis\/runs$/iu],
+  ["", "POST", /^\/panel-operations\/intents\/[^/]+\/dispatch$/iu],
+  ["", "POST", /^\/assistant\/sessions$/iu],
+  ["", "POST", /^\/assistant\/sessions\/[^/]+\/runs$/iu],
 ];
 
-/** Whether this DataRAG request is a business-data write, whose owner refuses it under a preview identity. */
-export function entersBusinessDataWrite(method: string, path: string): boolean {
-  const pathname = path.split("?")[0]!;
-  return businessDataWriteEntries.some(([entry, pattern]) => entry === method.toUpperCase() && pattern.test(pathname));
+/**
+ * Whether a preview's request to this service carries its identity. The path is read as loosely as any owner routes it,
+ * so a spelling that still reaches one of these entries is never left unmarked: with or without percent-decoding, in any
+ * letter case, with repeated or a trailing slash.
+ */
+export function carriesPreviewIdentity(service: string, method: string, path: string): boolean {
+  const raw = path.split("?")[0]!;
+  const spellings = [raw, decodeURIComponent(raw)].map(spelling => spelling.replace(/\/{2,}/gu, "/").replace(/(?<=.)\/$/u, ""));
+  return previewEntries.some(([entryService, entryMethod, pattern]) => entryService === service
+    && entryMethod === method.toUpperCase() && spellings.some(spelling => pattern.test(spelling)));
 }
 
 /** Details of PREVIEW_SDK_UPGRADE_REQUIRED in the existing HTTP error envelope. */

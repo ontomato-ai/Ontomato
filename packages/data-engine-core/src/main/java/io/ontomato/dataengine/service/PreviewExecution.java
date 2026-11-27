@@ -44,7 +44,7 @@ public final class PreviewExecution {
    * writing there and reading it back is how a trial or a generation check answers its question.
    */
   public static JSONObject refuseLiveWrite(HttpServletRequest request, Supplier<ExecutionTarget> target) {
-    return isPreview(request) && !target.get().testing() ? refuse() : null;
+    return isPreview(request) && target.get().mode() != ExecutionTarget.Mode.SANDBOX ? refuse() : null;
   }
 
   private static JSONObject refuse() {

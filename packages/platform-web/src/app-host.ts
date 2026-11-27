@@ -1,5 +1,5 @@
 import type { AppExecutionContext } from "@ontomato/contracts/execution-context";
-import {EXECUTION_CONTEXT_HEADER,PREVIEW_WRITE_FORBIDDEN,PREVIEW_WRITE_MESSAGE,entersBusinessDataWrite,previewExecutionContextHeader} from '@ontomato/contracts/execution-context';
+import {EXECUTION_CONTEXT_HEADER,PREVIEW_WRITE_FORBIDDEN,PREVIEW_WRITE_MESSAGE,carriesPreviewIdentity,previewExecutionContextHeader} from '@ontomato/contracts/execution-context';
 import { watch,h,type App } from "vue";
 import { confirmDanger } from "@ontomato/platform-shell";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -400,9 +400,9 @@ export function installAppHost(options: {
       if(!options.credential)throw new Error('Platform credential unavailable');
       if(options.credential.type==='token')headers.set('tk',options.credential.token);
       if(options.credential.type==='apiKey')headers.set('x-api-key',options.credential.apiKey);
-      // A preview marks the one request it sends straight to a DataRAG entry that writes business data: its owner then
-      // refuses it. Reads and the definition and platform writes this frame makes travel exactly as they do live.
-      if(execution.kind==='preview'&&service==='/data-query'&&entersBusinessDataWrite(method,path))
+      // A preview marks the requests that run something: a business-data write, which its owner refuses, and a
+      // conversation's run, which then runs as the preview. Reads and building travel exactly as they do live.
+      if(execution.kind==='preview'&&carriesPreviewIdentity(service,method,path))
         headers.set(EXECUTION_CONTEXT_HEADER,previewExecutionContextHeader);
       const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${path}`,{...init,headers,credentials:'omit',...(readsVectorResource ? {redirect:'error'} : {})});
       return panel?relayToPanel(panel,method,path,service,response):response;

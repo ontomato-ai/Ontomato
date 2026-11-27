@@ -29,6 +29,10 @@ class PreviewBusinessWriteBoundaryTest {
   private static final JSONObject SANDBOX = JSONObject.of("domainId", "d", "purpose", "action-execution",
       "executionKind", "action-trial", "contextId", "sb-1", "sandboxId", "sb-1", "classNames", List.of("person"));
 
+  /** A generation check's grant binds its sandbox alone, with no action-trial context. */
+  private static final JSONObject GENERATION = JSONObject.of("domainId", "d", "purpose", "sandbox-write",
+      "target", "sandbox", "sandboxId", "gen-1", "classNames", List.of("person"));
+
   private final WriteFunctionOperationService writes = mock(WriteFunctionOperationService.class);
   private final VectorResourceService vectors = mock(VectorResourceService.class);
   private MockHttpServletResponse response;
@@ -96,6 +100,15 @@ class PreviewBusinessWriteBoundaryTest {
     verify(writes).deleteVector("person", "photo", "p", "p.bin", "sb-1", "d");
     assertEquals(200, response.getStatus());
     verifyNoInteractions(vectors);
+  }
+
+  @Test
+  void aGenerationSandboxWriteOfThePreviewGoesAheadWithoutAnActionTrialContext() throws Exception {
+    assertFalse(QueryGrantService.target(GENERATION).testing());
+    preview(GENERATION);
+    assertTrue(writeController().insert(inserted()).getBooleanValue("success"));
+    verify(writes).insert(eq("person"), any(), eq("gen-1"), eq("d"));
+    assertEquals(200, response.getStatus());
   }
 
   @Test

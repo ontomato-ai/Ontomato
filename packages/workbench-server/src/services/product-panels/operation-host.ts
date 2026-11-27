@@ -1,4 +1,4 @@
-import { EXECUTION_CONTEXT_HEADER, entersBusinessDataWrite, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
@@ -23,7 +23,7 @@ export function operationHost(initiator: PanelOperationActor, skillView?: Assist
       // A preview caller's request to a business-data write entry carries the preview identity its owner refuses;
       // every other request, a read or a definition write, reaches its owner as it would live.
       return request(config.dataQuery.baseUrl.replace(/\/$/u,"") + entry, init,
-        credentials.executionKind === "preview" && entersBusinessDataWrite(init.method ?? "GET", entry));
+        credentials.executionKind === "preview" && carriesPreviewIdentity("/data-query", init.method ?? "GET", entry));
     },
     requestWorkbench: (path, init) => request(environment.agentRuntime().callbackUrl.replace(/\/$/u,"") + "/api" + path, init),
   };

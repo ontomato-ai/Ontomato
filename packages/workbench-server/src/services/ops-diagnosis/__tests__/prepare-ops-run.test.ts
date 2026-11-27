@@ -54,6 +54,7 @@ const session: SessionRow = {
   owner_id: "user-1",
   agent_id: agentId,
   workspace_id: null,
+  preview: false,
   title: "",
   origin: "user",
   latest_run_id: null,

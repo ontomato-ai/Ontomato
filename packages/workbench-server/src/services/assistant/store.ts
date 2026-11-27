@@ -26,6 +26,8 @@ export interface SessionRow {
   workspace_id: string | null;
   title: string;
   origin: "user" | "scheduled" | "delegated";
+  /** Opened by a preview: every run in it runs as the preview. */
+  preview: boolean;
   latest_run_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -323,7 +325,7 @@ export const assistantStore = {
       updatedAt: row.updatedAt.toISOString(),
     };
   },
-  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string, fromChannel = false) {
+  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string, fromChannel = false, preview = false) {
     return transaction(async (tx) => {
     await lockSessionClaim(tx, id);
     const existing = await tx.query(
@@ -348,8 +350,8 @@ export const assistantStore = {
     if (isAppBuilderKind(a.kind) && !boundWorkspace)
       throw new HttpError(400, "App builder conversations require a workspace", "INVALID_REQUEST");
     const r = await tx.query(
-      `INSERT INTO ${table("assistant_sessions")} (id,domain_id,owner_id,agent_id,origin,workspace_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
-      [id, owner.domainId, owner.userId, agentId, origin, boundWorkspace],
+      `INSERT INTO ${table("assistant_sessions")} (id,domain_id,owner_id,agent_id,origin,workspace_id,preview) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+      [id, owner.domainId, owner.userId, agentId, origin, boundWorkspace, preview],
     );
     const row = await this.session(id, owner, tx);
     if (row.agent_id !== agentId || row.workspace_id !== boundWorkspace)

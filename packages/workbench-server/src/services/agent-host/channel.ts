@@ -49,7 +49,7 @@ export const agentChannelService = {
         await requireDiagnosisAgent(owner, credentials);
       } else {
         const session = await assistantStore.session(body.sessionId, owner);
-        await assistantService.admitAgent(session.agent_id, owner, credentials, body.authority);
+        await assistantService.admitAgent(session.agent_id, owner, credentials, body.authority, body.requestedBy);
       }
       if (body.agent.providerId === "workbench" &&
         (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {

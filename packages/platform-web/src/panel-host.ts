@@ -21,7 +21,9 @@ import {
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
-import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
+import {
+  EXECUTION_CONTEXT_HEADER, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE, carriesPreviewIdentity, previewExecutionContextHeader,
+} from "@ontomato/contracts/execution-context";
 import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame, servePageComposer } from "./app-host";
@@ -53,7 +55,7 @@ import {
   type DisplayObjectChange, type PageCounter, type PanelChatHost,
 } from "@ontomato/agent-shell-ui";
 import type { PanelSessionFeed } from "./panel-session-runs";
-import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
+import { createAssistantClient, createPreviewAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
 import { createPanelPreviewHost } from "./panel-preview";
 
 /*
@@ -734,7 +736,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
       return mountCoded(withNested({
         manifest: source.panel.manifest,
         run,
-        requests: platformRequests,
+        requests: previewRequests,
         readProjection: readPlatformProjection,
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
@@ -746,7 +748,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
         translate: (key, params) => global.t(key, params ?? {}),
-      }, { kind: "candidate", workspace: source.workspace }), target, source.panel.content.module);
+      }, { kind: "candidate", workspace: source.workspace }), target, source.panel.content.module, undefined, previewPanelChatHost());
     },
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
@@ -794,7 +796,7 @@ export function appCandidatePanelHost(
       return mountCoded(withNested({
         manifest: source.panel.manifest,
         run,
-        requests: platformRequests,
+        requests: previewRequests,
         readProjection: readPlatformProjection,
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
@@ -806,7 +808,7 @@ export function appCandidatePanelHost(
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
         translate: (key, params) => global.t(key, params ?? {}),
-      }, { kind: "app-candidate", app: source.app }), target, source.panel.content.module);
+      }, { kind: "app-candidate", app: source.app }), target, source.panel.content.module, undefined, previewPanelChatHost());
     },
     snapshot,
     mode: { kind: "author", definitions: panelAuthorDefinitions() },
@@ -819,6 +821,16 @@ export function appCandidatePanelHost(
  */
 const platformRequests: PlatformRequests = {
   request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init),
+};
+
+/**
+ * The same requests for a candidate preview: those that run something, a business-data write or a conversation's run,
+ * carry the preview's identity; reads and building travel as the reader's, as they do live.
+ */
+const previewRequests: PlatformRequests = {
+  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, carriesPreviewIdentity(service, init.method ?? "GET", path)
+    ? { ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), [EXECUTION_CONTEXT_HEADER]: previewExecutionContextHeader } }
+    : init),
 };
 
 /**
@@ -1098,14 +1110,20 @@ function warmTemplateCompiler() {
 function createPanelChatHost(
   defaultAgent?: ApplicationPanelUse["defaultAgent"],
   options?: Pick<PanelChatHost, "claimComposer" | "display">,
+  newClient: () => ReturnType<typeof createAssistantClient> = createAssistantClient,
 ): PanelChatHost {
   let client: ReturnType<typeof createAssistantClient> | null = null;
   return {
-    client: () => (client ??= createAssistantClient()),
+    client: () => (client ??= newClient()),
     ...(defaultAgent ? { defaultAgent } : {}),
     claimComposer: options?.claimComposer,
     display: options?.display,
   };
+}
+
+/** The conversations a candidate preview opens are the preview's: every run in them runs as the preview. */
+function previewPanelChatHost(): PanelChatHost {
+  return createPanelChatHost(undefined, undefined, createPreviewAssistantClient);
 }
 
 /**

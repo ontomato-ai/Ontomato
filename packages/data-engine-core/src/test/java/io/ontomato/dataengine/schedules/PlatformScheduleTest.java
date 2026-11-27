@@ -140,6 +140,12 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         "frequency", object("kind", "interval", "every", 1, "unit", "hour"), "notifyEmail", null);
   }
 
+  private static ObjectNode workflowInput() {
+    return object("title", "Start a review", "targetKind", "workflow", "targetId", "wf-review",
+        "content", object("inputs", object()),
+        "frequency", object("kind", "interval", "every", 1, "unit", "hour"), "notifyEmail", null);
+  }
+
   private static ObjectNode appInput() {
     return object("title", "Ask the agent", "targetKind", "application", "appId", "agents", "formRevision", "v1",
         "content", object("question", "Find anomalies"),
@@ -351,21 +357,32 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   }
 
   @Test
-  void previewManualRunOfAnActionIsRefusedBeforeAdmissionWhileOtherTargetsRunAsUsual() throws Exception {
+  void previewManualRunIsRefusedBeforeAdmissionForEveryTargetWhileRegistrationIsNot() throws Exception {
+    var preview = "{\"kind\":\"preview\"}";
+    // Registering a trigger is building: a preview saves it as any caller does.
+    var application = UUID.randomUUID();
+    http.perform(post("/platform/triggers").header("Idempotency-Key", application).header(PreviewExecution.HEADER, preview)
+            .contentType(MediaType.APPLICATION_JSON).content(appInput().toString()))
+        .andExpect(status().isCreated());
     var action = UUID.randomUUID();
     tasks.create(action, actionInput(), "en", true);
-    http.perform(post("/platform/triggers/{id}/runs", action).header("Idempotency-Key", UUID.randomUUID())
-            .header(PreviewExecution.HEADER, "{\"kind\":\"preview\"}"))
-        .andExpect(status().isUnprocessableEntity())
-        .andExpect(jsonPath("$.error.code").value(PreviewExecution.WRITE_CODE))
-        .andExpect(jsonPath("$.error.message").value(PreviewExecution.WRITE_MESSAGE));
-    assertEquals(0, tasks.history(action.toString(), null, 20).path("runs").size());
+    String workflow = "trigger-start-review";
+    store.insert(workflow, "sales", "alice", "alice", List.of(), TaskDefinition.input(workflowInput(), "Asia/Shanghai", false),
+        null, array(), "en", "PUBLISHED", null, null, false);
+    // Running one now is running: refused for an Action, an application and a workflow alike, before any run exists.
+    for (var id : List.of(action.toString(), application.toString(), workflow)) {
+      http.perform(post("/platform/triggers/{id}/runs", id).header("Idempotency-Key", UUID.randomUUID())
+              .header(PreviewExecution.HEADER, preview))
+          .andExpect(status().isUnprocessableEntity())
+          .andExpect(jsonPath("$.error.code").value(PreviewExecution.WRITE_CODE))
+          .andExpect(jsonPath("$.error.message").value(PreviewExecution.WRITE_MESSAGE));
+      assertEquals(0, tasks.history(id, null, 20).path("runs").size(), id);
+    }
+    assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM trigger_run", Integer.class));
     verify(actions, never()).executeScheduled(any(), any(), any(), any(), any(), anyInt(), any());
-
-    var application = UUID.randomUUID();
-    tasks.create(application, appInput(), "en", true);
-    http.perform(post("/platform/triggers/{id}/runs", application).header("Idempotency-Key", UUID.randomUUID())
-            .header(PreviewExecution.HEADER, "{\"kind\":\"preview\"}"))
+    verify(provider, never()).start(any(), any());
+    // The same manual run without the preview identity is admitted as before.
+    http.perform(post("/platform/triggers/{id}/runs", application).header("Idempotency-Key", UUID.randomUUID()))
         .andExpect(status().isAccepted());
   }
 

@@ -510,10 +510,14 @@ it("marks only a business-data write with the preview execution identity", async
   expect(requests[2]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
 });
 
-it("leaves the definition and management writes of a preview unmarked and unrefused",async()=>{
+it("leaves the definition and management writes of a preview unmarked and unrefused, and opens its conversations as the preview",async()=>{
   const {context}=setup({type:"anonymous"});context.executionContext={kind:"preview"};
   const request=createManagerRequest(context,()=>{});
+  await request.request("/assistant/agent-definitions",{method:"POST",body:"{}"},"");
+  await request.request("/function/save",{method:"POST",body:"{}"},"/data-query");
   await request.request("/assistant/sessions",{method:"POST",body:"{}"},"");
-  expect(requests).toHaveLength(1);
+  expect(requests).toHaveLength(3);
   expect(requests[0]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
+  expect(requests[1]!.headers[EXECUTION_CONTEXT_HEADER]).toBeUndefined();
+  expect(JSON.parse(requests[2]!.headers[EXECUTION_CONTEXT_HEADER]!)).toEqual({kind:"preview"});
 });

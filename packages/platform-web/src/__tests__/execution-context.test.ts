@@ -66,11 +66,23 @@ describe("explicit frame execution bindings",()=>{
     await host().request!(source,'/business-definitions',{method:'POST',body:'{}'},'');
     expect(new Headers(request.mock.calls[0][1]?.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
   });
-  it('does not refuse a definition or management write from a build preview here',async()=>{
+  it('opens a conversation from a build preview as the preview, and leaves an agent definition write unmarked and unrefused',async()=>{
     const source=frame();registerBuildPreview(source,previewExecutionContextValue);
-    const request=vi.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({success:true,data:[]}));
-    await expect(host().request!(source,'/assistant/sessions',{method:'POST',body:'{}'},'')).resolves.toBeInstanceOf(Response);
-    expect(request).toHaveBeenCalledTimes(1);
+    const request=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>Response.json({success:true,data:[]}));
+    const marker=async(path:string)=>{
+      request.mockClear();
+      await expect(host().request!(source,path,{method:'POST',body:'{}'},'')).resolves.toBeInstanceOf(Response);
+      expect(request).toHaveBeenCalledTimes(1);
+      return new Headers(request.mock.calls[0][1]?.headers).get(EXECUTION_CONTEXT_HEADER);
+    };
+    // The conversation and each of its runs are the preview's, so what they execute is refused where it is executed.
+    expect(await marker('/assistant/sessions')).toBe(JSON.stringify({kind:'preview'}));
+    expect(await marker('/assistant/sessions/8f5df4a4-e30b-48cb-831a-33b759144f76/runs')).toBe(JSON.stringify({kind:'preview'}));
+    expect(await marker('/assistant/agent-definitions')).toBeNull();
+    // A live frame's conversation runs live.
+    const live=frame();registerLiveFrame(live,'published');
+    request.mockClear();
+    await host().request!(live,'/assistant/sessions',{method:'POST',body:'{}'},'');
     expect(new Headers(request.mock.calls[0][1]?.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
   });
   it("throws for unregistered frames instead of selecting live",()=>{
