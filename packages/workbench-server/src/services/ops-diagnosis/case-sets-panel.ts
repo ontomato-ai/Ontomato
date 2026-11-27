@@ -440,10 +440,6 @@ function autotestCaseSetReads(owner: ProductOwner, locale: string | undefined, r
   };
 }
 
-export function createAutotestCaseSetReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  return autotestCaseSetReads(owner, viewer.locale, () => assertManagement(workbenchManagement.opsCaseSetsRead, owner, viewer));
-}
-
 export function createRegisteredAutotestCaseSetReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
   return autotestCaseSetReads(owner, locale, () => {
     z.literal(workbenchManagement.opsCaseSetsRead.id).parse(javaFacts);

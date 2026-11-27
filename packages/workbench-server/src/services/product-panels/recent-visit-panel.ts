@@ -8,7 +8,7 @@ import { personalWorkspaceStore } from "../personal-workspace/store";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { APPLICATION_NAVIGATION_READ, applicationCatalogueClient, applicationNavigationFactsSchema } from "./application-catalogue";
 import { formatShortDateTime } from "./agent-session-panel";
-import type { PanelReadSelection } from "./panel-owner-reads";
+import type { PanelReadSelection } from "./registered-data-read";
 import { ownerReadRegistration, type RegisteredDataReadRegistration } from "./registered-data-read";
 
 const recentText = (locale: string | undefined, key: string) => tForLocale(locale, `panels.recentVisit.${key}`);

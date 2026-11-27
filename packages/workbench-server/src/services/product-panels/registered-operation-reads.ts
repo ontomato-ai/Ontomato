@@ -2,8 +2,9 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
-import { actionDescriptionRead, planDescription, prepareOperationDescriptions } from "./direct-operations";
+import { actionDefinitionsRead, planDescription, prepareOperationDescriptions, presentActionDefinitions } from "./direct-operations";
 import type { JavaPanelReadResult, JavaPanelViewer } from "./java-panel-reads";
+import { readyPayload } from "./registered-data-read";
 import type { RegisteredDataReadItem } from "./registered-data-read";
 import { describeServerOperation } from "./server-operations";
 
@@ -20,32 +21,33 @@ export async function prepareRegisteredOperationRead(
 ) {
   const { locale } = credentials;
   const context = { owner: viewer, credentials, locale };
-  const descriptions = await Promise.all(prepareOperationDescriptions(placement, inputs, locale).map(
-    async (description): Promise<PlannedDescription> => {
-      const { name, target } = description;
-      if (description.kind === "action") {
-        const action = actionDescriptionRead(description.action);
-        return {
-          name, reads: [action.read],
-          present: async ([result]) => {
-            const descriptor = action.present(result!);
-            return descriptor && { ...descriptor, target };
-          },
-        };
-      }
-      const { handler, calls } = description;
-      const planned = await planDescription(context, handler, calls,
-        inputSchema => describeServerOperation(handler, locale, placement.slot, target, inputSchema));
-      return { name, ...planned };
-    }));
+  const descriptions = prepareOperationDescriptions(placement, inputs, locale);
+  const actions = descriptions.flatMap(description => description.kind === "action" ? [description] : []);
+  const actionRead = actions.length ? [actionDefinitionsRead(actions)] : [];
+  const platformDescriptions = await Promise.all(descriptions.map(async description => {
+    if (description.kind === "action") return undefined;
+    const { name, target, handler, calls } = description;
+    const planned = await planDescription(context, handler, calls,
+      inputSchema => describeServerOperation(handler, locale, placement.slot, target, inputSchema));
+    return { name, ...planned } satisfies PlannedDescription;
+  }));
   return {
-    reads: descriptions.flatMap(({ reads }) => reads),
+    reads: [...actionRead, ...platformDescriptions.flatMap(description => description?.reads ?? [])],
     async present(results: readonly JavaPanelReadResult[]): Promise<ProductPanelReadResponse> {
-      let index = 0;
+      const actionEntries = actions.length
+        ? presentActionDefinitions(readyPayload(results[0]).payload, actions)
+        : new Map<string, PanelOwnerOperationDescriptor>();
+      let index = actionRead.length;
       const entries = [];
-      for (const { name, reads, present } of descriptions) {
-        const descriptor = await present(results.slice(index, index += reads.length));
-        if (descriptor) entries.push([name, descriptor] as const);
+      for (const [position, description] of descriptions.entries()) {
+        if (description.kind === "action") {
+          const descriptor = actionEntries.get(description.name);
+          if (descriptor) entries.push([description.name, descriptor] as const);
+          continue;
+        }
+        const planned = platformDescriptions[position]!;
+        const descriptor = await planned.present(results.slice(index, index += planned.reads.length));
+        if (descriptor) entries.push([planned.name, descriptor] as const);
       }
       return { status: "ready", value: runtimeJsonObjectSchema.parse(Object.fromEntries(entries)) };
     },

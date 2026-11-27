@@ -36,77 +36,20 @@ import {
   isFavoriteTarget,
   moveFavoriteTarget,
   readAllFavoriteState,
-  readPinnedObjects,
   removeFavoriteTarget,
 } from "../platform-home/service";
 import { createCustomerOntologyReadAdapter, customerObjectRecordCall, customerObjectRecordResult } from "../ontology-model/customer-reads";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { cleanSessionDisplayTitle, formatShortDateTime, sessionOpenPath } from "./agent-session-panel";
 import { APPLICATION_NAVIGATION_READ, applicationCatalogueClient, applicationNavigationFactsSchema } from "./application-catalogue";
-import type { JavaPanelReadResult, PanelReadRanges, PanelReadVisibility, PreparedOwnerReadFacts } from "./java-panel-reads";
-import type { PanelReadSelection } from "./panel-owner-reads";
-import { defaultRegisteredJavaCall, localReadRegistration, ownerFactsPlan, ownerReadPlan, readyPayload, type RegisteredDataReadRegistration } from "./registered-data-read";
+import type { JavaPanelReadResult } from "./java-panel-reads";
+import { localReadRegistration, readyPayload, type RegisteredDataReadRegistration } from "./registered-data-read";
 import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
 export const FAVORITE_TARGET_TYPES: PanelOperationTargetTypes = {
   platformTypes: [APPLICATION, AGENT_DEFINITION, DASHBOARD, DASHBOARD_CARD, AGENT_SESSION],
   customerObjects: true,
 };
-
-export function preparePersonalFavoriteRead(
-  owner: ProductOwner, viewer: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
-) {
-  if (selection.typeId !== FAVORITE || selection.method !== "list") return undefined;
-  const group = params.targetGroup;
-  if (group === "apps") return {
-    visibility: [{ kind: "AGENT", verbs: ["USE"] }] satisfies PanelReadVisibility[],
-    call: APPLICATION_NAVIGATION_READ,
-    async present(facts: unknown, ranges?: PanelReadRanges) {
-      const range = ranges?.AGENT?.USE;
-      if (!range) throw new HttpError(502, "The panel read owner did not provide AGENT/USE visibility", "PANEL_READ_OWNER_RESPONSE_INVALID");
-      const applications = applicationNavigationFactsSchema.parse(facts);
-      const { listAssistantAgentsInRange } = await import("../assistant/agents");
-      return createFavoriteReadAdapter(owner, viewer).list({ targetGroup: group }, {
-        applications: () => Promise.resolve(applications),
-        agents: () => listAssistantAgentsInRange(owner, viewer, range).then(result => result.agents),
-      });
-    },
-  };
-  if (group !== "dashboards" && group !== "dashboardCards" && group !== "sessions") return undefined;
-  return { call: undefined, present: () => createFavoriteReadAdapter(owner, viewer).list({ targetGroup: group }) };
-}
-
-export function isFavoriteObjectRead(selection: PanelReadSelection, params: Record<string, unknown>) {
-  return selection.typeId === FAVORITE && selection.method === "list" && params.targetGroup === "objects";
-}
-
-export async function prepareScopedFavoriteObjectRead(owner: ProductOwner, locale?: string) {
-  const objects = await readPinnedObjects(owner);
-  return {
-    call: {
-      type: "customer:ObjectType", name: "favoriteRecords",
-      parameters: { objects: objects.map(({ className, primaryKey }) => ({ className, primaryKey })) },
-    },
-    present(payload: unknown) {
-      const records = z.array(z.unknown()).length(objects.length).parse(payload);
-      return presentFavoriteObjectRows(objects, records.map((record, index) => readFavoriteObjectTitle(
-        objects[index], record === null ? { status: "empty" } : { status: "ready", payload: record },
-      )), locale);
-    },
-  };
-}
-
-export async function prepareFavoriteObjectRead(
-  owner: ProductOwner, selection: PanelReadSelection, params: Record<string, unknown>, locale?: string,
-): Promise<PreparedOwnerReadFacts | undefined> {
-  if (!isFavoriteObjectRead(selection, params)) return;
-  const objects = await readPinnedObjects(owner);
-  return {
-    facts: objects.map(({ className, primaryKey }) => ({ call: customerObjectRecordCall(className, primaryKey) })),
-    present: (_viewer, facts) => presentFavoriteObjectRows(objects,
-      facts.map((fact, index) => readFavoriteObjectTitle(objects[index], fact)), locale),
-  };
-}
 
 const GALLERY_EXCLUDED_APP_IDS = new Set(["home", "personal-workspace", "workplace", "application-gallery"]);
 
@@ -169,6 +112,12 @@ function shouldInclude(group: FavoriteTargetGroup, candidate: FavoriteTargetGrou
 }
 
 type FavoriteObjectTitle = { title: string; available: boolean };
+type FavoriteDirectory = {
+  state(): Promise<Awaited<ReturnType<typeof readAllFavoriteState>>>;
+  applications(): Promise<Awaited<ReturnType<ReturnType<typeof applicationCatalogueClient>["navigation"]>>>;
+  agents(): Promise<Awaited<ReturnType<typeof import("../assistant/service").assistantService.agents>>["agents"]>;
+  objectTitles(objects: readonly HomePinnedObject[]): Promise<FavoriteObjectTitle[]>;
+};
 
 function favoriteObjectTitle(primaryKey: string, savedTitle?: string, recordLabel?: string) {
   return recordLabel?.trim() || savedTitle?.trim() || primaryKey;
@@ -241,13 +190,6 @@ async function resolveCustomerObjectTitle(
   }
 }
 
-function favoriteDirectory(owner: ProductOwner, viewer: AssistantCredentials) {
-  return {
-    applications: () => applicationCatalogueClient(viewer).navigation().catch(() => []),
-    agents: () => import("../assistant/service").then(({ assistantService }) =>
-      assistantService.agents(owner, viewer).then(result => result.agents)).catch(() => []),
-  };
-}
 
 export function createFavoriteReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const language = resolveLocale(viewer.locale);
@@ -332,9 +274,9 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
   }
 
   return {
-    async list(params: { targetGroup?: FavoriteTargetGroup } = {}, directory = favoriteDirectory(owner, viewer)): Promise<PanelRecord[]> {
+    async list(params: { targetGroup?: FavoriteTargetGroup } = {}, directory: FavoriteDirectory): Promise<PanelRecord[]> {
       const group = favoriteTargetGroupSchema.parse(params.targetGroup ?? "all");
-      const state = await readAllFavoriteState(owner);
+      const state = await directory.state();
       const rows: PanelRecord[] = [];
 
       const needApps = shouldInclude(group, "applications");
@@ -542,11 +484,7 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
       }
 
       if (needObjects) {
-        const resolvedObjects = await Promise.all(
-          state.pinnedObjects.map(item =>
-            resolveCustomerObjectTitle(owner, viewer, item.className, item.primaryKey, item.title),
-          ),
-        );
+        const resolvedObjects = await directory.objectTitles(state.pinnedObjects);
         rows.push(...presentFavoriteObjectRows(state.pinnedObjects, resolvedObjects, viewer.locale));
       }
 
@@ -773,13 +711,39 @@ export const favoriteDataReadRegistrations: RegisteredDataReadRegistration[] = [
   {
     typeId: FAVORITE, method: "list",
     async plan(context) {
-      const ownerRead = preparePersonalFavoriteRead(context.owner, context.credentials, context.selection, context.params);
-      if (ownerRead) return ownerReadPlan(ownerRead);
-      const facts = await prepareFavoriteObjectRead(context.owner, context.selection, context.params, context.credentials.locale);
-      if (facts) return ownerFactsPlan(facts);
+      const group = favoriteTargetGroupSchema.parse(context.params.targetGroup ?? "all");
+      const applications = shouldInclude(group, "applications");
+      const agents = shouldInclude(group, "agents");
+      const initialState = shouldInclude(group, "objects")
+        ? await context.cache.read("favorite-state", () => readAllFavoriteState(context.owner)) as Awaited<ReturnType<typeof readAllFavoriteState>>
+        : undefined;
+      const objects = initialState?.pinnedObjects ?? [];
       return {
-        reads: [{ call: defaultRegisteredJavaCall(context) }],
-        present: results => readyPayload(results[0]).payload,
+        reads: [
+          {
+            ...(applications && { call: APPLICATION_NAVIGATION_READ }),
+            ...(agents && { visibleKinds: [{ kind: "AGENT" as const, verbs: ["USE" as const] }] }),
+          },
+          ...objects.map(({ className, primaryKey }) => ({ call: customerObjectRecordCall(className, primaryKey) })),
+        ],
+        async present(results) {
+          const first = readyPayload(results[0]!);
+          const stored = await context.cache.read("favorite-state", () => readAllFavoriteState(context.owner)) as Awaited<ReturnType<typeof readAllFavoriteState>>;
+          const state = shouldInclude(group, "objects") ? { ...stored, pinnedObjects: objects } : stored;
+          const titles = objects.map((object, index) => readFavoriteObjectTitle(object, results[index + 1]!));
+          return createFavoriteReadAdapter(context.owner, context.credentials).list({ targetGroup: group }, {
+            state: () => Promise.resolve(state),
+            applications: () => Promise.resolve(applications ? applicationNavigationFactsSchema.parse(first.payload) : []),
+            async agents() {
+              if (!agents) return [];
+              const range = first.visibility?.AGENT?.USE;
+              if (!range) throw new HttpError(502, "The panel read owner did not provide AGENT/USE visibility", "PANEL_READ_OWNER_RESPONSE_INVALID");
+              const { listAssistantAgentsInRange } = await import("../assistant/agents");
+              return (await listAssistantAgentsInRange(context.owner, context.credentials, range)).agents;
+            },
+            objectTitles: () => Promise.resolve(titles),
+          });
+        },
       };
     },
   },

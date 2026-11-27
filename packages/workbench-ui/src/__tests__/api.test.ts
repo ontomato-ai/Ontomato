@@ -54,13 +54,13 @@ describe("shared request boundary", () => {
     vi.stubGlobal("fetch", fetchMock);
     credential.token = "tok";
     credential.apiKey = "key";
-    await apiGet("/auditLog/queryPage");
+    await apiGet("/action/queryById");
     credential.token = null;
     await apiGet("x");
     credential.apiKey = null;
     await apiGet("x");
     const headers = fetchMock.mock.calls.map((call) => (call[1] as Parameters<typeof fetch>[1])!.headers as Record<string, string>);
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/data-query/auditLog/queryPage");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/data-query/action/queryById");
     expect(headers[0]).toMatchObject({ tk: "tok", "Accept-Language": "en" });
     expect(headers[0]["x-api-key"]).toBeUndefined();
     expect(headers[1]).toMatchObject({ "x-api-key": "key" });

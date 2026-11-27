@@ -273,26 +273,3 @@ export function createInstanceGraphReadPresenter(locale?: string) {
     },
   };
 }
-
-export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
-  const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
-  const present = createInstanceGraphReadPresenter(viewer.locale);
-
-  async function read(operation: string, body?: Record<string, unknown>): Promise<unknown> {
-    const url = `${config.dataQuery.baseUrl}/data/instanceGraph/${operation}`;
-    const response = body === undefined
-      ? await backendGet(`instance-graph-${operation}`, url, options)
-      : await backendPost(`instance-graph-${operation}`, url, body, options);
-    return JSON.parse(response.text);
-  }
-
-  return {
-    overview: async () => present.overview(await read("nodes")),
-    connections: async (params: Record<string, unknown>) => present.connections(await read("connections", instanceGraphConnectionsRequest(params))),
-    statistics: async () => present.statistics(await read("statistics")),
-    classes: async () => present.classes(await read("nodes")),
-    search: async (params: Record<string, unknown>) => present.search(await read("search", instanceGraphSearchRequest(params))),
-    neighbors: async (node: PlatformOntologyNodeRef, params: NeighborFilters) =>
-      present.neighbors(node, await read("neighborhood", instanceNeighborsRequest(node, params))),
-  };
-}

@@ -333,21 +333,6 @@ function opsKnowledgeFileReads(locale?: string) {
   };
 }
 
-export function createOpsKnowledgeReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const reads = opsKnowledgeFileReads(viewer.locale);
-  const requireAccess = () => assertManagement(workbenchManagement.opsKnowledgeRead, owner, viewer);
-  return {
-    async files() {
-      await requireAccess();
-      return reads.files();
-    },
-    async record(filePath: string) {
-      await requireAccess();
-      return reads.record(filePath);
-    },
-  };
-}
-
 const opsKnowledgeReadApproval = z.literal(workbenchManagement.opsKnowledgeRead.id);
 
 /** A ready Java batch item must carry the approval from the registered management read. */
@@ -523,10 +508,6 @@ function turnEvidenceReads(owner: ProductOwner, locale: string | undefined, requ
       };
     },
   };
-}
-
-export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  return turnEvidenceReads(owner, viewer.locale, () => assertManagement(workbenchManagement.opsTurnEvidenceRead, owner, viewer));
 }
 
 export function createRegisteredTurnEvidenceReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
@@ -705,10 +686,6 @@ function autotestRunReads(owner: ProductOwner, locale: string | undefined, requi
   };
 }
 
-export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  return autotestRunReads(owner, viewer.locale, () => assertManagement(workbenchManagement.opsRunsRead, owner, viewer));
-}
-
 export function createRegisteredAutotestRunReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
   return autotestRunReads(owner, locale, () => {
     z.literal(workbenchManagement.opsRunsRead.id).parse(javaFacts);
@@ -831,10 +808,6 @@ function autotestCaseArtifactReads(owner: ProductOwner, locale: string | undefin
   };
 }
 
-export function createAutotestCaseArtifactReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  return autotestCaseArtifactReads(owner, viewer.locale, () => assertManagement(workbenchManagement.opsRunsRead, owner, viewer));
-}
-
 export function createRegisteredAutotestCaseArtifactReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
   return autotestCaseArtifactReads(owner, locale, () => {
     z.literal(workbenchManagement.opsRunsRead.id).parse(javaFacts);
@@ -882,10 +855,6 @@ function dslQueryReads(locale: string | undefined, requireAccess: () => Promise<
       };
     },
   };
-}
-
-export function createDslQueryReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  return dslQueryReads(viewer.locale, () => requireDslQueryAccess(workbenchManagement.opsDslRead, owner, viewer));
 }
 
 export function createRegisteredDslQueryReadAdapter(_owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {

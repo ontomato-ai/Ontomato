@@ -27,7 +27,7 @@ vi.mock("../../../infrastructure/postgres", () => ({
 }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
 vi.mock("../../../config/environment", () => ({
-  environment: { agentRuntime: () => ({ callbackUrl: "http://workbench.test" }) },
+  environment: { agentRuntime: () => ({ callbackUrl: "http://workbench.test", queryServiceToken: "fixture-service" }) },
 }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: class {

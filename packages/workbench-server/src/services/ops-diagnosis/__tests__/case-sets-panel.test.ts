@@ -13,13 +13,14 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import { getCaseSet } from "../../../platform/diagnosis/autotest/cases/repository";
+import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { HttpError } from "../../../utils/errors";
 import {
   panelServerOperation,
   type PanelOperationHost,
   type PanelWriteServerOperation,
 } from "../../product-panels/server-operations";
-import { createAutotestCaseSetReadAdapter } from "../case-sets-panel";
+import { createRegisteredAutotestCaseSetReadAdapter } from "../case-sets-panel";
 
 configureI18n({
   defaultLocale: "en",
@@ -103,9 +104,8 @@ describe("AutotestCaseSet panel reads and operations", () => {
     expect(createdB.kind).toBe("success");
     const idB = (createdB as Extract<typeof createdB, { kind: "success" }>).created!.primaryKey;
 
-    const adapterA = createAutotestCaseSetReadAdapter(
-      { domainId: "domain-a", userId: "user-1" },
-      { token: "tok", locale: "en" },
+    const adapterA = createRegisteredAutotestCaseSetReadAdapter(
+      { domainId: "domain-a", userId: "user-1" }, "en", workbenchManagement.opsCaseSetsRead.id,
     );
 
     const listA = await adapterA.list();
@@ -124,8 +124,10 @@ describe("AutotestCaseSet panel reads and operations", () => {
     await expect(adapterA.record(idB)).rejects.toMatchObject({ status: 404 });
     await expect(adapterA.form(idB)).rejects.toMatchObject({ status: 404 });
 
-    mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Operation forbidden"));
-    await expect(adapterA.list()).rejects.toMatchObject({ status: 403 });
+    const denied = createRegisteredAutotestCaseSetReadAdapter(
+      { domainId: "domain-a", userId: "user-1" }, "en", "wrong-approval",
+    );
+    await expect(denied.list()).rejects.toThrow();
   });
 
   it("switches /cases between object-array (form) and code(json) (json) on the single /cases path without duplicating fields", async () => {
@@ -144,9 +146,8 @@ describe("AutotestCaseSet panel reads and operations", () => {
     expect(imported.kind).toBe("success");
     const id = (imported as Extract<typeof imported, { kind: "success" }>).created!.primaryKey;
 
-    const adapter = createAutotestCaseSetReadAdapter(
-      { domainId: "domain-a", userId: "user-1" },
-      { token: "tok", locale: "en" },
+    const adapter = createRegisteredAutotestCaseSetReadAdapter(
+      { domainId: "domain-a", userId: "user-1" }, "en", workbenchManagement.opsCaseSetsRead.id,
     );
 
     const formDesc = await adapter.form(id, { editMode: "form" });

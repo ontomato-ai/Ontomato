@@ -150,10 +150,6 @@ function feedbackReads(owner: ProductOwner, locale: string | undefined, requireA
   };
 }
 
-export function createFeedbackReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  return feedbackReads(owner, viewer.locale, () => assertManagement(workbenchManagement.feedbackRead, owner, viewer));
-}
-
 export function createRegisteredFeedbackReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
   return feedbackReads(owner, locale, () => {
     if (javaFacts !== workbenchManagement.feedbackRead.id)

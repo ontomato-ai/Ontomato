@@ -22,14 +22,14 @@ vi.mock("../data-reads", async original => ({
 }));
 
 let plan: typeof import("../registered-read-plan");
-let readAdmittedProjectionOperations: typeof import("../direct-operations").readAdmittedProjectionOperations;
+let readRegisteredProjectionOperations: typeof import("./registered-operations-fixture").readRegisteredProjectionOperations;
 let serverOperations: typeof import("../server-operations");
 
 beforeAll(async () => {
   installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
   configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { ...enLocaleMeta, messages: en } } });
   plan = await import("../registered-read-plan");
-  ({ readAdmittedProjectionOperations } = await import("../direct-operations"));
+  ({ readRegisteredProjectionOperations } = await import("./registered-operations-fixture"));
   serverOperations = await import("../server-operations");
 });
 
@@ -99,7 +99,7 @@ it("shows a check added to the role delete declaration in the formal detail, the
   ]);
 
   const actor = { owner: viewer, credentials };
-  const outside = await readAdmittedProjectionOperations(actor, { ...detail, slot: "header" } as never, detail.inputs);
+  const outside = await readRegisteredProjectionOperations(actor, { ...detail, slot: "header" } as never, detail.inputs);
   expect(outside.delete?.unavailable).toEqual(frozen);
   expect(mocks.read.mock.lastCall![1]).toEqual([
     { source: { kind: "direct" }, call: { type: ROLE, name: "deleteRefusal", parameters: { primaryKey: "frozen" } } },

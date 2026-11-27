@@ -1,12 +1,12 @@
 import type { ObjectDecisionRequest } from "../../product-governance/authorization";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   type CreatePanelHumanOperationIntentRequest,
   type PanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import {
-  AGENT_DEFINITION, APPLICATION, BUSINESS_KNOWLEDGE, GENERATE_USER_API_KEY, PRODUCT_PANEL,
+  AGENT_DEFINITION, APPLICATION, BUSINESS_KNOWLEDGE, GENERATE_USER_API_KEY, ORG_UNIT, PRODUCT_PANEL,
   REGENERATE_USER_API_KEY, REMOVE_USER, REVOKE_USER_API_KEY, TRIGGER, USER,
 } from "@ontomato/contracts/platform-object-types";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
@@ -15,11 +15,13 @@ import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@onto
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import { components as sdkComponents } from "../../../../../apps-sdk/src/catalogue";
+import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { HttpError } from "../../../utils/errors";
 import type { CurrentProductKind, CurrentProductRow } from "../../../infrastructure/product-current";
 import * as serverOperations from "../server-operations";
+import { triggerFixture } from "../../scheduling/__tests__/fixtures";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
@@ -34,10 +36,11 @@ const mocks = vi.hoisted(() => ({
   sessionActor: vi.fn(),
   notify: vi.fn(),
   findProduct: vi.fn(),
-  listScheduledTasks: vi.fn(),
   queryKnowledge: vi.fn(),
   usedPanels: vi.fn(),
   readCatalogue: vi.fn(),
+  javaLocate: vi.fn(),
+  javaRead: vi.fn(),
 }));
 
 vi.mock("../../../infrastructure/postgres", () => ({
@@ -46,6 +49,11 @@ vi.mock("../../../infrastructure/postgres", () => ({
 }));
 vi.mock("../../../infrastructure/product-current", () => ({
   findCurrentProduct: mocks.findProduct,
+  findCurrentProducts: async (_domainId: string, kind: CurrentProductKind, ids: readonly string[]) =>
+    new Map(ids.flatMap(id => {
+      const row = products.get(`${kind}:${id}`);
+      return row ? [[id, row] as const] : [];
+    })),
   currentProductRecord: (row: CurrentProductRow, editable: boolean) => ({
     ...row.definition,
     id: row.id,
@@ -102,18 +110,8 @@ vi.mock("../../agent-host/caller", () => ({
   readAgentSessionActor: mocks.sessionActor,
 }));
 vi.mock("../../agent-host/presentation", () => ({ publishObjectChanged: mocks.notify }));
-vi.mock("../../scheduling/panel-reads", () => ({
-  createScheduledTaskReadAdapter: (viewer: unknown) => ({
-    list: () => mocks.listScheduledTasks(viewer),
-  }),
-}));
-vi.mock("../../business-knowledge/panel-reads", () => ({
-  createBusinessKnowledgeReadAdapter: (viewer: unknown) => ({
-    query: (params: Record<string, unknown>) => mocks.queryKnowledge(viewer, params),
-    counts: vi.fn(),
-    record: vi.fn(),
-    form: vi.fn(),
-  }),
+vi.mock("../../business-knowledge/panel-reads", async importOriginal => ({
+  ...await importOriginal<typeof import("../../business-knowledge/panel-reads")>(),
 }));
 vi.mock("../application-catalogue", async importOriginal => {
   const actual = await importOriginal<typeof import("../application-catalogue")>();
@@ -124,6 +122,11 @@ vi.mock("../application-catalogue", async importOriginal => {
     }),
   };
 });
+vi.mock("../java-panel-reads", async importOriginal => ({
+  ...await importOriginal<typeof import("../java-panel-reads")>(),
+  locateViaJava: mocks.javaLocate,
+  readViaJava: mocks.javaRead,
+}));
 vi.mock("../component-catalogue", async importOriginal => {
   const actual = await importOriginal<typeof import("../component-catalogue")>();
   return {
@@ -140,7 +143,7 @@ import {
   dispatchHumanPanelOperation, prepareHumanPanelOperation,
   readPanelOperation,
 } from "../operations";
-import { readScopedPanelData } from "../data-reads";
+let readPanelData: typeof import("../registered-read-plan").readPanelData;
 
 configureI18n({
   defaultLocale: "en",
@@ -160,6 +163,11 @@ configureI18n({
       },
     },
   },
+});
+
+beforeAll(async () => {
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  ({ readPanelData } = await import("../registered-read-plan"));
 });
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -269,6 +277,14 @@ beforeEach(() => {
   mocks.resolve.mockImplementation(async () => ({ credentials }));
   mocks.findProduct.mockImplementation(async (_domainId: string, kind: CurrentProductKind, id: string) =>
     products.get(`${kind}:${id}`) ?? null);
+  mocks.javaLocate.mockImplementation(async () => ({
+    viewer: owner,
+    entries: [{ kind: "ready", entry: { applicationId: "A", framePanelId: "frame", use: currentUse } }],
+  }));
+  mocks.javaRead.mockImplementation(async (_viewer: unknown, reads: readonly unknown[]) => ({
+    viewer: owner,
+    results: reads.map(() => ({ status: "ready" })),
+  }));
   mocks.readCatalogue.mockResolvedValue({
     version: "1.0.0",
     digest: "sha256:test",
@@ -399,8 +415,6 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       { primaryKey: "task-2", className: TRIGGER, label: "System GC", fields: { schedule: "0 3 * * *" } },
       { primaryKey: "task-3", className: TRIGGER, label: "Weekly Report", fields: { schedule: "0 9 * * 1" } },
     ];
-    mocks.listScheduledTasks.mockResolvedValue(rows);
-
     setProduct(makeProjection("list-proj", {
       componentId: "@ontomato/sdk:ObjectList",
       inputs: {
@@ -438,7 +452,23 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readScopedPanelData(owner, credentials, {
+    const tasks = rows.map((row, index) => ({
+      ...triggerFixture,
+      id: row.primaryKey,
+      title: row.label!,
+      frequency: { kind: "daily" as const, time: "09:00" },
+      nextRunAt: index === 1 ? null : triggerFixture.nextRunAt,
+    }));
+    mocks.javaRead.mockImplementation(async () => ({ viewer: owner, results: [
+      { status: "ready" },
+      { status: "ready", payload: { tasks, timeZone: "UTC" } },
+      { status: "ready", payload: [] },
+      { status: "ready", payload: {
+        inspection: { allowed: true }, caseSets: { allowed: true },
+      }, visibility: { AGENT: { USE: { fixed: false, all: true, authorId: null, objectIds: [] } } } },
+    ] }));
+
+    const res = await readPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "tasks" }],
       dataName: "rows",
@@ -486,31 +516,33 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     }));
     setProduct(makePanel("P", { state: {}, members: { members: { target: { projectionId: "members-list" } } } }));
     const rows = Array.from({ length: size }, (_, i) => ({ primaryKey: `member-${i}`, label: `Member ${i}`, fields: {} }));
-    const factReads: unknown[] = [];
-    mocks.backendPost.mockImplementation(async (_name: string, url: string, payload: { reads?: { source: unknown; call: { parameters: {
-      inspections: { name: string; ids: string[] }[] } } }[] }) => {
-      if (url.endsWith("/panel/governance/users/query"))
-        return { text: JSON.stringify({ success: true, data: { rows, total: size } }) };
-      if (!url.endsWith("/internal/workbench-panel-reads")) throw new Error(`Unexpected RPC: ${url}`);
-      factReads.push(payload);
-      return { text: JSON.stringify({ viewer: owner, results: payload.reads!.map(({ call: { parameters: { inspections: [inspection] } } }) => ({
-        status: "ready", payload: { [inspection!.name]: inspection!.ids.map(() => null) },
-      })) }) };
+    const memberReads: unknown[][] = [];
+    mocks.javaRead.mockImplementation(async (_viewer: unknown, reads: readonly unknown[]) => {
+      memberReads.push([...reads]);
+      const rowRefusals = Object.fromEntries(rows.map(row => [row.primaryKey, {
+        remove: null, generateApiKey: null, regenerateApiKey: null, revokeApiKey: null,
+      }]));
+      return { viewer: owner, results: [{ status: "ready", payload: {
+        query: { rows, total: size }, rowRefusals,
+      } }] };
     });
 
-    const res = await readScopedPanelData(owner, credentials, {
+    const res = await readPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "members" }], dataName: "rows", inputs: {},
     });
 
     expect(res).toMatchObject({ status: "ready", value: { rows, total: size } });
-    expect(mocks.backendGet.mock.calls.length).toBeLessThanOrEqual(1);
-    // The page's list read, then one direct read of the four row operations' facts for all rows.
-    expect(mocks.backendPost.mock.calls.length).toBe(2);
-    expect(factReads).toEqual([expect.objectContaining({ reads: [REMOVE_USER, GENERATE_USER_API_KEY, REGENERATE_USER_API_KEY, REVOKE_USER_API_KEY]
-      .map(operation => ({ source: { kind: "direct" }, call: { type: USER, name: "operationRefusals", parameters: {
-        inspections: [{ name: operation, operation, ids: rows.map(row => row.primaryKey) }],
-      } } })) })]);
+    expect(mocks.backendGet).not.toHaveBeenCalled();
+    expect(mocks.backendPost).not.toHaveBeenCalled();
+    // The list owner carries all four operations' per-row facts in the same admitted Java batch, independent of page size.
+    expect(mocks.javaRead).toHaveBeenCalledTimes(1);
+    expect(memberReads).toHaveLength(1);
+    expect(memberReads[0]).toHaveLength(1);
+    expect(memberReads[0]![0]).toMatchObject({
+      source: { kind: "registered", applicationId: "A", useId: "tasks" },
+      call: { type: USER, name: "query", parameters: { inspectApiKeyRows: true } },
+    });
   });
 
   it("executes row-scoped operations on human and agent channels and rejects wrong target class", async () => {
@@ -821,7 +853,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    await expect(readScopedPanelData(owner, credentials, {
+    await expect(readPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "tasks" }],
       operations: true,
@@ -995,7 +1027,14 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readScopedPanelData(owner, credentials, {
+    const panelRange = { fixed: false, all: true, authorId: null, objectIds: [] };
+    mocks.javaRead.mockImplementation(async () => ({ viewer: owner, results: [
+      { status: "ready", payload: { panelIds: rows.map(row => row.primaryKey) }, visibility: {
+        PANEL: { USE: panelRange, EDIT: panelRange },
+      } },
+    ] }));
+
+    const res = await readPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "panels" }],
       dataName: "rows",
@@ -1072,8 +1111,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       inputs: { app: { kind: "object", objectType: APPLICATION } },
       data: {
         rows: {
-          source: { object: { input: "app" } },
-          read: "usedPanels",
+          source: { type: { kind: "PlatformObjectType", id: ORG_UNIT } },
+          read: "list",
           params: {},
         },
       },
@@ -1097,7 +1136,11 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readScopedPanelData(owner, credentials, {
+    mocks.javaRead.mockImplementation(async () => ({ viewer: owner, results: [
+      { status: "ready", payload: rows },
+    ] }));
+
+    const res = await readPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "items" }],
       dataName: "rows",

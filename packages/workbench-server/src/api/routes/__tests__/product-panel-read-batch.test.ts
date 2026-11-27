@@ -89,7 +89,8 @@ function postScopedBatch(body: unknown) {
 beforeEach(() => {
   vi.resetAllMocks();
   authenticate.mockImplementation((req, _res, next) => {
-    Object.assign(req, { userId: "reader", token: "reader-token", locale: "en" });
+    const apiKey = req.header("x-api-key");
+    Object.assign(req, { userId: "reader", token: apiKey ? undefined : "reader-token", ...(apiKey && { apiKey }), locale: "en" });
     next();
   });
   mocks.get.mockImplementation(async (_endpoint, url: string) => {
@@ -104,6 +105,30 @@ beforeEach(() => {
   mocks.post.mockImplementation(async (_endpoint, url: string, body) => {
     if (url.endsWith("/authorization/objects/decide-batch"))
       return { text: JSON.stringify(objectDecisions(body, request => "target" in request && request.target.id !== projectionIds[2])) };
+    if (url.endsWith("/internal/workbench-panel-reads")) {
+      const viewer = { userId: "reader", domainId: "domain-a" };
+      if (body.kind === "locate") {
+        return { text: JSON.stringify({ viewer, entries: body.entries.map(({ useId }: { useId: string }) => useId === "denied-entry"
+          ? { kind: "error", status: 403, error: "Denied" }
+          : { kind: "ready", entry: {
+            applicationId: source.applicationId, framePanelId: root,
+            use: { id: useId, names: { en: String(useId) }, pageKey: "list", panelId: root, path: "/ontology/list" },
+          } }) }) };
+      }
+      const modelFacts = { fieldLabels: {}, views: [{
+        className: "sample", showName: "Sample", classDesc: "", attributeCount: 1,
+        businessKeyCount: 0, relationshipCount: 0, primaryKey: { status: "ok", count: 1, name: "id", showName: "ID" },
+      }] };
+      return { text: JSON.stringify({ viewer, results: body.reads.map((read: {
+        call?: { type: string }; uses?: { target: { id: string } }[];
+      }) => {
+        if (read.uses?.some(use => use.target.id === projectionIds[2])) return { status: "forbidden", error: "Projection denied" };
+        if (!read.call) return { status: "ready" };
+        if (read.call.type === ATTRIBUTE) return { status: "ready", payload: { views: [], fieldLabels: {}, classLabels: {} } };
+        if (read.call.type === RELATIONSHIP) return { status: "error", error: "Could not read relationships" };
+        return { status: "ready", payload: modelFacts };
+      }) }) };
+    }
     throw new Error(`Unexpected backend POST: ${url}`);
   });
   const time = new Date("2026-11-24T00:00:00Z");
@@ -142,48 +167,67 @@ const useRequest = (kind: string, id: string) => ({
   target: { kind, id, domainId: "domain-a" }, ownerFacts: { ownerId: "author", state: "PUBLISHED" }, verb: "USE",
 });
 
-it("reads a 19-member frame with one entry lookup, two grant calls and isolated results", async () => {
+it("reads a 19-member frame through one Java locate and one ordered owner batch", async () => {
   const response = await postScopedBatch({ reads });
-  expect(response).toEqual({ status: 200, body: { results: [
-    { status: "ready", value: [record] },
+  const ready = { status: "ready", value: [expect.objectContaining({ primaryKey: record.primaryKey, label: record.label })] };
+  expect(response).toMatchObject({ status: 200, body: { results: [
+    ready,
     { status: "empty" },
     { status: "forbidden", reason: expect.stringMatching(/\S/u) },
     { status: "error", message: "Could not read relationships" },
-    ...Array.from({ length: projectionIds.length - 4 }, () => ({ status: "ready", value: [record] })),
+    ...Array.from({ length: projectionIds.length - 4 }, () => ready),
   ] } });
-  expect(mocks.get).toHaveBeenCalledTimes(1);
-  expect(mocks.get).toHaveBeenCalledWith(
-    "registered-panel-entry", expect.stringContaining("/platform/applications/registered-entry?"),
-    expect.objectContaining({ headers: expect.objectContaining({ tk: "reader-token" }) }),
-  );
-  expect(mocks.post.mock.calls.map(([, url, body]) => [new URL(url, "http://data-engine.test").pathname, body])).toEqual([
-    ["/authorization/objects/decide-batch", { requests: [useRequest("PANEL", root)] }],
-    ["/authorization/objects/decide-batch", { requests: projectionIds.map(id => useRequest("PROJECTION", id)) }],
+
+  expect(mocks.get).not.toHaveBeenCalled();
+  const calls = mocks.post.mock.calls.map(([, url, body]) => [new URL(url, "http://data-engine.test").pathname, body] as const);
+  expect(calls.map(([pathname, body]) => [pathname, body.kind])).toEqual([
+    ["/internal/workbench-panel-reads", "locate"],
+    ["/internal/workbench-panel-reads", "read"],
   ]);
-  expect(mocks.query.mock.calls.map(([, ids]) => ids)).toEqual([
-    ["domain-a", [root]],
-    ["domain-a", projectionIds],
-  ]);
-  // Identical authorized reads within one batch (16x OBJECT_TYPE + 1x ATTRIBUTE + 1x RELATIONSHIP) deduplicate to 3 calls.
-  expect(mocks.list).toHaveBeenCalledTimes(3);
+  expect(calls[0]![1].entries).toEqual([{ applicationId: source.applicationId, useId: source.useId, kind: "frame" }]);
+  const batch = calls[1]![1];
+  expect(batch.viewer).toEqual({ userId: "reader", domainId: "domain-a" });
+  expect(batch.reads).toHaveLength(projectionIds.length);
+  for (const [index, item] of batch.reads.entries()) {
+    expect(item).toMatchObject({
+      source,
+      registration: { panelId: root, framePanelId: root },
+      call: { type: index === 1 ? ATTRIBUTE : index === 3 ? RELATIONSHIP : OBJECT_TYPE, name: "list", parameters: {} },
+    });
+    expect(item.uses).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: expect.objectContaining({ kind: "PANEL", id: root }) }),
+      expect.objectContaining({ target: expect.objectContaining({ kind: "PROJECTION", id: projectionIds[index] }) }),
+    ]));
+  }
+
+  const productQueries = mocks.query.mock.calls.map(([, ids]) => ids);
+  expect(productQueries[0]).toEqual(["domain-a", root]);
+  expect(productQueries.slice(1).map(([, id]) => id).sort()).toEqual([...projectionIds].sort());
+  // Authorization is part of the Java owner batch; the old per-member object-decision and owner-adapter fan-out are gone.
+  expect(calls.some(([, body]) => body.requests)).toBe(false);
+  expect(mocks.list).not.toHaveBeenCalled();
 });
 
-it("does not carry cached entries or grants across batches or inspect a denied root's members", async () => {
+it("does not carry located entries across batches or inspect definitions for a denied entry", async () => {
   const sample = [reads[0], { ...reads[0], source: { ...source, useId: "denied-entry" } }];
-  expect((await postScopedBatch({ reads: sample })).body).toEqual({
-    results: [{ status: "ready", value: [record] }, { status: "forbidden", reason: expect.stringMatching(/\S/u) }],
+  expect((await postScopedBatch({ reads: sample })).body).toMatchObject({
+    results: [{ status: "ready" }, { status: "forbidden", reason: "Denied" }],
   });
+  expect(mocks.post.mock.calls.filter(([, , body]) => body.kind === "locate")).toHaveLength(1);
+
   mocks.query.mockClear();
-  mocks.post.mockImplementation(async (_endpoint, _url, body) => ({ text: JSON.stringify(objectDecisions(body, () => false)) }));
-  expect((await postScopedBatch({ reads: sample })).body).toEqual({
-    results: [{ status: "forbidden", reason: expect.stringMatching(/\S/u) }, { status: "forbidden", reason: expect.stringMatching(/\S/u) }],
+  mocks.post.mockImplementation(async (_endpoint, url: string, body) => {
+    if (!url.endsWith("/internal/workbench-panel-reads") || body.kind !== "locate") throw new Error(`Unexpected owner call: ${url}`);
+    return { text: JSON.stringify({ viewer: { userId: "reader", domainId: "domain-a" }, entries: body.entries.map(() => ({
+      kind: "error", status: 403, error: "Denied",
+    })) }) };
   });
-  expect(mocks.get).toHaveBeenCalledTimes(4);
-  expect(mocks.post).toHaveBeenLastCalledWith(
-    "object-authorization-decide-batch", expect.stringContaining("/authorization/objects/decide-batch"),
-    { requests: [useRequest("PANEL", root)] }, expect.anything(),
-  );
-  expect(mocks.query.mock.calls.map(([, args]) => args)).toEqual([["domain-a", [root]]]);
+  expect((await postScopedBatch({ reads: sample })).body).toEqual({
+    results: [{ status: "forbidden", reason: "Denied" }, { status: "forbidden", reason: "Denied" }],
+  });
+  expect(mocks.post.mock.calls.filter(([, , body]) => body.kind === "locate")).toHaveLength(2);
+  expect(mocks.post.mock.calls.some(([, url]) => url.endsWith("/authorization/objects/decide-batch"))).toBe(false);
+  expect(mocks.query).not.toHaveBeenCalled();
 });
 
 it("rejects invalid envelopes before entry or grant lookup", async () => {
@@ -194,15 +238,16 @@ it("rejects invalid envelopes before entry or grant lookup", async () => {
   expect(mocks.post).not.toHaveBeenCalled();
 });
 
-it("rejects an incomplete grant response before reading member data", async () => {
-  mocks.post.mockResolvedValueOnce({ text: JSON.stringify({ decisions: [{ allowed: true }] }) })
-    .mockResolvedValueOnce({ text: JSON.stringify({ decisions: [{ allowed: true }] }) });
+it("rejects a malformed locate response before reading member definitions", async () => {
+  mocks.post.mockResolvedValueOnce({ text: JSON.stringify({
+    viewer: { userId: "reader", domainId: "domain-a" }, entries: [{}, {}],
+  }) });
   const result = await postScopedBatch({ reads: reads.slice(0, 2) });
-  expect(result).toEqual({ status: 200, body: { results: [
-    { status: "error", message: expect.stringMatching(/decisions|grant/i) },
-    { status: "error", message: expect.stringMatching(/decisions|grant/i) },
-  ] } });
-  expect(mocks.query).toHaveBeenCalledTimes(2);
+  expect(result).toEqual({ status: 502, body: {
+    correlationId: "assistant",
+    error: { code: "PANEL_READ_OWNER_RESPONSE_INVALID", message: "Invalid response from the panel read owner" },
+  } });
+  expect(mocks.query).not.toHaveBeenCalled();
   expect(mocks.list).not.toHaveBeenCalled();
 });
 
@@ -225,8 +270,8 @@ function stubFormalOwner() {
       className: "sample", showName: "Sample", classDesc: "", attributeCount: 1,
       businessKeyCount: 0, relationshipCount: 0, primaryKey: { status: "ok", count: 1, name: "id", showName: "ID" },
     }] };
-    const results = body.reads.map(({ call }: { call: { type: string } }) => ({
-      status: "ready", payload: call.type === EXTERNAL_MCP_SERVICE ? workbenchManagement.mcpServicesRead.id : modelFacts,
+    const results = body.reads.map(({ call }: { call?: { type: string } }) => ({
+      status: "ready", ...(call && { payload: call.type === EXTERNAL_MCP_SERVICE ? workbenchManagement.mcpServicesRead.id : modelFacts }),
     }));
     return { text: JSON.stringify({ viewer, results }) };
   });
@@ -267,6 +312,26 @@ it("restores item order across live and candidate reads in a mixed batch", async
   expect(authenticate).toHaveBeenCalledTimes(1);
   expect(mocks.post.mock.calls.map(([, , body, options]) => [body.kind, new Headers(options.headers).get("x-api-key")]))
     .toEqual([["locate", "live-key"], ["read", "live-key"]]);
+});
+
+it("isolates an unexpected candidate resolution failure in a mixed batch", async () => {
+  stubFormalOwner();
+  const candidate = {
+    ...reads[0], source: { kind: "candidate", workspace: { id: "11111111-1111-4111-8111-111111111111", ref: "working" } },
+  };
+  mocks.candidate.mockRejectedValue(new TypeError("socket hang up"));
+
+  const answer = await postRead("/product-panels/read-batch", { reads: [candidate, reads[0]] }, {
+    "x-api-key": "live-key",
+  });
+  expect(answer).toMatchObject({ status: 200, body: { results: [
+    { status: "error", message: "Service unavailable" },
+    { status: "ready", value: [{ primaryKey: record.primaryKey, label: record.label }] },
+  ] } });
+  const readCalls = mocks.post.mock.calls.filter(([, , body]) => body.kind === "read");
+  expect(readCalls).toHaveLength(1);
+  expect(readCalls[0]?.[2].reads).toHaveLength(1);
+  expect(readCalls[0]?.[2].reads[0]?.source).toEqual(source);
 });
 
 it("keeps other reads when an admitted MCP tools item receives a non-JSON response", async () => {
@@ -409,6 +474,15 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
     expect(headers.get("tk")).toBeNull();
     expect(headers.get("X-API-Key")).toBe(executorKey);
     expect(pathname).toBe("/internal/workbench-panel-reads");
+    const executionViewer = { domainId: "domain-a", userId: "executor" };
+    if (body.kind === "locate") {
+      expect(headers.get(scopeHeader)).toBeNull();
+      expect(headers.get("X-Ontomato-Agent-Execution")).toBeNull();
+      return { text: JSON.stringify({ viewer: executionViewer, entries: body.entries.map(() => ({ kind: "ready", entry: {
+        applicationId: source.applicationId, framePanelId: root,
+        use: { id: source.useId, names: { en: String(source.useId) }, pageKey: "list", panelId: "panel-content", path: "/ontology/list" },
+      } })) }) };
+    }
     const key = { name: "id", showName: "ID", type: "varchar", attrDesc: "", enable: true, businessKey: false, primaryKey: true };
     const attributeFacts = {
       views: [{ ...key, className: "org" }, { ...key, className: "org", name: "note", primaryKey: false }],
@@ -428,8 +502,8 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
       : { primaryKey: metricId, parameters: cardRead ? savedParameters : {} };
     const call = isRecord ? { type: "customer:ObjectType", name: "record", parameters: node }
       : isRelationship ? { type: "customer:Relationship", name: "neighbors", parameters: { relationshipId: "staff", node, limit: 50, offset: 0 } }
-      : isModel ? { type: OBJECT_TYPE, name: "form", parameters: { primaryKey: "Order", changedField: null, values: modelValues } }
-      : isAttributeList ? { type: ATTRIBUTE, name: "list", parameters: {} }
+      : isModel ? { type: OBJECT_TYPE, name: "form", parameters: { primaryKey: "Order", values: modelValues } }
+      : isAttributeList ? { type: ATTRIBUTE, name: "list", parameters: { includeDeleteFacts: true } }
       : { type: METRIC_VIEW, name, parameters };
     expect(body.reads.map(({ call }: { call: unknown }) => call)).toEqual([call]);
     expect(body.viewer).toEqual({ domainId: "domain-a", userId: "executor" });
@@ -471,8 +545,8 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
   expect(await postCallback()).toMatchObject({ status: 200, body: { status: "ready", value: expected } });
   expect(mocks.get).toHaveBeenCalledWith("resolve-panel-entry", expect.stringContaining("/platform/applications/resolve-entry?"), expect.anything());
   expect(mocks.executor).toHaveBeenCalledWith({ userId: "reader", domainId: "domain-a" }, runId, expect.objectContaining({ token: "reader-token" }), sessionId);
-  expect(placementChecks.splice(0)).toEqual(["reader-token", executorKey]);
-  expect(ownerPaths.splice(0)).toEqual(Array(isAttributeList ? 2 : 1).fill("/internal/workbench-panel-reads"));
+  expect(placementChecks.splice(0)).toEqual(["reader-token"]);
+  expect(ownerPaths.splice(0)).toEqual(["/internal/workbench-panel-reads", "/internal/workbench-panel-reads"]);
 
   if (isAttributeList) {
     for (const reason of ["Relationship read denied", "The owner read failed"]) {
@@ -481,7 +555,7 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
         [`${ATTRIBUTE}:["org","id"]`]: { delete: { available: false, unavailable: { reason: "A primary key attribute cannot be deleted." } } },
         [`${ATTRIBUTE}:["org","note"]`]: { delete: { available: false, unavailable: { reason } } },
       } } });
-      expect(placementChecks.splice(0)).toEqual(["reader-token", executorKey]);
+      expect(placementChecks.splice(0)).toEqual(["reader-token"]);
       expect(ownerPaths.splice(0)).toEqual(["/internal/workbench-panel-reads", "/internal/workbench-panel-reads"]);
     }
   }
@@ -489,15 +563,16 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
   if (isRecord || (!isRelationship && cardRead !== "form")) {
     ownerRefused = true;
     expect(await postCallback()).toEqual({ status: 200, body: { status: "forbidden", reason: "Execution exceeds the caller class scope" } });
-    expect(placementChecks.splice(0)).toEqual(["reader-token", executorKey]);
-    expect(ownerPaths.splice(0)).toEqual(["/internal/workbench-panel-reads"]);
+    expect(placementChecks.splice(0)).toEqual(["reader-token"]);
+    expect(ownerPaths.splice(0)).toEqual(["/internal/workbench-panel-reads", "/internal/workbench-panel-reads"]);
   }
 
   denied = "reader-token";
   expect((await postCallback()).status).toBe(403);
   expect(placementChecks.splice(0)).toEqual(["reader-token"]);
-  denied = executorKey;
+  denied = undefined;
+  ownerRefused = true;
   expect(await postCallback()).toMatchObject({ status: 200, body: { status: "forbidden" } });
-  expect(placementChecks).toEqual(["reader-token", executorKey]);
-  expect(ownerPaths).toEqual([]);
+  expect(placementChecks.splice(0)).toEqual(["reader-token"]);
+  expect(ownerPaths.splice(0)).toEqual(["/internal/workbench-panel-reads", "/internal/workbench-panel-reads"]);
 });

@@ -49,8 +49,6 @@ import { panelOperationStore as store } from "./operation-store";
 import { panelUploadStore as uploads } from "./upload-store";
 import { panelSecretStore } from "./secret-store";
 
-type PanelRun = Awaited<ReturnType<typeof runForOwner>>;
-
 async function requireAgentPanelUse(owner: AssistantOwner, credentials: AssistantCredentials,
   ref: PanelUseRef & Pick<PanelOperationRef, "root">) {
   if (ref.root === "frame")
@@ -196,7 +194,7 @@ export async function readPanelOperationDescriptor(owner: AssistantOwner, creden
 export async function readPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, request: ReadPanelOperationRequest) {
   let current: Awaited<ReturnType<typeof operationForUse>>;
   if (request.agentRun) {
-    const { run } = await requireActivePageRun(owner, request.agentRun);
+    await requireActivePageRun(owner, request.agentRun);
     const { use, framePanelId } = await requireAgentPanelUse(owner, credentials, request);
     const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
     current = await declaredOperation(owner, credentials, panel, use.panelId, use, request, request.call.target, { mode: "read", framePanelId });
@@ -820,8 +818,8 @@ async function confirmationLabels(
   if (current.handler.kind !== "form.save" || current.handler.binding.kind !== "PlatformObjectType") return undefined;
   const target = invocation.target;
   const method = target?.kind === "object" ? "form" : "createForm";
-  const { readSelectedPanelOwner } = await import("./panel-owner-reads");
-  const answer = await readSelectedPanelOwner({ owner, viewer: credentials }, {
+  const { readPanelOwnerData } = await import("./registered-read-plan");
+  const answer = await readPanelOwnerData(owner, credentials, {
     kind: "platform",
     typeId: current.handler.binding.id,
     method,

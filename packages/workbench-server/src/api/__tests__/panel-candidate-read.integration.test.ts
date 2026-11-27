@@ -91,14 +91,25 @@ beforeAll(async () => {
     expect(req.body.id).toBe(projectionId);
     res.json({ allowed: req.header("tk") === "alice" && canUseProjection });
   });
-  app.post("/java/action/queryById", (req, res) => {
+  app.post("/java/internal/workbench-panel-reads", (req, res) => {
     expect(req.header("tk")).toBe("alice");
     expect(req.header("Accept-Language")).toBe("en");
-    expect(req.body).toEqual({ id: "review" });
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     // A candidate's read is the reader's own live read: it carries no preview identity.
     expect(req.header(EXECUTION_CONTEXT_HEADER)).toBeUndefined();
-    ownerReads += 1;
-    res.json({ success: true, data: { id: "review", name: "Review candidate" } });
+    expect(req.body).toEqual({
+      kind: "read",
+      viewer: { userId: "alice", domainId: "domain" },
+      reads: [{
+        source: { kind: "direct" },
+        call: { type: "platform:Action", name: "record", parameters: { primaryKey: "review" } },
+      }],
+    });
+    ownerReads += req.body.reads.length;
+    res.json({
+      viewer: req.body.viewer,
+      results: [{ status: "ready", payload: { id: "review", name: "Review candidate" } }],
+    });
   });
   const authenticate: express.RequestHandler = (req, _res, next) => {
     const user = req.header("tk");

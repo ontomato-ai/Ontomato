@@ -39,15 +39,18 @@ import {
 } from "../../product-panels/server-operations";
 import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 import { unwrapReadDirective } from "../../product-panels/read-directive";
+import type { RegisteredDataReadContext } from "../../product-panels/registered-data-read";
+import type { JavaPanelReadResult } from "../../product-panels/java-panel-reads";
 import { platformTypeEntries } from "../../product-panels/type-table";
 import {
-  createAutotestCaseArtifactReadAdapter,
-  createAutotestRunReadAdapter,
-  createDslQueryReadAdapter,
-  createOpsKnowledgeReadAdapter,
-  createTurnEvidenceReadAdapter,
+  createRegisteredAutotestCaseArtifactReadAdapter,
+  createRegisteredAutotestRunReadAdapter,
+  createRegisteredDslQueryReadAdapter,
+  createRegisteredOpsKnowledgeReadAdapter,
+  createRegisteredTurnEvidenceReadAdapter,
   DEFAULT_DSL_QUERY_TEXT,
   encodeAutotestCaseArtifactKey,
+  opsDiagnosisDataReadRegistrations,
 } from "../panel-reads";
 import { registerDslResultSectionProvider } from "../panel-operations";
 
@@ -158,6 +161,26 @@ async function refusalFor(operation: PanelServerOperation, target: PanelOperatio
   return refusal;
 }
 
+/** Present one registered ops read from its Java batch item, using the same registered plan the panel batch uses. */
+async function presentRegisteredOpsRead(
+  typeId: string, method: string, result: JavaPanelReadResult, params: Record<string, unknown> = {},
+) {
+  const registration = opsDiagnosisDataReadRegistrations.find(item => item.typeId === typeId && item.method === method);
+  expect(registration, `registered read ${typeId}.${method}`).toBeDefined();
+  const context = {
+    owner: { domainId: "domain-a", userId: "user-1" },
+    credentials: { token: "tok", locale: "en" },
+    selection: { kind: "platform" as const, typeId, method },
+    params,
+    inputs: {},
+    projection: {} as RegisteredDataReadContext["projection"],
+    cache: undefined as unknown as RegisteredDataReadContext["cache"],
+    rowOperations: [],
+  };
+  const plan = await registration!.plan(context);
+  return plan.present([result], context);
+}
+
 function makeHost(domainId = "domain-a", locale = "en"): PanelOperationHost {
   const actor = { owner: { domainId, userId: "user-1" }, credentials: { token: "tok", locale } };
   return {
@@ -237,7 +260,7 @@ afterEach(() => {
 describe("Observe and Autotest panel owner reads and operations", () => {
   it("lists and reads OpsKnowledge documents including directory index.md and enforces management access", async () => {
     fs.writeFileSync(path.join(mocks.knowledgeDir, "guides/index.md"), "# Guides Index\n\nOverview.", "utf8");
-    const adapter = createOpsKnowledgeReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
+    const adapter = createRegisteredOpsKnowledgeReadAdapter(workbenchManagement.opsKnowledgeRead.id, "en");
     const files = await adapter.files();
     expect(files.map((item) => item.primaryKey)).toEqual(["guides/index.md", "guides/logs.md", "index.md"]);
     expect(files[0]!.className).toBe(OPS_KNOWLEDGE);
@@ -250,9 +273,18 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     expect(doc.label).toBe("Log Guide");
     expect(doc.fields.path).toBe("guides/logs.md");
     expect(doc.fields.content).toContain("Check logs.");
+    expect(mocks.assertManagement).not.toHaveBeenCalled();
 
-    mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Operation forbidden"));
-    await expect(adapter.files()).rejects.toMatchObject({ status: 403 });
+    await expect(presentRegisteredOpsRead(OPS_KNOWLEDGE, "files", {
+      status: "forbidden", error: "Operation forbidden",
+    })).rejects.toMatchObject({ response: { status: "forbidden", reason: "Operation forbidden" } });
+    await expect(presentRegisteredOpsRead(OPS_KNOWLEDGE, "files", {
+      status: "error", error: "Management owner unavailable", code: "DEPENDENCY_UNAVAILABLE",
+    })).rejects.toMatchObject({ response: {
+      status: "error", message: "Management owner unavailable", code: "DEPENDENCY_UNAVAILABLE",
+    } });
+    expect(mocks.assertManagement).not.toHaveBeenCalled();
+    expect(() => createRegisteredOpsKnowledgeReadAdapter("wrong-approval", "en")).toThrow(/invalid_literal/u);
   });
 
   it("isolates TurnEvidence by domain and supports retention, build, delete, and ZIP download", async () => {
@@ -287,7 +319,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
       "utf8",
     );
 
-    const adapter = createTurnEvidenceReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
+    const adapter = createRegisteredTurnEvidenceReadAdapter({ domainId: "domain-a", userId: "user-1" }, "en", workbenchManagement.opsTurnEvidenceRead.id);
     const listed = await adapter.list();
     expect(listed.map((r) => r.primaryKey)).toEqual([turnA]);
 
@@ -343,9 +375,9 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     const keptKey = "turn.threadA.4";
     const host = makeHost();
     const { domainId } = host.executor.owner;
-    const adapter = createTurnEvidenceReadAdapter(host.executor.owner, host.executor.credentials);
+    const adapter = createRegisteredTurnEvidenceReadAdapter(host.executor.owner, host.locale, workbenchManagement.opsTurnEvidenceRead.id);
     const other = makeHost("domain-b");
-    const otherAdapter = createTurnEvidenceReadAdapter(other.executor.owner, other.executor.credentials);
+    const otherAdapter = createRegisteredTurnEvidenceReadAdapter(other.executor.owner, other.locale, workbenchManagement.opsTurnEvidenceRead.id);
     saveManifest(keptKey, { workspaceId: keptKey, domainId, status: "completed", createdAt: "2026-11-25T01:00:00.000Z" });
     mocks.keptArtifacts.add(`turn-workspace:${keptKey}`);
     if (mode === "rebuild") {
@@ -399,7 +431,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
   it("propagates a failed first collection and removes the in-progress Turn", async () => {
     const turnKey = "turn.threadA.3";
     const host = makeHost();
-    const adapter = createTurnEvidenceReadAdapter(host.executor.owner, host.executor.credentials);
+    const adapter = createRegisteredTurnEvidenceReadAdapter(host.executor.owner, host.locale, workbenchManagement.opsTurnEvidenceRead.id);
     const collection = holdTurnCollection();
     const build = globalWrite(BUILD_TURN_EVIDENCE).execute(host, null, { turnKey }, "i1");
     await collection.started;
@@ -461,7 +493,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     );
     fs.writeFileSync(path.join(caseDir, "trace.json"), '{"ok":true}', "utf8");
 
-    const runAdapter = createAutotestRunReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
+    const runAdapter = createRegisteredAutotestRunReadAdapter({ domainId: "domain-a", userId: "user-1" }, "en", workbenchManagement.opsRunsRead.id);
     expect(await runAdapter.list()).toMatchObject([{ primaryKey: runId }]);
     const runRecord = await runAdapter.record(runId);
     expect(runRecord).toHaveProperty("fields");
@@ -483,7 +515,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     expect(correctOnly[0]!.tones?.verdictLabel).toBe("success");
 
     const caseKey = encodeAutotestCaseArtifactKey(runId, "c1");
-    const caseAdapter = createAutotestCaseArtifactReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
+    const caseAdapter = createRegisteredAutotestCaseArtifactReadAdapter({ domainId: "domain-a", userId: "user-1" }, "en", workbenchManagement.opsRunsRead.id);
     const caseRecord = await caseAdapter.record(caseKey);
     expect(caseRecord.outputs).toEqual({ runId, caseId: "c1", hasEvidence: true });
     expect(caseRecord.tones).toMatchObject({ hasEvidence: "info", verdictLabel: "success" });
@@ -535,11 +567,21 @@ describe("Observe and Autotest panel owner reads and operations", () => {
 
   it("reads the DSL draft form and executes dslQuery.execute with default 2 sections and provider-inserted middle sections", async () => {
     const owner = { domainId: "domain-a", userId: "user-1" };
-    const viewer = { token: "tok", locale: "en" };
-    const adapter = createDslQueryReadAdapter(owner, viewer);
+    const adapter = createRegisteredDslQueryReadAdapter(owner, "en", workbenchManagement.opsDslRead.id);
     const form = panelFormDescriptionSchema.parse(await adapter.form());
-    expect(mocks.assertManagement).toHaveBeenLastCalledWith(workbenchManagement.opsDslRead, owner, viewer);
     expect(form.values).toEqual({ dsl: DEFAULT_DSL_QUERY_TEXT });
+    expect(mocks.assertManagement).not.toHaveBeenCalled();
+    await expect(presentRegisteredOpsRead(DSL_QUERY, "form", {
+      status: "forbidden", error: "Operation forbidden",
+    })).rejects.toMatchObject({ response: { status: "forbidden", reason: "Operation forbidden" } });
+    await expect(presentRegisteredOpsRead(DSL_QUERY, "form", {
+      status: "error", error: "Management owner unavailable", code: "DEPENDENCY_UNAVAILABLE",
+    })).rejects.toMatchObject({ response: {
+      status: "error", message: "Management owner unavailable", code: "DEPENDENCY_UNAVAILABLE",
+    } });
+    const denied = createRegisteredDslQueryReadAdapter(owner, "en", "wrong-approval");
+    await expect(denied.form()).rejects.toThrow(/invalid_literal/u);
+    expect(mocks.assertManagement).not.toHaveBeenCalled();
     expect(form.fields).toHaveLength(1);
     expect(form.fields[0]).toMatchObject({
       path: "/dsl",
@@ -671,12 +713,10 @@ describe("Observe and Autotest panel owner reads and operations", () => {
       unregister();
     }
 
-    for (const callDsl of [() => adapter.form(), () => executeOp.execute(host, call)]) {
-      mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Forbidden", "PERMISSION_DENIED"));
-      await expect(callDsl()).rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
-      mocks.assertManagement.mockRejectedValueOnce(new HttpError(502, "Unavailable", "DEPENDENCY_UNAVAILABLE"));
-      await expect(callDsl()).rejects.toMatchObject({ status: 503, code: "DEPENDENCY_UNAVAILABLE" });
-    }
+    mocks.assertManagement.mockRejectedValueOnce(new HttpError(403, "Forbidden", "PERMISSION_DENIED"));
+    await expect(executeOp.execute(host, call)).rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
+    mocks.assertManagement.mockRejectedValueOnce(new HttpError(502, "Unavailable", "DEPENDENCY_UNAVAILABLE"));
+    await expect(executeOp.execute(host, call)).rejects.toMatchObject({ status: 503, code: "DEPENDENCY_UNAVAILABLE" });
   });
 
   it("validates ops-dsl-console builtin panel source with real draftReadOperationIds and 8-locale parity", async () => {

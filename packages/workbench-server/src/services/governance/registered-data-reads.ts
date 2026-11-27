@@ -6,6 +6,7 @@ import {
 import { z } from "zod";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
+import type { JavaPanelReadResult } from "../product-panels/java-panel-reads";
 import {
   defaultReadRegistration, defaultRegisteredJavaCall, readyPayload, renderReadPayload, type RegisteredDataReadContext,
   type RegisteredDataReadRegistration, type RegisteredJavaCall,
@@ -113,6 +114,8 @@ export const governanceDataReadRegistrations: RegisteredDataReadRegistration[] =
   memberQueryRegistration,
   customJavaRead(USER, "effectiveAccess", effectiveAccessCall),
   customJavaRead(ROLE, "effectiveAccess", effectiveAccessCall),
+  defaultReadRegistration(ROLE, "options"),
+  defaultReadRegistration(ROLE, "resolve"),
   ...(["form", "createForm"] as const).map(method =>
     defaultReadRegistration(ROLE, method, undefined, validateGovernanceForm)),
   customJavaRead(PERMISSION_POLICY, "objectGrantCandidates", async ({ selection, params, owner, credentials }) => ({

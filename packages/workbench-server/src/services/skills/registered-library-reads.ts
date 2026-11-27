@@ -7,7 +7,7 @@ import { HttpError } from "../../utils/errors";
 import { agentObject } from "../assistant/authorization";
 import { readAgentDefinitionRow } from "../assistant/definitions";
 import type { ProductOwner } from "../product-governance/service-authentication";
-import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
+import type { PanelReadSelection } from "../product-panels/registered-data-read";
 import { ownerReadRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { createSkillReadAdapter, type SkillResolveRequest } from "./panel-reads";
 import { readSkillView } from "./view";

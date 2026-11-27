@@ -122,6 +122,22 @@ const host: PanelOperationHost = {
   locale: "en",
 };
 const adapter = createFavoriteReadAdapter(owner, credentials);
+const favoriteDirectory = {
+  state: async () => ({
+    favorites: [...state.favorites],
+    dashboardIds: [...state.dashboardIds],
+    dashboardCards: { ...state.dashboardCards },
+    pinnedSessions: [...state.pinnedSessions],
+    pinnedObjects: [...state.pinnedObjects],
+  }),
+  applications: async () => [],
+  agents: async () => [],
+  objectTitles: async (objects: readonly HomePinnedObject[]) => objects.map(({ className, primaryKey }) => ({
+    title: `${className} #${primaryKey}`, available: true,
+  })),
+};
+const listFavorites = (targetGroup: "objects" | "sessions" | "dashboardCards") =>
+  adapter.list({ targetGroup }, favoriteDirectory);
 const [addOp, removeOp, moveOp] = favoriteServerOperations;
 
 beforeEach(() => {
@@ -144,7 +160,7 @@ it("lists real object identities, checks status, and adds/removes/reorders acros
   const sessionA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const sessionB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-  expect(await adapter.list({ targetGroup: "objects" })).toEqual([]);
+  expect(await listFavorites("objects")).toEqual([]);
   expect((await adapter.status({ object: { className: "Order", primaryKey: "ord-1" } })).outputs).toMatchObject({
     favorited: false,
     className: "Order",
@@ -168,7 +184,7 @@ it("lists real object identities, checks status, and adds/removes/reorders acros
     title: "Order #1",
   });
 
-  const objectRows = await adapter.list({ targetGroup: "objects" });
+  const objectRows = await listFavorites("objects");
   expect(objectRows).toMatchObject([
     {
       className: "Order",
@@ -188,7 +204,7 @@ it("lists real object identities, checks status, and adds/removes/reorders acros
   await addOp.execute(host, { kind: "object", objectType: AGENT_SESSION, primaryKey: sessionA } as never, {}, "intent-2");
   await addOp.execute(host, { kind: "object", objectType: AGENT_SESSION, primaryKey: sessionB } as never, {}, "intent-3");
   await moveOp.execute(host, { kind: "object", objectType: AGENT_SESSION, primaryKey: sessionB } as never, { direction: "up" }, "intent-4");
-  const sessionRows = await adapter.list({ targetGroup: "sessions" });
+  const sessionRows = await listFavorites("sessions");
   expect(sessionRows.map(row => row.primaryKey)).toEqual([sessionB, sessionA]);
   expect(sessionRows[0]?.className).toBe(AGENT_SESSION);
   expect(sessionRows[0]?.outputs).toMatchObject({ canMoveUp: false, canMoveDown: true });
@@ -210,7 +226,7 @@ it("lists real object identities, checks status, and adds/removes/reorders acros
   expect((await adapter.status({ object: { className: "Order", primaryKey: "ord-1" } })).outputs).toMatchObject({
     favorited: false,
   });
-  expect(await adapter.list({ targetGroup: "objects" })).toEqual([]);
+  expect(await listFavorites("objects")).toEqual([]);
 });
 
 it("lists dashboard card placements without querying metrics, preserving order, caps and missing selections", async () => {
@@ -250,7 +266,7 @@ it("lists dashboard card placements without querying metrics, preserving order, 
     ],
   };
 
-  const rows = await adapter.list({ targetGroup: "dashboardCards" });
+  const rows = await listFavorites("dashboardCards");
   expect(rows.map(row => row.fields.cardId)).toEqual(["m1", "m2", "m3", "c1", "c2"]);
   expect(rows[0]).toMatchObject({
     label: "Metric m1", subtitle: "Revenue Board",
@@ -270,7 +286,7 @@ it("lists dashboard card placements without querying metrics, preserving order, 
     "dash-live": ["c3", "m7", "m6", "deleted-1", "c2", "m5", "m4", "c1", "m3", "m2", "m1", "c4", "c5", "deleted-2"],
     inaccessible: ["private-card"],
   };
-  const selectedRows = await adapter.list({ targetGroup: "dashboardCards" });
+  const selectedRows = await listFavorites("dashboardCards");
   expect(selectedRows.map(row => row.fields.cardId)).toEqual(["m7", "m6", "m5", "m4", "m3", "m2", "c3", "c2", "c1", "c4"]);
   expect((await adapter.dashboardCardsStatus()).outputs).toEqual({ missingCount: 3, metricCount: 6, chartCount: 4 });
   expect(state.metricDescribe).not.toHaveBeenCalled();

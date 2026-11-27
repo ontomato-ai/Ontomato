@@ -7,9 +7,7 @@ import { Router, type RequestHandler } from "express";
 import type { ZodType } from "zod";
 import { resolveLocale } from "../../i18n";
 import { runWithLogContext } from "../../logging/log-context";
-import { readScopedPanelData, readScopedPanelDataBatch } from "../../services/product-panels/data-reads";
 import { prepareRegisteredDataReads, runPreparedDataReads, type RegisteredDataRead } from "../../services/product-panels/registered-read-plan";
-import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { context, wrap } from "../utils/agent-host";
 import { getApiKeyFromRequest, getLocaleFromRequest, getTokenFromRequest } from "../utils/request";
 
@@ -27,12 +25,9 @@ export function createProductPanelReadRouter(authenticate: RequestHandler) {
       // Preview and execution proxy requests keep their owner-specific context.
       const scopedRequest = Boolean(req.header("X-Ontomato-Retrieval-Caller-Id"))
         || req.header(AGENT_EXECUTION_HEADER) !== undefined;
-      const formal: RegisteredDataRead[] = [];
-      const scoped: ProductPanelReadRequest[] = [];
-      const order = parsed.success ? items(parsed.data).map(read => {
-        if (!scopedRequest && isRegisteredRead(read)) return { formal: true, index: formal.push(read) - 1 };
-        return { formal: false, index: scoped.push(read) - 1 };
-      }) : [];
+      const all = parsed.success ? items(parsed.data) : [];
+      const scoped = scopedRequest || all.some(read => !isRegisteredRead(read));
+      const formal: RegisteredDataRead[] = scoped ? [] : all as RegisteredDataRead[];
 
       async function readFormal(): Promise<ProductPanelReadResponse[]> {
         if (!formal.length) return [];
@@ -46,23 +41,19 @@ export function createProductPanelReadRouter(authenticate: RequestHandler) {
       }
 
       async function readScoped(): Promise<ProductPanelReadResponse[]> {
-        if (!scoped.length) return [];
         const { owner, credentials } = context(req);
-        const callerUserName = (req as AuthenticatedRequest).userName;
         return runWithLogContext({ ...owner, token: credentials.token, apiKey: credentials.apiKey }, async () => {
-          if (batch) return readScopedPanelDataBatch(owner, credentials, scoped, { callerUserName, location: req });
-          const read = scoped[0]!;
-          return [await readScopedPanelData(owner, credentials, read, callerUserName, req)];
+          const prepared = await prepareRegisteredDataReads(credentials, all, { owner, location: req });
+          return runPreparedDataReads(credentials, prepared);
         });
       }
 
       const respond = wrap(async () => {
         if (!parsed.success) throw parsed.error;
-        const [formalResults, scopedResults] = await Promise.all([readFormal(), readScoped()]);
-        const results = order.map(({ formal, index }) => (formal ? formalResults : scopedResults)[index]);
+        const results = formal.length ? await readFormal() : await readScoped();
         res.json(batch ? { results } : results[0]);
       });
-      if (parsed.success && !scoped.length) return respond(req, res, next);
+      if (parsed.success && !scoped) return respond(req, res, next);
       scopedAccess(req, res, error => error ? next(error) : respond(req, res, next));
     };
   }

@@ -17,7 +17,7 @@ import { presentObjectTypeLabel } from "../ontology-model/model-reads";
 import { defaultRegisteredJavaCall, ownerReadPlan, readyPayload, RegisteredDataReadFailure, type RegisteredDataReadContext, type RegisteredDataReadRegistration } from "./registered-data-read";
 import { panelMemberReadRefusal } from "./data-reads";
 import type { JavaPanelReadResult } from "./java-panel-reads";
-import { formParams, type PanelReadSelection } from "./panel-owner-reads";
+import { formParams, type PanelReadSelection } from "./registered-data-read";
 
 const instanceRecordFacts = z.object({ record: z.unknown(), type: z.unknown() });
 

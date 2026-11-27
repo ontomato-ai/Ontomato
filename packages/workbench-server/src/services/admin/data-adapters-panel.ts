@@ -1244,26 +1244,6 @@ async function readDataAdapterFacts(host: DataQueryOperationHost): Promise<DataA
   return { config, catalogue };
 }
 
-export function createDataAdapterConfigReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const presentation = dataAdapterConfigPresentation(actor.credentials.locale);
-  return {
-    async record(primaryKey: string) {
-      requireDomainKey(primaryKey);
-      return presentation.record(await readDataAdapterFacts(host));
-    },
-    async form(primaryKey: string, inputs: DataAdapterFormInputs) {
-      requireDomainKey(primaryKey);
-      return presentation.form(await readDataAdapterFacts(host), inputs);
-    },
-    async routingForm(primaryKey: string, inputs: DataAdapterFormInputs) {
-      requireDomainKey(primaryKey);
-      const [facts, ontology] = await Promise.all([readDataAdapterFacts(host), readOntologyOutline(host)]);
-      return presentation.routingForm({ ...facts, ontology }, inputs);
-    },
-  };
-}
-
 export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
   {
     handlerRef: SAVE_OP,

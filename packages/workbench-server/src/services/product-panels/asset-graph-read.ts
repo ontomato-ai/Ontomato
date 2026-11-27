@@ -16,7 +16,7 @@ import { buildProductAssetGraph, resolveObjectTypeLabel, type AssetGraphSources 
 import { definitionVisibleInRange } from "./access";
 import { objectVisibilityRangeSchema } from "../product-governance/authorization";
 import { javaPanelReadResultSchema, type JavaPanelRead, type JavaPanelReadResult } from "./java-panel-reads";
-import type { PanelReadSelection } from "./panel-owner-reads";
+import type { PanelReadSelection } from "./registered-data-read";
 import { ownerReadRegistration, type RegisteredDataReadRegistration } from "./registered-data-read";
 import { readCurrentDefinitionRows } from "./current";
 import { currentProductRecord, type CurrentProductRow } from "../../infrastructure/product-current";

@@ -294,25 +294,3 @@ export async function planRowOperations(
     },
   };
 }
-
-/** The row availability of a list read outside a formal page: row facts, or one direct read for all rows' targets. */
-export async function readDirectRowOperations(
-  context: PanelOperationFactsContext, bounds: readonly BoundProjectionOperation[],
-  inputs: Readonly<Record<string, unknown>>, rows: readonly PanelRecord[], rowType: string | undefined,
-): Promise<PanelRowOperationsMap | undefined> {
-  if (!rows.length) return undefined;
-  const operated = rowOperations(bounds);
-  if (!operated.length) return undefined;
-  const entries = operated.map(bound => rowEntries(bound, rows, rowType, inputs));
-  const operations = await Promise.all(operated.map(async (bound, index): Promise<RowOperation> => {
-    const { availability } = bound.owner.handler;
-    if (!availability) return { bound };
-    if (availability.row && rowTargetBinding(bound.binding))
-      return { bound, plan: await planAvailability(availability, context, { from: "row" }) };
-    const targets = entries[index]!.filter(entry => entry.compatible).map(entry => entry.call.target);
-    if (!targets.length) return { bound };
-    return { bound, plan: await planAvailability(availability, context, { from: "targets", targets }) };
-  }));
-  const results = await readDirect(context, operations.map(({ plan }) => ({ reads: plan?.reads ?? [] })));
-  return presentRows(operations, entries, results);
-}

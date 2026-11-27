@@ -3,13 +3,10 @@ import { PUBLISHED_MCP_SERVICE } from "@ontomato/contracts/platform-object-types
 import type { McpToolDesc } from "@ontomato/contracts/mcp";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
-import { assertManagement } from "../../identity/management";
-import type { ProductOwner } from "../product-governance/service-authentication";
 import { tForLocale } from "../../i18n";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { workbenchProduct } from "../../product/installed";
 import { HttpError } from "../../utils/errors";
-import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
+import type { PanelReadSelection } from "../product-panels/registered-data-read";
 import { ownerReadRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { publishedMcpCatalogue, type McpRequestLocation } from "./catalog";
 
@@ -90,34 +87,12 @@ function publishedMcpReads(
   };
 }
 
-function publishedMcpReadsForViewer(owner: ProductOwner, viewer: AssistantCredentials, location?: McpRequestLocation) {
-  return publishedMcpReads(viewer.locale, location, () =>
-    assertManagement(workbenchManagement.publishedMcpRead, owner, viewer));
-}
-
-export function readPublishedMcpServices(owner: ProductOwner, viewer: AssistantCredentials, location?: McpRequestLocation) {
-  return publishedMcpReadsForViewer(owner, viewer, location).list();
-}
-
-export function readPublishedMcpService(
-  owner: ProductOwner, viewer: AssistantCredentials, primaryKey: string, location?: McpRequestLocation,
-) {
-  return publishedMcpReadsForViewer(owner, viewer, location).record(primaryKey);
-}
-
-export function readPublishedMcpServiceTools(
-  owner: ProductOwner, viewer: AssistantCredentials, primaryKey: string, location?: McpRequestLocation,
-) {
-  return publishedMcpReadsForViewer(owner, viewer, location).tools(primaryKey);
-}
-
 export function preparePublishedMcpRead(selection: PanelReadSelection, locale?: string, location?: McpRequestLocation) {
   const { typeId, method, primaryKey } = selection;
   if (typeId !== PUBLISHED_MCP_SERVICE || (method !== "list" && method !== "record" && method !== "tools")) return;
   return {
     call: { type: typeId, name: method, parameters: {} },
     present(payload: unknown) {
-      if (!location) throw new HttpError(500, "Published MCP reads require the server request location");
       const reads = publishedMcpReads(locale, location, () => {
         z.literal(workbenchManagement.publishedMcpRead.id).parse(payload);
       });

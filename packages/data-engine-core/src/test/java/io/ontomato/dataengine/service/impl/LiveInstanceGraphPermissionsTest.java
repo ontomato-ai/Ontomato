@@ -7,18 +7,14 @@ import static org.mockito.Mockito.*;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.BusinessConfig;
-import io.ontomato.dataengine.controller.DataController;
-import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.BusinessConfigService;
-import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.sys.bean.permission.FieldPermission;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
-import io.ontomato.dataengine.util.SystemUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,13 +23,12 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
-/** Exercises public graph responses against an in-memory datasource, without services or databases. */
+/** Exercises live graph owner responses against an in-memory datasource, without services or databases. */
 class LiveInstanceGraphPermissionsTest {
     @Test
-    void allControllerEntriesApplyRowsAndColumnsBeforeCountsSearchAndExpansion() throws Exception {
+    void allLiveGraphOperationsApplyRowsAndColumnsBeforeCountsSearchAndExpansion() throws Exception {
         var fixture = new Fixture(List.of("Person", "Department", "Secret"));
         fixture.relate("worksIn", "Person", "Department");
         fixture.rows.get("Person").addAll(List.of(
@@ -48,60 +43,48 @@ class LiveInstanceGraphPermissionsTest {
         var permission = permission(List.of("Person", "Department"), "alice", false);
         permission.getFieldPermissionByClassName("Department").getVisibleFields().add("name");
 
-        var identity = mock(IdentityService.class);
-        when(identity.getCurrentUserDataPermission()).thenReturn(permission);
-        var service = new DataServiceImpl();
-        ReflectionTestUtils.setField(service, "liveInstanceGraph", fixture.service);
-        var controller = new DataController(new io.ontomato.dataengine.service.agent.AgentExecutionScope(mock(io.ontomato.dataengine.service.agent.OntologyAgentAccess.class)));
-        ReflectionTestUtils.setField(controller, "identityService", identity);
-        ReflectionTestUtils.setField(controller, "dataService", service);
-        var user = mock(User.class); when(user.getDomainId()).thenReturn("test");
-        try (var currentUser = mockStatic(SystemUtils.class)) {
-            currentUser.when(SystemUtils::getCurUser).thenReturn(user);
-            var request = new MockHttpServletRequest();
-            var summary = data(controller.instanceGraphSummary(request));
-            assertEquals(3, summary.getIntValue("nodeCount"));
-            assertEquals(Set.of("Person:p1", "Person:p3", "Department:d1"), ids(summary, "overviewNodes"));
-            assertEquals(1, summary.getJSONArray("overviewEdges").size());
-            assertFalse(summary.getBooleanValue("overviewEdgesTruncated"));
-            assertEquals(2, summary.getJSONArray("classes").size());
-            assertFalse(summary.toJSONString().contains("Hidden name"));
-            assertFalse(summary.toJSONString().contains("Secret"));
-            assertEquals(3, data(controller.instanceGraphStatistics(request)).getIntValue("nodeCount"));
+        var summary = fixture.query("summary", new JSONObject(), permission);
+        assertEquals(3, summary.getIntValue("nodeCount"));
+        assertEquals(Set.of("Person:p1", "Person:p3", "Department:d1"), ids(summary, "overviewNodes"));
+        assertEquals(1, summary.getJSONArray("overviewEdges").size());
+        assertFalse(summary.getBooleanValue("overviewEdgesTruncated"));
+        assertEquals(2, summary.getJSONArray("classes").size());
+        assertFalse(summary.toJSONString().contains("Hidden name"));
+        assertFalse(summary.toJSONString().contains("Secret"));
+        assertEquals(3, fixture.query("statistics", new JSONObject(), permission).getIntValue("nodeCount"));
 
-            var search = data(controller.instanceGraphSearch(JSONObject.of("term", "Hidden name"), request));
-            assertTrue(search.getJSONArray("nodes").isEmpty());
-            assertFalse(search.getBooleanValue("hasMore"));
-            search = data(controller.instanceGraphSearch(JSONObject.of("term", "p1"), request));
-            assertEquals(Set.of("Person:p1"), ids(search, "nodes"));
-            assertEquals(1, search.getIntValue("total"));
-            var node = search.getJSONArray("nodes").getJSONObject(0);
-            assertEquals("Person:p1", node.getString("id"));
-            assertEquals("—", node.getString("name"));
+        var search = fixture.query("search", JSONObject.of("term", "Hidden name"), permission);
+        assertTrue(search.getJSONArray("nodes").isEmpty());
+        assertFalse(search.getBooleanValue("hasMore"));
+        search = fixture.query("search", JSONObject.of("term", "p1"), permission);
+        assertEquals(Set.of("Person:p1"), ids(search, "nodes"));
+        assertEquals(1, search.getIntValue("total"));
+        var node = search.getJSONArray("nodes").getJSONObject(0);
+        assertEquals("Person:p1", node.getString("id"));
+        assertEquals("—", node.getString("name"));
 
-            var neighbors = data(controller.instanceGraphNeighborhood(JSONObject.of(
-                    "node", Map.of("className", "Department", "primaryKey", "d1"),
-                    "direction", "incoming", "relationKinds", List.of("worksIn"), "limit", 1), request));
-            assertEquals(Set.of("Department:d1", "Person:p1"), ids(neighbors, "nodes"));
-            assertEquals(1, neighbors.getIntValue("total"));
-            assertNull(neighbors.get("nextOffset"));
-            assertFalse(neighbors.toJSONString().contains("Hidden name"));
-            var outgoing = data(controller.instanceGraphNeighborhood(JSONObject.of("id", "Person:p3", "direction", "outgoing"), request));
-            assertEquals(Set.of("Person:p3"), ids(outgoing, "nodes"));
-            assertEquals(0, outgoing.getIntValue("total"));
-            assertFalse(controller.instanceGraphNeighborhood(JSONObject.of("id", "Person:p2"), request).getBooleanValue("success"));
-            assertFalse(controller.instanceGraphNeighborhood(JSONObject.of("id", "Secret:s1"), request).getBooleanValue("success"));
+        var neighbors = fixture.query("neighborhood", JSONObject.of(
+                "node", Map.of("className", "Department", "primaryKey", "d1"),
+                "direction", "incoming", "relationKinds", List.of("worksIn"), "limit", 1), permission);
+        assertEquals(Set.of("Department:d1", "Person:p1"), ids(neighbors, "nodes"));
+        assertEquals(1, neighbors.getIntValue("total"));
+        assertNull(neighbors.get("nextOffset"));
+        assertFalse(neighbors.toJSONString().contains("Hidden name"));
+        var outgoing = fixture.query("neighborhood", JSONObject.of("id", "Person:p3", "direction", "outgoing"), permission);
+        assertEquals(Set.of("Person:p3"), ids(outgoing, "nodes"));
+        assertEquals(0, outgoing.getIntValue("total"));
+        assertFalse(fixture.service.query("neighborhood", JSONObject.of("id", "Person:p2"), permission, "test", ExecutionTarget.LIVE).getBooleanValue("success"));
+        assertFalse(fixture.service.query("neighborhood", JSONObject.of("id", "Secret:s1"), permission, "test", ExecutionTarget.LIVE).getBooleanValue("success"));
 
-            // The unrestricted graph is already cached for the same row and column permissions.
-            var scope = new ExecutionTarget(null, null, List.of("Person"), Long.MAX_VALUE);
-            var scopedSummary = data(fixture.service.query("summary", new JSONObject(), permission, "test", scope));
-            assertEquals(Set.of("Person:p1", "Person:p3"), ids(scopedSummary, "overviewNodes"));
-            assertTrue(scopedSummary.getJSONArray("overviewEdges").isEmpty());
-            var scopedNeighbors = data(fixture.service.query("neighborhood", JSONObject.of("id", "Person:p1"),
-                    permission, "test", scope));
-            assertEquals(Set.of("Person:p1"), ids(scopedNeighbors, "nodes"));
-            assertEquals(0, scopedNeighbors.getIntValue("total"));
-        }
+        // The unrestricted graph is already cached for the same row and column permissions.
+        var scope = new ExecutionTarget(null, null, List.of("Person"), Long.MAX_VALUE);
+        var scopedSummary = data(fixture.service.query("summary", new JSONObject(), permission, "test", scope));
+        assertEquals(Set.of("Person:p1", "Person:p3"), ids(scopedSummary, "overviewNodes"));
+        assertTrue(scopedSummary.getJSONArray("overviewEdges").isEmpty());
+        var scopedNeighbors = data(fixture.service.query("neighborhood", JSONObject.of("id", "Person:p1"),
+                permission, "test", scope));
+        assertEquals(Set.of("Person:p1"), ids(scopedNeighbors, "nodes"));
+        assertEquals(0, scopedNeighbors.getIntValue("total"));
     }
 
     @Test

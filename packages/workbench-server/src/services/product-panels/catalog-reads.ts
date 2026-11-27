@@ -64,7 +64,7 @@ import { loadCurrentProduct, readCurrentContentInRange, readCurrentPanel, readCu
 import { panelUsersInRange, panelsUsingPanelInRange, panelsUsingProjectionInRange } from "./used-by";
 import type { JavaPanelRead, JavaPanelReadResult, PanelReadRanges, PanelReadVisibility, PreparedOwnerReadFacts } from "./java-panel-reads";
 import { localReadRegistration, ownerFactsRegistration, ownerReadRegistration, type RegisteredDataReadRegistration, type RegisteredLocalDataRead } from "./registered-data-read";
-import type { PanelReadSelection } from "./panel-owner-reads";
+import type { PanelReadSelection } from "./registered-data-read";
 import {
   addProjectionGraphReferences, assetGraphNode, createAssetGraph, objectTypeGraphNode, panelGraphMembers, resolveObjectTypeLabel,
 } from "./asset-graph";
@@ -1667,7 +1667,10 @@ export const productCatalogueDataReadRegistrations: RegisteredDataReadRegistrati
     ),
   }),
   localReadRegistration(PRODUCT_PANEL, "unavailable", panelCatalogueRegisteredRead(registeredPanelEdit, reads => reads.unavailable())),
+  localReadRegistration(PRODUCT_PANEL, "members", panelCatalogueRegisteredRead([...registeredPanelEdit, ...registeredProjectionUse], (reads, key) => reads.members(key))),
   localReadRegistration(PRODUCT_PANEL, "memberRows", panelCatalogueRegisteredRead([...registeredPanelEdit, ...registeredProjectionUse], (reads, key) => reads.memberRows(key))),
+  localReadRegistration(PRODUCT_PANEL, "usedBy", panelCatalogueRegisteredRead(registeredPanelEdit, (reads, key) => reads.usedBy(key), true),
+    ({ selection }) => ({ type: PRODUCT_PANEL, name: "usedByRows", parameters: { primaryKey: selection.primaryKey! } })),
   localReadRegistration(PRODUCT_PANEL, "usedByRows", panelCatalogueRegisteredRead(registeredPanelEdit, (reads, key) => reads.usedByRows(key), true)),
   localReadRegistration(PRODUCT_PANEL, "referenceGraph", panelCatalogueRegisteredRead([...registeredPanelEdit, ...registeredProjectionUse], (reads, key) => reads.referenceGraph(key), true)),
   localReadRegistration(PRODUCT_PANEL, "sourceFiles", panelCatalogueRegisteredRead(registeredPanelUse, (reads, key) => reads.sourceFiles(key))),
@@ -1690,6 +1693,7 @@ export const productCatalogueDataReadRegistrations: RegisteredDataReadRegistrati
   localReadRegistration(PRODUCT_PROJECTION, "inputRows", projectionCatalogueRegisteredRead(registeredProjectionUse, (reads, key) => reads.inputRows(key))),
   localReadRegistration(PRODUCT_PROJECTION, "outputRows", projectionCatalogueRegisteredRead(registeredProjectionUse, (reads, key) => reads.outputRows(key))),
   localReadRegistration(PRODUCT_PROJECTION, "operationRows", projectionCatalogueRegisteredRead(registeredProjectionUse, (reads, key) => reads.operationRows(key))),
+  localReadRegistration(PRODUCT_PROJECTION, "usedBy", projectionCatalogueRegisteredRead([...registeredProjectionUse, ...registeredPanelUse], (reads, key) => reads.usedBy(key))),
   localReadRegistration(PRODUCT_PROJECTION, "usedByRows", projectionCatalogueRegisteredRead([...registeredProjectionUse, ...registeredPanelUse], (reads, key) => reads.usedByRows(key))),
   localReadRegistration(PRODUCT_PROJECTION, "referenceGraph", projectionCatalogueRegisteredRead([...registeredProjectionUse, ...registeredPanelUse], (reads, key) => reads.referenceGraph(key))),
   localReadRegistration(PRODUCT_PROJECTION, "form", projectionCatalogueRegisteredRead([...registeredProjectionEdit, ...registeredComponentUse], (reads, key, params) =>

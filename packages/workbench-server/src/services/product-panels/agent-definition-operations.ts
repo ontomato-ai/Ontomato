@@ -3,7 +3,6 @@ import { agentHostErrorSchema } from "@ontomato/contracts/agent-host";
 import { assistantAgentDefinitionSchema } from "@ontomato/contracts/assistant-chat";
 import { formFieldErrorSchema } from "@ontomato/contracts/form-fields";
 import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
-import { assistantService } from "../assistant/service";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";

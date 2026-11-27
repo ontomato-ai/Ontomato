@@ -24,7 +24,7 @@ import type { AssistantOwner } from "../assistant/store";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import { APPLICATION_NAVIGATION_READ } from "../product-panels/application-catalogue";
 import type { PreparedOwnerReadFacts } from "../product-panels/java-panel-reads";
-import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
+import type { PanelReadSelection } from "../product-panels/registered-data-read";
 import { ownerFactsRegistration, ownerReadRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { assertAppBuilderAccess, requireAppBuilderNavigation } from "./access";
 import {
@@ -523,13 +523,6 @@ export class ApplicationBuilderReadAdapter {
       jsonSchema(builderPublishFieldsSchema),
     );
   }
-}
-
-export function createApplicationBuilderReadAdapter(
-  owner: AssistantOwner,
-  credentials: AssistantCredentials,
-): ApplicationBuilderReadAdapter {
-  return new ApplicationBuilderReadAdapter(owner, credentials);
 }
 
 function builderFormValues(params: Record<string, unknown>) {

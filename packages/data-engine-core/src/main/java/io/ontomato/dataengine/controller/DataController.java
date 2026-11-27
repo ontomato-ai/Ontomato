@@ -47,30 +47,11 @@ public class DataController {
 		return instanceGraph("summary", new JSONObject(), request);
 	}
 
-	@GetMapping("/data/instanceGraph/statistics")
-	public JSONObject instanceGraphStatistics(HttpServletRequest request) {
-		return instanceGraph("statistics", new JSONObject(), request);
-	}
 
-	@GetMapping("/data/instanceGraph/nodes")
-	public JSONObject instanceGraphNodes(HttpServletRequest request) {
-		return instanceGraph("nodes", new JSONObject(), request);
-	}
 
-	@PostMapping("/data/instanceGraph/connections")
-	public JSONObject instanceGraphConnections(@RequestBody JSONObject param, HttpServletRequest request) {
-		return instanceGraph("connections", param, request);
-	}
 
-	@PostMapping("/data/instanceGraph/search")
-	public JSONObject instanceGraphSearch(@RequestBody JSONObject param, HttpServletRequest request) {
-		return instanceGraph("search", param, request);
-	}
 
-	@PostMapping("/data/instanceGraph/neighborhood")
-	public JSONObject instanceGraphNeighborhood(@RequestBody JSONObject param, HttpServletRequest request) {
-		return instanceGraph("neighborhood", param, request);
-	}
+
 	
 	private JSONObject instanceGraph(String operation, JSONObject parameters, HttpServletRequest request) {
 		var user = SystemUtils.getCurUser();

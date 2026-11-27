@@ -4,25 +4,29 @@ import type { PlatformReadDeclaration } from "@ontomato/contracts/platform-objec
 import { ZodError } from "zod";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 import { HttpError } from "../../utils/errors";
+import type { ProductOwner } from "../product-governance/service-authentication";
+import { createLogger } from "../../logging/logger";
 import { personalEntry, withPanelReadRegistration } from "./application-use";
 import {
   effectiveInputs, panelMemberReadRefusal, panelReadUseCollector, prepareProjectionDataRead, projectionDataReadOutcome, resolveReadMember,
   rowFallbackClassName,
 } from "./data-reads";
-import { locateViaJava, readViaJava, type JavaPanelLocateRef, type JavaPanelRead } from "./java-panel-reads";
+import { locateViaJava, readViaJava, type JavaDirectPanelRead, type JavaPanelLocateRef, type JavaPanelRead } from "./java-panel-reads";
 import { PanelReadBatchCache } from "./member-path";
 import { planRowOperations } from "./operation-availability";
 import { boundProjectionOperations } from "./operation-bindings";
 import {
   defaultRegisteredJavaCall, javaReadItem, readyPayload, RegisteredDataReadFailure, registeredDataReadKey,
-  type RegisteredDataReadContext, type RegisteredDataReadPlan,
+  type PanelReadSelection, type RegisteredDataReadContext, type RegisteredDataReadPlan,
 } from "./registered-data-read";
 import { registeredDataReads } from "./registered-data-reads";
 import { prepareRegisteredOperationRead } from "./registered-operation-reads";
 
 type RegisteredSource = Extract<ProductPanelReadSource, { kind: "registered" | "frame" }>;
+const logger = createLogger("registered-read-plan");
 export type RegisteredDataRead = ProductPanelReadRequest & { source: RegisteredSource };
 type RegisteredReadLocation = { protocol: string; headers: Record<string, unknown> };
+type PanelReadPath = JavaPanelRead | JavaDirectPanelRead;
 
 function entryKey({ applicationId, useId, kind }: JavaPanelLocateRef) {
   return JSON.stringify([applicationId, useId, kind ?? "registered"]);
@@ -46,6 +50,17 @@ function refusal(error: unknown): ProductPanelReadResponse {
     : { status: "error", message: error.message, ...(error.code && { code: error.code }) };
 }
 
+function preparationFailure(error: unknown, directResolution = false): ProductPanelReadResponse {
+  if (error instanceof ZodError || error instanceof URIError)
+    return { status: "error", message: error.message, code: "PANEL_READ_INPUT_INVALID" };
+  if (error instanceof HttpError) return refusal(error);
+  if (directResolution) {
+    logger.error("Candidate panel batch item failed", error instanceof Error ? error : undefined);
+    return { status: "error", message: "Service unavailable" };
+  }
+  return refusal(error);
+}
+
 function defaultDataReadPlan(context: RegisteredDataReadContext): RegisteredDataReadPlan {
   return {
     reads: [{ call: defaultRegisteredJavaCall(context) }],
@@ -55,13 +70,18 @@ function defaultDataReadPlan(context: RegisteredDataReadContext): RegisteredData
 
 /** Build the execution plan only after the entry owner has authenticated this request and returned its facts. */
 export async function prepareRegisteredDataReads(
-  credentials: AssistantCredentials, reads: readonly RegisteredDataRead[], { location }: { location?: RegisteredReadLocation } = {},
+  credentials: AssistantCredentials, reads: readonly ProductPanelReadRequest[],
+  { location, owner }: { location?: RegisteredReadLocation; owner?: ProductOwner } = {},
 ) {
-  const refs = [...new Map(reads.map(({ source: { applicationId, useId, kind } }) => {
-    const ref: JavaPanelLocateRef = { applicationId, useId, ...(kind === "frame" && { kind }) };
-    return [entryKey(ref), ref];
+  const refs = [...new Map(reads.flatMap(request => {
+    const { source } = request;
+    if (source.kind !== "registered" && source.kind !== "frame") return [];
+    const ref: JavaPanelLocateRef = { applicationId: source.applicationId, useId: source.useId, ...(source.kind === "frame" && { kind: source.kind }) };
+    return [[entryKey(ref), ref] as const];
   })).values()];
-  const { viewer, entries } = await locateViaJava(refs, credentials);
+  const located = refs.length ? await locateViaJava(refs, credentials) : undefined;
+  const viewer = located?.viewer ?? owner!;
+  const entries = located?.entries ?? [];
   const registrations = new Map(refs.map((ref, index) => [entryKey(ref), entries[index]]));
   const lookup = (source: JavaPanelLocateRef) => {
     const item = registrations.get(entryKey(source))!;
@@ -71,15 +91,26 @@ export async function prepareRegisteredDataReads(
   const cache = new PanelReadBatchCache(viewer, credentials, async source => personalEntry(withPanelReadRegistration(lookup(source).entry), viewer));
   const plans = await Promise.all(reads.map(async request => {
     const { source } = request;
-    let located: ReturnType<typeof lookup>;
-    try { located = lookup(source); }
-    catch (error) { return { ok: false as const, result: refusal(error) }; }
-    const { entry } = located;
-    const { registration: panelRegistration } = withPanelReadRegistration(entry);
+    const direct = source.kind === "candidate" || source.kind === "app-candidate";
+    let panelRegistration: ReturnType<typeof withPanelReadRegistration>["registration"] | undefined;
+    if (!direct) {
+      let locatedEntry: ReturnType<typeof lookup>;
+      try { locatedEntry = lookup(source); }
+      catch (error) { return { ok: false as const, result: refusal(error) }; }
+      panelRegistration = withPanelReadRegistration(locatedEntry.entry).registration;
+    }
     const { uses, collect: collectUse } = panelReadUseCollector(viewer.domainId, true);
-    const path = () => ({ source, registration: panelRegistration, uses: [...uses.values()] });
+    const path = (): PanelReadPath => {
+      if (source.kind === "candidate" || source.kind === "app-candidate") return { source: { kind: "direct" } };
+      return { source, registration: panelRegistration!, uses: [...uses.values()] };
+    };
+    let resolved: Awaited<ReturnType<typeof resolveReadMember>>;
     try {
-      const resolved = await resolveReadMember(viewer, credentials, request, cache, collectUse);
+      resolved = await resolveReadMember(viewer, credentials, request, cache, collectUse);
+    } catch (error) {
+      return { ok: false as const, result: preparationFailure(error, direct), ...(direct ? {} : { read: path() }) };
+    }
+    try {
       const placement = { ...resolved, slot: request.memberPath.at(-1)!.member };
       if ("operations" in request) {
         const inputs = effectiveInputs(placement.projection, placement.member, resolved.inputs);
@@ -105,17 +136,14 @@ export async function prepareRegisteredDataReads(
       };
       const dataPlan = registration ? await registration.plan(readContext) : defaultDataReadPlan(readContext);
       const admittedPath = path();
-      const reads = [...dataPlan.reads, ...rows?.reads ?? []].map(item => ({ ...admittedPath, ...javaReadItem(item) }));
+      const readItems = [...dataPlan.reads, ...rows?.reads ?? []].map(item => ({ ...admittedPath, ...javaReadItem(item) }));
       return {
-        ok: true as const, kind: "data" as const, reads, dataPlan, prepared, readContext,
+        ok: true as const, kind: "data" as const, reads: readItems, dataPlan, prepared, readContext,
         rows: rows && { ...rows, rowType: rowFallbackClassName(placement.projection, request.dataName, declaration) },
       };
     } catch (error) {
       // A path error must not disclose a definition that the reader cannot use.
-      const result = error instanceof ZodError || error instanceof URIError
-        ? { status: "error" as const, message: error.message, code: "PANEL_READ_INPUT_INVALID" }
-        : refusal(error);
-      return { ok: false as const, result, read: path() };
+      return { ok: false as const, result: preparationFailure(error), ...(direct ? {} : { read: path() }) };
     }
   }));
   return { viewer, plans, cache };
@@ -140,7 +168,7 @@ export async function runPreparedDataReads(
   credentials: AssistantCredentials, prepared: Awaited<ReturnType<typeof prepareRegisteredDataReads>>,
 ): Promise<ProductPanelReadResponse[]> {
   const { viewer, plans } = prepared;
-  const reads = plans.flatMap<JavaPanelRead>(plan => {
+  const reads = plans.flatMap<PanelReadPath>(plan => {
     if (!plan.ok) return plan.read ? [plan.read] : [];
     return plan.reads;
   });
@@ -179,4 +207,40 @@ export async function runPreparedDataReads(
       return presentationFailure(error);
     }
   }));
+}
+
+/** Read one owner selection through its registration plan, directly or with an already admitted registered path. */
+export async function readPanelOwnerData(
+  owner: ProductOwner,
+  credentials: AssistantCredentials,
+  selection: PanelReadSelection,
+  params: Record<string, unknown>,
+  projection: RegisteredDataReadContext["projection"],
+  path?: PanelReadPath,
+): Promise<unknown> {
+  const cache = new PanelReadBatchCache(owner, credentials);
+  const context: RegisteredDataReadContext = {
+    owner, credentials, selection, params, inputs: {}, rowOperations: [], projection, cache,
+  };
+  const registration = registrationFor(selection);
+  const plan = registration ? await registration.plan(context) : defaultDataReadPlan(context);
+  const admittedPath = path ?? { source: { kind: "direct" as const } };
+  const reads = plan.reads.map(item => ({ ...admittedPath, ...javaReadItem(item) }));
+  const batch = await readViaJava(owner, reads, credentials);
+  return plan.present(batch.results, { ...context, javaViewer: batch.viewer });
+}
+/** Read one or more panel members through the same admitted owner batch. */
+export async function readPanelDataBatch(
+  owner: ProductOwner, credentials: AssistantCredentials, reads: readonly ProductPanelReadRequest[],
+  location?: RegisteredReadLocation,
+): Promise<ProductPanelReadResponse[]> {
+  const prepared = await prepareRegisteredDataReads(credentials, reads, { owner, ...(location && { location }) });
+  return runPreparedDataReads(credentials, prepared);
+}
+
+export async function readPanelData(
+  owner: ProductOwner, credentials: AssistantCredentials, request: ProductPanelReadRequest, location?: RegisteredReadLocation,
+): Promise<ProductPanelReadResponse> {
+  const [response] = await readPanelDataBatch(owner, credentials, [request], location);
+  return response!;
 }

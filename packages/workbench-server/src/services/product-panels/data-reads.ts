@@ -1,8 +1,6 @@
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
-import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
@@ -10,33 +8,20 @@ import {
   authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField,
   type DirectProjectionData, type PanelRecord, type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
-import { DASHBOARD_CARD, type PlatformReadDeclaration } from "@ontomato/contracts/platform-object-types";
+import type { PlatformReadDeclaration } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { tApp } from "../../i18n";
-import { createLogger } from "../../logging/logger";
-import { isQueryRuntimeGrant } from "../../utils/assistant-credentials";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import type { ObjectDefinition } from "../product-governance/authorization";
-import { isProductAssetGraphRead, prepareProductAssetGraphRead } from "./asset-graph-read";
-import { preparePanelMetricQuery } from "../dashboard/panel-chart-read-plan";
-import type { McpRequestLocation } from "../mcp/catalog";
 import { readProjectionComponent } from "./component-catalogue";
 import { resolvePinnedInputs } from "./input-wiring";
-import type { ScopedActionDescriptions } from "./direct-operations";
-import { PanelReadBatchCache, registeredPanelRootId, requireRegisteredPanelRoot, resolvePanelMemberPath, type PanelUseCollector } from "./member-path";
+import { PanelReadBatchCache, requireRegisteredPanelRoot, resolvePanelMemberPath, type PanelUseCollector } from "./member-path";
 import { unwrapReadDirective } from "./read-directive";
-import { RegisteredDataReadFailure } from "./registered-data-read";
-import type { PanelOperationActor } from "./server-operations";
-import { readSelectedPanelOwner, type PanelReadSelection } from "./panel-owner-reads";
+import { RegisteredDataReadFailure, type PanelReadSelection } from "./registered-data-read";
 import { currentDefinition } from "./access";
-import { prepareCustomerDataRead } from "./customer-data-read-plan";
-import { isFavoriteObjectRead, prepareScopedFavoriteObjectRead } from "./favorite-panel";
-import { readViaJava, stableJson, type JavaPanelRead } from "./java-panel-reads";
-
-const logger = createLogger("panel-data-reads");
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadMember = ProductPanel["manifest"]["members"][string];
@@ -62,19 +47,19 @@ export async function resolveReadMember(
   if (source.kind === "candidate") {
     const { resolvePanelCandidateMember } = await import("../workspaces/panel-candidate");
     const { panel, member, projection } = await resolvePanelCandidateMember(owner, viewer, source.workspace, memberPath);
-    return { member, projection, panel, inputs: request.inputs, viewer, javaPath: undefined };
+    return { member, projection, panel, inputs: request.inputs, viewer };
   }
   if (source.kind === "app-candidate") {
     const { resolveApplicationPreviewMember } = await import("../app-builder/preview-service");
     const { panel, member, projection } = await resolveApplicationPreviewMember(
       owner, viewer, source.app.id, { ref: source.app.ref, entryId: source.app.entryId }, memberPath,
     );
-    return { member, projection, panel, inputs: request.inputs, viewer, javaPath: undefined };
+    return { member, projection, panel, inputs: request.inputs, viewer };
   }
 
   const { uses, collect } = panelReadUseCollector(owner.domainId);
   const useCollector = collectUse ?? collect;
-  const { panel, entry, registration } = await requireRegisteredPanelRoot(owner, viewer, source, { batchCache, collectUse: useCollector });
+  const { panel, entry } = await requireRegisteredPanelRoot(owner, viewer, source, { batchCache, collectUse: useCollector });
   const placement = await resolvePanelMemberPath(owner, viewer, panel, memberPath, entry, undefined, batchCache, undefined, useCollector);
   if (placement.kind !== "projection")
     throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
@@ -84,8 +69,7 @@ export async function resolveReadMember(
     if (value === undefined) delete inputs[name];
     else inputs[name] = value as ReadInputs[string];
   }
-  const javaPath = { source, registration, uses: [...uses.values()] } satisfies JavaPanelRead;
-  return { ...placement, inputs, viewer, javaPath };
+  return { ...placement, inputs, viewer };
 }
 
 export function effectiveInputs(
@@ -208,78 +192,6 @@ export async function prepareProjectionDataRead(
   return { declaration, inputs, params, selection: readSelection(data, inputs) };
 }
 
-async function executeProjectionDataRead(
-  owner: ProductOwner,
-  viewer: AssistantCredentials,
-  placement: ReadPlacement,
-  dataName: string,
-  submittedInputs: ReadInputs,
-  runtimeParams?: ProductPanelReadRequest["runtimeParams"],
-  callerUserName?: string,
-  location?: McpRequestLocation,
-  batchCache?: PanelReadBatchCache,
-  readScopeKey?: string,
-  javaPath?: JavaPanelRead,
-): Promise<{ outcome: ProjectionDataReadOutcome; inputs: ReadInputs }> {
-  const { projection } = placement;
-  const { declaration, params, selection, inputs } = await prepareProjectionDataRead(viewer, placement, dataName, submittedInputs, runtimeParams);
-  const invoke = () => readResolvedPanelOwner({ owner, viewer, callerUserName, location, batchCache }, selection, params, projection, javaPath);
-  // These Java reads include admission of this placement.
-  const needsOwnerAdmission = isProductAssetGraphRead(selection) || selection.kind === "customer" && selection.method === "neighbors";
-  const result = await (batchCache && readScopeKey !== undefined && !needsOwnerAdmission
-    ? batchCache.read(
-        JSON.stringify([
-          readScopeKey,
-          selection.kind,
-          selection.typeId,
-          selection.method,
-          selection.primaryKey ?? null,
-          selection.typeId === DASHBOARD_CARD ? projection.id : null,
-          stableJson(params),
-        ]),
-        invoke,
-      )
-    : invoke());
-  return { outcome: await projectionDataReadOutcome(declaration, result), inputs };
-}
-
-export async function readResolvedPanelOwner(
-  reader: Parameters<typeof readSelectedPanelOwner>[0], selection: PanelReadSelection, params: Record<string, unknown>,
-  projection: ProductProjection, path?: JavaPanelRead, retrievalScopeId?: string,
-) {
-  const { owner, viewer } = reader;
-  const isRelationship = selection.kind === "customer" && selection.method === "neighbors";
-  const isGraph = isProductAssetGraphRead(selection);
-  if (!isGraph && !isRelationship && retrievalScopeId === undefined)
-    return readSelectedPanelOwner(reader, selection, params, projection);
-
-  const modelRead = !isGraph && retrievalScopeId !== undefined
-    ? (await import("./scoped-model-reads")).prepareScopedModelRead(selection, params, viewer.locale)
-    : undefined;
-  const ownerRead = isGraph ? undefined : modelRead ?? prepareCustomerDataRead(selection, params, viewer.locale);
-  const scopedFavorites = retrievalScopeId !== undefined && isFavoriteObjectRead(selection, params);
-  const metric = !isGraph && !ownerRead && !scopedFavorites
-    ? await preparePanelMetricQuery(owner, projection, { selection, params }, viewer.locale) : undefined;
-  if (!isGraph && !ownerRead && !scopedFavorites && !metric) return readSelectedPanelOwner(reader, selection, params, projection);
-  const headers = new Headers(viewer.headers);
-  const readLabel = isGraph ? "The product graph read" : metric ? "The metric read"
-    : modelRead ? "The model read" : "The customer read";
-  // Only the callback's stored caller reference may carry scope to the owner.
-  if (isQueryRuntimeGrant(viewer.token) || (retrievalScopeId === undefined
-      && (headers.has(AGENT_EXECUTION_HEADER) || headers.has("X-Ontomato-Retrieval-Caller-Id"))))
-    throw new HttpError(403, readLabel + " requires the caller's execution scope");
-  if (!path) throw new HttpError(422, readLabel + " requires a registered panel placement");
-  const { call, present } = ownerRead ?? metric ?? (isGraph
-    ? await prepareProductAssetGraphRead(owner, viewer.locale) : await prepareScopedFavoriteObjectRead(owner, viewer.locale));
-  const { results: [result] } = await readViaJava(owner, [{ ...path, call }], viewer, retrievalScopeId);
-  if (result.status === "empty") return null;
-  if (result.status === "forbidden") throw new HttpError(403, result.error);
-  if (result.status === "error")
-    throw new HttpError(metric && result.code === "UNAUTHENTICATED" ? 401 : 422,
-      result.error, metric ? result.code ?? undefined : undefined);
-  return present(result.payload);
-}
-
 export async function projectionDataReadOutcome(
   declaration: PlatformReadDeclaration, result: unknown, render: (value: unknown) => unknown | Promise<unknown> = value => value,
 ): Promise<ProjectionDataReadOutcome> {
@@ -305,20 +217,6 @@ export async function projectionDataReadOutcome(
   };
 }
 
-type PanelReadPlacement = ReadPlacement & { panel: Pick<ProductPanel, "manifest"> & { id?: string } };
-
-export async function readPanelMemberOperationDescriptions(
-  actor: PanelOperationActor, placement: PanelReadPlacement, submittedInputs: ReadInputs, actionScope?: ScopedActionDescriptions,
-): Promise<ProductPanelReadResponse> {
-  const inputs = effectiveInputs(placement.projection, placement.member, submittedInputs);
-  const { readAdmittedProjectionOperations } = await import("./direct-operations");
-  const headers = new Headers(actor.credentials.headers);
-  const scoped = headers.has(AGENT_EXECUTION_HEADER) || isQueryRuntimeGrant(actor.credentials.token)
-    ? undefined : actionScope;
-  const value = await readAdmittedProjectionOperations(actor, placement, inputs, scoped);
-  return { status: "ready", value: runtimeJsonObjectSchema.parse(value) };
-}
-
 /** The record type a list's rows fall back to when a row names none: the read's declared row type, else its source's. */
 export function rowFallbackClassName(projection: ProductProjection, dataName: string, declaration: PlatformReadDeclaration) {
   if (declaration.rowType) return declaration.rowType;
@@ -328,38 +226,6 @@ export function rowFallbackClassName(projection: ProductProjection, dataName: st
   if ("literal" in datum.source.object) return datum.source.object.literal.className;
   const input = projection.inputs[datum.source.object.input];
   return input?.kind === "object" ? input.objectType : undefined;
-}
-
-async function readMemberRowOperations(
-  actor: PanelOperationActor, { projection }: PanelReadPlacement, dataName: string, inputs: ReadInputs,
-  rows: readonly PanelRecord[], declaration: PlatformReadDeclaration,
-) {
-  const [{ readDirectRowOperations }, { boundProjectionOperations }] = await Promise.all([
-    import("./operation-availability"), import("./operation-bindings"),
-  ]);
-  return readDirectRowOperations(
-    { owner: actor.owner, credentials: actor.credentials, locale: actor.credentials.locale },
-    boundProjectionOperations(projection), inputs, rows, rowFallbackClassName(projection, dataName, declaration));
-}
-
-export async function presentPanelMemberRead(
-  actor: PanelOperationActor, placement: PanelReadPlacement, dataName: string, inputs: ReadInputs,
-  outcome: ProjectionDataReadOutcome,
-): Promise<ProductPanelReadResponse> {
-  const { projection } = placement;
-  if (outcome.status === "empty") return { status: "empty" };
-  const { declaration, value, rereadAfterMs } = outcome;
-  const rows = declaration.result === "panelRecordList" ? value as PanelRecord[]
-    : declaration.result === "panelRecordQuery" ? (value as PanelRecordQuery).rows : undefined;
-  const rowOperations = rows && Object.keys(projection.operations ?? {}).length > 0
-    ? await readMemberRowOperations(actor, placement, dataName, inputs, rows, declaration)
-    : undefined;
-  return {
-    status: "ready",
-    value,
-    ...(rereadAfterMs !== undefined && { rereadAfterMs }),
-    ...(rowOperations && { rowOperations }),
-  };
 }
 
 export function panelMemberReadRefusal(error: unknown): ProductPanelReadResponse | undefined {
@@ -376,68 +242,4 @@ export function panelMemberReadRefusal(error: unknown): ProductPanelReadResponse
   }
   if (error instanceof HttpError || error instanceof BackendUnavailableError || error instanceof z.ZodError || error instanceof SyntaxError)
     return { status: "error", message: error.message };
-}
-
-export async function readScopedPanelData(
-  owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string, location?: McpRequestLocation,
-  batchCache?: PanelReadBatchCache,
-): Promise<ProductPanelReadResponse> {
-  try {
-    const { member, projection, panel, inputs: submittedInputs, viewer: readViewer, javaPath } = await resolveReadMember(owner, viewer, request, batchCache);
-    const placement = { panel, projection, member, slot: request.memberPath.at(-1)!.member };
-    const actor = { owner, credentials: readViewer };
-    if ("operations" in request)
-      return await readPanelMemberOperationDescriptions(actor, placement, submittedInputs);
-    const readScopeKey = request.source.kind === "candidate"
-      ? JSON.stringify(["candidate", request.source.workspace.id, request.source.workspace.ref])
-      : request.source.kind === "app-candidate"
-        ? JSON.stringify(["app-candidate", request.source.app.id, request.source.app.ref, request.source.app.entryId ?? null])
-        : "registered";
-    const { outcome, inputs } = await executeProjectionDataRead(
-      owner, readViewer, placement, request.dataName, submittedInputs, request.runtimeParams, callerUserName, location,
-      batchCache, readScopeKey, javaPath,
-    );
-    return await presentPanelMemberRead(actor, placement, request.dataName, inputs, outcome);
-  } catch (error) {
-    const refusal = panelMemberReadRefusal(error);
-    if (refusal) return refusal;
-    if (batchCache) {
-      logger.error("Panel batch item failed", error instanceof Error ? error : undefined);
-      return { status: "error", message: "Service unavailable" };
-    }
-    throw error;
-  }
-}
-
-export async function readScopedPanelDataBatch(
-  owner: ProductOwner, credentials: AssistantCredentials, requests: readonly ProductPanelReadRequest[],
-  { callerUserName, location }: { callerUserName?: string; location?: McpRequestLocation } = {},
-): Promise<ProductPanelReadResponse[]> {
-  const batchCache = new PanelReadBatchCache(owner, credentials);
-  const registered = requests.flatMap(({ source, memberPath }) =>
-    source.kind === "candidate" || source.kind === "app-candidate" ? [] : [{ source, memberPath }],
-  );
-
-  const entries = await Promise.allSettled(registered.map(async request =>
-    registeredPanelRootId(request.source, await batchCache.entry(request.source))));
-  await batchCache.prefetch(entries.flatMap(entry =>
-    entry.status === "fulfilled" && entry.value !== undefined ? [{ kind: "panel", id: entry.value }] : []));
-
-  const members = await Promise.allSettled(registered.map(async ({ source, memberPath }) => {
-    const { panel } = await requireRegisteredPanelRoot(owner, credentials, source, { batchCache });
-    const first = memberPath[0];
-    if (first.selection || first.member.startsWith("$state.")) return;
-    const target = panel.manifest.members[first.member]?.target;
-    if (!target) return;
-    if ("projectionId" in target) return { kind: "projection" as const, id: target.projectionId };
-    if ("panelId" in target) return { kind: "panel" as const, id: target.panelId };
-  }));
-  await batchCache.prefetch(members.flatMap(member =>
-    member.status === "fulfilled" && member.value ? [member.value] : []));
-
-  return Promise.all(requests.map(request => readScopedPanelData(
-    owner,
-    credentials,
-    request, callerUserName, location, batchCache,
-  )));
 }

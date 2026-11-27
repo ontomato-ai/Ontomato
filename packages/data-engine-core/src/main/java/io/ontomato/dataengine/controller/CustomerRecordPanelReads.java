@@ -149,34 +149,6 @@ class CustomerRecordPanelReads {
     }
 
     @Bean
-    WorkbenchPanelRead customerFavoriteRecords() {
-        return WorkbenchPanelRead.callerScopedLiveData(CUSTOMER, "favoriteRecords", this::favoriteRecords);
-    }
-
-    private List<Facts> favoriteRecords(SubjectContext subject, Map<String, Object> parameters, ExecutionTarget target) {
-        if (!(parameters.get("objects") instanceof List<?> objects)) throw invalid("Expected favorite objects");
-        var records = new ArrayList<Facts>(objects.size());
-        for (var item : objects) {
-            if (!(item instanceof Map<?, ?> object)) throw invalid("Expected a favorite object");
-            records.add(favoriteRecord(subject, object, target));
-        }
-        return records;
-    }
-
-    private Facts favoriteRecord(SubjectContext subject, Map<?, ?> object, ExecutionTarget target) {
-        try {
-            return record(subject, object, target, false);
-        } catch (ResponseStatusException failure) {
-            int status = failure.getStatusCode().value();
-            if (status == 403 || status == 404) return null;
-            throw failure;
-        } catch (OwnerRefusal refusal) {
-            if ("OBJECT_TYPE_NOT_FOUND".equals(refusal.code())) return null;
-            throw refusal;
-        }
-    }
-
-    @Bean
     WorkbenchPanelRead customerForm() {
         return WorkbenchPanelRead.callerScopedLiveData(CUSTOMER, "form",
                 (subject, parameters, target) -> record(subject, parameters, target, true));

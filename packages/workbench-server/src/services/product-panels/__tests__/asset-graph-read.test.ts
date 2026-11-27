@@ -1,11 +1,12 @@
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
 import type { JavaPanelRead } from "../java-panel-reads";
-import { readResolvedPanelOwner } from "../data-reads";
+let readPanelOwnerData: typeof import("../registered-read-plan").readPanelOwnerData;
 
 const mocks = vi.hoisted(() => ({ definitions: vi.fn(), mappings: vi.fn(), post: vi.fn() }));
 vi.mock("../current", async original => ({
@@ -25,9 +26,13 @@ vi.mock("../../../utils/backend-client", async original => ({
   ...await original<typeof import("../../../utils/backend-client")>(), backendPost: mocks.post,
 }));
 
-beforeAll(() => configureI18n({
-  defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { ...enLocaleMeta, messages: en } },
-}));
+beforeAll(async () => {
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  configureI18n({
+    defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { ...enLocaleMeta, messages: en } },
+  });
+  ({ readPanelOwnerData } = await import("../registered-read-plan"));
+});
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -96,9 +101,9 @@ it("uses the same single graph owner with a stored caller and keeps the ID of a 
     source: { kind: "registered", applicationId: "app", useId: "graph" },
     registration: { panelId: "orders", framePanelId: "frame", inputs: {} }, uses: [],
   };
-  const read = (caller?: string) => readResolvedPanelOwner(
-    { owner, viewer: { apiKey: "executor-key", locale: "en", headers: caller ? { [scopeHeader]: "ignored-header" } : {} } },
-    { kind: "platform", typeId: OBJECT_TYPE, method: "productGraph" }, {}, {} as ProductProjection, path, caller,
+  const read = (caller?: string) => readPanelOwnerData(
+    owner, { apiKey: "executor-key", locale: "en", headers: caller ? { [scopeHeader]: caller } : {} },
+    { kind: "platform", typeId: OBJECT_TYPE, method: "productGraph" }, {}, {} as ProductProjection, path,
   );
   const ordinary = await read();
   const scoped = await read("stored-caller");

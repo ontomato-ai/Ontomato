@@ -3,7 +3,7 @@ import { APPLICATION } from "@ontomato/contracts/platform-object-types";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { AssistantOwner } from "../assistant/store";
 import type { PreparedOwnerReadFacts } from "../product-panels/java-panel-reads";
-import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
+import type { PanelReadSelection } from "../product-panels/registered-data-read";
 import { ownerFactsRegistration, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { ApplicationBuilderReadAdapter, sourceCommitPage } from "./application-panel-reads";
 import {

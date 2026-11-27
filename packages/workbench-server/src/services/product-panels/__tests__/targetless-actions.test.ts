@@ -5,7 +5,8 @@ import {
   mocks, orderFormProjection, orderPanel, owner, use, uuid,
 } from "./customer-action-dispatch-fixture";
 import { panelOperationTargetCheck, readPanelTypeTable } from "../type-table";
-import { declaredDirectOperation, readAdmittedProjectionOperations } from "../direct-operations";
+import { declaredDirectOperation } from "../direct-operations";
+import { readRegisteredProjectionOperations } from "./registered-operations-fixture";
 import {
   dispatchHumanPanelOperation,
   prepareHumanPanelOperation,
@@ -104,7 +105,22 @@ describe("admitting targetless customer Actions in direct-operations", () => {
       throw new Error(`Unexpected fetch ${url}`);
     }));
 
-    const admittedMap = await readAdmittedProjectionOperations(
+    mocks.backendPost.mockImplementationOnce(async (_name, url, body) => {
+      expect(String(url)).toBe("http://owner.test/internal/workbench-panel-reads");
+      expect(body).toEqual({
+        kind: "read",
+        viewer: owner,
+        reads: [{ source: { kind: "direct" }, call: {
+          type: "platform:Action", name: "executionDefinitions",
+          parameters: { actions: [{ primaryKey: "create-order" }] },
+        } }],
+      });
+      return { text: JSON.stringify({ viewer: owner, results: [{ status: "ready", payload: [
+        { status: "ready", payload: createOrderAction },
+      ] }] }) };
+    });
+
+    const admittedMap = await readRegisteredProjectionOperations(
       { owner, credentials },
       { panel: orderPanel as never, projection: orderFormProjection as never, member: orderPanel.manifest.members.orderForm, slot: "orderForm" },
       {},
@@ -115,11 +131,7 @@ describe("admitting targetless customer Actions in direct-operations", () => {
       label: "Create order",
       target: { source: "none" },
     });
-    expect(sent.at(-1)?.body).toEqual({
-      id: "create-order",
-      parameters: {},
-      readOnlyParameters: [],
-    });
+    expect(sent).toEqual([]);
 
     mocks.projection.mockResolvedValue(orderFormProjection);
     const direct = await declaredDirectOperation(
@@ -140,6 +152,11 @@ describe("admitting targetless customer Actions in direct-operations", () => {
       });
       expect(direct.operation.action?.object).toBeUndefined();
     }
+    expect(sent.at(-1)?.body).toEqual({
+      id: "create-order",
+      parameters: {},
+      readOnlyParameters: [],
+    });
   });
 });
 

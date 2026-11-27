@@ -16,7 +16,7 @@ import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 import { HttpError } from "../../utils/errors";
 import type { JavaPanelReadResult, PreparedOwnerReadFacts } from "../product-panels/java-panel-reads";
-import { formParams, type PanelReadSelection } from "../product-panels/panel-owner-reads";
+import { formParams, type PanelReadSelection } from "../product-panels/registered-data-read";
 import { ownerFactsRegistration, type RegisteredDataReadContext, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import { withReadDirective } from "../product-panels/read-directive";
 import {

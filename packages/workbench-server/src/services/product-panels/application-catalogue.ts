@@ -28,7 +28,7 @@ import { readCurrentPanel } from "./current";
 import { assetGraphNode, createAssetGraph, panelGraphMembers } from "./asset-graph";
 import type { PanelReadRanges, PanelReadVisibility } from "./java-panel-reads";
 import { localReadRegistration, ownerReadRegistration, readyPayload, renderReadPayload, type RegisteredDataReadRegistration, type RegisteredLocalDataRead } from "./registered-data-read";
-import type { PanelReadSelection } from "./panel-owner-reads";
+import type { PanelReadSelection } from "./registered-data-read";
 
 const applicationPath = "/platform/applications";
 export const APPLICATION_NAVIGATION_READ = { type: APPLICATION, name: "navigation", parameters: {} } as const;

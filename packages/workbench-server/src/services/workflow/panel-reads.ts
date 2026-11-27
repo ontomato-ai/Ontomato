@@ -1,18 +1,11 @@
 import { z } from "zod";
-import { ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, WORKFLOW } from "@ontomato/contracts/platform-object-types";
+import { WORKFLOW } from "@ontomato/contracts/platform-object-types";
 import { panelReadParameterSchemas, type PanelFormValues, type PanelRecord, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
-import { config } from "../../config/application";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
-import { readRefusal } from "../action/object-actions";
-import type { ProductOwner } from "../product-governance/service-authentication";
-import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
-import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
 import { defaultReadRegistration, ownerReadRegistration, presentedRegisteredDataRead, type ContextualReadyPayloadOptions, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import {
-  canActivateWorkflow, canDeactivateWorkflow, requireWorkflow, scopeKinds, stepInvocation,
+  canActivateWorkflow, canDeactivateWorkflow, scopeKinds, stepInvocation,
   workflowForm, workflowFormValues, workflowSchema, workflowText, type Workflow, type WorkflowStep,
 } from "./definition";
 
@@ -36,7 +29,6 @@ const grantSchema = z.object({
   inForce: z.boolean(),
   activatedByWorkflowVersion: z.string().nullish(),
 });
-const workflowCountSchema = z.object({ total: z.number().int().nonnegative() });
 const querySchema = z.object({
   search: panelReadParameterSchemas.keyword.optional(),
   cursor: panelReadParameterSchemas.cursor.optional(),
@@ -301,88 +293,6 @@ export function createWorkflowPanelReadPresenter(locale?: string) {
       const { workflow, grants, actions } = directGrantPayloadSchema.parse(payload);
       return groupedGrantRows(workflow.id, "direct", grants, actions, t, workflow);
     },
-  };
-}
-
-export function createWorkflowReadAdapter(_reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
-  const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
-  const base = config.dataQuery.baseUrl.replace(/\/$/, "");
-  const t = workflowText(viewer.locale);
-  const present = workflowReadMappers(t);
-
-  async function read<T>(path: string, body: object, schema: z.ZodType<T>): Promise<T> {
-    const response = await backendPost(path, base + path, body, options);
-    const envelope = ownerEnvelopeSchema.parse(JSON.parse(response.text));
-    if (!envelope.success) throw readRefusal(envelope, "WORKFLOW_READ_FAILED", t("readFailed"));
-    return schema.parse(envelope.data);
-  }
-
-  const workflows = () => read("/workflow/query", {}, z.array(workflowSchema));
-  async function workflow(id: string) {
-    return requireWorkflow(await read("/workflow/query", { id }, workflowSchema.nullish()), viewer.locale);
-  }
-  const subjects = () => read("/workflow/subjects", {}, z.array(subjectSchema)).catch(() => []);
-  const actions = () => read("/action/queryList", {}, actionCatalogueSchema).catch(() => []);
-  const grants = () => read("/workflow/grants", {}, grantListSchema).catch((error: unknown) => {
-    throw new HttpError(error instanceof HttpError ? error.status : 502, t("grantsUnavailable"), "WORKFLOW_GRANTS_UNAVAILABLE", error);
-  });
-
-  async function recordContext(): Promise<WorkflowRecordFacts> {
-    const [directory, grantRows, catalogue] = await Promise.all([subjects(), grants().catch(() => null), actions()]);
-    return { subjects: directory, grants: grantRows, actions: catalogue };
-  }
-
-  async function list() {
-    const [rows, facts] = await Promise.all([workflows(), recordContext()]);
-    return present.list(rows, facts);
-  }
-
-  async function formFacts(): Promise<WorkflowFormFacts> {
-    const [directory, catalogue] = await Promise.all([subjects(), actions()]);
-    return { subjects: directory, actions: catalogue };
-  }
-
-  async function grantRows(id: string, group: "inForce" | "superseded" | "direct"): Promise<PanelRecord[]> {
-    const [all, catalogue, definition] = await Promise.all([
-      grants(), actions(), group === "direct" ? workflow(id) : undefined,
-    ]);
-    return groupedGrantRows(id, group, all, catalogue, t, definition);
-  }
-
-  const describe = (operation: string) =>
-    describeServerOperation(panelServerOperation(operation), viewer.locale);
-
-  return {
-    list,
-    async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
-      const paging = parseWorkflowPaging(params);
-      return pageWorkflowRows(await list(), paging);
-    },
-    async count() {
-      const { total } = await read("/workflow/query", { countOnly: true }, workflowCountSchema);
-      return { rows: [], total };
-    },
-    async record(id: string) {
-      const [row, facts] = await Promise.all([workflow(id), recordContext()]);
-      return present.record(row, facts);
-    },
-    async form(id: string) {
-      const [row, facts] = await Promise.all([workflow(id), formFacts()]);
-      return present.form(row, facts);
-    },
-    async createForm({ values }: { values?: PanelFormValues; changedField?: string | null }) {
-      return present.createForm(await formFacts(), values);
-    },
-    async grantCaseScopedSteps(id: string): Promise<PanelRecord[]> {
-      const [row, catalogue] = await Promise.all([workflow(id), actions(), grants()]);
-      return caseScopedRows(row, catalogue, t);
-    },
-    grantInForce: (id: string) => grantRows(id, "inForce"),
-    grantSuperseded: (id: string) => grantRows(id, "superseded"),
-    grantDirect: (id: string) => grantRows(id, "direct"),
-    [`${ACTIVATE_WORKFLOW}.describe`]: () => describe(ACTIVATE_WORKFLOW),
-    [`${DEACTIVATE_WORKFLOW}.describe`]: () => describe(DEACTIVATE_WORKFLOW),
-    [`${DELETE_WORKFLOW}.describe`]: () => describe(DELETE_WORKFLOW),
   };
 }
 

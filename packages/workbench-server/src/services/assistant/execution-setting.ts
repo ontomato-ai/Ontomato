@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agentExecutionOptionsSchema } from "@ontomato/contracts/assistant-chat";
+import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
@@ -31,8 +32,10 @@ export async function resolveAgentExecution(agent: Pick<AgentRow, "id" | "execut
   const response = await internalRequest("resolve", { domainId: initiator.domainId, agentId: agent.id,
     executionUserId: agent.execution_user_id, initiatorId: initiator.userId }, initiatorCredentials);
   const resolved = resolvedSchema.parse(JSON.parse(response.text));
+  const executionHeader = initiatorCredentials.headers?.[AGENT_EXECUTION_HEADER];
   return { executionUserId: resolved.executionUserId, credentials: resolved.apiKey === null ? initiatorCredentials :
-    { apiKey: resolved.apiKey, locale: initiatorCredentials.locale } };
+    { apiKey: resolved.apiKey, locale: initiatorCredentials.locale,
+      ...(executionHeader !== undefined && { headers: { [AGENT_EXECUTION_HEADER]: executionHeader } }) } };
 }
 
 export async function readExecutionOptions(credentials: AssistantCredentials, selected: string | null) {

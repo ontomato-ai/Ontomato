@@ -1,15 +1,27 @@
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { panelReadParameterSchemas } from "@ontomato/contracts/panel-projection";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { HttpError } from "../../utils/errors";
+import { requireFormFieldNames } from "../../utils/form-field-names";
 import type {
   JavaPanelRead, JavaPanelReadResult, JavaPanelViewer, PanelReadRanges, PanelReadVisibility, PreparedOwnerReadFacts,
 } from "./java-panel-reads";
 import type { PanelReadBatchCache } from "./member-path";
 import { unwrapReadDirective, withReadDirective } from "./read-directive";
-import type { PanelReadSelection } from "./panel-owner-reads";
+
+export type PanelReadSelection = { kind: "platform" | "customer"; typeId: string; method: string; primaryKey?: string };
+
+export function formParams(params: Record<string, unknown>) {
+  const values = panelReadParameterSchemas.panelFormValues.optional().parse(params.values);
+  requireFormFieldNames(values, "values");
+  return {
+    values,
+    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
+  };
+}
 
 export interface RegisteredDataReadContext {
   owner: ProductOwner;

@@ -12,7 +12,7 @@ const productPanels = path.resolve(__dirname, "..");
 const planFiles = ["registered-read-plan.ts", "registered-operation-reads.ts", "operation-availability.ts", "registered-data-read.ts"];
 const platformFiles = new Set([
   "application-use", "data-reads", "direct-operations", "java-panel-reads", "member-path", "operation-availability",
-  "operation-bindings", "panel-owner-reads", "read-directive", "registered-data-read", "registered-data-reads",
+  "operation-bindings", "read-directive", "registered-data-read", "registered-data-reads",
   "registered-operation-reads", "server-operations",
 ]);
 

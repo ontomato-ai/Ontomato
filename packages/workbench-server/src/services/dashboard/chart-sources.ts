@@ -107,27 +107,3 @@ export function createDashboardCardReadSource(owner: DashboardOwner) {
 export function dashboardCardMetricQuery(card: { query: DashboardMetricReference }, parameters: DashboardMetricReference["parameters"]) {
   return { ...card.query, parameters: { ...card.query.parameters, ...parameters } };
 }
-
-export function createDashboardCardReadAdapter(owner: DashboardOwner, viewer: AssistantCredentials) {
-  const source = createDashboardCardReadSource(owner);
-  async function execute(query: DashboardMetricReference) {
-    const metric = new DashboardMetricClient(owner.domainId, viewer);
-    const { revision, sourceObjectTypes } = await metric.describe(query.metricId);
-    const executed = await metric.execute(query, revision);
-    return sourceObjectTypes !== undefined ? { ...executed, sourceObjectTypes } : executed;
-  }
-  return {
-    chartTemplate: source.chartTemplate,
-    ownedChartTemplate: source.ownedChartTemplate,
-    async result(primaryKey: string, registration: ChartRegistration, parameters: DashboardMetricReference["parameters"]) {
-      const card = await source.registeredCard(primaryKey, registration);
-      return execute(dashboardCardMetricQuery(card, parameters));
-    },
-    async ownedResult(primaryKey: string, parameters: DashboardMetricReference["parameters"]) {
-      const card = await source.ownedCard(primaryKey);
-      const output = await execute(dashboardCardMetricQuery(card, parameters));
-      requireMatchingOutput(card, output);
-      return output;
-    },
-  };
-}

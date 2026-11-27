@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ProductPanelReadSource } from "@ontomato/contracts/panel-host";
+import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { applicationEntryResolutionSchema, panelApplicationEntryUseSchema, type ApplicationEntryResolutionQuery, type ApplicationPanelUse, type PanelUseRef } from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
@@ -29,7 +30,7 @@ export interface JavaPanelRead {
 /**
  * A read without an application placement: Java compares no registration and admits no use, and each owner judges the
  * verified person by itself. It serves pages that have no registered placement (candidates, previews, an agent's own
- * reads) and operation facts; data-query reads are not available to it.
+ * reads) and operation facts.
  */
 export type JavaDirectPanelRead = Pick<JavaPanelRead, "call" | "visibleKinds"> & { source: { kind: "direct" } };
 
@@ -74,13 +75,23 @@ export interface PreparedOwnerReadFacts {
   present(viewer: JavaPanelViewer, facts: readonly JavaPanelReadResult[]): unknown | Promise<unknown>;
 }
 
+function narrowingHeaders(credentials: AssistantCredentials) {
+  const headers = credentials.headers ?? {};
+  return {
+    ...(headers["X-Ontomato-Retrieval-Caller-Id"] !== undefined
+      && { "X-Ontomato-Retrieval-Caller-Id": headers["X-Ontomato-Retrieval-Caller-Id"] }),
+    ...(headers[AGENT_EXECUTION_HEADER] !== undefined && { [AGENT_EXECUTION_HEADER]: headers[AGENT_EXECUTION_HEADER] }),
+  };
+}
+
 async function requestJavaPanelReads<T>(
-  payload: object, credentials: AssistantCredentials, reply: z.ZodType<T, z.ZodTypeDef, unknown>, retrievalScopeId?: string,
+  payload: object, credentials: AssistantCredentials, reply: z.ZodType<T, z.ZodTypeDef, unknown>,
+  { scoped = true }: { scoped?: boolean } = {},
 ) {
   const { token, apiKey, locale } = credentials;
   const headers = buildBackendHeaders(token, undefined, locale, token ? undefined : apiKey, {
     ...productGovernanceServiceHeaders(),
-    ...(retrievalScopeId !== undefined && { "X-Ontomato-Retrieval-Caller-Id": retrievalScopeId }),
+    ...(scoped ? narrowingHeaders(credentials) : {}),
   });
   const response = await backendPost("workbench-panel-reads", `${config.dataQuery.baseUrl.replace(/\/$/u, "")}/internal/workbench-panel-reads`,
     payload, { headers, retries: 1 });
@@ -98,11 +109,11 @@ export function locateViaJava(entries: readonly JavaPanelLocateRef[], credential
     viewer: viewerSchema, entries: z.array(registeredResultSchema.catch({
       kind: "error", status: 502, code: "PANEL_READ_OWNER_RESPONSE_INVALID", error: "Invalid entry from the panel read owner",
     })).length(entries.length),
-  }));
+  }), { scoped: false });
 }
 
 export async function readViaJava(
-  viewer: JavaPanelViewer, reads: readonly (JavaPanelRead | JavaDirectPanelRead)[], credentials: AssistantCredentials, retrievalScopeId?: string,
+  viewer: JavaPanelViewer, reads: readonly (JavaPanelRead | JavaDirectPanelRead)[], credentials: AssistantCredentials,
 ) {
   const { userId, domainId } = viewer;
   const uniqueReads: (JavaPanelRead | JavaDirectPanelRead)[] = [];
@@ -119,6 +130,6 @@ export async function readViaJava(
     viewer: viewerSchema, results: z.array(javaPanelReadResultSchema.catch({
       status: "error", code: "PANEL_READ_OWNER_RESPONSE_INVALID", error: "Invalid item from the panel read owner",
     })).length(uniqueReads.length),
-  }), retrievalScopeId);
+  }));
   return { viewer: response.viewer, results: indexes.map(index => response.results[index]) };
 }

@@ -95,30 +95,6 @@ export function createAuditLogPanelReadPresenter(locale?: string) {
   };
 }
 
-export function createAuditLogPanelReads(viewer: AssistantCredentials) {
-  const presentation = auditLogPresentation(viewer.locale);
-  async function read(path: string, body: object) {
-    const response = await backendPost(`audit-log-${path}`, `${config.dataQuery.baseUrl.replace(/\/$/, "")}/auditLog/${path}`, body, {
-      headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
-    });
-    return JSON.parse(response.text);
-  }
-  return {
-    async query(params: Record<string, unknown>) {
-      const { page = { number: 1, size: 20 }, business, operation } = querySchema.parse(params);
-      let result = pageSchema.parse(await read("queryPage", { pageNum: page.number, pageSize: page.size, bussiness: business, operation }));
-      const maxPage = Math.max(1, result.totalPages);
-      if (page.number > maxPage) {
-        result = pageSchema.parse(await read("queryPage", { pageNum: maxPage, pageSize: page.size, bussiness: business, operation }));
-      }
-      return presentation.query(result);
-    },
-    async record(primaryKey: string) {
-      return presentation.record(auditRecordSchema.parse(await read("queryById", { id: primaryKey })));
-    },
-  };
-}
-
 export const auditLogDataReadRegistrations: RegisteredDataReadRegistration[] = [
   presentedRegisteredDataRead(AUDIT_LOG, "query", createAuditLogPanelReadPresenter),
   presentedRegisteredDataRead(AUDIT_LOG, "record", createAuditLogPanelReadPresenter),

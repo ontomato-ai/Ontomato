@@ -1,9 +1,7 @@
 package io.ontomato.dataengine.controller;
 
-import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.AuditLog;
 import io.ontomato.dataengine.core.bean.Page;
-import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.service.AuditLogService;
 import io.ontomato.dataengine.service.OwnerRefusal;
@@ -17,11 +15,7 @@ import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -48,30 +42,6 @@ public class AuditLogController {
 	@Autowired
 	private AuditLogService auditLogService;
 	
-    @PostMapping("/auditLog/queryById")
-    @Owned
-    public ResponseEntity<AuditLog> queryById(@RequestBody Map<String, Object> body) {
-        User user = management.require(READ);
-        String id = auditId(body.get("id"));
-        if (id == null) {
-            return ResponseEntity.badRequest().build();
-        }
-        return ResponseEntity.ofNullable(auditLogService.queryById(id, user.getDomainId()));
-    }
-
-	@PostMapping("/auditLog/queryPage")
-    @ResponseBody
-    @Owned
-    public Page<AuditLog> queryPage(@RequestBody JSONObject param) {
-        User user = management.require(READ);
-    	int pageNum = param.getInteger("pageNum");
-    	int pageSize = param.getInteger("pageSize");
-    	String bussiness = param.getString("bussiness");
-    	String operation = param.getString("operation");
-
-        return auditLogService.queryPage(pageNum, pageSize, bussiness, operation, user.getDomainId());
-    }
-
     @Bean
     WorkbenchPanelRead auditLogPanelQuery() {
         return new WorkbenchPanelRead("platform:AuditLog", "query", (subject, parameters) -> {

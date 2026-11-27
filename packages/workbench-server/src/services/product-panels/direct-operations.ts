@@ -21,15 +21,15 @@ import {
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { requireDirectPanelMember } from "./current";
 import { resolvePinnedInputs } from "./input-wiring";
-import { readViaJava, type JavaPanelRead, type JavaPanelReadResult } from "./java-panel-reads";
+import type { JavaPanelReadResult } from "./java-panel-reads";
 import { resolvePanelMemberPath, type ResolvedPanelPathStep } from "./member-path";
 import {
-  bindingRefusal, placedObject, planAvailability, readDirect, readDirectInputSchema, resolvePinnedBoundParams, rowParamBinding,
+  bindingRefusal, placedObject, planAvailability, readDirectInputSchema, resolvePinnedBoundParams, rowParamBinding,
   rowTargetBinding, type AvailabilityCall,
 } from "./operation-availability";
 import { allowsOperationDraft, boundProjectionOperations, isCreateFormRead, type BoundProjectionOperation } from "./operation-bindings";
 import { operationHost } from "./operation-host";
-import { readyPayload, type RegisteredDataReadItem } from "./registered-data-read";
+import type { RegisteredDataReadItem } from "./registered-data-read";
 import {
   describeServerOperation, type PanelOperationActor, type PanelOperationFactsContext, type PanelOperationTarget,
   type PanelRecordTarget, type PanelServerOperation, type PanelWriteServerOperation,
@@ -242,11 +242,6 @@ function admitPlatformOperation(
   };
 }
 
-export interface ScopedActionDescriptions {
-  path: JavaPanelRead;
-  retrievalScopeId: string;
-}
-
 const actionDescriptionFields = storedObjectActionSchema.pick({ id: true, name: true, target: true, function: true });
 const actionDescriptionResult = z.discriminatedUnion("status", [
   z.object({ status: z.literal("ready"), payload: storedObjectActionSchema }),
@@ -254,22 +249,18 @@ const actionDescriptionResult = z.discriminatedUnion("status", [
   z.object({ status: z.literal("error"), code: z.string().nullish(), error: z.string() }),
 ]);
 
-async function readScopedActionDescriptions(
-  actor: PanelOperationActor, descriptions: ActionDescription[], { path, retrievalScopeId }: ScopedActionDescriptions,
-) {
-  const entries = new Map<string, PanelOwnerOperationDescriptor>();
-  if (!descriptions.length) return entries;
-  const actions = descriptions.map(({ action: { actionId, object } }) => ({
+/** The one caller-scoped owner read that describes a group of object actions in execution order. */
+export function actionDefinitionsRead(descriptions: readonly ActionDescription[]): RegisteredDataReadItem {
+  return { call: { type: ACTION, name: "executionDefinitions", parameters: { actions: descriptions.map(({ action: { actionId, object } }) => ({
     primaryKey: actionId,
     ...(object && { object: { className: object.objectType, primaryKey: object.primaryKey } }),
-  }));
-  const { results: [result] } = await readViaJava(actor.owner, [{
-    ...path, call: { type: ACTION, name: "executionDefinitions", parameters: { actions } },
-  }], actor.credentials, retrievalScopeId);
-  if (result.status === "forbidden") throw new HttpError(403, result.error, result.code ?? undefined);
-  if (result.status === "error") throw new HttpError(422, result.error, result.code ?? undefined);
-  if (result.status === "empty") throw new HttpError(502, "The action description owner returned no result");
-  const definitions = z.array(actionDescriptionResult).length(descriptions.length).parse(result.payload);
+  })) } } };
+}
+
+/** Present the positional owner answers of `actionDefinitionsRead`; out-of-scope actions stay visible but disabled. */
+export function presentActionDefinitions(payload: unknown, descriptions: readonly ActionDescription[]) {
+  const entries = new Map<string, PanelOwnerOperationDescriptor>();
+  const definitions = z.array(actionDescriptionResult).length(descriptions.length).parse(payload);
   for (const [index, definition] of definitions.entries()) {
     if (definition.status === "error") continue;
     const stored = definition.payload;
@@ -289,44 +280,6 @@ async function readScopedActionDescriptions(
 export function factsContext({ owner, credentials }: PanelOperationActor): PanelOperationFactsContext {
   return { owner, credentials, locale: credentials.locale };
 }
-
-/** Describe a member's operations outside a formal page: their facts are read directly, in one batch. */
-export async function readAdmittedProjectionOperations(
-  actor: PanelOperationActor,
-  placement: Placement,
-  inputs: Record<string, unknown>,
-  actionScope?: ScopedActionDescriptions,
-): Promise<Record<string, PanelOwnerOperationDescriptor>> {
-  const pinnedInputs = literalOperationInputs(placement);
-  const selection = operationReadSelection(inputs);
-  const bounds = boundProjectionOperations(placement.projection);
-  const actions = actionScope && await readScopedActionDescriptions(actor, bounds.flatMap(bound =>
-    bound.binding.operation.kind === "Action"
-      ? prepareActionDescription(placement, bound, selection, pinnedInputs, actor.credentials.locale)
-      : []), actionScope);
-  const context = factsContext(actor);
-  const described: { name: string; descriptor?: PanelOwnerOperationDescriptor; admitted?: Admitted }[] = [];
-  for (const bound of bounds) {
-    if (actions && bound.binding.operation.kind === "Action") {
-      const descriptor = actions.get(bound.name);
-      if (descriptor) described.push({ name: bound.name, descriptor });
-      continue;
-    }
-    let result: Awaited<ReturnType<typeof admitBoundOperation>>;
-    try {
-      result = await admitBoundOperation(actor, placement, bound, selection, pinnedInputs);
-    } catch (error) {
-      if (!skipDescriptionAdmission(error)) throw error;
-      continue;
-    }
-    if (result) described.push({ name: bound.name, admitted: await planDescription(context, result.handler, availabilityCalls(bound, result, inputs, pinnedInputs), result.describe) });
-  }
-  const results = await readDirect(context, described.map(({ admitted }) => ({ reads: admitted?.reads ?? [] })));
-  return Object.fromEntries(await Promise.all(described.map(async ({ name, descriptor, admitted }, index) =>
-    [name, descriptor ?? await admitted!.present(results[index]!)] as const)));
-}
-
-type Admitted = Awaited<ReturnType<typeof planDescription>>;
 
 /** An operation's description with the facts it needs: its availability for the calls and its input form. */
 export async function planDescription(
@@ -438,34 +391,6 @@ export function prepareOperationDescriptions(placement: Placement, inputs: Recor
       calls: availabilityCalls(bound, admitted, inputs, pinnedInputs),
     }] : [];
   });
-}
-
-const skippedActionRefusals = new Set([
-  "ACTION_NOT_FOUND", "ACTION_NOT_EXECUTABLE", "ACTION_NOT_OBJECT_ACTION", "ACTION_TARGET_REQUIRED",
-  "ACTION_TARGET_MISMATCH", "ACTION_NOT_GRANTED", "ACTION_TARGET_OUT_OF_SCOPE", "ACTION_PRECONDITION_FAILED",
-]);
-
-/**
- * An object action's description within a formal page's second read: its execution definition, or nothing when the
- * owner refuses the action itself. Placement denials have their own codes and refuse the read; a code-less denial
- * here comes from the owner's form data-scope check.
- */
-export function actionDescriptionRead({ actionId, object }: ObjectActionSelection) {
-  return {
-    read: { call: { type: ACTION, name: "executionDefinition", parameters: {
-      primaryKey: actionId,
-      ...(object && { object: { className: object.objectType, primaryKey: object.primaryKey } }),
-    } } } satisfies RegisteredDataReadItem,
-    present(result: JavaPanelReadResult) {
-      if (result.status === "empty"
-          || result.status !== "ready" && (result.code ? skippedActionRefusals.has(result.code) : result.status === "forbidden"))
-        return undefined;
-      const action = storedObjectActionSchema.parse(readyPayload(result).payload);
-      if (action.id !== actionId || (object ? action.target?.className !== object.objectType : action.target !== null))
-        throw new HttpError(502, "The execution definition does not match the admitted action and target", "PANEL_READ_OWNER_RESPONSE_INVALID");
-      return describeObjectAction({ name: action.name, declaration: objectActionDeclaration(action) });
-    },
-  };
 }
 
 export async function declaredDirectOperation(

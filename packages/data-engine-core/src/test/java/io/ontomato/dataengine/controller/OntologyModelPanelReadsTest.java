@@ -451,41 +451,6 @@ class OntologyModelPanelReadsTest {
         verifyNoInteractions(dsl);
     }
 
-    @Test
-    void favoriteRecordsUseTheScopedRecordOwnerForEachObjectAndKeepUnavailableSlots() {
-        var data = mock(DataService.class);
-        var permission = new UserDataPermission();
-        var captured = subject.withLiveDataPermission(permission);
-        var owner = new CustomerRecordPanelReads(panel, data, mock(DslService.class)).customerFavoriteRecords();
-        var handler = (WorkbenchPanelRead.CallerScopedHandler) owner.handler();
-        String lang = LocaleContextHolder.getLocale().toLanguageTag();
-        var attributes = List.of(attribute("org", "id", true, false));
-        when(authorization.decide(captured, new Management("ontology-model.read"))).thenReturn(new Decision(true, null, null));
-        when(model.attributes("org", "d1", lang)).thenReturn(attributes);
-        when(model.attributes("removed", "d1", lang))
-                .thenThrow(OntologyModelException.notFound("OBJECT_TYPE_NOT_FOUND", "Class removed"));
-        var center = centerRecord();
-        var hidden = JSONObject.of("success", false, "code", "DATA_PERMISSION_DENIED", "message", "Hidden");
-        when(data.queryInfoByNode(JSONObject.of("class", "org", "id", "org:o1"), lang, permission, "d1")).thenReturn(center);
-        when(data.queryInfoByNode(JSONObject.of("class", "org", "id", "org:hidden"), lang, permission, "d1")).thenReturn(hidden);
-        var target = new ExecutionTarget(null, null, List.of("org", "removed"),
-                System.currentTimeMillis() + 60_000, "u1", "initiator");
-        var objects = List.of(Map.of("className", "org", "primaryKey", "o1"),
-                Map.of("className", "person", "primaryKey", "p1"),
-                Map.of("className", "org", "primaryKey", "hidden"),
-                Map.of("className", "removed", "primaryKey", "r1"));
-        var results = (List<?>) handler.read(captured, Map.of("objects", objects), target);
-
-        assertTrue(owner.requiresLiveData());
-        assertEquals(4, results.size());
-        assertEquals(new CustomerRecordPanelReads.Facts(attributes, center), results.get(0));
-        assertNull(results.get(1));
-        assertEquals(new CustomerRecordPanelReads.Facts(attributes, hidden), results.get(2));
-        assertNull(results.get(3));
-        verify(model, never()).attributes("person", "d1", lang);
-        verify(data, times(2)).queryInfoByNode(any(), eq(lang), eq(permission), eq("d1"));
-    }
-
     private static Map<String, Object> neighbors(String relation, String className, String key, int limit, int offset) {
         return Map.of("relationshipId", relation, "node", Map.of("className", className, "primaryKey", key),
                 "limit", limit, "offset", offset);

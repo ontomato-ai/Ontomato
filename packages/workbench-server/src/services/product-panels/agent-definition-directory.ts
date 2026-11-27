@@ -29,7 +29,7 @@ import { decideObjects, readAgentAccess, readObjectRanges, requireAllowed, type 
 import { agentObject, allowedAgents } from "../assistant/authorization";
 import { ownerEnvelopeSchema } from "./data-query-operations";
 import { operationHost } from "./operation-host";
-import { formParams, type PanelReadSelection } from "./panel-owner-reads";
+import { formParams, type PanelReadSelection } from "./registered-data-read";
 import { localReadRegistration, ownerReadRegistration, type RegisteredDataReadRegistration } from "./registered-data-read";
 
 const retrievalPath = `${DATA_QUERY_GATEWAY}/ontology/ai/agent-models`;
@@ -264,9 +264,12 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
   }
 
   return {
-    async available(params: { search?: string; favoritesOnly?: boolean } = {}): Promise<PanelRecord[]> {
+    async available(
+      params: { search?: string; favoritesOnly?: boolean } = {},
+      visibleAgents?: Awaited<ReturnType<typeof assistantService.agents>>["agents"],
+    ): Promise<PanelRecord[]> {
       const [{ agents }, favorites] = await Promise.all([
-        assistantService.agents(owner, viewer),
+        visibleAgents ? Promise.resolve({ agents: visibleAgents }) : assistantService.agents(owner, viewer),
         readFavorites(owner),
       ]);
       const enabled = agents.filter(agent => agent.enabled);
@@ -388,7 +391,7 @@ export async function prepareAgentDefinitionRead(
   owner: AssistantOwner, viewer: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
 ) {
   const { typeId, method } = selection;
-  if (typeId !== AGENT_DEFINITION || !["record", "grantRows", "form", "createForm"].includes(method)) return;
+  if (typeId !== AGENT_DEFINITION || !["record", "grants", "grantRows", "form", "createForm"].includes(method)) return;
   const directory = createAgentDefinitionDirectory(owner, viewer);
   if (method === "createForm") {
     const { validation, present } = directory.prepareCreateForm(formParams(params));
@@ -414,21 +417,32 @@ export async function prepareAgentDefinitionRead(
   }
   if (primaryKey === RETRIEVAL_AGENT_ID) {
     return {
-      call: { type: AGENT_DEFINITION, name: method, parameters: { primaryKey } },
-      present: method === "grantRows" ? directory.grantRowsFromBatch : directory.retrievalRecordFromBatch,
+      call: { type: AGENT_DEFINITION, name: method === "grants" ? "grantRows" : method, parameters: { primaryKey } },
+      present: method === "grantRows" ? directory.grantRowsFromBatch
+        : method === "grants" ? (payload: unknown) => agentObjectAccessSchema.parse(payload) : directory.retrievalRecordFromBatch,
     };
   }
   const agent = await assistantStore.agent(primaryKey, owner);
   return {
-    call: { type: AGENT_DEFINITION, name: method, parameters: { primaryKey, ownerId: agent.owner_id } },
-    present: method === "grantRows" ? directory.grantRowsFromBatch : (payload: unknown) => directory.localRecordFromBatch(agent, payload),
+    call: { type: AGENT_DEFINITION, name: method === "grants" ? "grantRows" : method, parameters: { primaryKey, ownerId: agent.owner_id } },
+    present: method === "grantRows" ? directory.grantRowsFromBatch
+      : method === "grants" ? (payload: unknown) => agentObjectAccessSchema.parse(payload)
+        : (payload: unknown) => directory.localRecordFromBatch(agent, payload),
   };
 }
 
 export const agentDefinitionDataReadRegistrations: RegisteredDataReadRegistration[] = [
-  ...(["record", "grantRows", "form", "createForm"] as const).map(method =>
+  ...(["record", "grants", "grantRows", "form", "createForm"] as const).map(method =>
     ownerReadRegistration(AGENT_DEFINITION, method, ({ owner, credentials, selection, params }) =>
       prepareAgentDefinitionRead(owner, credentials, selection, params))),
+  localReadRegistration(AGENT_DEFINITION, "available", {
+    visibility: [{ kind: "AGENT", verbs: ["USE"] }],
+    async read(owner, ranges, _facts, credentials, _key, params) {
+      const { listAssistantAgentsInRange } = await import("../assistant/agents");
+      const { agents } = await listAssistantAgentsInRange(owner, credentials, ranges!.AGENT.USE);
+      return createAgentDefinitionDirectory(owner, credentials).available(params, agents);
+    },
+  }),
   localReadRegistration(AGENT_DEFINITION, "count", {
     visibility: [{ kind: "AGENT", verbs: ["VIEW"] }],
     readJavaFacts: true,

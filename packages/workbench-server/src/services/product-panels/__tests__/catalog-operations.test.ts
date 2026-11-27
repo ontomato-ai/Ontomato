@@ -146,7 +146,7 @@ it.each([
 });
 
 it.each([PRODUCT_PROJECTION, PRODUCT_PANEL, APPLICATION])("describes %s save in the reader's language", async type => {
-  const { readAdmittedProjectionOperations } = await import("../direct-operations");
+  const { readRegisteredProjectionOperations } = await import("./registered-operations-fixture");
   const owner = { domainId: "domain", userId: "reader" };
   const projection = productProjectionSchema.parse({
     id: "editor", domainId: owner.domainId, ownerId: owner.userId, editable: true,
@@ -159,7 +159,7 @@ it.each([PRODUCT_PROJECTION, PRODUCT_PANEL, APPLICATION])("describes %s save in 
   const member = { target: { projectionId: projection.id } };
   const placement = { projection, member, slot: "form", panel: { manifest: { members: { form: member }, state: {} } } };
 
-  const describe = (locale: string) => readAdmittedProjectionOperations({ owner, credentials: { locale } }, placement, {});
+  const describe = (locale: string) => readRegisteredProjectionOperations({ owner, credentials: { locale } }, placement, {});
   expect(await describe("en")).toMatchObject({ save: { label: "Save" } });
   expect(await describe("fr")).toMatchObject({ save: { label: "Enregistrer" } });
 });
@@ -222,7 +222,7 @@ it.each([
     { status: "error", code: "PANEL_READ_FAILED", message: "ECONNREFUSED" }],
 ] as const)("refuses applications.delete for a missing application and fails on an owner refusal (%s)", async (_kind, result, failure) => {
   javaReads.answer = () => result;
-  const { readAdmittedProjectionOperations } = await import("../direct-operations");
+  const { readRegisteredProjectionOperations } = await import("./registered-operations-fixture");
   const owner = { domainId: "domain", userId: "reader" };
   const projection = productProjectionSchema.parse({
     id: "app-actions", domainId: owner.domainId, ownerId: owner.userId, editable: true,
@@ -255,7 +255,7 @@ it.each([
     },
   };
 
-  const admitted = readAdmittedProjectionOperations(
+  const admitted = readRegisteredProjectionOperations(
     { owner, credentials: { locale: "en" } },
     placement,
     { app: { className: APPLICATION, primaryKey: "app-1" } },
@@ -271,7 +271,7 @@ it.each([
 });
 
 it("marks applications.delete unavailable for read-only applications and available when maintainable", async () => {
-  const { readAdmittedProjectionOperations } = await import("../direct-operations");
+  const { readRegisteredProjectionOperations } = await import("./registered-operations-fixture");
   const owner = { domainId: "domain", userId: "reader" };
   const projection = productProjectionSchema.parse({
     id: "app-delete", domainId: owner.domainId, ownerId: owner.userId, editable: true,
@@ -302,7 +302,7 @@ it("marks applications.delete unavailable for read-only applications and availab
       },
     },
   };
-  const readOps = () => readAdmittedProjectionOperations(
+  const readOps = () => readRegisteredProjectionOperations(
     { owner, credentials: { locale: "en" } },
     placement,
     { app: { className: APPLICATION, primaryKey: "app-1" } },

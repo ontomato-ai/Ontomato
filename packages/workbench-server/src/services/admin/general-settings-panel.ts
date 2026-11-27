@@ -113,23 +113,6 @@ export function createGeneralSettingsPanelReadPresenter(locale?: string) {
   };
 }
 
-export function createGeneralSettingsReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const presentation = generalSettingsPresentation(actor.credentials.locale);
-  async function record(primaryKey: string): Promise<PanelRecord> {
-    requireGeneralKey(primaryKey);
-    return presentation.record(primaryKey, await readSettings(host));
-  }
-  return {
-    list: async () => [await record(key)],
-    record,
-    async form(primaryKey: string, inputs: GeneralSettingsFormInputs): Promise<PanelFormDescription> {
-      requireGeneralKey(primaryKey);
-      return presentation.form(await readSettings(host), inputs);
-    },
-  };
-}
-
 function submittedValues(input: unknown) {
   const { values, submittedFields } = inputSchema.parse(input);
   if (submittedFields === undefined) return values;

@@ -1653,21 +1653,13 @@ it("presents model usages and the usage draft from both authorized settings fact
 });
 
 it("reads vector status in the second batch and shares the existing rebuild flags", async () => {
-  const { createModelUsageReads } = await import("../../admin/model-settings-panel");
   const payload = { configured: true, state: "RUNNING", total: 8, done: 3, error: null };
-  const fetch = vi.fn().mockResolvedValueOnce(Response.json({
-    success: true, data: payload,
-  }));
+  const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
-  const status = await createModelUsageReads({ owner: viewer, credentials }).vectorRebuild("domain");
-  expect(status).toMatchObject({
+  const status = {
     fields: { progress: "3 / 8" },
     outputs: { state: "RUNNING", alive: true, canPause: true, canRebuild: false, canResume: false },
-  });
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(fetch).toHaveBeenLastCalledWith(expect.stringMatching(/\/businessConfig\/vectorRebuildStatus$/), expect.objectContaining({ method: "GET" }));
-
-  fetch.mockClear();
+  };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.prepare.mockResolvedValueOnce({
@@ -1677,7 +1669,7 @@ it("reads vector status in the second batch and shares the existing rebuild flag
   mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "ready", payload }] });
 
   const prepared = await prepareRegisteredDataReads(credentials, [request]);
-  expect(await runPreparedDataReads(credentials, prepared)).toEqual([{ status: "ready", value: status }]);
+  expect(await runPreparedDataReads(credentials, prepared)).toMatchObject([{ status: "ready", value: status }]);
   expect(mocks.read.mock.lastCall?.[1]).toEqual([
     expect.objectContaining({ call: { type: MODEL_USAGE, name: "vectorRebuild", parameters: {} } }),
   ]);
@@ -3781,8 +3773,11 @@ it("joins mixed operation facts in one read batch and keeps binding skips separa
     declaration: { result: "panelRecordQuery" }, params: {}, selection: { typeId: OBJECT_TYPE, method: "count" },
   });
   mocks.read.mockResolvedValueOnce({ viewer, results: [
-    ready(execution), ready({ ...execution, target: null, id: "create", name: "Create" }),
-    { status: "forbidden", code: "ACTION_TARGET_OUT_OF_SCOPE", error: "Row is outside the scope" },
+    ready([
+      { status: "ready", payload: execution },
+      { status: "ready", payload: { ...execution, target: null, id: "create", name: "Create" } },
+      { status: "forbidden", code: "ACTION_TARGET_OUT_OF_SCOPE", error: "Row is outside the scope" },
+    ]),
     ready(form), ready({ reason: "System action" }), ready({ reason: "Referenced function" }), ready({ reason: null }),
     ready({ [REMOVE_USER]: ["Protected member"] }),
     ready({ reason: 42 }),
@@ -3794,16 +3789,16 @@ it("joins mixed operation facts in one read batch and keeps binding skips separa
   const results = await runPreparedDataReads(credentials, prepared);
   expect(mocks.read).toHaveBeenCalledTimes(callsBefore + 1);
   expect(mocks.read.mock.lastCall?.[1].map((item: { call: unknown }) => item.call)).toEqual([
-    { type: ACTION, name: "executionDefinition", parameters: { primaryKey: "approve", object: order } },
-    { type: ACTION, name: "executionDefinition", parameters: { primaryKey: "create" } },
-    { type: ACTION, name: "executionDefinition", parameters: { primaryKey: "denied", object: order } },
+    { type: ACTION, name: "executionDefinitions", parameters: { actions: [
+      { primaryKey: "approve", object: order }, { primaryKey: "create" }, { primaryKey: "denied", object: order },
+    ] } },
     { type: ACTION, name: "createForm", parameters: {} },
     { type: ACTION, name: "deleteRefusal", parameters: { primaryKey: "draft-action" } },
     { type: FUNCTION, name: "deleteRefusal", parameters: { primaryKey: "function-1" } },
     { type: METRIC_VIEW, name: "deleteRefusal", parameters: { primaryKey: "metric-1" } },
     { type: USER, name: "operationRefusals", parameters: { inspections: [{ name: REMOVE_USER, operation: REMOVE_USER, ids: ["user-1"] }] } },
     { type: METRIC_VIEW, name: "deleteRefusal", parameters: { primaryKey: "metric-1" } },
-    { type: ACTION, name: "executionDefinition", parameters: { primaryKey: "approve", object: order } },
+    { type: ACTION, name: "executionDefinitions", parameters: { actions: [{ primaryKey: "approve", object: order }] } },
     { type: OBJECT_TYPE, name: "count", parameters: {} },
   ]);
   expect(results).toMatchObject([
@@ -4157,8 +4152,15 @@ it("reads published MCP declarations after batch admission using the server requ
       { status: "ready", value: { fields: { mcpUrl: "https://configured.example/base/mcp/ops-agent" } } },
     ]);
     catalogue.mockClear();
-    expect(await run([cases[0]], undefined)).toMatchObject([{ status: "error" }]);
-    expect(catalogue).not.toHaveBeenCalled();
+    vi.stubEnv("ANALYSIS_AGENT_MCP_URL", "");
+    vi.stubEnv("PUBLIC_BASE_PATH", "https://fallback.example/base/");
+    expect(await run([cases[0]], undefined)).toMatchObject([
+      { status: "ready", value: expect.arrayContaining([
+        expect.objectContaining({ primaryKey: analysis, fields: expect.objectContaining({ mcpUrl: "https://fallback.example/base/mcp/analysis-agents" }) }),
+        expect.objectContaining({ primaryKey: ops, fields: expect.objectContaining({ mcpUrl: "https://fallback.example/base/mcp/ops-agent" }) }),
+      ]) },
+    ]);
+    expect(catalogue).toHaveBeenCalledWith(undefined, credentials.locale);
     expect(fetch).not.toHaveBeenCalled();
   } finally {
     catalogue.mockRestore();
@@ -4799,45 +4801,6 @@ it("reads customer relationship neighbors in one owner call after locating the p
   }]);
 });
 
-it("uses the same customer neighbors owner for an admitted live reader and preserves restricted boundaries", async () => {
-  const { readResolvedPanelOwner } = await import("../data-reads");
-  const projection = {} as Parameters<typeof readResolvedPanelOwner>[3];
-  const node = { className: "org", primaryKey: "o1" };
-  const selection = { kind: "customer", typeId: "person_to_org", method: "neighbors" } as const;
-  const path = { source: request.source, registration: { panelId: "panel", framePanelId: "frame", inputs: undefined }, uses: [] };
-  const reader = { owner: viewer, viewer: { apiKey: "executor-key", locale: "en" } };
-  const previousCalls = mocks.read.mock.calls.length;
-  await expect(readResolvedPanelOwner({ ...reader, viewer: { ...reader.viewer, headers: { "X-Ontomato-Retrieval-Caller-Id": "run" } } },
-    selection, { node }, projection, path)).rejects.toMatchObject({ status: 403 });
-  expect(mocks.read).toHaveBeenCalledTimes(previousCalls);
-  mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "forbidden", error: "Owner said no" }] });
-  await expect(readResolvedPanelOwner(reader, selection, { node }, projection, path))
-    .rejects.toMatchObject({ status: 403, message: "Owner said no" });
-  expect(mocks.read).toHaveBeenLastCalledWith(viewer, [{ ...path,
-    call: { type: "customer:Relationship", name: "neighbors", parameters: { relationshipId: "person_to_org", node, limit: 50, offset: 0 } },
-  }], reader.viewer, undefined);
-});
-
-it("forwards instance graph reads from a callback with a verified caller and run marker", async () => {
-  const { readResolvedPanelOwner } = await import("../data-reads");
-  const projection = {} as Parameters<typeof readResolvedPanelOwner>[3];
-  const path = { source: request.source, registration: { panelId: "panel", framePanelId: "frame", inputs: undefined }, uses: [] };
-  const selection = { kind: "platform", typeId: OBJECT_TYPE, method: "instanceNeighbors" } as const;
-  const node = { className: "Person", primaryKey: "p1" };
-  const reader = { owner: viewer, viewer: {
-    token: "viewer-token",
-    headers: { "X-Ontomato-Agent-Execution": "run", "X-Ontomato-Retrieval-Caller-Id": "scope" },
-  } };
-  mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "ready", payload: {
-    success: true, status: "READY", data: { nodes: [{ class: node.className, primaryKey: node.primaryKey }], edges: [], version: "v1" },
-  } }] });
-  await expect(readResolvedPanelOwner(reader, selection, { node }, projection, path, "scope"))
-    .resolves.toMatchObject({ node, neighbors: [] });
-  expect(mocks.read).toHaveBeenLastCalledWith(viewer, [{ ...path,
-    call: { type: OBJECT_TYPE, name: "instanceNeighbors", parameters: { node } },
-  }], reader.viewer, "scope");
-});
-
 it("reads platform class directories, including model definitions, in the registered data-browser batch", async () => {
   const object = { className: OBJECT_TYPE, primaryKey: "order_archive" };
   const route = "/ontology/objects?selected=order_archive";
@@ -5083,20 +5046,23 @@ it("reads only the verified viewer's pinned objects in one batch and keeps unava
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockImplementationOnce(async () => {
-    expect(mocks.pinnedObjects).not.toHaveBeenCalled();
+    expect(mocks.favoriteState).not.toHaveBeenCalled();
     return { viewer, entries: [{ kind: "ready", entry }] };
   });
   mocks.resolve.mockImplementationOnce(async (_owner, _credentials, _request, _cache, collectUse) => {
     collectUse("projection", { id: "pinned-objects", domainId: viewer.domainId, ownerId: "author" });
     return { inputs: {}, projection: {} };
-  }).mockResolvedValueOnce({ inputs: {}, projection: {} });
+  }).mockImplementationOnce(async (_owner, _credentials, _request, _cache, collectUse) => {
+    collectUse("projection", { id: "pinned-objects", domainId: viewer.domainId, ownerId: "author" });
+    return { inputs: {}, projection: {} };
+  });
   mocks.prepare.mockResolvedValueOnce({
     declaration: { result: "panelRecordList" }, selection: { typeId: FAVORITE, method: "list" },
     params: { targetGroup: "objects", className: "Spoofed", primaryKey: "not-a-favorite" },
   }).mockResolvedValueOnce({
     declaration: { result: "panelRecordList" }, selection: { typeId: FAVORITE, method: "list" }, params: {},
   });
-  mocks.pinnedObjects.mockResolvedValueOnce(pinned);
+  mocks.favoriteState.mockResolvedValue({ favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: pinned });
   mocks.read.mockResolvedValueOnce({ viewer, results: [
     { status: "ready" },
     ready({ success: true, data: { data: { name: "Current name" } } }),
@@ -5105,11 +5071,12 @@ it("reads only the verified viewer's pinned objects in one batch and keeps unava
     { status: "error", code: "OBJECT_TYPE_NOT_FOUND", error: "Class removed" },
     { status: "forbidden", error: "Model permission revoked" },
     { status: "error", code: "PANEL_READ_UNKNOWN", error: "Read not registered" },
+    ...pinned.map(() => ({ status: "ready" })),
   ] });
 
   const prepared = await prepareRegisteredDataReads(credentials, [request, request]);
-  expect(mocks.pinnedObjects).toHaveBeenCalledTimes(1);
-  expect(mocks.pinnedObjects).toHaveBeenCalledWith(viewer);
+  expect(mocks.favoriteState).toHaveBeenCalledTimes(1);
+  expect(mocks.favoriteState).toHaveBeenCalledWith(viewer);
   expect(await runPreparedDataReads(credentials, prepared)).toMatchObject([
     { status: "ready", value: [
       { primaryKey: "c/1", label: "Current name", outputs: {
@@ -5126,72 +5093,34 @@ it("reads only the verified viewer's pinned objects in one batch and keeps unava
   const [owner, batch] = mocks.read.mock.lastCall!;
   expect(owner).toEqual(viewer);
   const use = { target: { kind: "PROJECTION", id: "pinned-objects", domainId: viewer.domainId } };
-  expect(batch).toMatchObject([
-    { uses: [use] },
-    ...pinned.map(({ className, primaryKey }) => ({
-      uses: [use], call: { type: "customer:ObjectType", name: "record", parameters: { className, primaryKey } },
-    })),
-    { call: { type: FAVORITE, name: "list", parameters: {} } },
-  ]);
+  const objectCalls = pinned.map(({ className, primaryKey }) => ({
+    type: "customer:ObjectType", name: "record", parameters: { className, primaryKey },
+  }));
+  expect(batch).toHaveLength((pinned.length + 1) * 2);
   expect(batch[0]).not.toHaveProperty("call");
+  expect(batch.slice(1, pinned.length + 1).map(({ call }: { call?: unknown }) => call)).toEqual(objectCalls);
+  expect(batch[pinned.length + 1]).toMatchObject({
+    call: { type: APPLICATION, name: "navigation", parameters: {} },
+    visibleKinds: [{ kind: "AGENT", verbs: ["USE"] }],
+  });
+  expect(batch.slice(pinned.length + 2).map(({ call }: { call?: unknown }) => call)).toEqual(objectCalls);
+  for (const item of batch) expect(item.uses).toMatchObject([use]);
   expect(mocks.read).toHaveBeenCalledTimes(1);
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it("reads scoped object favorites in one owner item without disclosing saved or live names for unavailable rows", async () => {
-  const { readResolvedPanelOwner } = await import("../data-reads");
-  const projection = {} as Parameters<typeof readResolvedPanelOwner>[3];
-  const sale = { className: "Customer", primaryKey: "c/1", title: "Stale name" };
-  const hidden = { className: "Account", primaryKey: "a1", title: "Saved restricted name" };
-  const masked = { className: "Customer", primaryKey: "masked", title: "Saved masked name" };
-  mocks.pinnedObjects.mockResolvedValueOnce([sale, hidden, masked]);
-  const scopedReader = { owner: { domainId: viewer.domainId, userId: "executor" }, viewer: { apiKey: "executor-key", locale: "en" } };
-  const path = { source: request.source, registration: { panelId: "panel", framePanelId: "frame", inputs: undefined }, uses: [] };
-  const attributes = [
-    { className: "Customer", name: "id", type: "varchar", attrDesc: "", enable: true, showName: "ID", businessKey: false, primaryKey: true },
-    { className: "Customer", name: "name", type: "varchar", attrDesc: "", enable: true, showName: "Name", businessKey: true, primaryKey: false },
-  ];
-  mocks.read.mockResolvedValueOnce({ viewer: scopedReader.owner, results: [{ status: "ready", payload: [
-    { attributes, answer: { success: true, data: { data: { name: "Current name" } } } },
-    null,
-    { attributes, answer: { success: false, code: "DATA_PERMISSION_DENIED", message: "Hidden row" } },
-  ] }] });
-  const selection = { kind: "platform", typeId: FAVORITE, method: "list" } as const;
-  const caller = "scope-from-run";
-  const rows = await readResolvedPanelOwner(scopedReader, selection, {
-    targetGroup: "objects", objects: [{ className: "Spoofed", primaryKey: "not-pinned" }],
-  }, projection, path, caller);
-  const unavailable = tForLocale(scopedReader.viewer.locale, "panels.favorite.unavailable");
-  expect(rows).toMatchObject([
-    { primaryKey: sale.primaryKey, label: "Current name", fields: { title: "Current name" }, outputs: {
-      openPath: "/browser/views/Customer?key=c%2F1&from=workspace", unavailable: false, canMoveUp: false, canMoveDown: true,
-    } },
-    { primaryKey: hidden.primaryKey, label: unavailable, fields: { title: unavailable }, outputs: {
-      openPath: "", unavailable: true, canMoveUp: true, canMoveDown: true,
-    } },
-    { primaryKey: masked.primaryKey, label: unavailable, fields: { title: unavailable }, outputs: {
-      openPath: "", unavailable: true, canMoveUp: true, canMoveDown: false,
-    } },
-  ]);
-  expect(mocks.pinnedObjects).toHaveBeenCalledTimes(1);
-  expect(mocks.pinnedObjects).toHaveBeenCalledWith(scopedReader.owner);
-  expect(mocks.read).toHaveBeenCalledTimes(1);
-  expect(mocks.read).toHaveBeenCalledWith(scopedReader.owner, [{ ...path, call: {
-    type: "customer:ObjectType", name: "favoriteRecords",
-    parameters: { objects: [sale, hidden, masked].map(({ className, primaryKey }) => ({ className, primaryKey })) },
-  } }], scopedReader.viewer, caller);
-});
-
-it("preserves denied favorite placements and real owner failures, including an empty collection in the same batch", async () => {
+it("preserves denied favorite placements and real owner failures in one objects batch", async () => {
   const pinned = [{ className: "Customer", primaryKey: "c1", title: "Saved name" }];
+  const state = { favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: pinned };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
-  for (const objects of [pinned, pinned, pinned, []]) {
+  for (let index = 0; index < 3; index += 1) {
     mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelRecordList" }, selection: { typeId: FAVORITE, method: "list" }, params: { targetGroup: "objects" },
     });
-    mocks.pinnedObjects.mockResolvedValueOnce(objects);
   }
+  mocks.pinnedObjects.mockResolvedValueOnce(pinned);
+  mocks.favoriteState.mockResolvedValue(state);
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
   mocks.read.mockResolvedValueOnce({ viewer, results: [
@@ -5201,21 +5130,39 @@ it("preserves denied favorite placements and real owner failures, including an e
     { status: "error", code: "PANEL_READ_ERROR", error: "The owner read failed" },
     { status: "ready" },
     { status: "ready", payload: { attributes: [], answer: { success: false, code: "QUERY_FAILED", message: "Data query failed" } } },
-    { status: "ready" },
   ] });
 
-  const prepared = await prepareRegisteredDataReads(credentials, [request, request, request, request]);
+  const prepared = await prepareRegisteredDataReads(credentials, [request, request, request]);
   expect(await runPreparedDataReads(credentials, prepared)).toEqual([
     { status: "forbidden", reason: "Placement denied" },
     { status: "error", code: "PANEL_READ_ERROR", message: "The owner read failed" },
     { status: "error", code: "CUSTOMER_OBJECT_READ_FAILED", message: "Data query failed" },
-    { status: "empty" },
   ]);
   const [, batch] = mocks.read.mock.lastCall!;
-  expect(batch.at(-1)).not.toHaveProperty("call");
-  expect(batch).toHaveLength(7);
+  expect(batch).toHaveLength(6);
+  for (const index of [0, 2, 4]) expect(batch[index]).not.toHaveProperty("call");
+  for (const index of [1, 3, 5]) expect(batch[index]).toMatchObject({ call: {
+    type: "customer:ObjectType", name: "record", parameters: { className: "Customer", primaryKey: "c1" },
+  } });
   expect(mocks.read).toHaveBeenCalledTimes(1);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("returns an empty objects favorite list without a customer record fact", async () => {
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
+  mocks.prepare.mockResolvedValueOnce({
+    declaration: { result: "panelRecordList" }, selection: { typeId: FAVORITE, method: "list" }, params: { targetGroup: "objects" },
+  });
+  mocks.pinnedObjects.mockResolvedValueOnce([]);
+  mocks.favoriteState.mockResolvedValue({ favorites: [], dashboardIds: [], dashboardCards: {}, pinnedSessions: [], pinnedObjects: [] });
+  mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "ready" }] });
+
+  const prepared = await prepareRegisteredDataReads(credentials, [request]);
+  expect(await runPreparedDataReads(credentials, prepared)).toEqual([{ status: "empty" }]);
+  const [, batch] = mocks.read.mock.lastCall!;
+  expect(batch).toHaveLength(1);
+  expect(batch[0]).not.toHaveProperty("call");
 });
 
 it("starts the platform graph with the directory's own member label or the second authenticated viewer", async () => {

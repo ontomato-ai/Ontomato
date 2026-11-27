@@ -23,6 +23,9 @@ vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({call
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
 vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({}),findAgent:async()=>undefined}}));
+vi.mock("../../assistant/service",()=>({assistantService:{}}));
+vi.mock("../../skills/skill-manager",()=>({skillManager:{}}));
+vi.mock("../../skills/view",()=>({readSkillView:vi.fn()}));
 vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.resolve}));
 vi.mock("../../../identity/installed", () => ({ assertPermission: mocks.assertPermission }));
 vi.mock("../../assistant/definitions", () => ({
@@ -63,7 +66,7 @@ import {
 } from "../operations";
 import { productCatalogServerOperations } from "../catalog-operations";
 import { panelOperationStore } from "../operation-store";
-import { readAdmittedProjectionOperations } from "../direct-operations";
+import { readRegisteredProjectionOperations } from "./registered-operations-fixture";
 import { requireDirectPanelMember } from "../current";
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
@@ -109,7 +112,8 @@ beforeEach(()=>{
  current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:null,channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill,digest:"sha256:" + "a".repeat(64)}]} as unknown as RuntimeRun;
  mocks.run.mockImplementation(async()=>({run:current}));
  mocks.resolve.mockImplementation(async()=>({credentials:{apiKey:"V-key"}}));
- mocks.backend.mockImplementation(async(_name:string,url:string,options:{headers:object})=>{
+ mocks.backend.mockImplementation(async(_name:string,url:string,bodyOrOptions:unknown,maybeOptions?:{headers:object})=>{
+   const options=(maybeOptions??bodyOrOptions) as {headers:object};
    expect(options.headers).toMatchObject({tk:"U-token"});
    if (url.includes("/platform/agent-execution/options")) {
      const id=new URL(url).searchParams.get("selected");
@@ -588,12 +592,12 @@ it("adds owner availability only to a live descriptor for the selected record", 
   const panel = await mocks.panel();
   const placement = { ...await requireDirectPanelMember(owner, credentials, panel, "run"), panel, slot: "run" };
   const actor = { owner, credentials };
-  expect((await readAdmittedProjectionOperations(actor, placement, {})).runNow).not.toHaveProperty("unavailable");
+  expect((await readRegisteredProjectionOperations(actor, placement, {})).runNow).not.toHaveProperty("unavailable");
   expect(unavailable).not.toHaveBeenCalled();
 
   const { call, intentId: _intentId, ...operation } = action();
   const target = call.target;
-  const read = await readAdmittedProjectionOperations(actor, placement,
+  const read = await readRegisteredProjectionOperations(actor, placement,
     { task: { className: target.objectType, primaryKey: target.primaryKey } });
   expect(read.runNow).toMatchObject({ unavailable: reason });
   expect(unavailable).toHaveBeenCalledWith([target], { ...actor, locale: "en" }, undefined);
@@ -1059,9 +1063,12 @@ it("uses the owner form's display labels in the confirmation input summary", asy
   });
   mocks.backend.mockImplementation(async (...args) => {
     const url = new URL(args[1]);
-    if (url.pathname === "/ontology/model/object-type/form") {
-      expect(args[2]).toMatchObject({ target: { kind: "draft" }, changedField: null });
-      return { text: JSON.stringify({
+    if (url.pathname === "/ontology/model/object-type/form")
+      throw new Error("The confirmation form must join the registered panel-read batch");
+    if (url.pathname === "/internal/workbench-panel-reads") {
+      const [read] = (args[2] as { reads: { call: { type: string; name: string } }[] }).reads;
+      expect(read.call).toMatchObject({ type: "platform:ObjectType", name: "createForm" });
+      return { text: JSON.stringify({ viewer: owner, results: [{ status: "ready", payload: {
         fields: [
           textField("/className", "API name", true),
           textField("/primaryKeyName", "Primary key name", true),
@@ -1070,7 +1077,7 @@ it("uses the owner form's display labels in the confirmation input summary", asy
         ],
         values: { className: "", primaryKeyName: "", showName: "", classDesc: "" },
         save: { method: "POST", path: "/ontology/model/object-type/create", bodySchema: { type: "object" } },
-      }) };
+      } }] }) };
     }
     return originalBackend(...args);
   });
@@ -1087,7 +1094,7 @@ it("uses the owner form's display labels in the confirmation input summary", asy
 });
 
 it("admits a cross-member form.save write operation bound to another form member via operationDrafts", async () => {
-  const { readAdmittedProjectionOperations } = await import("../direct-operations");
+  const { readRegisteredProjectionOperations } = await import("./registered-operations-fixture");
   const saveId = "test.cross.save";
   mockRegisteredOperation({
     handlerRef: saveId,
@@ -1142,7 +1149,7 @@ it("admits a cross-member form.save write operation bound to another form member
     use: { kind: "registered" as const, applicationId: "A", useId: "relations" },
   };
 
-  const admitted = await readAdmittedProjectionOperations(actor as never, {
+  const admitted = await readRegisteredProjectionOperations(actor as never, {
     panel: panel as never,
     projection: headerProjection as never,
     member: panel.manifest.members.headerSave,
@@ -1224,7 +1231,7 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
   mockRegisteredOperation(batchHandler);
 
   // All selected items unavailable -> returns first target's unavailable reason, from one read of every target
-  const allUnavailable = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, approved2] });
+  const allUnavailable = await readRegisteredProjectionOperations(actor, placement, { checked: [approved1, approved2] });
   expect(allUnavailable.approveAll).toMatchObject({ unavailable: { reason: "Already approved: k-approved-1" } });
   expect(local).toHaveBeenCalledTimes(1);
   expect(local).toHaveBeenCalledWith([
@@ -1233,12 +1240,12 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
   ], { ...actor, locale: "en" }, undefined);
 
   // Mixed selection (at least one available) -> remains available
-  const mixed = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, draft] });
+  const mixed = await readRegisteredProjectionOperations(actor, placement, { checked: [approved1, draft] });
   expect(mixed.approveAll).not.toHaveProperty("unavailable");
   expect(local).toHaveBeenCalledTimes(2);
 
   // Empty array -> remains available without reading facts
-  const empty = await readAdmittedProjectionOperations(actor, placement, { checked: [] });
+  const empty = await readRegisteredProjectionOperations(actor, placement, { checked: [] });
   expect(empty.approveAll).not.toHaveProperty("unavailable");
   expect(local).toHaveBeenCalledTimes(2);
 
@@ -1250,7 +1257,7 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
       inputs: { checked: { literal: [approved2, approved1] } },
     },
   };
-  const pinnedResult = await readAdmittedProjectionOperations(actor, pinnedPlacement as never, {});
+  const pinnedResult = await readRegisteredProjectionOperations(actor, pinnedPlacement as never, {});
   expect(pinnedResult.approveAll).toMatchObject({ unavailable: { reason: "Already approved: k-approved-2" } });
 
 });
@@ -1505,7 +1512,7 @@ it("asks the owner for availability of a targetless write operation", async () =
   mocks.projection.mockResolvedValue({ id: "create", binding: { kind: "PlatformOperation", id: handlerRef }, inputs: {} });
   panel.manifest.members.create = member;
   const { projection } = await requireDirectPanelMember(owner, credentials, panel, "create");
-  const descriptors = await readAdmittedProjectionOperations({ owner, credentials }, {
+  const descriptors = await readRegisteredProjectionOperations({ owner, credentials }, {
     panel, member, projection, slot: "create",
   }, {});
   expect(unavailable).toHaveBeenCalledWith([null], expect.anything(), undefined);
@@ -1538,18 +1545,16 @@ it("describes mixed scoped Action buttons in one owner item and displays caller 
     },
   });
   const { projection } = await requireDirectPanelMember(owner, credentials, panel, "buttons");
-  const actor = { owner, credentials: { apiKey: "executor-key", locale: "en" } };
   const retrievalScopeId = uuid(39);
-  const path = {
-    source: { kind: "registered" as const, applicationId: "A", useId: "tasks" },
-    registration: { panelId: "P", framePanelId: "F", inputs: undefined }, uses: [],
-  };
+  const actor = { owner, credentials: {
+    apiKey: "executor-key", locale: "en", headers: { "X-Ontomato-Retrieval-Caller-Id": retrievalScopeId },
+  } };
   mocks.backend.mockImplementationOnce(async (_method, url, body, options) => {
     expect(new URL(url).pathname).toBe("/internal/workbench-panel-reads");
     expect(options.headers).toMatchObject({
       "X-API-Key": "executor-key", "X-Ontomato-Retrieval-Caller-Id": retrievalScopeId,
     });
-    expect(body.reads).toEqual([{ ...path, call: {
+    expect(body.reads).toEqual([{ source: { kind: "direct" }, call: {
       type: "platform:Action", name: "executionDefinitions", parameters: {
         actions: [
           { primaryKey: "primary", object: first }, { primaryKey: "secondary", object: second }, { primaryKey: "hidden", object: second },
@@ -1570,7 +1575,7 @@ it("describes mixed scoped Action buttons in one owner item and displays caller 
     ] }] }) };
   });
 
-  const result = await readAdmittedProjectionOperations(actor, { panel, member, projection, slot: "buttons" }, {}, { path, retrievalScopeId });
+  const result = await readRegisteredProjectionOperations(actor, { panel, member, projection, slot: "buttons" }, {});
   expect(result).toMatchObject({
     approve: { label: "Approve", handlerRef: "actions.execute" },
     create: { unavailable: { reason: "Creation is closed" } },

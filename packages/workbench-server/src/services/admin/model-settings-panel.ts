@@ -1123,41 +1123,6 @@ export function prepareModelSettingsRead(
   };
 }
 
-export function createModelConnectionReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const locale = actor.credentials.locale;
-  const present = presentModelConnections(locale);
-
-  return {
-    list: async () => present.list(await readSettings(host)),
-    record: async (primaryKey: string) => present.record(await readSettings(host), { primaryKey }),
-    form: async (primaryKey: string, inputs: Pick<PanelFormRequest, "values">) =>
-      present.form(await readSettings(host), { ...inputs, primaryKey }),
-    createForm: async (inputs: Pick<PanelFormRequest, "values">) => present.createForm(await readSettings(host), inputs),
-    createModelForm: async (primaryKey: string, inputs: Pick<PanelFormRequest, "values">) =>
-      present.createModelForm(await readSettings(host), { ...inputs, primaryKey }),
-    models: async (primaryKey: string) => present.models(await readSettings(host), { primaryKey }),
-
-    async usages(primaryKey: string): Promise<PanelRecord[]> {
-      const [settings, agents] = await Promise.all([
-        readSettings(host),
-        readOntologyAgents(host),
-      ]);
-      return presentConnectionUsages(primaryKey, settings, agents, locale);
-    },
-  };
-}
-
-export function createModelEntryReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const present = presentModelEntries(actor.credentials.locale);
-  return {
-    record: async (primaryKey: string) => present.record(await readSettings(host), { primaryKey }),
-    form: async (primaryKey: string, inputs: Pick<PanelFormRequest, "values">) =>
-      present.form(await readSettings(host), { ...inputs, primaryKey }),
-  };
-}
-
 function requireDomainKey(primaryKey: string) {
   if (primaryKey !== DOMAIN_KEY) throw new HttpError(404, "Domain model usage not found", "NOT_FOUND");
 }
@@ -1524,28 +1489,6 @@ function presentVectorRebuild(status: VectorRebuildStatus, locale?: string): Pan
     },
     tones: { stateLabel: tone, tone },
     outputs: { configured: status.configured, state, tone, alive, canRebuild, canResume, canPause },
-  };
-}
-
-export function createModelUsageReads(actor: PanelOperationActor) {
-  const host = operationHost(actor);
-  const locale = actor.credentials.locale;
-
-  return {
-    async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      requireDomainKey(primaryKey);
-      const [settings, ontologyAgents] = await Promise.all([
-        readSettings(host),
-        readOntologyAgents(host),
-      ]);
-      return presentModelUsageForm(settings, ontologyAgents, inputs, locale);
-    },
-
-    async vectorRebuild(primaryKey: string): Promise<PanelRecord> {
-      requireDomainKey(primaryKey);
-      const status = await readVectorRebuild(host);
-      return presentVectorRebuild(status, locale);
-    },
   };
 }
 

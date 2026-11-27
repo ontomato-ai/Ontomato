@@ -428,12 +428,6 @@ public class ActionController {
 	}
 
 	@Bean
-	WorkbenchPanelRead actionPanelExecutionDefinition() {
-		return new WorkbenchPanelRead("platform:Action", "executionDefinition",
-				(subject, parameters) -> panelExecutionDefinition(subject, parameters, ExecutionTarget.LIVE, false));
-	}
-
-	@Bean
 	WorkbenchPanelRead actionPanelExecutionDefinitions() {
 		return WorkbenchPanelRead.callerScopedMetadata("platform:Action", "executionDefinitions",
 				(subject, parameters, scope) -> {
@@ -451,7 +445,7 @@ public class ActionController {
 
 	private JSONObject panelExecutionDescription(SubjectContext subject, Map<?, ?> description, ExecutionTarget scope) {
 		try {
-			return panelExecutionDefinition(subject, description, scope, true);
+			return panelExecutionDefinition(subject, description, scope);
 		} catch (ActionAuthorization.Denied refusal) {
 			return JSONObject.of("status", "forbidden", "code", refusal.code(), "error", refusal.getMessage());
 		} catch (OwnerRefusal refusal) {
@@ -462,7 +456,7 @@ public class ActionController {
 		}
 	}
 
-	private JSONObject panelExecutionDefinition(SubjectContext subject, Map<?, ?> parameters, ExecutionTarget scope, boolean item) {
+	private JSONObject panelExecutionDefinition(SubjectContext subject, Map<?, ?> parameters, ExecutionTarget scope) {
 		if (!(parameters.get("primaryKey") instanceof String id) || id.isBlank())
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected an action id");
 		String lang = LocaleContextHolder.getLocale().toLanguageTag();
@@ -490,7 +484,6 @@ public class ActionController {
 		try {
 			actionService.requireExecutionForm(action, bound, readOnly, lang, subject, admission, scope);
 		} catch (CallerScopeDenied refusal) {
-			if (!item) throw refusal;
 			// The definition and binding were admitted. Only send the fields used to render the disabled button.
 			var parametersForDisplay = action.getFunction().getParameters().stream()
 					.map(parameter -> JSONObject.of("name", parameter.getName(), "type", parameter.getType(),
@@ -500,7 +493,7 @@ public class ActionController {
 			return JSONObject.of("status", "forbidden", "code", refusal.code(), "error", refusal.getMessage(), "payload", payload);
 		}
 		var definition = executionDefinition(action);
-		return item ? JSONObject.of("status", "ready", "payload", definition) : definition;
+		return JSONObject.of("status", "ready", "payload", definition);
 	}
 
 	private Admission admitExecutionDefinition(Action action, String lang, Supplier<SubjectContext> subject, ExecutionTarget target) {

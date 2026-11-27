@@ -31,17 +31,27 @@ export const modelOwnerRead: PanelFixtureRead = async ({ type, name, parameters 
 export const actionOwnerRead: PanelFixtureRead = async ({ type, name, parameters }, owner) => {
   if (type !== ACTION) return;
   if (name === "list") return ownerData(await owner.post("/action/queryList", { purpose: "manage" }));
-  if (name === "executionDefinition") {
-    const action = ownerData(await owner.post("/action/queryById", { id: parameters.primaryKey, purpose: "execute" })) as {
-      target?: { keyParameter: string } | null;
-    };
-    const object = parameters.object as { primaryKey: string } | undefined;
-    const key = action.target?.keyParameter;
-    ownerData(await owner.post("/action/form", {
-      id: parameters.primaryKey, parameters: key && object ? { [key]: object.primaryKey } : {},
-      readOnlyParameters: key && object ? [key] : [],
+  if (name === "executionDefinitions") {
+    const descriptions = parameters.actions as { primaryKey: string; object?: { primaryKey: string } }[];
+    return Promise.all(descriptions.map(async description => {
+      try {
+        const action = ownerData(await owner.post("/action/queryById", { id: description.primaryKey, purpose: "execute" })) as {
+          target?: { keyParameter: string } | null;
+        };
+        const key = action.target?.keyParameter;
+        ownerData(await owner.post("/action/form", {
+          id: description.primaryKey, parameters: key && description.object ? { [key]: description.object.primaryKey } : {},
+          readOnlyParameters: key && description.object ? [key] : [],
+        }));
+        return { status: "ready", payload: action };
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        const http = error as { status?: number; code?: string; message: string };
+        return http.status === 403
+          ? { status: "forbidden", code: http.code, error: http.message }
+          : { status: "error", code: http.code, error: http.message };
+      }
     }));
-    return action;
   }
 };
 

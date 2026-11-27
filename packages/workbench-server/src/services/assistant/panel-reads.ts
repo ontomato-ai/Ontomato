@@ -6,7 +6,7 @@ import { MODEL_OPTION, USER } from "@ontomato/contracts/platform-object-types";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { ownerReadRegistration, presentedRegisteredDataRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
-import type { PanelReadSelection } from "../product-panels/panel-owner-reads";
+import type { PanelReadSelection } from "../product-panels/registered-data-read";
 import { queryExecutionOptions } from "./execution-setting";
 import { presentDomainModelOptions, readDomainModelOptions } from "./model-panel-form";
 
@@ -82,33 +82,6 @@ export function prepareExecutionUserRead(selection: PanelReadSelection, params: 
       },
     };
   }
-}
-
-export function createAgentOptionReadAdapters(viewer: AssistantCredentials) {
-  const modelOptions = () => readDomainModelOptions(viewer);
-  return {
-    models: {
-      async options() { return { options: await modelOptions() }; },
-      async resolve(values: readonly unknown[]) { return resolveModelChoices(await modelOptions(), values, viewer.locale); },
-    },
-    users: {
-      async options({ keyword, page }: { keyword?: string; page?: { number: number; size: number } }) {
-        const parameters = executionUserPage(keyword, page);
-        const query = new URLSearchParams(Object.entries(parameters).map(([key, value]) => [key, String(value)]));
-        const { users } = await queryExecutionOptions(viewer, query);
-        return presentExecutionUserOptions(users, parameters.pageNum ?? 1, viewer.locale);
-      },
-      async resolve(values: readonly unknown[]) {
-        return { options: await Promise.all(values.map(async (value): Promise<PanelOption> => {
-          if (value === null) return executionOwnOption(viewer.locale);
-          const id = executionUserId.parse(value);
-          const { selected } = await queryExecutionOptions(viewer, new URLSearchParams({ selected: id, pageSize: "1" }));
-          if (!selected) throw new Error("The execution user owner did not return the requested selection");
-          return presentExecutionUserSelection(selected, viewer.locale);
-        })) };
-      },
-    },
-  };
 }
 
 export const assistantDataReadRegistrations: RegisteredDataReadRegistration[] = [

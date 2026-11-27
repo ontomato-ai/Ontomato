@@ -1,6 +1,4 @@
-import http from "node:http";
-import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../assistant/skills", () => ({}));
 import {
@@ -34,14 +32,12 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { withoutPanelSecretDelivery } from "@ontomato/contracts/panel-agent";
 import { panelSchemaSecretPaths, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
-import { config } from "../../../config/application";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { platformTypeEntries } from "../../product-panels/type-table";
 import { describeServerOperation, registeredPanelOperation, type PanelOperationHost, type PanelServerOperation } from "../../product-panels/server-operations";
 import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 import { governanceServerOperations } from "../panel-operations";
-import { createGovernanceReadAdapters } from "../panel-reads";
 
 configureI18n({
   defaultLocale: "en",
@@ -59,36 +55,6 @@ const GOVERNANCE_TYPES = [
   ORG_POSITION,
   ORG_GRANT,
 ] as const;
-
-const originalDataQueryBaseUrl = config.dataQuery.baseUrl;
-const servers: http.Server[] = [];
-
-afterEach(async () => {
-  config.dataQuery.baseUrl = originalDataQueryBaseUrl;
-  while (servers.length > 0) {
-    const server = servers.pop()!;
-    await new Promise<void>(resolve => server.close(() => resolve()));
-  }
-});
-
-async function startBackend(handler: (path: string, body: Record<string, unknown>) => unknown) {
-  const requests: { path: string; body: Record<string, unknown> }[] = [];
-  const server = http.createServer(async (req, res) => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(Buffer.from(chunk));
-    const raw = Buffer.concat(chunks).toString("utf8");
-    const body = raw ? JSON.parse(raw) as Record<string, unknown> : {};
-    const path = req.url ?? "";
-    requests.push({ path, body });
-    const payload = handler(path, body);
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(payload));
-  });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  servers.push(server);
-  config.dataQuery.baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { requests };
-}
 
 const ops: readonly PanelServerOperation[] = governanceServerOperations;
 const formSaveOp = (handlerRef: string) =>
@@ -154,170 +120,7 @@ describe("governance platform type declarations and registry", () => {
   });
 });
 
-describe("governance panel read adapter", () => {
-  it("routes user, role, policy, and organization reads to the Java governance owner endpoints", async () => {
-    const { requests } = await startBackend((path) => {
-      if (path === "/panel/governance/users/query") {
-        return {
-          success: true,
-          data: {
-            rows: [{ primaryKey: "u-1", label: "Alice", fields: { loginCode: "alice" } }],
-            total: 1,
-          },
-        };
-      }
-      if (path === "/panel/governance/users/form") {
-        return {
-          success: true,
-          data: {
-            fields: [], values: {}, errors: [],
-            save: { method: "POST", path: "/panel/governance/users/save", bodySchema: { type: "object" } },
-          },
-        };
-      }
-      if (path === "/panel/governance/org-units/form") {
-        return {
-          success: true,
-          data: {
-            fields: [],
-            values: { parentId: "org-root" },
-            errors: [],
-            save: { method: "POST", path: "/panel/governance/org-units/save", bodySchema: { type: "object" } },
-          },
-        };
-      }
-      if (path === "/panel/governance/policies/form") {
-        return {
-          success: true,
-          data: {
-            fields: [],
-            values: { postName: "Draft", managementOperationIds: ["governance.users.read"] },
-            errors: [],
-            save: { method: "POST", path: "/panel/governance/policies/save", bodySchema: { type: "object" } },
-          },
-        };
-      }
-      if (path === "/panel/governance/users/record") {
-        return {
-          success: false,
-          code: "USER_NOT_FOUND",
-          message: "Member not found",
-        };
-      }
-      return { success: true, data: [] };
-    });
-
-    const workbenchCatalog = {
-      panels: [{ id: "panel-1", label: "Orders Panel" }],
-      projections: [{ id: "proj-1", label: "Orders Projection" }],
-      components: [{ id: "comp-1", label: "Status Badge" }],
-      agents: [{ id: "agent-1", label: "Analysis Agent" }],
-    };
-    const adapter = createGovernanceReadAdapters(
-      { token: "tok", locale: "en" },
-      { loadPolicyCatalog: async () => workbenchCatalog },
-    );
-
-    const page = await adapter.users.query({ search: "ali", page: { number: 2, size: 15 } });
-    expect(page.total).toBe(1);
-    expect(page.rows[0]?.primaryKey).toBe("u-1");
-    expect(requests[0]).toEqual({
-      path: "/panel/governance/users/query",
-      body: { search: "ali", pageNum: 2, pageSize: 15 },
-    });
-
-    const createForm = await adapter.orgUnits.createForm({ parentId: "org-root" });
-    expect(createForm.values).toEqual({ parentId: "org-root" });
-    expect(requests[1]).toEqual({
-      path: "/panel/governance/org-units/form",
-      body: { parentId: "org-root", changedField: null },
-    });
-
-    const values = { postName: "Draft", managementOperationIds: ["governance.users.read"] };
-    const policyForm = await adapter.policies.form("p-1", { values });
-    expect(policyForm.values).toEqual(values);
-    expect(requests[2]).toEqual({
-      path: "/panel/governance/policies/form",
-      body: { id: "p-1", workbenchCatalog, values, changedField: null },
-    });
-
-    await adapter.policies.createForm({});
-    expect(requests[3]).toEqual({
-      path: "/panel/governance/policies/form",
-      body: { changedField: null },
-    });
-
-    await expect(adapter.users.record("missing")).rejects.toMatchObject({
-      code: "USER_NOT_FOUND",
-      message: "Member not found",
-    });
-
-    await adapter.users.createForm({});
-    expect(requests).toContainEqual({
-      path: "/panel/governance/users/form",
-      body: { changedField: null },
-    });
-  });
-});
-
 describe("governance role contribution reads", () => {
-  it("reads the role's permission policies and its in-force workflow steps from the role owner", async () => {
-    const { requests } = await startBackend((path, body) => {
-      if (body.id !== "r-analyst") {
-        return { success: false, code: "ROLE_NOT_FOUND", message: "Role not found in the current domain." };
-      }
-      if (path === "/panel/governance/roles/contribution/permission-policies") {
-        return {
-          success: true,
-          data: [{
-            primaryKey: "p-data",
-            className: PERMISSION_POLICY,
-            label: "Data policy",
-            fields: { policyName: "Data policy", policyType: "Data permissions" },
-          }],
-        };
-      }
-      if (path === "/panel/governance/roles/contribution/workflow-steps") {
-        return {
-          success: true,
-          data: [{
-            primaryKey: "w-1:1",
-            className: "platform:Workflow",
-            label: "Expense approval",
-            fields: { workflowName: "Expense approval", step: "1. Manager approval", scope: "Own organization" },
-          }],
-        };
-      }
-      return { success: true, data: [] };
-    });
-    const adapter = createGovernanceReadAdapters({ token: "tok", locale: "en" });
-
-    const policies = await adapter.roles.contributionPolicies("r-analyst");
-    expect(requests[0]).toEqual({
-      path: "/panel/governance/roles/contribution/permission-policies",
-      body: { id: "r-analyst" },
-    });
-    expect(policies).toEqual([{
-      primaryKey: "p-data",
-      className: PERMISSION_POLICY,
-      label: "Data policy",
-      fields: { policyName: "Data policy", policyType: "Data permissions" },
-    }]);
-
-    const steps = await adapter.roles.contributionWorkflowSteps("r-analyst");
-    expect(requests[1]).toEqual({
-      path: "/panel/governance/roles/contribution/workflow-steps",
-      body: { id: "r-analyst" },
-    });
-    expect(steps[0]?.fields.step).toBe("1. Manager approval");
-
-    await expect(adapter.roles.contributionPolicies("r-missing")).rejects.toMatchObject({
-      status: 404,
-      code: "ROLE_NOT_FOUND",
-      message: "Role not found in the current domain.",
-    });
-  });
-
   it("declares both contribution reads on platform:Role so a panel may bind them", () => {
     const reads = platformObjectTypes[ROLE].reads ?? {};
     expect(reads.contributionPolicies).toMatchObject({
@@ -741,31 +544,7 @@ describe("governance panel server operations", () => {
     expect(withoutPositions!.summary).toContain("other organizations are kept");
   });
 
-  it("reads role assignment record lists and enforces owner unavailable checks on role relation writes", async () => {
-    const memberRow = { primaryKey: "u-1", className: USER, label: "Alice", fields: { loginCode: "alice" } };
-    const policyRow = { primaryKey: "p-1", className: PERMISSION_POLICY, label: "Entries", fields: { grantSummary: "Entries 2" } };
-    const { requests } = await startBackend((path) => {
-      if (path.endsWith("/panel/governance/roles/members") || path.endsWith("/panel/governance/roles/member-candidates")) {
-        return { success: true, data: [memberRow] };
-      }
-      if (path.endsWith("/panel/governance/roles/policies") || path.endsWith("/panel/governance/roles/policy-candidates")) {
-        return { success: true, data: [policyRow] };
-      }
-      return { success: true, data: [] };
-    });
-
-    const reads = createGovernanceReadAdapters({ token: "tok", locale: "en" });
-    expect(await reads.roles.members("r-1")).toHaveLength(1);
-    expect(await reads.roles.memberCandidates("r-1")).toHaveLength(1);
-    expect(await reads.roles.policies("r-1")).toHaveLength(1);
-    expect(await reads.roles.policyCandidates("r-1")).toHaveLength(1);
-    expect(requests.map((r) => r.path)).toEqual([
-      "/panel/governance/roles/members",
-      "/panel/governance/roles/member-candidates",
-      "/panel/governance/roles/policies",
-      "/panel/governance/roles/policy-candidates",
-    ]);
-
+  it("enforces owner unavailable checks on role relation writes", async () => {
     const { host, sent } = hostWith(() => {
       return new Response(
         JSON.stringify({ success: true, data: { id: "r-1" } }),
@@ -797,7 +576,7 @@ describe("governance panel server operations", () => {
     expect(sent.some((req) => req.path.endsWith("/panel/governance/roles/add-policies"))).toBe(true);
   });
 
-  it("declares and routes identical effectiveAccess and effectiveAccessCounts reads on platform:User and platform:Role", async () => {
+  it("declares identical effectiveAccess and effectiveAccessCounts reads on platform:User and platform:Role", () => {
     const userReads = platformObjectTypes[USER].reads ?? {};
     const roleReads = platformObjectTypes[ROLE].reads ?? {};
     for (const reads of [userReads, roleReads]) {
@@ -826,73 +605,5 @@ describe("governance panel server operations", () => {
     expect(platformObjectTypes[USER].operations ?? []).not.toContain("users.effectiveAccess");
     expect(governanceServerOperations.find((op) => op.handlerRef === "users.effectiveAccess")).toBeUndefined();
 
-    const row = {
-      primaryKey: "entry:app-1/home",
-      label: "Home /home",
-      fields: {
-        category: "Entries",
-        object: "Home /home",
-        permission: "Enter",
-        scope: "Permissions",
-        sources: [
-          { kind: "reference", className: ROLE, primaryKey: "r-1", label: "Analyst" },
-          { kind: "reference", className: PERMISSION_POLICY, primaryKey: "p-1", label: "→ Entries Policy" },
-        ],
-      },
-    };
-    const countsRecord = {
-      primaryKey: "r-1",
-      className: ROLE,
-      label: "Analyst",
-      fields: {},
-      outputs: {
-        entryCount: 1,
-        systemInterfaceCount: 0,
-        productObjectCount: 2,
-        capabilityObjectCount: 0,
-        businessDataCount: 0,
-        workflowStepCount: 1,
-        totalCount: 4,
-      },
-    };
-    const { requests } = await startBackend((path) => {
-      if (path.endsWith("/effective-access-counts")) return { success: true, data: countsRecord };
-      if (path.endsWith("/effective-access")) return { success: true, data: [row] };
-      return { success: true, data: [] };
-    });
-
-    let catalogLoads = 0;
-    const workbenchCatalog = {
-      applications: [],
-      panels: [{ id: "panel-1", label: "Orders" }],
-      projections: [],
-      components: [],
-      agents: [],
-    };
-    const reads = createGovernanceReadAdapters(
-      { token: "tok", locale: "en" },
-      {
-        loadPolicyCatalog: async () => {
-          catalogLoads += 1;
-          return workbenchCatalog;
-        },
-      },
-    );
-
-    expect(await reads.users.effectiveAccess("u-1", "entry")).toHaveLength(1);
-    expect(await reads.roles.effectiveAccess("r-1", "productObject")).toHaveLength(1);
-    expect(await reads.users.effectiveAccessCounts("u-1")).toMatchObject({ outputs: { totalCount: 4 } });
-    expect(await reads.roles.effectiveAccessCounts("r-1")).toMatchObject({ outputs: { entryCount: 1 } });
-
-    expect(catalogLoads).toBe(1);
-    expect(requests).toEqual([
-      { path: "/panel/governance/users/effective-access", body: { id: "u-1", category: "entry" } },
-      {
-        path: "/panel/governance/roles/effective-access",
-        body: { id: "r-1", category: "productObject", workbenchCatalog },
-      },
-      { path: "/panel/governance/users/effective-access-counts", body: { id: "u-1" } },
-      { path: "/panel/governance/roles/effective-access-counts", body: { id: "r-1" } },
-    ]);
   });
 });

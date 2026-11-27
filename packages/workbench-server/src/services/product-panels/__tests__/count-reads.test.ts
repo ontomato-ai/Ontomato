@@ -3,205 +3,157 @@ import {
   WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { applicationPanelUseSchema, productProjectionSchema } from "@ontomato/contracts/product-panels";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
-import { readScopedPanelData } from "../data-reads";
 
 const mocks = vi.hoisted(() => ({
   resolveMember: vi.fn(),
   resolveRoot: vi.fn(),
-  assertPermission: vi.fn(),
+  locate: vi.fn(),
+  read: vi.fn(),
   query: vi.fn(),
+  components: vi.fn(),
+  countAgents: vi.fn(),
 }));
 
-vi.mock("../member-path", () => ({
+vi.mock("../member-path", async importOriginal => ({
+  ...await importOriginal<typeof import("../member-path")>(),
   requireRegisteredPanelRoot: mocks.resolveRoot,
   resolvePanelMemberPath: mocks.resolveMember,
 }));
-vi.mock("../../../config/application", async importOriginal => {
-  const { config } = await importOriginal<typeof import("../../../config/application")>();
-  return { config: { ...config, dataQuery: { ...config.dataQuery, baseUrl: "http://owner.test" } } };
-});
-vi.mock("../../../identity/installed", async importOriginal => ({
-  ...await importOriginal<typeof import("../../../identity/installed")>(),
-  assertPermission: mocks.assertPermission,
+vi.mock("../java-panel-reads", async importOriginal => ({
+  ...await importOriginal<typeof import("../java-panel-reads")>(),
+  locateViaJava: mocks.locate,
+  readViaJava: mocks.read,
 }));
+vi.mock("../component-catalogue", async importOriginal => ({
+  ...await importOriginal<typeof import("../component-catalogue")>(),
+  countSdkComponentsInRange: mocks.components,
+}));
+vi.mock("../../assistant/store", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../assistant/store")>();
+  return {
+    ...actual,
+    assistantStore: { ...actual.assistantStore, countVisibleAgentDefinitions: mocks.countAgents },
+  };
+});
 vi.mock("../../../infrastructure/postgres", async importOriginal => ({
   ...await importOriginal<typeof import("../../../infrastructure/postgres")>(),
   getPostgresPool: () => ({ query: mocks.query }),
 }));
-vi.mock("../../app-builder/sdk", () => ({
-  readCurrentAppSdkComponents: async () => ({
-    version: "1.0.0",
-    digest: "a".repeat(64),
-    catalogue: {
-      version: "1.0.0",
-      components: [{
-        componentId: "ObjectCount", module: "@ontomato/sdk/base", exportName: "ObjectCount",
-        role: "presentation", meaning: "Shows a count.", ports: { props: [], slots: [], events: [] },
-      }],
-    },
-  }),
-}));
-vi.mock("../../component-packages/store", () => ({
-  listComponentPackages: async () => [{
-    name: "@acme/widgets",
-    components: [{ componentId: "@ontomato/sdk:ObjectCount" }, { componentId: "@acme/widgets:Indicator" }],
-  }],
-}));
+
+let readPanelData: typeof import("../registered-read-plan").readPanelData;
 
 const owner = { domainId: "tenant", userId: "reader" };
-const viewer = { token: "reader-token", locale: "en", headers: { "x-scope": "reader-scope" } };
+const viewer = {
+  token: "reader-token", locale: "en",
+  headers: { "X-Ontomato-Retrieval-Caller-Id": "caller-scope" },
+};
+const source = { kind: "frame", applicationId: "ontology", useId: "objects" } as const;
+const entry = {
+  applicationId: source.applicationId,
+  framePanelId: "ontology-frame",
+  use: { id: source.useId, names: { en: "Objects" }, pageKey: "objects", panelId: "objects-panel", path: "/objects" },
+};
 
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
   packs: { en: { ...enLocaleMeta, messages: en } },
 });
 
-function readCount(typeId: string, read = "count") {
-  const projection = productProjectionSchema.parse({
-    id: "builtin-product-test-count", domainId: null, ownerId: null, editable: false,
+function projectionFor(typeId: string, read: string, params: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
+  return productProjectionSchema.parse({
+    id: `builtin-product-count-${typeId.replaceAll(/[^a-z0-9]+/giu, "-")}`, domainId: null, ownerId: null, editable: false,
     name: "Count", description: "", visibility: "platform", revision: 1,
     createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
     componentId: "@ontomato/sdk:ObjectCount", inputs: {}, outputs: {}, config: {},
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read, params: {} } },
-  });
-  mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection, trail: [] });
-  return readScopedPanelData(owner, viewer, {
-    source: { kind: "frame", applicationId: "ontology", useId: "objects" },
-    memberPath: [{ member: "count" }], dataName: "rows", inputs: {},
+    ...extra,
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read, params } },
   });
 }
 
-/** A normal catalogue query, including its one-row page, must keep returning rows. */
-function readQuery(typeId: string, params: Record<string, unknown>) {
-  const projection = productProjectionSchema.parse({
-    id: "builtin-product-test-query", domainId: null, ownerId: null, editable: false,
-    name: "Query", description: "", visibility: "platform", revision: 1,
-    createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
-    componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read: "query", params } },
-  });
+function readType(typeId: string, read = "count", params: Record<string, unknown> = {}, inputs: Record<string, RuntimeJsonValue> = {}, registered = false) {
+  const projection = projectionFor(typeId, read, params);
   mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection, trail: [] });
-  return readScopedPanelData(owner, viewer, {
-    source: { kind: "frame", applicationId: "ontology", useId: "objects" },
-    memberPath: [{ member: "rows" }], dataName: "rows", inputs: {},
+  return readPanelData(owner, viewer, {
+    source: registered ? { ...source, kind: "registered" } : source,
+    memberPath: [{ member: "count" }], dataName: "rows", inputs,
   });
 }
+
+function readyCounts(total: number) {
+  return (_owner: unknown, reads: readonly unknown[]) => Promise.resolve({
+    viewer: owner,
+    results: reads.map(() => ({ status: "ready", payload: { rows: [], total } })),
+  });
+}
+
+beforeAll(async () => {
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  ({ readPanelData } = await import("../registered-read-plan"));
+});
 
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.resolveRoot.mockResolvedValue({});
+  mocks.locate.mockResolvedValue({ viewer: owner, entries: [{ kind: "ready", entry }] });
+  mocks.read.mockImplementation(readyCounts(2));
 });
-beforeAll(() => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
-});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
 
 describe("platform count reads", () => {
-  const objectType = {
-    className: "Device", showName: "Device", classDesc: "", attributeCount: 7,
-    businessKeyCount: 0, relationshipCount: 4, primaryKey: { status: "ok", count: 1, name: "id", showName: "id" },
-  };
-  const attribute = {
-    className: "Device", name: "id", showName: "", type: "varchar",
-    attrDesc: "", enable: true, businessKey: false, primaryKey: true,
-  };
   it.each([
-    { type: OBJECT_TYPE, path: "/ontology/model/object-types", total: 2 },
-    { type: ATTRIBUTE, path: "/ontology/model/attributes", total: 1 },
-    { type: RELATIONSHIP, path: "/ontology/model/relationships", total: 1 },
-  ])("$type asks its owner to count as the current viewer", async ({ type, path, total }) => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe(path);
-      expect(new URL(url).searchParams.get("countOnly")).toBe("true");
-      expect(init.method).toBe("GET");
-      const headers = new Headers(init.headers);
-      expect(headers.get("tk")).toBe(viewer.token);
-      expect(headers.get("x-scope")).toBe(viewer.headers["x-scope"]);
-      return Response.json({ total });
-    }));
-    await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total } });
-  });
+    OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP, ACTION, TRIGGER, METRIC_VIEW, APPLICATION, WORKFLOW,
+  ])("forwards the %s count selection as one admitted Java read", async type => {
+    await expect(readType(type)).resolves.toEqual({ status: "ready", value: { rows: [], total: 2 } });
 
-  it("counts actions through the same list URL without reading the list", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe("/action/queryList");
-      expect(init.method).toBe("POST");
-      expect(init.body).toBe(JSON.stringify({ countOnly: true }));
-      return Response.json({ success: true, data: { total: 4 } });
-    }));
-    await expect(readCount(ACTION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 4 } });
-  });
-
-  it("counts triggers without loading the list", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      const { pathname, searchParams } = new URL(url);
-      expect(pathname).toBe("/platform/triggers");
-      expect(searchParams.get("countOnly")).toBe("true");
-      expect(init.method).toBe("GET");
-      expect(init.body).toBeUndefined();
-      return Response.json({ total: 3 });
-    }));
-    await expect(readCount(TRIGGER)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
-  });
-
-  it("counts metric views through the count read", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe("/metricView/queryList");
-      expect(init.method).toBe("POST");
-      expect(init.body).toBe(JSON.stringify({ countOnly: true }));
-      return Response.json({ success: true, data: { total: 2 } });
-    }));
-    await expect(readCount(METRIC_VIEW)).resolves.toEqual({ status: "ready", value: { rows: [], total: 2 } });
-  });
-
-  it("counts applications through the count read", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      const request = new URL(url);
-      expect(request.pathname).toBe("/platform/applications/catalogue");
-      expect(request.searchParams.get("countOnly")).toBe("true");
-      expect(init.method).toBe("GET");
-      return Response.json({ success: true, data: { total: 5 } });
-    }));
-    await expect(readCount(APPLICATION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 5 } });
+    expect(mocks.locate).toHaveBeenCalledWith([
+      { applicationId: source.applicationId, useId: source.useId, kind: "frame" },
+    ], viewer);
+    expect(mocks.read).toHaveBeenCalledTimes(1);
+    const [readViewer, reads, credentials] = mocks.read.mock.lastCall!;
+    expect(readViewer).toEqual(owner);
+    expect(credentials).toBe(viewer);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toMatchObject({
+      source,
+      registration: { framePanelId: entry.framePanelId, panelId: entry.use.panelId },
+      call: { type, name: "count", parameters: {} },
+    });
+    expect(credentials.headers).toMatchObject({ "X-Ontomato-Retrieval-Caller-Id": "caller-scope" });
   });
 
   it("keeps a one-row application catalogue query a row query", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      const request = new URL(url);
-      expect(request.pathname).toBe("/platform/applications/catalogue");
-      expect(request.searchParams.get("countOnly")).toBeNull();
-      expect(request.searchParams.get("size")).toBe("1");
-      expect(init.method).toBe("GET");
-      return Response.json({
-        success: true,
-        data: {
-          rows: [{
-            id: "app-1", names: { en: "App" }, descriptions: { en: "" }, icon: "app-window",
-            source: "builtin", canMaintain: false, canEditEntries: false, entryCount: 0,
-          }],
-          total: 1,
-        },
-      });
-    }));
-    const result = await readQuery(APPLICATION, { size: { literal: 1 } });
+    mocks.read.mockImplementation(async () => ({ viewer: owner, results: [{ status: "ready", payload: {
+      rows: [{
+        id: "app-1", names: { en: "App" }, descriptions: { en: "" }, icon: "app-window",
+        source: "builtin", canMaintain: false, canEditEntries: false, entryCount: 0,
+      }],
+      total: 1,
+    } }] }));
+
+    const result = await readType(APPLICATION, "query", { size: { literal: 1 } });
     expect(result).toMatchObject({ status: "ready", value: { total: 1, rows: [{ primaryKey: "app-1" }] } });
+    expect(mocks.read.mock.lastCall![1][0].call).toEqual({
+      type: APPLICATION, name: "query", parameters: { size: 1 },
+    });
   });
 
   it("projects a fixed object state key before reading the selected class's attributes", async () => {
-    const projection = productProjectionSchema.parse({
-      id: "builtin-product-test-attributes", domainId: null, ownerId: null, editable: false,
-      name: "Attributes", description: "", visibility: "platform", revision: 1,
-      createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
-      componentId: "@ontomato/sdk:ObjectList", inputs: { className: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: ATTRIBUTE } }, read: "list", params: { className: { input: "className" } } } },
+    const attribute = {
+      className: "Device", name: "id", showName: "ID", type: "varchar",
+      attrDesc: "", enable: true, businessKey: false, primaryKey: true,
+    };
+    const projection = projectionFor(ATTRIBUTE, "list", { className: { input: "className" } }, {
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { className: { kind: "scalar", type: "string" } },
     });
     mocks.resolveRoot.mockResolvedValue({ entry: applicationPanelUseSchema.parse({
       id: "attributes", names: { en: "attributes" }, pageKey: "attributes", panelId: "model", path: "/attributes",
@@ -211,131 +163,71 @@ describe("platform count reads", () => {
       kind: "projection", projection, trail: [],
       member: { inputs: { className: { state: "selectedNode", field: "primaryKey" } } },
     });
-    const classNames: (string | null)[] = [];
-    vi.stubGlobal("fetch", async (url: string) => {
-      const path = new URL(url);
-      switch (path.pathname) {
-        case "/ontology/model/attributes":
-          classNames.push(path.searchParams.get("className"));
-          return Response.json([attribute]);
-        case "/ontology/model/object-types": return Response.json([objectType]);
-        case "/ontology/model/field-labels": return Response.json({ attribute: {}, objectType: {}, relationship: {} });
-        default: throw new Error(`Unexpected owner read: ${path.pathname}`);
-      }
-    });
+    mocks.read.mockImplementation(async () => ({ viewer: owner, results: [{ status: "ready", payload: {
+      views: [attribute], fieldLabels: {}, classLabels: { Device: "Device" },
+    } }] }));
 
-    await expect(readScopedPanelData(owner, viewer, {
-      source: { kind: "registered", applicationId: "ontology", useId: "attributes" },
+    await expect(readPanelData(owner, viewer, {
+      source: { ...source, kind: "registered" },
       memberPath: [{ member: "attributes" }], dataName: "rows", inputs: { className: "Site" },
     })).resolves.toMatchObject({ status: "ready" });
-    expect(classNames).toEqual(["Device"]);
-  });
-
-  it("counts distinct releases and counts only authorised domain component IDs", async () => {
-    const visible = "domain-component:registered";
-    const hidden = "domain-component:private";
-    mocks.query.mockImplementation(async (sql: string, params: unknown[]) => {
-      expect(sql).toContain("domain_components");
-      if (sql.includes("COUNT(*)")) {
-        expect(params).toEqual([owner.domainId, [visible]]);
-        return { rows: [{ total: 1 }] };
-      }
-      expect(sql).not.toContain("definition,");
-      expect(params).toEqual([owner.domainId]);
-      return { rows: [visible, hidden].map(id => ({ id, domainId: owner.domainId, ownerId: "author" })) };
+    expect(mocks.read.mock.lastCall![1][0].call).toEqual({
+      type: ATTRIBUTE, name: "list", parameters: { className: "Device" },
     });
-    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
-    const decide = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe("/authorization/objects/decide-batch");
-      expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
-      expect(JSON.parse(String(init.body)).requests.map((request: { target: { id: string } }) => request.target.id))
-        .toEqual([visible, hidden]);
-      return Response.json({ decisions: [
-        { allowed: true, code: null, reason: null },
-        { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Use permission required" },
-      ] });
+  });
+
+  it("counts Node-owned components only through the Java visibility range", async () => {
+    const range = { fixed: false, all: false, objectIds: ["domain-component:registered"], authorId: null };
+    mocks.read.mockImplementation(async () => ({ viewer: owner, results: [
+      { status: "ready", visibility: { COMPONENT: { USE: range } } },
+    ] }));
+    mocks.components.mockResolvedValue({ rows: [], total: 3 });
+
+    await expect(readType(SDK_COMPONENT)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
+    const item = mocks.read.mock.lastCall![1][0];
+    expect(item).not.toHaveProperty("call");
+    expect(item.visibleKinds).toEqual([{ kind: "COMPONENT", verbs: ["USE"] }]);
+    expect(mocks.components).toHaveBeenCalledWith(owner.domainId, range);
+  });
+
+  it.each([0, 1])("counts visible agent definitions and the retriever fact %i in one batch", async retrievers => {
+    const range = { fixed: false, all: false, authorId: null, objectIds: ["visible-agent"] };
+    mocks.read.mockImplementation(async () => ({ viewer: owner, results: [
+      { status: "ready", payload: retrievers, visibility: { AGENT: { VIEW: range } } },
+    ] }));
+    mocks.countAgents.mockResolvedValue(2);
+
+    await expect(readType(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 2 + retrievers } });
+    expect(mocks.read.mock.lastCall![1][0]).toMatchObject({
+      call: { type: AGENT_DEFINITION, name: "count", parameters: {} },
+      visibleKinds: [{ kind: "AGENT", verbs: ["VIEW"] }],
     });
-    vi.stubGlobal("fetch", decide);
-    await expect(readCount(SDK_COMPONENT)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
-    expect(decide).toHaveBeenCalledTimes(1);
+    expect(mocks.countAgents).toHaveBeenCalledWith(owner.domainId, range, { includeSystem: true });
   });
 
-  it("counts only definitions with view, including visible system agents", async () => {
-    mocks.query.mockResolvedValue({ rows: [{ total: 2 }] });
-    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
-    vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      const path = new URL(url).pathname;
-      const headers = new Headers(init.headers);
-      expect(headers.get("tk")).toBe(viewer.token);
-      expect(headers.get("x-scope")).toBe(viewer.headers["x-scope"]);
-      if (path === `/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`) {
-        expect(init.method).toBe("GET");
-        return Response.json({ success: true, data: {
-          id: RETRIEVAL_AGENT_ID, kind: "retrieval", name: "Data retrieval", modelSelection: { modelId: null }, editable: false,
-        } });
-      }
-      expect(path).toBe("/authorization/objects/read-ranges");
-      expect(init.method).toBe("POST");
-      expect(headers.get("X-Ontomato-Query-Service-Token")).toBe("count-test-token");
-      expect(JSON.parse(String(init.body))).toEqual({ kind: "AGENT", verbs: ["VIEW"] });
-      return Response.json({ ranges: {
-        VIEW: { fixed: false, authorId: "author", all: false, objectIds: ["builder"] },
-      } });
+  it("returns forbidden when the Java owner denies the count", async () => {
+    mocks.read.mockImplementation(async () => ({ viewer: owner, results: [
+      { status: "forbidden", error: "Count denied" },
+    ] }));
+    await expect(readType(OBJECT_TYPE)).resolves.toEqual({ status: "forbidden", reason: "Count denied" });
+  });
+
+  it("maps a missing workflow count through the workflow registration", async () => {
+    mocks.read.mockImplementation(async () => ({ viewer: owner, results: [
+      { status: "error", code: "WORKFLOW_NOT_FOUND", error: "workflow missing" },
+    ] }));
+    await expect(readType(WORKFLOW)).resolves.toMatchObject({
+      status: "error", code: "WORKFLOW_NOT_FOUND", message: "Workflow not found",
     });
-    await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
-    expect(mocks.assertPermission).not.toHaveBeenCalled();
   });
 
-  it("returns zero when the viewer has no agent view grants", async () => {
-    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
-    vi.stubGlobal("fetch", async (url: string) => {
-      const path = new URL(url).pathname;
-      if (path === `/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`) {
-        return Response.json({ success: false, code: 403 }, { status: 403 });
-      }
-      expect(path).toBe("/authorization/objects/read-ranges");
-      return Response.json({ ranges: { VIEW: { fixed: false, authorId: null, all: false, objectIds: [] } } });
-    });
-    mocks.query.mockResolvedValue({ rows: [{ total: 0 }] });
-    await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 0 } });
-  });
-
-  it("returns forbidden when Java denies the viewer", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "FORBIDDEN" } }, { status: 403 })));
-    await expect(readCount(OBJECT_TYPE)).resolves.toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
-  });
-
-  it("counts graph agent definitions in the database from a VIEW range without loading rows", async () => {
+  it("counts graph agent definitions in the database from an explicit VIEW range without loading rows", async () => {
     const { countVisibleAgentDefinitions } = await import("../../assistant/definitions");
     const visible = "10000000-0000-4000-a000-000000000001";
-    mocks.query.mockResolvedValueOnce({ rows: [{ total: 1 }] });
-    vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "count-test-token");
-    const decide = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe("/authorization/objects/read-ranges");
-      expect(JSON.parse(String(init.body))).toEqual({ kind: "AGENT", verbs: ["VIEW"] });
-      return Response.json({ ranges: { VIEW: { fixed: false, authorId: null, all: false, objectIds: [visible] } } });
-    });
-    vi.stubGlobal("fetch", decide);
-    await expect(countVisibleAgentDefinitions(owner, viewer)).resolves.toBe(1);
-    expect(mocks.query).toHaveBeenCalledTimes(1);
-    expect(mocks.query).toHaveBeenCalledWith(expect.stringMatching(/^SELECT COUNT\(\*\)/), [owner.domainId, [visible]]);
-    expect(decide).toHaveBeenCalledTimes(1);
-  });
+    mocks.countAgents.mockResolvedValueOnce(1);
+    const range = { fixed: false, authorId: null, all: false, objectIds: [visible] };
 
-  it("counts workflows through the owner without loading the list", async () => {
-    const ownerRead = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-      expect(new URL(url).pathname).toBe("/workflow/query");
-      expect(JSON.parse(String(init.body))).toEqual({ countOnly: true });
-      expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
-      return Response.json({ success: true, data: { total: 3 } });
-    });
-    vi.stubGlobal("fetch", ownerRead);
-    await expect(readCount(WORKFLOW)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
-    expect(ownerRead).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns an error when the workflow owner cannot read the count", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: false, message: "Database unavailable" })));
-    await expect(readCount(WORKFLOW)).resolves.toMatchObject({ status: "error" });
+    await expect(countVisibleAgentDefinitions(owner, viewer, range)).resolves.toBe(1);
+    expect(mocks.countAgents).toHaveBeenCalledWith(owner.domainId, range, { includeSystem: false });
   });
 });

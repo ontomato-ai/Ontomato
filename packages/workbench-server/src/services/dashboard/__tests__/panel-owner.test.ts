@@ -75,7 +75,6 @@ vi.mock("../validation", () => ({
 }));
 
 import { installDashboardChartProjectionReferences } from "../projection-references";
-import { createDashboardCardReadAdapter } from "../chart-sources";
 import { createDashboardCardOwnerReadAdapter, createDashboardReadAdapter } from "../panel-reads";
 import { dashboardServerOperations } from "../panel-operations";
 
@@ -251,111 +250,6 @@ beforeEach(() => {
     errors: [],
   });
   mocks.readFavoriteKeySet.mockResolvedValue(new Set());
-});
-
-describe("dashboard panel owner reads", () => {
-  it("lists dashboards, reads board detail with empty groups, and lists typed card rows", async () => {
-    const adapter = createDashboardReadAdapter(owner, credentials);
-
-    const list = panelRecordListSchema.parse(await adapter.list());
-    expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ primaryKey: "dash-1", className: DASHBOARD, label: "Operations Board" });
-
-    const record = panelRecordSchema.parse(await adapter.record("dash-1"));
-    expect(record.outputs).toEqual({
-      name: "Operations Board",
-      groupCount: 2,
-      cardCount: 2,
-      openPath: "/dashboards?dashboardId=dash-1",
-      favorited: false,
-    });
-    expect(record.fields.groups).toEqual({
-      kind: "json",
-      value: [
-        { id: "g-1", title: "Overview", order: 0, metricCount: 1, chartCount: 1 },
-        { id: "g-empty", title: "Empty Section", order: 1, metricCount: 0, chartCount: 0 },
-      ],
-    });
-
-    const cards = panelRecordListSchema.parse(await adapter.cards("dash-1"));
-    expect(cards).toHaveLength(2);
-    expect(cards[0]).toMatchObject({
-      primaryKey: dashboardCardPrimaryKey({ dashboardId: "dash-1", cardId: "m-card-1" }),
-      className: DASHBOARD_CARD,
-      label: "Active Orders",
-      fields: expect.objectContaining({
-        cardId: "m-card-1",
-        kind: "metric",
-        groupId: "g-1",
-        valueField: "total",
-        unit: "orders",
-      }),
-    });
-    expect(cards[1]).toMatchObject({
-      primaryKey: dashboardCardPrimaryKey({ dashboardId: "dash-1", cardId: "c-card-1" }),
-      className: DASHBOARD_CARD,
-      label: "Daily Trend",
-      fields: expect.objectContaining({
-        cardId: "c-card-1",
-        kind: "chart",
-        groupId: "g-1",
-        colSpan: 6,
-        rowSpan: 2,
-      }),
-    });
-  });
-
-  it("reads card record, parameter form with string revision, metricSource reference, and direct owner metric results", async () => {
-    const cardKey = dashboardCardPrimaryKey({ dashboardId: "dash-1", cardId: "m-card-1" });
-    const chartKey = dashboardCardPrimaryKey({ dashboardId: "dash-1", cardId: "c-card-1" });
-    const cardOwner = createDashboardCardOwnerReadAdapter(owner, credentials);
-    const cardData = createDashboardCardReadAdapter(owner, credentials);
-
-    const cardRecord = panelRecordSchema.parse(await cardOwner.record(cardKey));
-    expect(cardRecord.outputs).toEqual({
-      name: "Active Orders",
-      kind: "metric",
-      metricId: "mv-orders",
-      openPath: "/dashboards?dashboardId=dash-1&cardId=m-card-1",
-      favorited: false,
-    });
-
-    const form = panelFormDescriptionSchema.parse(await cardOwner.form(cardKey, {}));
-    expect(form.revision).toBe("rev-7");
-    expect(form.fields.map(field => ({ path: field.path, readOnly: field.readOnly, kind: field.control.kind }))).toEqual([
-      { path: "/region", readOnly: false, kind: "select" },
-      { path: "/lockedTenant", readOnly: true, kind: "text" },
-    ]);
-
-    const source = panelRecordSchema.parse(await cardOwner.metricSource(cardKey));
-    expect(source.fields.metric).toEqual({
-      kind: "reference",
-      className: METRIC_VIEW,
-      primaryKey: "mv-orders",
-      label: "Order Count",
-    });
-    expect(source.fields.parameters).toEqual({
-      kind: "json",
-      value: { region: "APAC" },
-    });
-    expect(source.tones).toEqual({ status: "success" });
-
-    const tpl = await cardData.ownedChartTemplate(chartKey);
-    expect(tpl.chartFile.name).toBe("trend.chart.json");
-
-    const metricOut = await cardData.ownedResult(cardKey, {});
-    expect(metricOut.rows).toEqual([{ total: 42 }]);
-    expect(metricOut.sourceObjectTypes).toEqual(["Order"]);
-  });
-
-  it("enforces dashboard ownership on direct reads", async () => {
-    const stranger = { userId: "other-user", domainId: "domain-1" };
-    const cardKey = dashboardCardPrimaryKey({ dashboardId: "dash-1", cardId: "m-card-1" });
-    const adapter = createDashboardReadAdapter(stranger, credentials);
-    const cardData = createDashboardCardReadAdapter(stranger, credentials);
-    await expect(adapter.record("dash-1")).rejects.toMatchObject({ status: 404 });
-    await expect(cardData.ownedResult(cardKey, {})).rejects.toMatchObject({ status: 404 });
-  });
 });
 
 describe("dashboard panel server operations", () => {
