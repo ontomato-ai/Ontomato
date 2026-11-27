@@ -4792,6 +4792,26 @@ it("uses the same customer neighbors owner for an admitted live reader and prese
   }], reader.viewer, undefined);
 });
 
+it("forwards instance graph reads from a callback with a verified caller and run marker", async () => {
+  const { readResolvedPanelOwner } = await import("../data-reads");
+  const projection = {} as Parameters<typeof readResolvedPanelOwner>[3];
+  const path = { source: request.source, registration: { panelId: "panel", framePanelId: "frame", inputs: undefined }, uses: [] };
+  const selection = { kind: "platform", typeId: OBJECT_TYPE, method: "instanceNeighbors" } as const;
+  const node = { className: "Person", primaryKey: "p1" };
+  const reader = { owner: viewer, viewer: {
+    token: "viewer-token",
+    headers: { "X-Ontomato-Agent-Execution": "run", "X-Ontomato-Retrieval-Caller-Id": "scope" },
+  } };
+  mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "ready", payload: {
+    success: true, status: "READY", data: { nodes: [{ class: node.className, primaryKey: node.primaryKey }], edges: [], version: "v1" },
+  } }] });
+  await expect(readResolvedPanelOwner(reader, selection, { node }, projection, path, "scope"))
+    .resolves.toMatchObject({ node, neighbors: [] });
+  expect(mocks.read).toHaveBeenLastCalledWith(viewer, [{ ...path,
+    call: { type: OBJECT_TYPE, name: "instanceNeighbors", parameters: { node } },
+  }], reader.viewer, "scope");
+});
+
 it("reads platform class directories, including model definitions, in the registered data-browser batch", async () => {
   const object = { className: OBJECT_TYPE, primaryKey: "order_archive" };
   const route = "/ontology/objects?selected=order_archive";
