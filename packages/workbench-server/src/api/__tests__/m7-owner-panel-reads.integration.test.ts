@@ -441,11 +441,11 @@ beforeAll(async () => {
       return operationId;
     }
     if (type === SKILL) {
-      if (name === "count" || name === "queryWithDeleteAccess") {
+      if (name === "count") {
         await owner.post("/internal/workbench-management/require", { domainId, operationId: workbenchManagement.skillLibraryRead.id });
-        if (name === "count") return true;
+        return true;
       }
-      if (name === "queryWithDeleteAccess" || name === "deleteAccess")
+      if (name === "deleteAccess")
         return managementOperations.has(workbenchManagement.skillLibraryChange.id)
           ? { allowed: true }
           : { allowed: false, code: "PERMISSION_DENIED", reason: "Management operation forbidden" };

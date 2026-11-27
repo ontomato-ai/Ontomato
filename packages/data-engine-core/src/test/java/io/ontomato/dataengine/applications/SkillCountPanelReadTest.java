@@ -34,21 +34,13 @@ class SkillCountPanelReadTest {
         verify(authorization, never()).resolveSubject(any());
     }
 
-    @Test void deleteDescriptionSharesChangeAdmissionWithoutDenyingLibraryReads() {
+    @Test void deleteAccessAnswersTheChangeDecisionWithoutRefusingTheRead() {
         var authorization = mock(AuthorizationService.class);
-        var libraryRead = new Management("skills.library.read");
-        var libraryChange = new Management("skills.library.change");
-        var read = new SkillCountPanelRead().skillLibraryQueryWithDeleteAccess(authorization);
-        var delete = new SkillCountPanelRead().skillDeleteAccess(authorization);
         var denied = new Decision(false, "MANAGEMENT_FORBIDDEN", "Change refused");
-        when(authorization.decide(subject, libraryRead)).thenReturn(denied, new Decision(true, null, null));
-        when(authorization.decide(subject, libraryChange)).thenReturn(denied);
+        when(authorization.decide(subject, new Management("skills.library.change"))).thenReturn(denied);
+        var delete = new SkillCountPanelRead().skillDeleteAccess(authorization);
 
-        assertThrows(ResponseStatusException.class, () -> read.handler().read(subject, Map.of()));
-        verify(authorization, never()).decide(subject, libraryChange);
-        assertSame(denied, read.handler().read(subject, Map.of()));
         assertSame(denied, delete.handler().read(subject, Map.of()));
-        verify(authorization, times(2)).decide(subject, libraryChange);
+        verify(authorization, never()).decide(subject, new Management("skills.library.read"));
     }
-
 }

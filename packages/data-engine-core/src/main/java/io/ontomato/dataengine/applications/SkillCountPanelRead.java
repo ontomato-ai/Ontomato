@@ -23,14 +23,6 @@ class SkillCountPanelRead {
         return new WorkbenchPanelRead("platform:Skill", "deleteAccess", (subject, parameters) -> changeAccess(authorization, subject));
     }
 
-    @Bean
-    WorkbenchPanelRead skillLibraryQueryWithDeleteAccess(AuthorizationService authorization) {
-        return new WorkbenchPanelRead("platform:Skill", "queryWithDeleteAccess", (subject, parameters) -> {
-            requireLibraryRead(authorization, subject);
-            return changeAccess(authorization, subject);
-        });
-    }
-
     private static AuthorizationService.Decision changeAccess(AuthorizationService authorization, AuthorizationService.SubjectContext subject) {
         return authorization.decide(subject, new Management("skills.library.change"));
     }
