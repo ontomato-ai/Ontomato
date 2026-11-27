@@ -17,7 +17,7 @@ import {prepareAnalystRun,type AssistantPreparation} from '../prepare';
 const analyst = {name:'analyst',namespace:{kind:'provider' as const,provider:'ontology'}};
 const digest = 'a'.repeat(64);
 function request(executionUserId:string|null=null):AssistantPreparation {
- return {lane:'live',a:{id:'agent',kind:'regular',skills:[analyst],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'run',class_names:['Person']},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'},executionUserId,executionCredentials:executionUserId===null?{token:'human-secret',locale:'en'}:{apiKey:'executor-key',locale:'en',executionUserId}} as unknown as AssistantPreparation;
+ return {a:{id:'agent',kind:'regular',skills:[analyst],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'run',class_names:['Person']},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'},executionUserId,executionCredentials:executionUserId===null?{token:'human-secret',locale:'en'}:{apiKey:'executor-key',locale:'en',executionUserId}} as unknown as AssistantPreparation;
 }
 beforeEach(()=>{vi.resetAllMocks();mocks.open.mockResolvedValue({id:"run"});mocks.turns.mockResolvedValue([]);mocks.identities.mockResolvedValue({runs:[]});
  mocks.session.mockResolvedValue({messages:[{id:'input',runId:null,messageSeq:1,message:{role:'user',content:'Question',timestamp:1}}]});mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:true});mocks.callback.mockReturnValue({value:'wbc2.sealed-callback'});mocks.overview.mockResolvedValue('Ontology');});
@@ -105,15 +105,12 @@ it('tells a run for the user that the page line only locates, so attributes are 
  const delegated=await prepareAnalystRun({...request(),reader:'delegated'});
  expect(delegated.definition.systemPrompt).not.toContain('that line only locates');
 });
-it('continues and quotes only what runs of its own identity did in a conversation holding both',async()=>{
- const live='11111111-1111-4111-8111-111111111111',preview='22222222-2222-4222-8222-222222222222';
+it('continues and quotes the whole conversation regardless of how earlier runs started',async()=>{
+ const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
  const user=(id:string,runId:string|null,seq:number,content:string)=>({id,runId,messageSeq:seq,contextSeq:runId?seq:null,message:{role:'user',content,timestamp:seq}});
- mocks.session.mockResolvedValue({messages:[user('m1',live,1,'Live question'),user('m2',preview,2,'Preview question'),user('input',null,3,'Question')]});
- mocks.identities.mockResolvedValue({runs:[{runId:live,executionKind:'live'},{runId:preview,executionKind:'preview'}]});
- mocks.turns.mockResolvedValue([{id:live,retrieval_scope_id:'live-scope'},{id:preview,retrieval_scope_id:'preview-scope'}]);
+ mocks.session.mockResolvedValue({messages:[user('m1',first,1,'First question'),user('m2',second,2,'Second question'),user('input',null,3,'Question')]});
+ mocks.turns.mockResolvedValue([{id:first,retrieval_scope_id:'first-scope'},{id:second,retrieval_scope_id:'second-scope'}]);
  mocks.links.mockImplementation(async(scope:string)=>[{retrievalId:scope+'-retrieval'}]);
  await prepareAnalystRun(request());
- expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({continuationIds:['live-scope-retrieval'],recentUserMessages:['Live question','Question']}),expect.anything());
- await prepareAnalystRun({...request(),lane:'preview'});
- expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({continuationIds:['preview-scope-retrieval'],recentUserMessages:['Preview question','Question']}),expect.anything());
+ expect(mocks.open).toHaveBeenLastCalledWith(expect.objectContaining({continuationIds:['first-scope-retrieval','second-scope-retrieval'],recentUserMessages:['First question','Second question','Question']}),expect.anything());
 });

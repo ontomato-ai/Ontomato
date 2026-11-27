@@ -2,9 +2,9 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn(),session:vi.fn()}));
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn(),session:vi.fn(),agent:vi.fn()}));
 vi.mock('../../../services/assistant/store',()=>({
- assistantStore:{session:mocks.session},
+ assistantStore:{session:mocks.session,agent:mocks.agent},
 }));
 vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring,adoptAppBuilderDefinition:mocks.adopt}));
 vi.mock('../../../core/skills/registry/manager',()=>({skillRegistryManager:{}}));
@@ -37,13 +37,23 @@ async function call(path:string,extra:Record<string,string>={},method='POST',tok
 }
 it("resolves the workspace only for the active App Builder session", async () => {
  const path = "workbench/api/app-builder/workspace";
+ mocks.run.mockResolvedValue({status:"running",sessionId:other});
+ mocks.session.mockResolvedValue({workspace_id:run,agent_id:"regular-agent"});
+ mocks.agent.mockResolvedValue({kind:"regular"});
  expect((await call(path, {}, "GET")).status).toBe(403);
- expect(mocks.session).not.toHaveBeenCalled();
- mocks.run.mockResolvedValue({status:"running",sessionId:other,channel:{authority:{executionKind:"preview"}}});
- mocks.session.mockResolvedValue({workspace_id:run});
+ expect(mocks.agent).toHaveBeenCalledWith("regular-agent",{userId:"U",domainId:"domain"});
+ vi.clearAllMocks();
+ mocks.run.mockResolvedValue({status:"running",sessionId:other,channel:{authority:{executionKind:"live"}}});
+ mocks.session.mockResolvedValue({workspace_id:run,agent_id:"builder"});
+ mocks.agent.mockResolvedValue({kind:"app-builder"});
  const response = await call(path, {}, "GET");
  expect(await response.json()).toEqual({workspaceId:run});
  expect(mocks.session).toHaveBeenCalledWith(other,{userId:"U",domainId:"domain"});
+ expect(mocks.agent).toHaveBeenCalledWith("builder",{userId:"U",domainId:"domain"});
+ // A preview run of an ordinary agent is not an App Builder run.
+ mocks.run.mockResolvedValue({status:"running",sessionId:other,channel:{authority:{executionKind:"preview"}}});
+ mocks.agent.mockResolvedValue({kind:"regular"});
+ expect((await call(path, {}, "GET")).status).toBe(403);
 });
 it("injects the exact preview execution header from the run authority", async () => {
  const upstream=vi.fn(async(_url: string,_init?:Parameters<typeof fetch>[1])=>Response.json({result:"test"}));

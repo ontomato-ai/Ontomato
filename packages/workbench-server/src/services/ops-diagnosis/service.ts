@@ -36,8 +36,7 @@ export async function requireDiagnosisAgent(owner: AgentHostOwner, credentials: 
   await requireAgent(agent, "USE", credentials);
 }
 
-/** `preview`: opened by a preview, so every run in it runs as the preview, wherever it is sent from. */
-type Session = { id: string; domain_id: string; owner_id: string; title: string; target: DiagnosisTarget | null; preview: boolean; created_at: Date; updated_at: Date };
+type Session = { id: string; domain_id: string; owner_id: string; title: string; target: DiagnosisTarget | null; created_at: Date; updated_at: Date };
 const db = getPostgresPool;
 const skill = { namespace: { kind: "provider" as const, provider: "workbench" }, name: "ops-diagnosis" };
 const missing = () => new HttpError(404, "Conversation not found", "NOT_FOUND");
@@ -58,12 +57,7 @@ const view = (s: Session, latest: LatestRun | null) => ({
   createdAt: new Date(s.created_at).toISOString(), updatedAt: new Date(s.updated_at).toISOString(),
   latestRun: latest ? runStatusView(latest) : null,
 });
-/**
- * A replayed public create must name the same conversation, its preview identity included; a provider preparing a run in
- * an existing conversation (`fromChannel`) takes it as stored.
- */
-export async function createDiagnosis(id: string, owner: AgentHostOwner, credentials: AssistantCredentials, target: DiagnosisTarget | null = null, fromChannel = false,
-  preview = credentials.executionKind === "preview") {
+export async function createDiagnosis(id: string, owner: AgentHostOwner, credentials: AssistantCredentials, target: DiagnosisTarget | null = null, fromChannel = false) {
   await requireDiagnosisAgent(owner, credentials);
   if (target) target = diagnosisTargetSchema.parse(target);
   const inserted = await transaction(async (tx) => {
@@ -71,10 +65,10 @@ export async function createDiagnosis(id: string, owner: AgentHostOwner, credent
     const previous = await tx.query(`SELECT id FROM ${table("ops_sessions")} WHERE id=$1`, [id]);
     if (previous.rowCount) return { rowCount: 0 };
     await assertUnclaimedSession(tx, id, owner, fromChannel);
-    return tx.query(`INSERT INTO ${table("ops_sessions")} (id,domain_id,owner_id,target,preview) VALUES($1,$2,$3,$4,$5)`, [id, owner.domainId, owner.userId, target ? JSON.stringify(target) : null, preview]);
+    return tx.query(`INSERT INTO ${table("ops_sessions")} (id,domain_id,owner_id,target) VALUES($1,$2,$3,$4)`, [id, owner.domainId, owner.userId, target ? JSON.stringify(target) : null]);
   });
   const row = await diagnosisSession(id, owner);
-  if (canonical(row.target) !== canonical(target) || (!fromChannel && row.preview !== preview)) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+  if (canonical(row.target) !== canonical(target)) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   await client.createSession(id);
   return { session: view(row, (await client.session(id)).latestRun?.run ?? null), replayed: !inserted.rowCount };
@@ -142,8 +136,8 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
   },
   async send(session, run, input, owner, credentials, entry) {
     await requireDiagnosisAgent(owner, credentials);
-    // A preview's conversation, or a preview's message, runs as the preview, as an assistant conversation does.
-    const preview = (await diagnosisSession(session, owner)).preview || credentials.executionKind === "preview";
+    await diagnosisSession(session, owner);
+    const preview = credentials.executionKind === "preview";
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
@@ -248,7 +242,7 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
   const evidencePath = "/api/observe/evidence";
   const baseUrl = environment.agentRuntime().callbackUrl.replace(/\/$/, "") + evidencePath;
   return {
-    ...(authority && { authority: { ...authority, executionKind: row.preview ? "preview" as const : authority.executionKind } }),
+    ...(authority && { authority }),
     executionActor: executionActor(executionUserId, owner.domainId),
     language: intent.language,
     input,

@@ -26,6 +26,7 @@ import { readPageCatalog, readPageDescription, searchPages } from "../../service
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
 import { credentialsForRun, ownedRun, runForOwner } from "../../services/assistant/execution";
 import { assistantStore } from "../../services/assistant/store";
+import { isAppBuilderKind } from "../../services/app-builder/definition";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { adoptAppBuilderDefinition, executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
 import { authoringAdoptionRequestSchema, authoringKindSchema, authoringOperations } from "@ontomato/contracts/authoring";
@@ -145,11 +146,12 @@ assistantExecutionRouter.get("/:runId/workbench/api/app-builder/workspace", wrap
   const runId = callbackRun(req, res.locals.runtimeCallback);
   const { owner } = context(req);
   const run = await runForOwner(owner, runId);
-  if (run.status !== "running" || run.channel?.authority.executionKind !== "preview")
-    throw new HttpError(403, "An active App Builder run is required", "FORBIDDEN");
+  if (run.status !== "running") throw new HttpError(403, "An active App Builder run is required", "FORBIDDEN");
   const session = await assistantStore.session(run.sessionId, owner);
-    if (!session.workspace_id) throw new HttpError(422, "The run has no workspace", "WORKSPACE_REQUIRED");
-    res.json({ workspaceId: session.workspace_id });
+  const agent = await assistantStore.agent(session.agent_id, owner);
+  if (!isAppBuilderKind(agent.kind)) throw new HttpError(403, "An active App Builder run is required", "FORBIDDEN");
+  if (!session.workspace_id) throw new HttpError(422, "The run has no workspace", "WORKSPACE_REQUIRED");
+  res.json({ workspaceId: session.workspace_id });
 }));
 
 for (const kind of ["action", "metric-view"] as const) {
