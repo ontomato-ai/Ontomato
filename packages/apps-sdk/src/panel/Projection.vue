@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, effectScope, inject, onBeforeUnmount, onErrorCaptured, provide, ref, shallowRef, useAttrs, watch, type Component, type EffectScope, type StyleValue } from "vue";
+import { computed, effectScope, getCurrentInstance, inject, onBeforeUnmount, onErrorCaptured, provide, ref, shallowRef, useAttrs, watch, type Component, type EffectScope, type StyleValue } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
 import { declaredComponentProps, placementListeners } from "./projection-attrs";
 import { frameMemberData } from "./frame-member";
-import { panelMemberKey, type PanelMemberContext } from "./member";
+import { panelMemberHostVisibilityKey, panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
 import { admittedOperations, watchMemberOperations } from "./member-operations";
 import { slotInputValues } from "./ports";
@@ -180,6 +180,13 @@ provide(projectionKey, {
   },
 } as ProjectionSlot);
 provide(panelMemberKey, () => loaded.value!.member);
+const hostHidden = ref(false);
+provide(panelMemberHostVisibilityKey, {
+  owner: getCurrentInstance()!,
+  setHidden(hidden: boolean) {
+    hostHidden.value = hidden;
+  },
+});
 /** What the component takes as its own props; a value the page gives for a prop it does not declare is dropped. */
 const bound = computed(() => {
   const { component, projection } = loaded.value!;
@@ -199,7 +206,7 @@ defineExpose({ refresh });
 </script>
 
 <template>
-  <div class="sdk-panel-member" :data-member="slot" :class="placementClass" :style="placementStyle">
+  <div class="sdk-panel-member" :data-member="slot" :class="placementClass" :style="placementStyle" :hidden="hostHidden || undefined">
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
     <component :is="loaded.component" v-else ref="innerRef" v-bind="bound">

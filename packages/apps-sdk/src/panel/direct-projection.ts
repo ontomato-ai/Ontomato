@@ -1,8 +1,9 @@
-import { cloneVNode, defineComponent, h, inject, ref, type InjectionKey, type PropType } from "vue";
+import { cloneVNode, defineComponent, h, inject, provide, ref, type InjectionKey, type PropType } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { useAppTheme } from "@ontomato/platform-shell";
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import type { DirectPanelMount } from "./direct-mount";
+import { panelMemberHostHiddenKey } from "./member";
 import { placementListeners } from "./projection-attrs";
 
 /** The run a panel's component mounted in the platform's document draws its members from. */
@@ -32,6 +33,10 @@ export default defineComponent({
     // placed panel takes its placement's theme from the host, over that panel's own (see the nested run's `theme`).
     const place = ref<HTMLElement | null>(null);
     const memberRef = ref<{ refresh?: () => void } | null>(null);
+    const hostHidden = ref(false);
+    provide(panelMemberHostHiddenKey, (hidden: boolean) => {
+      hostHidden.value = hidden;
+    });
     expose({
       refresh() {
         memberRef.value?.refresh?.();
@@ -48,6 +53,7 @@ export default defineComponent({
         ref: place,
         class: ["sdk-panel-member", isCurrentEntry ? "sdk-current-entry-slot" : null, attrs.class],
         "data-member": props.slot,
+        ...(hostHidden.value ? { hidden: true } : {}),
       };
       if (attrs.style !== undefined) containerProps.style = attrs.style;
       return h("div", containerProps, [
