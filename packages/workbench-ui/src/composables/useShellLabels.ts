@@ -81,6 +81,7 @@ return computed<ShellLabels>(() => ({
   open: t("assistant.open"),
   download: t("assistant.download"),
   close: t("assistant.close"),
+  backToFile: t("assistant.backToFile"),
   preparing: t("assistant.preparing"),
   artifactMissing: t("assistant.artifactMissing"),
   menu: t("assistant.menu"),

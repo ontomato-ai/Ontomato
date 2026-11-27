@@ -328,9 +328,9 @@ const shellLabels = useShellLabels();
 const labels = computed(() => {
   const base = shellLabels.value;
   if (!props.splitNavigation) return base;
-  if (locale.value === "zh-CN") return { ...base, newConversation: "新建会话", sessions: "历史会话", conversationTab: "会话", reportTab: "报告", fileTab: "文件预览", backToFile: "返回上一级文件" };
-  if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", conversationTab: "會話", reportTab: "報告", fileTab: "檔案預覽", backToFile: "返回上一層檔案" };
-  return { ...base, conversationTab: "Conversation", reportTab: "Report", fileTab: "File preview", backToFile: "Back to previous file" };
+  if (locale.value === "zh-CN") return { ...base, newConversation: "新建会话", sessions: "历史会话", conversationTab: "会话", reportTab: "报告", fileTab: "文件预览" };
+  if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", conversationTab: "會話", reportTab: "報告", fileTab: "檔案預覽" };
+  return { ...base, conversationTab: "Conversation", reportTab: "Report", fileTab: "File preview" };
 });
 const pptLabel = computed(() => locale.value === "zh-CN" ? "生成 PPT" : locale.value === "zh-TW" ? "產生 PPT" : "Generate PPT");
 const requestingPpt = ref(false);

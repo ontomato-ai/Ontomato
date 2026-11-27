@@ -36,7 +36,7 @@ async function download() {
   <aside ref="root" class="side-panel" :class="{ resizing, inline }" :style="{ '--panel-width': `${width}px` }" @keydown.escape.stop="emit('close')">
     <div v-if="!inline" class="panel-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
     <header class="panel-header">
-      <button v-if="back" type="button" class="panel-button" :title="shell.labels.value.backToFile ?? shell.labels.value.close" :aria-label="shell.labels.value.backToFile ?? shell.labels.value.close" @click="emit('close')">
+      <button v-if="back" type="button" class="panel-button" :title="shell.labels.value.backToFile" :aria-label="shell.labels.value.backToFile" @click="emit('close')">
         <ArrowLeft :size="17" />
       </button>
       <span class="panel-icon"><component :is="icon" :size="17" /></span>
