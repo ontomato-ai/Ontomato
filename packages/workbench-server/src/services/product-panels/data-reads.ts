@@ -277,8 +277,8 @@ export async function readResolvedPanelOwner(
   const readLabel = isGraph ? "The product graph read" : metric ? "The metric read"
     : modelRead ? "The model read" : "The customer read";
   // Only the callback's stored caller reference may carry scope to the owner.
-  if (isQueryRuntimeGrant(viewer.token) || headers.has(AGENT_EXECUTION_HEADER)
-      || (headers.has("X-Ontomato-Retrieval-Caller-Id") && retrievalScopeId === undefined))
+  if (isQueryRuntimeGrant(viewer.token) || (retrievalScopeId === undefined
+      && (headers.has(AGENT_EXECUTION_HEADER) || headers.has("X-Ontomato-Retrieval-Caller-Id"))))
     throw new HttpError(403, readLabel + " requires the caller's execution scope");
   if (!path) throw new HttpError(422, readLabel + " requires a registered panel placement");
   const { call, present } = ownerRead ?? metric ?? (isGraph
