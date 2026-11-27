@@ -72,7 +72,7 @@ vi.mock("../../product-governance/authorization", async original => ({
   }),
 }));
 vi.mock("../../../config/environment", () => ({
-  environment: { agentRuntime: () => ({ callbackUrl: "http://workbench.test" }) },
+  environment: { agentRuntime: () => ({ callbackUrl: "http://workbench.test", queryServiceToken: "service-token" }) },
 }));
 vi.mock("../../../config/application", () => ({
   config: { dataQuery: { baseUrl: "http://owner.test" } },
@@ -344,17 +344,10 @@ afterEach(() => {
 
 describe("list row-scoped operations, batch availability, and server-pinned injection", () => {
   it("returns batch per-row operation availability alongside list data without N+1 requests", async () => {
-    const unavailableBatch = vi.fn(async (_host, targets: readonly { target: { primaryKey: string }; rowKey: string }[]) => {
-      const map = new Map<string, { reason: string }>();
-      for (const entry of targets) {
-        if (entry.target.primaryKey === "task-2") {
-          map.set(entry.rowKey, { reason: "Built-in schedule cannot be deleted" });
-        }
-      }
-      return map;
-    });
-    const unavailableSingle = vi.fn(async (_host, target: { primaryKey: string } | null) =>
-      target!.primaryKey === "app-1" ? { reason: "Application is archived" } : undefined);
+    const builtinTasks = vi.fn(async (targets: readonly serverOperations.PanelOperationAvailabilityTarget[]) =>
+      targets.map(target => target!.primaryKey === "task-2"));
+    const archivedApps = vi.fn(async (targets: readonly serverOperations.PanelOperationAvailabilityTarget[]) =>
+      targets.map(target => target!.primaryKey === "app-1"));
 
     const deleteTaskOp: serverOperations.PanelWriteServerOperation = {
       effect: "write",
@@ -369,7 +362,10 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       resultSchema: z.object({ deleted: z.boolean() }).strict(),
       batch: false,
       targetLabel: async (_host, target) => `Task:${target.primaryKey}`,
-      unavailableBatch,
+      availability: {
+        local: builtinTasks,
+        refuse: ({ facts }) => facts ? { reason: "Built-in schedule cannot be deleted" } : undefined,
+      },
       execute: async () => ({ kind: "success", data: { deleted: true } }),
     };
 
@@ -386,7 +382,10 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       resultSchema: z.object({ revoked: z.boolean() }).strict(),
       batch: false,
       targetLabel: async (_host, target) => `App:${target.primaryKey}`,
-      unavailable: unavailableSingle,
+      availability: {
+        local: archivedApps,
+        refuse: ({ facts }) => facts ? { reason: "Application is archived" } : undefined,
+      },
       execute: async () => ({ kind: "success", data: { revoked: true } }),
     };
 
@@ -448,10 +447,11 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     expect(res.status).toBe("ready");
     if (res.status !== "ready") throw new Error("expected ready");
-    // unavailableBatch called once for all 3 rows, not 3 times.
-    expect(unavailableBatch).toHaveBeenCalledTimes(1);
-    // Shared outer target `app-1` deduplicated: called once across all 3 rows, not 3 times.
-    expect(unavailableSingle).toHaveBeenCalledTimes(1);
+    // Each operation's facts are read once for all 3 rows, not 3 times.
+    expect(builtinTasks).toHaveBeenCalledTimes(1);
+    // The shared fixed target `app-1` is deduplicated across all 3 rows.
+    expect(archivedApps).toHaveBeenCalledTimes(1);
+    expect(archivedApps.mock.calls[0]![0]).toEqual([{ kind: "object", objectType: APPLICATION, primaryKey: "app-1" }]);
 
     const k1 = panelRowOperationKey(rows[0]!, TRIGGER);
     const k2 = panelRowOperationKey(rows[1]!, TRIGGER);
@@ -486,15 +486,17 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     }));
     setProduct(makePanel("P", { state: {}, members: { members: { target: { projectionId: "members-list" } } } }));
     const rows = Array.from({ length: size }, (_, i) => ({ primaryKey: `member-${i}`, label: `Member ${i}`, fields: {} }));
-    mocks.backendPost.mockImplementation(async (_name: string, url: string) => {
-      if (!url.endsWith("/panel/governance/users/query")) throw new Error(`Unexpected RPC: ${url}`);
-      return { text: JSON.stringify({ success: true, data: { rows, total: size } }) };
+    const factReads: unknown[] = [];
+    mocks.backendPost.mockImplementation(async (_name: string, url: string, payload: { reads?: { source: unknown; call: { parameters: {
+      inspections: { name: string; ids: string[] }[] } } }[] }) => {
+      if (url.endsWith("/panel/governance/users/query"))
+        return { text: JSON.stringify({ success: true, data: { rows, total: size } }) };
+      if (!url.endsWith("/internal/workbench-panel-reads")) throw new Error(`Unexpected RPC: ${url}`);
+      factReads.push(payload);
+      return { text: JSON.stringify({ viewer: owner, results: payload.reads!.map(({ call: { parameters: { inspections: [inspection] } } }) => ({
+        status: "ready", payload: { [inspection!.name]: inspection!.ids.map(() => null) },
+      })) }) };
     });
-    const availabilityRpc = vi.fn(async (url: string) => {
-      if (!/\/panel\/governance\/users\/(remove\/batch\/unavailable|api-key\/rows\/unavailable)$/.test(url)) throw new Error(`Unexpected RPC: ${url}`);
-      return Response.json({ success: true, data: {} });
-    });
-    vi.stubGlobal("fetch", availabilityRpc);
 
     const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
@@ -503,9 +505,12 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     expect(res).toMatchObject({ status: "ready", value: { rows, total: size } });
     expect(mocks.backendGet.mock.calls.length).toBeLessThanOrEqual(1);
-    expect(mocks.backendPost.mock.calls.length).toBeLessThanOrEqual(1);
-    // Round 2 #4: the four row operations each resolve the whole page in one batch owner read.
-    expect(availabilityRpc.mock.calls.length).toBeLessThanOrEqual(4);
+    // The page's list read, then one direct read of the four row operations' facts for all rows.
+    expect(mocks.backendPost.mock.calls.length).toBe(2);
+    expect(factReads).toEqual([expect.objectContaining({ reads: [REMOVE_USER, GENERATE_USER_API_KEY, REGENERATE_USER_API_KEY, REVOKE_USER_API_KEY]
+      .map(operation => ({ source: { kind: "direct" }, call: { type: USER, name: "operationRefusals", parameters: {
+        inspections: [{ name: operation, operation, ids: rows.map(row => row.primaryKey) }],
+      } } })) })]);
   });
 
   it("executes row-scoped operations on human and agent channels and rejects wrong target class", async () => {
@@ -888,24 +893,15 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
   });
 
   it("aligns server rowOperations keys and row targets with read declaration rowType for cross-type rows without className", async () => {
-    const observedBatchTargets: Array<{ rowKey: string; target: { objectType: string; primaryKey: string } }> = [];
-    const unavailableBatch = vi.fn(async (
-      _host,
-      targets: readonly { target: { objectType: string; primaryKey: string }; rowKey: string }[],
-    ) => {
+    const observedBatchTargets: serverOperations.PanelOperationAvailabilityTarget[] = [];
+    const builtinPanels = vi.fn(async (targets: readonly serverOperations.PanelOperationAvailabilityTarget[]) => {
       observedBatchTargets.push(...targets);
-      const map = new Map<string, { reason: string }>();
-      for (const entry of targets) {
-        if (entry.target.primaryKey === "panel-builtin") {
-          map.set(entry.rowKey, { reason: "Built-in panel cannot be deleted" });
-        }
-      }
-      return map;
+      return targets.map(target => target!.primaryKey === "panel-builtin");
     });
-    const observedParentTargets: Array<{ objectType: string; primaryKey: string }> = [];
-    const unavailableParent = vi.fn(async (_host, target: { objectType: string; primaryKey: string } | null) => {
-      observedParentTargets.push(target!);
-      return target!.primaryKey === "app-1" ? { reason: "Application is locked" } : undefined;
+    const observedParentTargets: serverOperations.PanelOperationAvailabilityTarget[] = [];
+    const lockedApps = vi.fn(async (targets: readonly serverOperations.PanelOperationAvailabilityTarget[]) => {
+      observedParentTargets.push(...targets);
+      return targets.map(target => target!.primaryKey === "app-1");
     });
 
     const deletePanelOp: serverOperations.PanelWriteServerOperation = {
@@ -921,7 +917,10 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       resultSchema: z.object({ deleted: z.boolean() }).strict(),
       batch: false,
       targetLabel: async (_host, target) => `Panel:${target.primaryKey}`,
-      unavailableBatch,
+      availability: {
+        local: builtinPanels,
+        refuse: ({ facts }) => facts ? { reason: "Built-in panel cannot be deleted" } : undefined,
+      },
       execute: async () => ({ kind: "success", data: { deleted: true } }),
     };
 
@@ -938,7 +937,10 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       resultSchema: z.object({ detached: z.boolean() }).strict(),
       batch: false,
       targetLabel: async (_host, target) => `App:${target.primaryKey}`,
-      unavailable: unavailableParent,
+      availability: {
+        local: lockedApps,
+        refuse: ({ facts }) => facts ? { reason: "Application is locked" } : undefined,
+      },
       execute: async () => ({ kind: "success", data: { detached: true } }),
     };
 
@@ -1004,15 +1006,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     if (res.status !== "ready") throw new Error("expected ready");
 
     // Row-targeted availability checks receive `objectType: PRODUCT_PANEL` (from `rowType`), not parent `APPLICATION`.
-    expect(observedBatchTargets.map(entry => ({
-      rowKey: entry.rowKey,
-      objectType: entry.target.objectType,
-      primaryKey: entry.target.primaryKey,
-    }))).toEqual([
-      { rowKey: panelRowOperationKey(rows[0]!, PRODUCT_PANEL), objectType: PRODUCT_PANEL, primaryKey: "panel-custom" },
-      { rowKey: panelRowOperationKey(rows[1]!, PRODUCT_PANEL), objectType: PRODUCT_PANEL, primaryKey: "panel-builtin" },
-      { rowKey: panelRowOperationKey(rows[2]!, PRODUCT_PANEL), objectType: PRODUCT_PANEL, primaryKey: "panel-explicit" },
-    ]);
+    expect(observedBatchTargets).toEqual(["panel-custom", "panel-builtin", "panel-explicit"]
+      .map(primaryKey => ({ kind: "object", objectType: PRODUCT_PANEL, primaryKey })));
 
     // Parent-targeted availability check still resolves `objectType: APPLICATION` (deduplicated once).
     expect(observedParentTargets).toEqual([{ kind: "object", objectType: APPLICATION, primaryKey: "app-1" }]);
@@ -1060,13 +1055,12 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       resultSchema: z.object({ pinned: z.boolean() }).strict(),
       batch: false,
       targetLabel: async (_host, target) => target.primaryKey,
-      unavailableBatch: async (_host, targets) => {
-        const out = new Map<string, { reason: string } | undefined>();
-        for (const item of targets) {
-          observedTargets.push({ objectType: item.target.objectType, primaryKey: item.target.primaryKey });
-          out.set(item.rowKey, item.target.primaryKey === "agent-1" ? { reason: "Already pinned" } : undefined);
-        }
-        return out;
+      availability: {
+        local: targets => targets.map(target => {
+          observedTargets.push({ objectType: target!.objectType, primaryKey: target!.primaryKey });
+          return target!.primaryKey === "agent-1";
+        }),
+        refuse: ({ facts }) => facts ? { reason: "Already pinned" } : undefined,
       },
       execute: async () => ({ kind: "success", data: { pinned: true } }),
     };

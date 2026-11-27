@@ -10,13 +10,17 @@ import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { replaceAgentLevel, setAgentDomainUse } from "../product-governance/authorization";
-import { agentAllowed, requireAgent } from "../assistant/authorization";
-import { assistantStore, type AgentRow, type AssistantOwner } from "../assistant/store";
+import { requireAgent } from "../assistant/authorization";
+import { assistantStore, type AgentRow } from "../assistant/store";
 import {
   agentDefinitionDeletionRestriction, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
 } from "../assistant/definitions";
 import type { AssistantSkillView } from "../assistant/skills";
-import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "./server-operations";
+import type {
+  PanelImpactInspector, PanelOperationAvailability, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
+  SinglePanelOperationOutcome,
+} from "./server-operations";
+import { readyPayload } from "./registered-data-read";
 import { AgentDefinitionFieldError, agentDefinitionSave, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "../assistant/definition-form-schema";
 import { modelSelectionWrite } from "../assistant/model-panel-form";
 import { agentPolicyDefinition, createSystemAgentOwners, systemFormValues } from "./agent-definition-directory";
@@ -95,18 +99,35 @@ async function systemDeletionRestriction(host: AgentDeletionActor, target: Panel
     return { reason: tForLocale(host.locale, "panels.agentDefinition.systemCannotDelete") };
 }
 
-export async function prepareAgentDeletionTarget(
-  host: AgentDeletionActor, target: PanelRecordTarget,
-): Promise<{ restriction: { reason: string } } | { agent: AgentRow }> {
-  const restriction = await systemDeletionRestriction(host, target);
-  if (restriction) return { restriction };
-  return { agent: await assistantStore.agent(target.primaryKey, host.initiator.owner) };
-}
+type AgentDeletionFacts = { system: true } | { system: false; editable: boolean; restriction?: { reason: string } };
 
-export async function agentDeletionRefusal(owner: AssistantOwner, id: string, editable: boolean, locale?: string) {
-  if (!editable) return { reason: tForLocale(locale, "panels.agentForm.editReadOnly") };
-  return agentDefinitionDeletionRestriction(id, owner, locale);
-}
+/**
+ * A system agent is never deleted; another needs the reader's edit right on the stored agent, judged on its stored
+ * owner, and no remaining use.
+ */
+const deleteAvailability: PanelOperationAvailability<undefined, AgentDeletionFacts> = {
+  async read(targets, { owner, credentials, locale }) {
+    const systems = createSystemAgentOwners(owner, credentials);
+    const agents = await Promise.all(targets.map(async target =>
+      await systems.forTarget(target!.primaryKey) ? undefined : assistantStore.agent(target!.primaryKey, owner)));
+    const stored = agents.filter((agent): agent is AgentRow => agent !== undefined);
+    return {
+      reads: stored.map(agent => ({
+        call: { type: AGENT_DEFINITION, name: "deleteAvailability", parameters: { primaryKey: agent.id, ownerId: agent.owner_id } },
+      })),
+      facts: results => Promise.all(agents.map(async (agent): Promise<AgentDeletionFacts> => {
+        if (!agent) return { system: true };
+        const editable = z.boolean().parse(readyPayload(results[stored.indexOf(agent)]!).payload);
+        return { system: false, editable, ...(editable && { restriction: await agentDefinitionDeletionRestriction(agent.id, owner, locale) }) };
+      })),
+    };
+  },
+  refuse: ({ facts, locale }) => {
+    if (facts.system) return { reason: tForLocale(locale, "panels.agentDefinition.systemCannotDelete") };
+    if (!facts.editable) return { reason: tForLocale(locale, "panels.agentForm.editReadOnly") };
+    return facts.restriction;
+  },
+};
 
 const policyInput = z.object({ policyId: z.string().trim().min(1) }).strict();
 const grantInput = policyInput.extend({ verb: z.enum(["use", "view", "edit"]) });
@@ -216,12 +237,7 @@ export const agentDefinitionOperations = [
     targetLabel: definitionLabel,
     done: (host, name) => tForLocale(host.locale, "panels.agentDefinition.deleted", { name }),
     inspectImpact: deleteImpact,
-    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
-      const definition = await prepareAgentDeletionTarget(host, target);
-      if ("restriction" in definition) return definition.restriction;
-      const { owner, credentials } = host.initiator;
-      return agentDeletionRefusal(owner, target.primaryKey, await agentAllowed(definition.agent, "EDIT", credentials), host.locale);
-    },
+    availability: deleteAvailability,
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const restriction = await systemDeletionRestriction(host, target);
       if (restriction) return { kind: "refusal", code: "SYSTEM_AGENT_READ_ONLY", message: restriction.reason };

@@ -17,7 +17,11 @@ import { workspaceIdSchema, workspaceRestoreSchema } from "@ontomato/contracts/w
 import { supportedLocales, tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { applicationCatalogueClient } from "../product-panels/application-catalogue";
+import type { JavaPanelReadResult } from "../product-panels/java-panel-reads";
 import type {
+  PanelOperationAvailability,
+  PanelOperationAvailabilityTarget,
+  PanelOperationFactsContext,
   PanelOperationHost,
   PanelOperationTarget,
   PanelRecordTarget,
@@ -27,8 +31,12 @@ import type {
 import { appWorkspaceSlot } from "./project-store";
 import {
   authorizeBuilderProject,
+  builderPublishBlock,
   builderRestoreBlock,
   builderRollbackBlock,
+  prepareBuilderProjectFacts,
+  readBuilderProjectDetail,
+  readBuilderProjectStatus,
   createDraftProject,
   deleteApplicationBuilderDraft,
   getBuilderProject,
@@ -39,6 +47,8 @@ import {
   rollbackApplicationBuilderRelease,
   syncApplicationBuilderSource,
   updateDraftProjectMeta,
+  type AuthorizedProjectContext,
+  type BuilderProjectDetail,
 } from "./project-service";
 import { builderDraftFieldsSchema, builderPublishFieldsSchema } from "./application-panel-reads";
 
@@ -118,11 +128,66 @@ const appFormSaveBase = {
   draftInput,
 } as const;
 
-async function busyUnavailable(host: PanelOperationHost, target: PanelRecordTarget | null) {
-  if (!target) return;
-  const detail = await getBuilderProjectStatus(host.initiator.owner, host.initiator.credentials, target.primaryKey);
-  if (detail.busy) return { reason: text(host.locale ?? host.initiator.credentials.locale, "busy") };
+type BuilderStatus = Awaited<ReturnType<typeof readBuilderProjectStatus>>;
+
+/** A builder project's workspace status, or with the live application its full detail. */
+const projectStatus = {
+  live: false, read: (ctx: AuthorizedProjectContext, _domainId: string, locale?: string) => readBuilderProjectStatus(ctx, locale),
+};
+const projectDetail = {
+  live: true, read: (ctx: AuthorizedProjectContext, domainId: string, locale?: string) => readBuilderProjectDetail(domainId, ctx, locale),
+};
+
+/** Builder project facts per application: the catalogue read each project's context needs (none for the reader's own draft). */
+function builderProjectRead<Project, Facts>(
+  project: { live: boolean; read(ctx: AuthorizedProjectContext, domainId: string, locale?: string): Promise<Project> },
+  facts: (project: Project) => Facts,
+) {
+  return async (targets: readonly PanelOperationAvailabilityTarget[], { owner, locale }: PanelOperationFactsContext) => {
+    const prepared = await Promise.all(targets.map(target =>
+      prepareBuilderProjectFacts(owner, target!.primaryKey, { live: project.live })));
+    return {
+      reads: prepared.flatMap(item => item.facts),
+      async facts(results: readonly JavaPanelReadResult[]) {
+        let index = 0;
+        const own = prepared.map(item => results.slice(index, index += item.facts.length));
+        return Promise.all(prepared.map(async (item, at) =>
+          facts(await project.read(await item.context(own[at]!), owner.domainId, locale))));
+      },
+    };
+  };
 }
+
+function blocked(key: string | undefined, locale?: string) {
+  return key ? { reason: text(locale, key) } : undefined;
+}
+
+const syncAvailability: PanelOperationAvailability<undefined, boolean> = {
+  read: builderProjectRead(projectStatus, ({ busy }) => busy),
+  refuse: ({ facts: busy, locale }) => blocked(busy ? "busy" : undefined, locale),
+};
+
+/** Only an unpublished draft deletes, and not while its workspace is busy; builder project rows carry both. */
+const deleteDraftAvailability: PanelOperationAvailability<undefined, { published: boolean; busy: boolean }> = {
+  read: builderProjectRead(projectStatus, ({ published, busy }) => ({ published, busy })),
+  row: row => ({ published: row.fields.published === true, busy: row.fields.busy === true }),
+  refuse: ({ facts: { published, busy }, locale }) => blocked(published ? "draftOnly" : busy ? "busy" : undefined, locale),
+};
+
+const restoreAvailability: PanelOperationAvailability<undefined, BuilderStatus> = {
+  read: builderProjectRead(projectStatus, status => status),
+  refuse: ({ facts, params, locale }) => blocked(builderRestoreBlock(facts, params.commit), locale),
+};
+
+const publishAvailability: PanelOperationAvailability<undefined, BuilderProjectDetail> = {
+  read: builderProjectRead(projectDetail, detail => detail),
+  refuse: ({ facts, locale }) => blocked(builderPublishBlock(facts), locale),
+};
+
+const rollbackAvailability: PanelOperationAvailability<undefined, BuilderProjectDetail> = {
+  read: builderProjectRead(projectDetail, detail => detail),
+  refuse: ({ facts, params, locale }) => blocked(builderRollbackBlock(facts, params.releaseId), locale),
+};
 
 export const applicationBuilderServerOperations = [
   {
@@ -187,22 +252,7 @@ export const applicationBuilderServerOperations = [
     labelKey: "panels.appBuilder.deleteDraft",
     inputSchema: empty,
     resultSchema: empty,
-    async unavailable(host, target) {
-      if (!target) return;
-      const locale = host.locale ?? host.initiator.credentials.locale;
-      const detail = await getBuilderProjectStatus(host.initiator.owner, host.initiator.credentials, target.primaryKey);
-      if (detail.published) return { reason: text(locale, "draftOnly") };
-      if (detail.busy) return { reason: text(locale, "busy") };
-    },
-    async unavailableBatch(host, targets) {
-      const locale = host.locale ?? host.initiator.credentials.locale;
-      const reasons = new Map<string, { reason: string }>();
-      for (const { rowKey, row } of targets) {
-        if (row!.fields.published === true) reasons.set(rowKey, { reason: text(locale, "draftOnly") });
-        else if (row!.fields.busy === true) reasons.set(rowKey, { reason: text(locale, "busy") });
-      }
-      return reasons;
-    },
+    availability: deleteDraftAvailability,
     inspectImpact: {
       handlerRef: `${APPLICATION_DELETE_DRAFT}.inspect-impact`,
       async inspect({ initiator, locale }, [call]) {
@@ -251,27 +301,7 @@ export const applicationBuilderServerOperations = [
     labelKey: "panels.appBuilder.restoreCommit",
     inputSchema: workspaceRestoreSchema,
     resultSchema: empty,
-    async unavailableForInput(host, target, input) {
-      if (!target) return;
-      const locale = host.locale ?? host.initiator.credentials.locale;
-      const detail = await getBuilderProjectStatus(host.initiator.owner, host.initiator.credentials, target.primaryKey);
-      const reason = builderRestoreBlock(detail, input.commit);
-      if (reason) return { reason: text(locale, reason) };
-    },
-    async unavailableBatch(host, targets) {
-      const locale = host.locale ?? host.initiator.credentials.locale;
-      const details = new Map(await Promise.all([...new Set(targets.map(({ target }) => target.primaryKey))].map(async primaryKey => [
-        primaryKey,
-        await getBuilderProjectStatus(host.initiator.owner, host.initiator.credentials, primaryKey),
-      ] as const)));
-      const reasons = new Map<string, { reason: string }>();
-      for (const { rowKey, target, input } of targets) {
-        const detail = details.get(target.primaryKey)!;
-        const reason = builderRestoreBlock(detail, input!.commit);
-        if (reason) reasons.set(rowKey, { reason: text(locale, reason) });
-      }
-      return reasons;
-    },
+    availability: restoreAvailability,
     inspectImpact: {
       handlerRef: `${APPLICATION_RESTORE_SOURCE_COMMIT}.inspect-impact`,
       async inspect({ initiator, locale }, [call]) {
@@ -305,7 +335,7 @@ export const applicationBuilderServerOperations = [
     labelKey: "panels.appBuilder.syncSource",
     inputSchema: empty,
     resultSchema: syncResult,
-    unavailable: busyUnavailable,
+    availability: syncAvailability,
     inspectImpact: {
       handlerRef: `${APPLICATION_SYNC_BUILDER_SOURCE}.inspect-impact`,
       async inspect({ initiator, locale }, [call]) {
@@ -334,15 +364,7 @@ export const applicationBuilderServerOperations = [
     binding: binding(APPLICATION_PUBLISH_BUILDER_SOURCE),
     labelKey: "panels.appBuilder.publish",
     resultSchema: publicationResult,
-    async unavailable(host, target) {
-      if (!target) return;
-      const locale = host.locale ?? host.initiator.credentials.locale;
-      const detail = await getBuilderProject(host.initiator.owner, host.initiator.credentials, target.primaryKey);
-      if (detail.busy) return { reason: text(locale, "busy") };
-      if (!detail.materialized) return { reason: text(locale, "notMaterialized") };
-      if (detail.drift.hasDrift) return { reason: text(locale, "driftBlocking") };
-      if (detail.hasConflicts) return { reason: text(locale, "conflictsBlocking") };
-    },
+    availability: publishAvailability,
     async execute({ executor }: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>) {
       return execute(async () => {
         const { primaryKey } = appTarget.parse(target);
@@ -359,27 +381,7 @@ export const applicationBuilderServerOperations = [
     labelKey: "panels.appBuilder.rollbackRelease",
     inputSchema: releaseInput,
     resultSchema: publicationResult,
-    async unavailableForInput(host, target, input) {
-      if (!target) return;
-      const locale = host.locale ?? host.initiator.credentials.locale;
-      const detail = await getBuilderProject(host.initiator.owner, host.initiator.credentials, target.primaryKey);
-      const reason = builderRollbackBlock(detail, input.releaseId);
-      if (reason) return { reason: text(locale, reason) };
-    },
-    async unavailableBatch(host, targets) {
-      const locale = host.locale ?? host.initiator.credentials.locale;
-      const details = new Map(await Promise.all([...new Set(targets.map(({ target }) => target.primaryKey))].map(async primaryKey => [
-        primaryKey,
-        await getBuilderProject(host.initiator.owner, host.initiator.credentials, primaryKey),
-      ] as const)));
-      const reasons = new Map<string, { reason: string }>();
-      for (const { rowKey, target, input } of targets) {
-        const detail = details.get(target.primaryKey)!;
-        const reason = builderRollbackBlock(detail, input!.releaseId);
-        if (reason) reasons.set(rowKey, { reason: text(locale, reason) });
-      }
-      return reasons;
-    },
+    availability: rollbackAvailability,
     inspectImpact: {
       handlerRef: `${APPLICATION_ROLLBACK_BUILDER_RELEASE}.inspect-impact`,
       async inspect({ initiator, locale }, [call]) {

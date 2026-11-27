@@ -37,10 +37,15 @@ vi.mock("../../app-builder/project-service", async original => ({
   },
 }));
 
-vi.mock("../agent-definition-operations", async original => ({
-  ...await original<typeof import("../agent-definition-operations")>(),
-  prepareAgentDeletionTarget: async () => ({ restriction: { reason: "contract test restriction" } }),
+// Agent deletion reads its stored owner from Node to build the Java read; no system agent and every agent stored.
+vi.mock("../agent-definition-directory", async original => ({
+  ...await original<typeof import("../agent-definition-directory")>(),
+  createSystemAgentOwners: () => ({ forTarget: async () => undefined }),
 }));
+vi.mock("../../assistant/store", async original => {
+  const actual = await original<typeof import("../../assistant/store")>();
+  return { ...actual, assistantStore: { ...actual.assistantStore, agent: async (id: string) => ({ id, owner_id: "contract-owner" }) } };
+});
 
 let readBuiltinProducts: typeof import("../builtin-products").readBuiltinProducts;
 let prepareOperationDescriptions: typeof import("../direct-operations").prepareOperationDescriptions;
@@ -86,8 +91,7 @@ describe("operation availability read-plan contract", () => {
     ]);
     const cases = fixedAvailabilityCases(products, operationId => {
       const handler = registeredPanelOperation(operationId)?.handler;
-      return Boolean(handler && (handler.unavailable || handler.describeInputSchema
-        || (handler.effect === "write" && (handler.unavailableBatch || handler.unavailableForInput))));
+      return Boolean(handler && (handler.availability || handler.inputForm));
     });
     expect(cases.length).toBeGreaterThan(0);
 
@@ -121,7 +125,7 @@ describe("operation availability read-plan contract", () => {
           credentials,
         ),
         `fixed-target availability operations cannot be planned: ${label}`,
-      ).resolves.toMatchObject({ calls: expect.any(Array) });
+      ).resolves.toMatchObject({ reads: expect.any(Array) });
     }
   });
 });

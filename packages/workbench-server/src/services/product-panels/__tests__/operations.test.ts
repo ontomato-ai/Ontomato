@@ -89,6 +89,15 @@ async function executeLiveAction(request: Parameters<typeof prepareLiveAction>[0
   const { intentId } = await prepareLiveAction(request);
   return dispatchHumanPanelOperation(owner, credentials, intentId);
 }
+/** Availability from Node alone: each target's fact is the reason it is refused, if any. */
+function localAvailability(reasonOf: (target: serverOperations.PanelOperationAvailabilityTarget) => string | undefined) {
+  const local = vi.fn(async (targets: readonly serverOperations.PanelOperationAvailabilityTarget[]) => targets.map(reasonOf));
+  const availability: serverOperations.PanelOperationAvailability<undefined, string | undefined> = {
+    local, refuse: ({ facts }) => facts === undefined ? undefined : { reason: facts },
+  };
+  return { local, availability };
+}
+
 function mockRegisteredOperation(handler: serverOperations.PanelServerOperation) {
  return vi.spyOn(serverOperations, "registeredPanelOperation").mockReturnValue({
    handler, declaration: serverOperations.operationDeclaration(handler),
@@ -443,7 +452,7 @@ it.each([
 });
 
 function installBatchOwner(
-  availability: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch" | "secretFields"> = {},
+  availability: Pick<serverOperations.PanelWriteServerOperation, "availability" | "secretFields"> = {},
 ) {
   const objectType = "platform:Trigger";
   const binding = { kind: "PlatformOperation" as const, id: "test.batch" };
@@ -540,7 +549,7 @@ it("uses the same owner impact for the human read and agent confirmation of the 
 
 it("previews only executable calls in the agent's confirmation and owner impact", async () => {
   const { handler, request, impact } = installBatchOwner({
-    unavailable: async (_host, target) => target!.primaryKey === uuid(9) ? { reason: "Already processed" } : undefined,
+    availability: localAvailability(target => target!.primaryKey === uuid(9) ? "Already processed" : undefined).availability,
   });
   const [skipped, executable] = request.calls;
   handler.targetLabel.mockImplementation(async (_host, target) => target.primaryKey === skipped.target.primaryKey
@@ -574,8 +583,8 @@ it("adds owner availability only to a live descriptor for the selected record", 
   const registration = serverOperations.registeredPanelOperation("triggers.runNow");
   if (registration?.handler.effect !== "write") throw new Error("Expected the runtime task write handler");
   const reason = { reason: "The task is not available to run." };
-  const unavailable = vi.fn(async () => reason);
-  mockRegisteredOperation({ ...registration.handler, unavailable });
+  const { local: unavailable, availability } = localAvailability(() => reason.reason);
+  mockRegisteredOperation({ ...registration.handler, availability });
   const panel = await mocks.panel();
   const placement = { ...await requireDirectPanelMember(owner, credentials, panel, "run"), panel, slot: "run" };
   const actor = { owner, credentials };
@@ -587,9 +596,7 @@ it("adds owner availability only to a live descriptor for the selected record", 
   const read = await readAdmittedProjectionOperations(actor, placement,
     { task: { className: target.objectType, primaryKey: target.primaryKey } });
   expect(read.runNow).toMatchObject({ unavailable: reason });
-  expect(unavailable).toHaveBeenCalledWith(expect.objectContaining({
-    locale: "en", executor: actor,
-  }), target);
+  expect(unavailable).toHaveBeenCalledWith([target], { ...actor, locale: "en" }, undefined);
   expect(intents.size).toBe(0);
 
   const prepared = await prepareHumanPanelOperation(owner, credentials, { ...operation, call });
@@ -652,19 +659,15 @@ it("keeps a definitive atomic batch receipt without inventing per-item receipts"
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
 });
 
-it("uses the owner's bulk availability at dispatch and restores skipped targets in the frozen order", async () => {
+it("reads availability for all targets at once at dispatch and restores skipped targets in the frozen order", async () => {
   const reason = "Already approved";
-  const unavailable = vi.fn();
-  type UnavailableBatch = NonNullable<serverOperations.PanelWriteServerOperation["unavailableBatch"]>;
-  const unavailableBatch = vi.fn<Parameters<UnavailableBatch>, ReturnType<UnavailableBatch>>();
-  unavailableBatch.mockResolvedValue(new Map());
-  const { handler, request, impact } = installBatchOwner({ unavailable, unavailableBatch });
+  const refused = new Set<string>();
+  const { local, availability } = localAvailability(target => refused.has(target!.primaryKey) ? reason : undefined);
+  const { handler, request, impact } = installBatchOwner({ availability });
   automatic = true;
   const { intentId } = await prepareLiveAction(request);
-  unavailableBatch.mockImplementation(async (_host, targets) => new Map([
-    [targets[1]!.rowKey, { reason }],
-    [targets[4]!.rowKey, { reason }],
-  ]));
+  refused.add(request.calls[1].target.primaryKey);
+  refused.add(request.calls[4]!.target.primaryKey);
   const executable = [request.calls[0], request.calls[2], request.calls[3]];
   const targets = impact.objects.map(({ target }) => target);
   const affected = { objects: [targets[0]!], objectTypes: [targets[0]!.objectType] };
@@ -687,17 +690,16 @@ it("uses the owner's bulk availability at dispatch and restores skipped targets 
     },
   });
   expect(handler.executeBatch).toHaveBeenCalledWith(expect.anything(), executable, intentId);
-  expect(unavailable).not.toHaveBeenCalled();
+  expect(local).toHaveBeenLastCalledWith(request.calls.map(({ target }) => target), expect.anything(), undefined);
 });
 
-it("uses single-target availability and maps an atomic result only to the executable items", async () => {
+it("maps an atomic result only to the executable items", async () => {
   const reason = { reason: "Already approved" };
-  type Unavailable = NonNullable<serverOperations.PanelWriteServerOperation["unavailable"]>;
-  const unavailable = vi.fn<Parameters<Unavailable>, ReturnType<Unavailable>>();
-  const { handler, request, impact } = installBatchOwner({ unavailable });
+  const { handler, request, impact } = installBatchOwner({ availability: localAvailability(target =>
+    [request.calls[1].target.primaryKey, request.calls[3].target.primaryKey].includes(target!.primaryKey) ? reason.reason : undefined,
+  ).availability });
   automatic = true;
   const ids = [request.calls[1].target.primaryKey, request.calls[3].target.primaryKey];
-  unavailable.mockImplementation(async (_host, target) => ids.includes(target!.primaryKey) ? reason : undefined);
   const success = { kind: "success", data: { updated: 3 }, affected: {
     objects: impact.objects.filter(({ target }) => !ids.includes(target.primaryKey)).map(({ target }) => target),
     objectTypes: [request.calls[0].target.objectType],
@@ -720,7 +722,7 @@ it("uses single-target availability and maps an atomic result only to the execut
 
 it("records an all-skipped batch without calling the owner write or invalidating pending writes", async () => {
   const reason = { reason: "Already approved" };
-  const { handler, request, impact } = installBatchOwner({ unavailable: async () => reason });
+  const { handler, request, impact } = installBatchOwner({ availability: localAvailability(() => reason.reason).availability });
   automatic = true;
   const pending = await prepareLiveAction({ ...request, intentId: uuid(57), calls: [request.calls[0]] });
   const { intentId } = await prepareLiveAction(request);
@@ -849,13 +851,23 @@ it("requires confirmation for a batch without an impact inspector", async () => 
   expect(handler.executeBatch).not.toHaveBeenCalled();
 });
 
-it("freezes a localized input schema and dispatches the batch in the same locale", async () => {
+it("freezes a localized input schema read from its owner facts and dispatches the batch in the same locale", async () => {
   const { handler, request } = installBatchOwner();
-  const describeInputSchema: NonNullable<serverOperations.PanelServerOperation["describeInputSchema"]> = async (_host, locale) => ({
-    type: "object",
-    properties: { status: { type: "number", title: locale === "fr" ? "Statut" : "Status" } },
+  const inputForm: serverOperations.PanelOperationInputForm = {
+    reads: [{ call: { type: "platform:Trigger", name: "statusForm", parameters: {} } }],
+    schema: (_results, locale) => ({
+      type: "object",
+      properties: { status: { type: "number", title: locale === "fr" ? "Statut" : "Status" } },
+    }),
+  };
+  mockRegisteredOperation({ ...handler, inputForm });
+  const backend = mocks.backend.getMockImplementation()!;
+  const formReads: unknown[] = [];
+  mocks.backend.mockImplementation(async (name: string, url: string, ...rest: unknown[]) => {
+    if (!url.endsWith("/internal/workbench-panel-reads")) return backend(name, url, ...rest);
+    formReads.push(...(rest[0] as { reads: unknown[] }).reads);
+    return { text: JSON.stringify({ viewer: owner, results: [{ status: "ready", payload: {} }] }) };
   });
-  mockRegisteredOperation({ ...handler, describeInputSchema });
   handler.executeBatch.mockResolvedValue({
     kind: "batch",
     items: request.calls.map(({ target: { objectType, primaryKey } }) => ({
@@ -873,6 +885,7 @@ it("freezes a localized input schema and dispatches the batch in the same locale
     kind: "dispatched", outcome: { kind: "batch" },
   });
   expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ locale: "fr" }), input.calls, intentId);
+  expect(formReads[0]).toEqual({ source: { kind: "direct" }, ...inputForm.reads[0] });
 });
 
 it("runs a registered read for a preview reader with the preview identity, without creating an intent", async () => {
@@ -1143,23 +1156,10 @@ it("admits a cross-member form.save write operation bound to another form member
 });
 
 it("marks a batch operation unavailable only when every item in a non-empty array target is unavailable", async () => {
-  const unavailableBatch = vi.fn(async (_host, targets: readonly { target: { primaryKey: string }; rowKey: string }[]) => {
-    const reasons = new Map<string, { reason: string }>();
-    for (const entry of targets) {
-      if (entry.target.primaryKey !== "k-draft") {
-        reasons.set(entry.rowKey, { reason: `Already approved: ${entry.target.primaryKey}` });
-      }
-    }
-    return reasons;
-  });
-  const unavailableFallback = vi.fn(async (_host, target: { primaryKey: string } | null) => {
-    const { primaryKey } = target!;
-    return primaryKey === "k-draft" ? undefined : { reason: `Single unavailable: ${primaryKey}` };
-  });
+  const { local, availability } = localAvailability(target =>
+    target!.primaryKey === "k-draft" ? undefined : `Already approved: ${target!.primaryKey}`);
 
-  const makeBatchHandler = (
-    overrides: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch">,
-  ): serverOperations.PanelWriteServerOperation => ({
+  const batchHandler: serverOperations.PanelWriteServerOperation = {
     handlerRef: APPROVE_KNOWLEDGE,
     labelKey: "test.batch",
     kind: "action",
@@ -1174,8 +1174,8 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
     targetLabel: async (_host, target) => target.primaryKey,
     execute: async () => ({ kind: "success", data: { approved: true } }),
     executeBatch: async () => ({ kind: "success", data: { approved: true } }),
-    ...overrides,
-  });
+    availability,
+  };
 
   const panel = {
     id: "panel-batch-availability",
@@ -1221,31 +1221,26 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
   const approved2 = { className: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-2" };
   const draft = { className: BUSINESS_KNOWLEDGE, primaryKey: "k-draft" };
 
-  // 1. Handler with unavailableBatch (and unavailable, verifying unavailableBatch takes precedence)
-  const spy = mockRegisteredOperation(makeBatchHandler({ unavailableBatch, unavailable: unavailableFallback }));
+  mockRegisteredOperation(batchHandler);
 
-  // All selected items unavailable -> returns first target's unavailable reason
+  // All selected items unavailable -> returns first target's unavailable reason, from one read of every target
   const allUnavailable = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, approved2] });
   expect(allUnavailable.approveAll).toMatchObject({ unavailable: { reason: "Already approved: k-approved-1" } });
-  expect(unavailableBatch).toHaveBeenCalledTimes(1);
-  expect(unavailableBatch).toHaveBeenCalledWith(
-    expect.objectContaining({ locale: "en", executor: actor }),
-    [
-      { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-1" }, rowKey: "0" },
-      { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-2" }, rowKey: "1" },
-    ],
-  );
-  expect(unavailableFallback).not.toHaveBeenCalled();
+  expect(local).toHaveBeenCalledTimes(1);
+  expect(local).toHaveBeenCalledWith([
+    { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-1" },
+    { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-2" },
+  ], { ...actor, locale: "en" }, undefined);
 
   // Mixed selection (at least one available) -> remains available
   const mixed = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, draft] });
   expect(mixed.approveAll).not.toHaveProperty("unavailable");
-  expect(unavailableBatch).toHaveBeenCalledTimes(2);
+  expect(local).toHaveBeenCalledTimes(2);
 
-  // Empty array -> remains available without invoking handler checks
+  // Empty array -> remains available without reading facts
   const empty = await readAdmittedProjectionOperations(actor, placement, { checked: [] });
   expect(empty.approveAll).not.toHaveProperty("unavailable");
-  expect(unavailableBatch).toHaveBeenCalledTimes(2);
+  expect(local).toHaveBeenCalledTimes(2);
 
   // Pinned literal array input on member -> also checked
   const pinnedPlacement = {
@@ -1258,17 +1253,6 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
   const pinnedResult = await readAdmittedProjectionOperations(actor, pinnedPlacement as never, {});
   expect(pinnedResult.approveAll).toMatchObject({ unavailable: { reason: "Already approved: k-approved-2" } });
 
-  // 2. Handler implementing only unavailable (no unavailableBatch) -> falls back to concurrent per-item checks
-  spy.mockRestore();
-  mockRegisteredOperation(makeBatchHandler({ unavailable: unavailableFallback }));
-
-  const fallbackAllUnavailable = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, approved2] });
-  expect(fallbackAllUnavailable.approveAll).toMatchObject({ unavailable: { reason: "Single unavailable: k-approved-1" } });
-  expect(unavailableFallback).toHaveBeenCalledTimes(2);
-
-  const fallbackMixed = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, draft] });
-  expect(fallbackMixed.approveAll).not.toHaveProperty("unavailable");
-  expect(unavailableFallback).toHaveBeenCalledTimes(4);
 });
 
 it.each([
@@ -1464,7 +1448,7 @@ it.each(["none", "draft"] as const)("restricts agent reads with target source %s
     kind: "action", effect: "read", batch: false, target: { source },
     targetSchema: z.undefined().optional().or(z.object({ kind: z.literal("draft") })),
     inputSchema: runtimeJsonObjectSchema,
-    describeInputSchema: () => ({
+    describeLocalInputSchema: () => ({
       properties: {
         draft: { properties: { password: { format: "password" } } },
         parameters: { properties: { pin: { "x-secret": true } } },
@@ -1509,10 +1493,10 @@ it.each(["none", "draft"] as const)("restricts agent reads with target source %s
 it("asks the owner for availability of a targetless write operation", async () => {
   const handlerRef = "test.create";
   const reason = { reason: "Creation is closed" };
-  const unavailable = vi.fn(async () => reason);
+  const { local: unavailable, availability } = localAvailability(() => reason.reason);
   mockRegisteredOperation({
     handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
-    kind: "action", effect: "write", batch: false, unavailable,
+    kind: "action", effect: "write", batch: false, availability,
     targetSchema: z.null(), inputSchema: z.object({}), resultSchema: z.object({}),
     execute: async () => ({ kind: "success" as const, data: {} }),
   });
@@ -1524,16 +1508,16 @@ it("asks the owner for availability of a targetless write operation", async () =
   const descriptors = await readAdmittedProjectionOperations({ owner, credentials }, {
     panel, member, projection, slot: "create",
   }, {});
-  expect(unavailable).toHaveBeenCalledWith(expect.anything(), null);
+  expect(unavailable).toHaveBeenCalledWith([null], expect.anything(), undefined);
   expect(descriptors.create?.unavailable).toEqual(reason);
 });
 
 it("describes mixed scoped Action buttons in one owner item and displays caller scope refusals", async () => {
   const handlerRef = "test.create";
-  const unavailable = vi.fn(async () => ({ reason: "Creation is closed" }));
+  const { local: unavailable, availability } = localAvailability(() => "Creation is closed");
   mockRegisteredOperation({
     handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
-    kind: "action", effect: "write", batch: false, unavailable,
+    kind: "action", effect: "write", batch: false, availability,
     targetSchema: z.null(), inputSchema: z.object({}), resultSchema: z.object({}),
     execute: async () => ({ kind: "success" as const, data: {} }),
   });
@@ -1594,6 +1578,6 @@ it("describes mixed scoped Action buttons in one owner item and displays caller 
   });
   expect(result.approve).not.toHaveProperty("unavailable");
   expect(Object.keys(result)).toEqual(["approve", "create", "denied"]);
-  expect(unavailable).toHaveBeenCalledWith(expect.objectContaining({ executor: actor }), null);
+  expect(unavailable).toHaveBeenCalledWith([null], { ...actor, locale: "en" }, undefined);
   expect(mocks.backend).toHaveBeenCalledTimes(1);
 });

@@ -50,6 +50,7 @@ import { readAssistantSkillView } from "../../services/assistant/skills";
 import type { PanelOperationHost } from "../../services/product-panels/server-operations";
 import { tForLocale } from "../../i18n";
 import { agentDefinitionOperations } from "../../services/product-panels/agent-definition-operations";
+import { ready, refusalsOf } from "../../services/product-panels/__tests__/availability-fixture";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -200,11 +201,14 @@ describe("agent definitions on PostgreSQL", () => {
       );
       return id;
     };
+    // The Java owner answers the reader's edit right on the stored agent; the preset rule is the definition owner's.
+    const refusal = async (id: string) => (await refusalsOf(remove, [target(id)], () => ready(true),
+      { context: { ...actor, locale } })).refusals[0];
     const reason = tForLocale(locale, "panels.agentDefinition.presetCannotDelete");
     expect(reason).not.toBe(tForLocale("en", "panels.agentDefinition.presetCannotDelete"));
     for (const kind of ["regular", "analysis", "knowledge-governance"]) {
       const id = await insert(kind);
-      expect(await remove.unavailable(host, target(id))).toEqual({ reason });
+      expect(await refusal(id)).toEqual({ reason });
       const response = await fetch(base + "/" + id, { method: "DELETE", headers: { "Accept-Language": locale } });
       expect(response.status).toBe(403);
       expect((await response.json()).error).toEqual({ code: "PRESET_AGENT_READ_ONLY", message: reason });
@@ -216,10 +220,10 @@ describe("agent definitions on PostgreSQL", () => {
     }
     const custom = randomUUID();
     await insert(custom, custom);
-    expect(await remove.unavailable(host, target(custom))).toBeUndefined();
+    expect(await refusal(custom)).toBeUndefined();
     expect(await remove.execute(host, target(custom))).toMatchObject({ kind: "success" });
     expect(await stored(custom)).toBeUndefined();
-    await expect(remove.unavailable(host, target(custom))).rejects.toMatchObject({ status: 404 });
+    await expect(refusal(custom)).rejects.toMatchObject({ status: 404 });
     expect((await fetch(base + "/" + custom, { method: "DELETE" })).status).toBe(404);
   });
   it("creates and replays a UUID definition with its selected class range", async () => {

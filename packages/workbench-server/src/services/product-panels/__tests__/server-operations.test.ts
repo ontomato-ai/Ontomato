@@ -60,9 +60,9 @@ describe("server-operations schema caching", () => {
     expect(zodToJsonSchemaSpy).not.toHaveBeenCalled();
 
     const host = operationHost({ owner: { domainId: "d", userId: "reader" }, credentials: { locale: "en" } });
-    const firstDescription = await describeServerOperation(first!.handler, host, "editor");
+    const firstDescription = await describeServerOperation(first!.handler, host.locale, "editor");
     const callsAfterFirstDescribe = zodToJsonSchemaSpy.mock.calls.length;
-    const secondDescription = await describeServerOperation(first!.handler, host, "editor");
+    const secondDescription = await describeServerOperation(first!.handler, host.locale, "editor");
 
     expect(callsAfterFirstDescribe).toBeLessThanOrEqual(1);
     expect(zodToJsonSchemaSpy).toHaveBeenCalledTimes(callsAfterFirstDescribe);

@@ -7,12 +7,24 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 import { m7ServerOperations } from "../panel-operations";
+import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 
 const dispatchState = vi.hoisted(() => ({
   intents: new Map<string, PanelOperationIntent>(),
   invalidatedTargets: [] as unknown[],
 }));
 
+// Availability facts are the owner's approval statuses, read as the person without a placement.
+const javaReads = vi.hoisted(() => ({ statuses: {} as Record<string, number>, sources: [] as unknown[] }));
+vi.mock("../../product-panels/java-panel-reads", async original => ({
+  ...await original<typeof import("../../product-panels/java-panel-reads")>(),
+  readViaJava: async (viewer: { userId: string; domainId: string }, reads: { source: unknown; call: { parameters: { ids: string[] } } }[]) => {
+    javaReads.sources.push(...reads.map(read => read.source));
+    return { viewer, results: reads.map(read => ({
+      status: "ready", payload: read.call.parameters.ids.map(id => javaReads.statuses[id] ?? null),
+    })) };
+  },
+}));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
 vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ callbackUrl: "http://workbench.test" }) } }));
 vi.mock("../../assistant/skills", () => ({
@@ -303,36 +315,15 @@ describe("business knowledge panel server operations", () => {
     expect(alreadyApproved.sent.filter(item => item.path.endsWith("/admin/editBussinessKnowledge"))).toHaveLength(0);
   });
 
-  it("reports approve availability from owner status for single and batch checks", async () => {
+  it("reports approve availability from the owner's statuses, one read for every target", async () => {
     const operation = m7ServerOperations.find(item => item.handlerRef === APPROVE_KNOWLEDGE)!;
-    if (operation.kind !== "action" || !operation.unavailable || !operation.unavailableBatch) {
-      throw new Error("Expected approve action with availability hooks");
-    }
-    const approved = { ...entry, knowledgeID: "k-2", status: 1 };
-    const { host, sent } = hostWith(answers("/admin/getBussinessKnowledge", {
-      success: true,
-      data: { "k-1": entry, "k-2": approved },
-    }));
-    const localizedHost = { ...host, locale: "en" };
+    const targets = [target, { ...target, primaryKey: "k-2" }, { ...target, primaryKey: "k-missing" }];
+    const { refusals, reads } = await refusalsOf(operation, targets, () => ready([0, 1, null]));
 
-    expect(await operation.unavailable(localizedHost, target)).toBeUndefined();
-    expect(await operation.unavailable(localizedHost, { ...target, primaryKey: "k-2" })).toEqual({
-      reason: en["panels.knowledge.alreadyApproved"],
-    });
-    expect(await operation.unavailable(localizedHost, { ...target, primaryKey: "k-missing" })).toEqual({
-      reason: en["panels.knowledge.notFound"],
-    });
-
-    const beforeBatch = sent.length;
-    const batchReasons = await operation.unavailableBatch(localizedHost, [
-      { rowKey: "k-1", target },
-      { rowKey: "k-2", target: { ...target, primaryKey: "k-2" } },
-      { rowKey: "k-missing", target: { ...target, primaryKey: "k-missing" } },
+    expect(reads).toEqual([{ call: { type: BUSINESS_KNOWLEDGE, name: "approvalStatuses", parameters: { ids: ["k-1", "k-2", "k-missing"] } } }]);
+    expect(refusals).toEqual([
+      undefined, { reason: en["panels.knowledge.alreadyApproved"] }, { reason: en["panels.knowledge.notFound"] },
     ]);
-    expect(sent.length - beforeBatch).toBe(1);
-    expect(batchReasons.get("k-1")).toBeUndefined();
-    expect(batchReasons.get("k-2")).toEqual({ reason: en["panels.knowledge.alreadyApproved"] });
-    expect(batchReasons.get("k-missing")).toEqual({ reason: en["panels.knowledge.notFound"] });
   });
 
   it("deletes by key and refuses with the owner's reason", async () => {
@@ -484,6 +475,8 @@ describe("business knowledge batch approval through panel dispatch", () => {
   });
 
   function stubOwnerFetch(entries: Record<string, typeof entry>) {
+    javaReads.statuses = Object.fromEntries(Object.entries(entries).map(([id, { status }]) => [id, status]));
+    javaReads.sources.length = 0;
     const sent: { url: string; body: Record<string, unknown> }[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string | URL, init?: Parameters<typeof fetch>[1]) => {
       const targetUrl = String(url);
@@ -553,6 +546,7 @@ describe("business knowledge batch approval through panel dispatch", () => {
       },
     });
 
+    expect(new Set(javaReads.sources.map(source => JSON.stringify(source)))).toEqual(new Set([JSON.stringify({ kind: "direct" })]));
     const edits = sent.filter(item => item.url.endsWith("/admin/editBussinessKnowledge"));
     expect(edits).toHaveLength(1);
     expect(edits[0]?.body).toEqual({ ...pending, status: 1 });

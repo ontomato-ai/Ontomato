@@ -3,11 +3,14 @@ import { ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, WORKFLOW } fro
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
+import { HttpError } from "../../utils/errors";
 import {
   affected, ownerEnvelopeSchema, ownerPost, ownerRecord, ownerWriteFailure, remove, savedIdSchema, valuesForTarget,
 } from "../product-panels/data-query-operations";
+import { readyPayload } from "../product-panels/registered-data-read";
 import type {
-  PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelWriteServerOperation, SinglePanelOperationOutcome,
+  PanelOperationAvailability, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelWriteServerOperation,
+  SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import { canActivateWorkflow, canDeactivateWorkflow, requireWorkflow, workflowSaveValues, workflowSchema, workflowText } from "./definition";
 
@@ -18,17 +21,11 @@ const saveTarget = z.discriminatedUnion("kind", [objectTarget, panelFormTargetSc
 const saveInput = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const empty = z.object({}).strict();
 const activationSchema = savedIdSchema.extend({ activationNotes: z.array(z.string()).nullish() });
-export const workflowLifecycleStateSchema = workflowSchema.pick({ id: true, status: true, hasDraft: true }).required();
+const workflowLifecycleStateSchema = workflowSchema.pick({ id: true, status: true, hasDraft: true }).required();
 
 async function readTarget(host: PanelOperationHost, target: PanelRecordTarget) {
   const data = await ownerRecord(host, target, "/workflow/query", "WORKFLOW_READ_FAILED");
   return requireWorkflow(workflowSchema.nullish().parse(data), host.locale);
-}
-
-async function readWorkflowRows(host: PanelOperationHost) {
-  const envelope = await ownerPost(host, "/workflow/query", {}, ownerEnvelopeSchema);
-  if (!envelope.success) throw new Error(envelope.message ?? "The owner could not read workflows");
-  return z.array(workflowSchema).parse(envelope.data);
 }
 
 const actions = [
@@ -58,14 +55,30 @@ const actions = [
   },
 ] as const;
 
-export function workflowLifecycleAction(handlerRef: string) {
-  return actions.find(action => action.handlerRef === handlerRef);
-}
+type WorkflowLifecycle = Pick<z.infer<typeof workflowSchema>, "status" | "hasDraft">;
 
-export function workflowLifecycleUnavailable(
-  action: (typeof actions)[number], row: Pick<z.infer<typeof workflowSchema>, "status" | "hasDraft">, locale?: string,
-) {
-  return action.unavailable(row) ? { reason: workflowText(locale)(`unavailable.${action.reason}`) } : undefined;
+/** A lifecycle change's rule on the workflow's state; a selection with any workflow missing is not found as a whole. */
+function lifecycleAvailability(action: (typeof actions)[number]): PanelOperationAvailability<undefined, WorkflowLifecycle | null> {
+  return {
+    read: targets => ({
+      reads: targets.map(target => ({ call: { type: WORKFLOW, name: "lifecycleState", parameters: { primaryKey: target!.primaryKey } } })),
+      facts: results => {
+        const states = results.map((result, index) => {
+          if (result.status === "error" && result.code === "WORKFLOW_NOT_FOUND") return null;
+          const state = workflowLifecycleStateSchema.parse(readyPayload(result).payload);
+          if (state.id !== targets[index]!.primaryKey)
+            throw new HttpError(502, "The workflow state does not match the admitted target", "PANEL_READ_OWNER_RESPONSE_INVALID");
+          return state;
+        });
+        return states.includes(null) ? states.map(() => null) : states;
+      },
+    }),
+    row: row => ({ status: row.fields.statusCode as string, hasDraft: row.fields.hasDraft as boolean }),
+    refuse: ({ facts, locale }) => {
+      if (facts === null) return { reason: workflowText(locale)("notFound") };
+      return action.unavailable(facts) ? { reason: workflowText(locale)(`unavailable.${action.reason}`) } : undefined;
+    },
+  };
 }
 
 const workflowActions = actions.map((action): PanelWriteServerOperation => ({
@@ -81,19 +94,7 @@ const workflowActions = actions.map((action): PanelWriteServerOperation => ({
   resultSchema: action.verb === "delete" ? empty : savedIdSchema,
   targetInput: "workflow",
   targetLabel: async (host, target) => (await readTarget(host, target)).name,
-  async unavailable(host, target: PanelRecordTarget) {
-    return workflowLifecycleUnavailable(action, await readTarget(host, target), host.locale);
-  },
-  async unavailableBatch(host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
-    const rows = new Map((await readWorkflowRows(host)).map(row => [row.id, row]));
-    const reasons = new Map<string, { reason: string } | undefined>();
-    for (const { target, rowKey } of targets) {
-      const row = requireWorkflow(rows.get(target.primaryKey), host.locale);
-      const unavailable = workflowLifecycleUnavailable(action, row, host.locale);
-      if (unavailable) reasons.set(rowKey, unavailable);
-    }
-    return reasons;
-  },
+  availability: lifecycleAvailability(action),
   inspectImpact: {
     handlerRef: `${action.handlerRef}.inspect-impact`,
     async inspect(host, calls) {

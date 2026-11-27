@@ -47,6 +47,7 @@ import { HttpError } from "../../utils/errors";
 import type {
   PanelBatchCalls,
   PanelImpactInspector,
+  PanelOperationAvailability,
   PanelOperationHost,
   PanelOperationTarget,
   PanelRecordTarget,
@@ -55,16 +56,18 @@ import type {
 } from "../product-panels/server-operations";
 import {
   affected,
-  ownerDeleteUnavailable,
+  deleteRefusalPayloadSchema,
   ownerEnvelopeSchema,
   ownerPost,
   ownerRecord,
   ownerWriteFailure,
+  refusalRead,
   save,
   savedIdSchema,
   valuesForTarget,
   type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
+import { readyPayload } from "../product-panels/registered-data-read";
 import { readMemberAccessContext } from "./panel-reads";
 import { loadPolicyWorkbenchCatalog } from "./policy-catalog";
 import {
@@ -237,17 +240,6 @@ const setOrgMembershipLockedResultSchema = z.object({
   record: runtimeJsonObjectSchema,
 }).strict();
 
-const orgInspectSchema = z.union([
-  z.object({
-    available: z.literal(false),
-    code: z.string().min(1),
-    reason: z.string().min(1),
-  }).passthrough(),
-  z.object({
-    available: z.literal(true),
-  }).passthrough(),
-]);
-
 const pendingSummarySchema = z.object({
   total: z.number().int().nonnegative(),
   policies: z.array(z.object({
@@ -276,37 +268,21 @@ async function governanceTargetLabel(host: Host, target: PanelRecordTarget, reco
   return recordLabelSchema.parse(await ownerRecord(host, target, recordPath, code)).label;
 }
 
-async function inspectOrgAvailability(host: Host, path: string, target: PanelRecordTarget, fallbackCode: string) {
-  const envelope = await ownerPost(host, path, { id: target.primaryKey }, ownerEnvelopeSchema);
-  if (!envelope.success) {
-    const failure = ownerWriteFailure(envelope, fallbackCode, "The owner could not inspect the target");
-    throw new HttpError(422, failure.message, failure.code);
-  }
-  const data = orgInspectSchema.parse(envelope.data);
-  return data.available ? undefined : { reason: data.reason };
-}
-
-const batchReasonsSchema = z.record(z.string(), z.object({ reason: z.string().nullish() }).passthrough());
-
-async function ownerBatchUnavailable(
-  host: Host,
-  path: string,
-  body: Record<string, unknown>,
-  fallbackCode: string,
-  targets: readonly { target: PanelRecordTarget; rowKey: string }[],
-) {
-  const envelope = await ownerPost(host, path, body, ownerEnvelopeSchema);
-  if (!envelope.success) {
-    const failure = ownerWriteFailure(envelope, fallbackCode, "The owner could not inspect row availability");
-    throw new HttpError(422, failure.message, failure.code);
-  }
-  const rows = batchReasonsSchema.parse(envelope.data);
-  const reasons = new Map<string, { reason: string } | undefined>();
-  for (const { target, rowKey } of targets) {
-    const reason = rows[target.primaryKey]?.reason;
-    if (reason) reasons.set(rowKey, { reason });
-  }
-  return reasons;
+/**
+ * The member owner's refusal of one operation for each target (none for a targetless operation), the same fact the
+ * member list carries back for its rows.
+ */
+function memberOperationRefusals(operation: string): PanelOperationAvailability<undefined, z.infer<typeof deleteRefusalPayloadSchema>> {
+  return {
+    read: targets => ({
+      reads: [{ call: { type: USER, name: "operationRefusals", parameters: { inspections: [{
+        name: operation, operation, ids: targets[0] === null ? null : targets.map(target => target!.primaryKey),
+      }] } } }],
+      facts: ([result]) => z.record(z.array(z.string().min(1).max(500).nullable()).length(targets.length))
+        .parse(readyPayload(result!).payload)[operation]!.map(reason => ({ reason })),
+    }),
+    refuse: ({ facts }) => facts.reason === null ? undefined : { reason: facts.reason },
+  };
 }
 
 function simpleTargetImpact(
@@ -473,8 +449,7 @@ function roleRelationOperation(options: {
     targetInput: "role",
     targetLabel: (host: Host, target: PanelRecordTarget) =>
       governanceTargetLabel(host, target, "/panel/governance/roles/record", "ROLE_UNAVAILABLE"),
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      ownerDeleteUnavailable(host, "/panel/governance/roles/assign/unavailable", { id: target.primaryKey }, "ROLE_UNAVAILABLE"),
+    availability: refusalRead(ROLE, "assignRefusal"),
     execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return writeRoleRelation(
         host,
@@ -544,17 +519,7 @@ function issueUserApiKeyOperation(regenerate: boolean): PanelServerOperation {
       "/panel/governance/users/record",
       "USER_UNAVAILABLE",
     ) }),
-    unavailable: (host, target: PanelRecordTarget) => ownerDeleteUnavailable(
-      host, "/panel/governance/users/api-key/unavailable",
-      { id: target.primaryKey, mode: regenerate ? "regenerate" : "generate" }, "USER_UNAVAILABLE",
-    ),
-    unavailableBatch: (host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) => ownerBatchUnavailable(
-      host,
-      "/panel/governance/users/api-key/rows/unavailable",
-      { ids: targets.map(({ target }) => target.primaryKey), mode: regenerate ? "regenerate" : "generate" },
-      "USER_UNAVAILABLE",
-      targets,
-    ),
+    availability: memberOperationRefusals(handlerRef),
     async execute(host, target) {
       const { primaryKey } = target as PanelRecordTarget;
       return postAction(
@@ -629,16 +594,7 @@ export const governanceServerOperations = [
       "/panel/governance/users/record",
       "USER_UNAVAILABLE",
     ),
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      ownerDeleteUnavailable(host, "/panel/governance/users/remove/unavailable", { id: target.primaryKey }, "USER_UNAVAILABLE"),
-    unavailableBatch: (host: Host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) =>
-      ownerBatchUnavailable(
-        host,
-        "/panel/governance/users/remove/batch/unavailable",
-        { ids: targets.map(({ target }) => target.primaryKey) },
-        "USER_UNAVAILABLE",
-        targets,
-      ),
+    availability: memberOperationRefusals(REMOVE_USER),
     execute: removeUser,
     async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
       const items = await Promise.all(calls.map(async ({ target }) => ({
@@ -745,16 +701,7 @@ export const governanceServerOperations = [
       "/panel/governance/users/record",
       "USER_UNAVAILABLE",
     ),
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      ownerDeleteUnavailable(host, "/panel/governance/users/api-key/unavailable", { id: target.primaryKey, mode: "revoke" }, "USER_UNAVAILABLE"),
-    unavailableBatch: (host: Host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) =>
-      ownerBatchUnavailable(
-        host,
-        "/panel/governance/users/api-key/rows/unavailable",
-        { ids: targets.map(({ target }) => target.primaryKey), mode: "revoke" },
-        "USER_UNAVAILABLE",
-        targets,
-      ),
+    availability: memberOperationRefusals(REVOKE_USER_API_KEY),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("API key revocation acts on a selected user");
       return postAction(
@@ -783,8 +730,7 @@ export const governanceServerOperations = [
     inputSchema: issueApiKeyBatchInputSchema,
     resultSchema: issueApiKeyBatchResultSchema,
     inspectImpact: issueApiKeyBatchImpact,
-    unavailable: (host: Host) =>
-      ownerDeleteUnavailable(host, "/panel/governance/users/api-key/batch/unavailable", {}, "USER_UNAVAILABLE"),
+    availability: memberOperationRefusals(ISSUE_USER_API_KEY_BATCH),
     async execute(host: PanelOperationHost, _target: null, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const { scope, userIds, regenerate } = issueApiKeyBatchInputSchema.parse(input);
       return postAction(
@@ -931,16 +877,7 @@ export const governanceServerOperations = [
       "/panel/governance/roles/record",
       "ROLE_UNAVAILABLE",
     ),
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      ownerDeleteUnavailable(host, "/panel/governance/roles/delete/unavailable", { id: target.primaryKey }, "ROLE_UNAVAILABLE"),
-    unavailableBatch: (host: Host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) =>
-      ownerBatchUnavailable(
-        host,
-        "/panel/governance/roles/delete/batch/unavailable",
-        { ids: targets.map(({ target }) => target.primaryKey) },
-        "ROLE_UNAVAILABLE",
-        targets,
-      ),
+    availability: refusalRead(ROLE, "deleteRefusal"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected role");
       return removeWithAffected(host, "/panel/governance/roles/delete", target, "ROLE_DELETE_FAILED", [ROLE, USER, ORG_GRANT]);
@@ -1026,16 +963,7 @@ export const governanceServerOperations = [
       "/panel/governance/policies/record",
       "PERMISSION_POLICY_UNAVAILABLE",
     ),
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      ownerDeleteUnavailable(host, "/panel/governance/policies/delete/unavailable", { id: target.primaryKey }, "PERMISSION_POLICY_UNAVAILABLE"),
-    unavailableBatch: (host: Host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) =>
-      ownerBatchUnavailable(
-        host,
-        "/panel/governance/policies/delete/batch/unavailable",
-        { ids: targets.map(({ target }) => target.primaryKey) },
-        "PERMISSION_POLICY_UNAVAILABLE",
-        targets,
-      ),
+    availability: refusalRead(PERMISSION_POLICY, "deleteRefusal"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected permission policy");
       return removeWithAffected(
@@ -1268,16 +1196,7 @@ export const governanceServerOperations = [
       governanceTargetLabel(host, target, "/panel/governance/org-units/record", "ORG_UNIT_UNAVAILABLE"),
     done: (host, name) => tForLocale(host.locale, "panels.governance.orgUnit.deleted", { name }),
     inspectImpact: deleteOrgUnitImpact,
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      inspectOrgAvailability(host, "/panel/governance/org-units/delete/inspect", target, "ORG_UNIT_UNAVAILABLE"),
-    unavailableBatch: (host: Host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) =>
-      ownerBatchUnavailable(
-        host,
-        "/panel/governance/org-units/delete/batch/inspect",
-        { ids: targets.map(({ target }) => target.primaryKey) },
-        "ORG_UNIT_UNAVAILABLE",
-        targets,
-      ),
+    availability: refusalRead(ORG_UNIT, "deleteRefusal"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected organization unit");
       return removeWithAffected(
@@ -1389,16 +1308,7 @@ export const governanceServerOperations = [
       governanceTargetLabel(host, target, "/panel/governance/org-memberships/record", "ORG_MEMBERSHIP_UNAVAILABLE"),
     done: (host, name) => tForLocale(host.locale, "panels.governance.orgMembership.removed", { name }),
     inspectImpact: removeOrgMembershipImpact,
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      inspectOrgAvailability(host, "/panel/governance/org-memberships/remove/inspect", target, "ORG_MEMBERSHIP_UNAVAILABLE"),
-    unavailableBatch: (host: Host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) =>
-      ownerBatchUnavailable(
-        host,
-        "/panel/governance/org-memberships/remove/batch/inspect",
-        { ids: targets.map(({ target }) => target.primaryKey) },
-        "ORG_MEMBERSHIP_UNAVAILABLE",
-        targets,
-      ),
+    availability: refusalRead(ORG_MEMBERSHIP, "deleteRefusal"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Removing a membership acts on a selected organization membership");
       const envelope = await ownerPost(host, "/panel/governance/org-memberships/remove", { id: target.primaryKey }, ownerEnvelopeSchema);
@@ -1461,16 +1371,7 @@ export const governanceServerOperations = [
       governanceTargetLabel(host, target, "/panel/governance/org-positions/record", "ORG_POSITION_UNAVAILABLE"),
     done: (host, name) => tForLocale(host.locale, "panels.governance.orgPosition.deleted", { name }),
     inspectImpact: deleteOrgPositionImpact,
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      inspectOrgAvailability(host, "/panel/governance/org-positions/delete/inspect", target, "ORG_POSITION_UNAVAILABLE"),
-    unavailableBatch: (host: Host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) =>
-      ownerBatchUnavailable(
-        host,
-        "/panel/governance/org-positions/delete/batch/inspect",
-        { ids: targets.map(({ target }) => target.primaryKey) },
-        "ORG_POSITION_UNAVAILABLE",
-        targets,
-      ),
+    availability: refusalRead(ORG_POSITION, "deleteRefusal"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected organization position");
       const envelope = await ownerPost(host, "/panel/governance/org-positions/delete", { id: target.primaryKey }, ownerEnvelopeSchema);

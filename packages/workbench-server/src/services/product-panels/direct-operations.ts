@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { ACTION } from "@ontomato/contracts/platform-object-types";
-import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
 import { panelWriteOperationSnapshotSchema } from "@ontomato/contracts/panel-agent";
 import {
   matchesObjectType, panelObjectRefSchema, panelOperationId, panelOperationUnavailableSchema,
@@ -8,8 +7,8 @@ import {
 } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import {
-  declaredCustomerFormSaveName, formatOperationTargetTypes, operationAcceptsTargetType, panelRecordObjectRef,
-  panelRowOperationKey, projectionOperationTargetMatches, type PanelRecord, type ProjectionOperationBinding,
+  declaredCustomerFormSaveName, formatOperationTargetTypes, operationAcceptsTargetType,
+  projectionOperationTargetMatches,
 } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { tForLocale } from "../../i18n";
@@ -22,13 +21,18 @@ import {
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { requireDirectPanelMember } from "./current";
 import { resolvePinnedInputs } from "./input-wiring";
-import { readViaJava, type JavaPanelRead } from "./java-panel-reads";
+import { readViaJava, type JavaPanelRead, type JavaPanelReadResult } from "./java-panel-reads";
 import { resolvePanelMemberPath, type ResolvedPanelPathStep } from "./member-path";
+import {
+  bindingRefusal, placedObject, planAvailability, readDirect, readDirectInputSchema, resolvePinnedBoundParams, rowParamBinding,
+  rowTargetBinding, type AvailabilityCall,
+} from "./operation-availability";
 import { allowsOperationDraft, boundProjectionOperations, isCreateFormRead, type BoundProjectionOperation } from "./operation-bindings";
 import { operationHost } from "./operation-host";
+import { readyPayload, type RegisteredDataReadItem } from "./registered-data-read";
 import {
-  describeServerOperation, type PanelOperationActor, type PanelOperationTarget, type PanelRecordTarget, type PanelServerOperation,
-  type PanelWriteServerOperation,
+  describeServerOperation, type PanelOperationActor, type PanelOperationFactsContext, type PanelOperationTarget,
+  type PanelRecordTarget, type PanelServerOperation, type PanelWriteServerOperation,
 } from "./server-operations";
 
 export type PlacedOperationTarget = PanelOperationTarget | { kind: "list"; objects?: PanelRecordTarget[] } | null;
@@ -51,51 +55,10 @@ function unavailable(id: string): never {
   throw new HttpError(422, `The panel member does not declare operation '${id}'`, "OPERATION_UNAVAILABLE");
 }
 
-function placedObject({ className, primaryKey }: ReturnType<typeof panelObjectRefSchema.parse>): PanelRecordTarget {
-  return { kind: "object", objectType: className, primaryKey };
-}
-
 function requirePinnedObject(fixed: PlacedOperationTarget | undefined, supplied: PanelOperationTarget | null | undefined) {
   if (fixed?.kind === "object" && supplied?.kind === "object" &&
     (fixed.objectType !== supplied.objectType || fixed.primaryKey !== supplied.primaryKey))
     throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
-}
-
-export function resolvePinnedBoundParams(
-  binding: ProjectionOperationBinding,
-  pinnedInputs: ReadonlyMap<string, unknown>,
-  target?: PanelOperationTarget | null,
-  row?: PanelRecord,
-): Record<string, unknown> {
-  const boundParams: Record<string, unknown> = {};
-  for (const [paramKey, paramBinding] of Object.entries(binding.params ?? {})) {
-    if ("literal" in paramBinding) {
-      boundParams[paramKey] = paramBinding.literal;
-      continue;
-    }
-    if ("input" in paramBinding && pinnedInputs.has(paramBinding.input)) {
-      boundParams[paramKey] = pinnedInputs.get(paramBinding.input);
-      continue;
-    }
-    if (row && "row" in paramBinding) {
-      boundParams[paramKey] = row[paramBinding.row];
-      continue;
-    }
-    if (row && "rowField" in paramBinding) {
-      boundParams[paramKey] = row.fields[paramBinding.rowField];
-      continue;
-    }
-    if (
-      "row" in paramBinding
-      && paramBinding.row === "primaryKey"
-      && binding.target
-      && "row" in binding.target
-      && target?.kind === "object"
-    ) {
-      boundParams[paramKey] = target.primaryKey;
-    }
-  }
-  return boundParams;
 }
 
 function resolveTarget(
@@ -214,7 +177,8 @@ async function admitBoundOperation(
   const admitted = admitPlatformOperation(placement, bound, selection, pinnedInputs, actor.credentials.locale);
   if (admitted) return {
     ...admitted,
-    describe: () => describeServerOperation(admitted.handler, operationHost(actor), placement.slot, admitted.descriptor),
+    describe: (inputSchema?: PanelOwnerOperationDescriptor["inputSchema"]) =>
+      describeServerOperation(admitted.handler, actor.credentials.locale, placement.slot, admitted.descriptor, inputSchema),
   };
 }
 
@@ -322,6 +286,11 @@ async function readScopedActionDescriptions(
   return entries;
 }
 
+export function factsContext({ owner, credentials }: PanelOperationActor): PanelOperationFactsContext {
+  return { owner, credentials, locale: credentials.locale };
+}
+
+/** Describe a member's operations outside a formal page: their facts are read directly, in one batch. */
 export async function readAdmittedProjectionOperations(
   actor: PanelOperationActor,
   placement: Placement,
@@ -335,11 +304,12 @@ export async function readAdmittedProjectionOperations(
     bound.binding.operation.kind === "Action"
       ? prepareActionDescription(placement, bound, selection, pinnedInputs, actor.credentials.locale)
       : []), actionScope);
-  const descriptions: [string, PanelOwnerOperationDescriptor][] = [];
+  const context = factsContext(actor);
+  const described: { name: string; descriptor?: PanelOwnerOperationDescriptor; admitted?: Admitted }[] = [];
   for (const bound of bounds) {
     if (actions && bound.binding.operation.kind === "Action") {
       const descriptor = actions.get(bound.name);
-      if (descriptor) descriptions.push([bound.name, descriptor]);
+      if (descriptor) described.push({ name: bound.name, descriptor });
       continue;
     }
     let result: Awaited<ReturnType<typeof admitBoundOperation>>;
@@ -349,14 +319,33 @@ export async function readAdmittedProjectionOperations(
       if (!skipDescriptionAdmission(error)) throw error;
       continue;
     }
-    if (!result) continue;
-    const described = await result.describe();
-    const unavailableReason = await resolveAdmittedOperationUnavailable(actor, bound, result, inputs, pinnedInputs);
-    const descriptor = unavailableReason === undefined ? described
-      : { ...described, unavailable: panelOperationUnavailableSchema.parse(unavailableReason) };
-    descriptions.push([bound.name, descriptor]);
+    if (result) described.push({ name: bound.name, admitted: await planDescription(context, result.handler, availabilityCalls(bound, result, inputs, pinnedInputs), result.describe) });
   }
-  return Object.fromEntries(descriptions);
+  const results = await readDirect(context, described.map(({ admitted }) => ({ reads: admitted?.reads ?? [] })));
+  return Object.fromEntries(await Promise.all(described.map(async ({ name, descriptor, admitted }, index) =>
+    [name, descriptor ?? await admitted!.present(results[index]!)] as const)));
+}
+
+type Admitted = Awaited<ReturnType<typeof planDescription>>;
+
+/** An operation's description with the facts it needs: its availability for the calls and its input form. */
+export async function planDescription(
+  context: PanelOperationFactsContext, handler: PanelServerOperation, calls: readonly AvailabilityCall[] | undefined,
+  describe: (inputSchema?: PanelOwnerOperationDescriptor["inputSchema"]) =>
+    PanelOwnerOperationDescriptor | Promise<PanelOwnerOperationDescriptor>,
+) {
+  const availability = calls && await planAvailability(handler.availability!, context,
+    { from: "targets", targets: calls.map(({ target }) => target) });
+  const form = handler.inputForm;
+  const count = availability?.reads.length ?? 0;
+  return {
+    reads: [...availability?.reads ?? [], ...form?.reads ?? []] as readonly RegisteredDataReadItem[],
+    async present(results: readonly JavaPanelReadResult[]): Promise<PanelOwnerOperationDescriptor> {
+      const descriptor = await describe(form?.schema(results.slice(count), context.locale));
+      const refusal = availability && bindingRefusal(await availability.refuse(results.slice(0, count), calls!));
+      return refusal ? { ...descriptor, unavailable: panelOperationUnavailableSchema.parse(refusal) } : descriptor;
+    },
+  };
 }
 
 function literalOperationInputs(placement: Placement) {
@@ -372,36 +361,32 @@ function operationReadSelection(inputs: Record<string, unknown>): Selection {
   };
 }
 
-type OperationAdmission = NonNullable<Awaited<ReturnType<typeof admitBoundOperation>>>;
-type AvailabilityTarget =
-  | { kind: "single"; target: PanelRecordTarget | null }
-  | { kind: "input"; target: PanelRecordTarget | null; input: Readonly<Record<string, unknown>> }
-  | { kind: "batch"; targets: readonly { target: PanelRecordTarget; rowKey: string }[] };
+type OperationAdmission = Pick<NonNullable<Awaited<ReturnType<typeof admitBoundOperation>>>, "effect" | "handler" | "selected">;
 
-function operationAvailabilityTarget(
+/**
+ * The targets a binding asks availability for in a description: the fixed or selected record (none for a targetless
+ * operation), or each record of a list input. A binding that takes its target or parameters from a row is decided
+ * per row instead.
+ */
+function availabilityCalls(
   bound: BoundProjectionOperation,
-  { effect, handler, selected }: Pick<OperationAdmission, "effect" | "handler" | "selected">,
+  { effect, handler, selected }: OperationAdmission,
   inputs: Record<string, unknown>,
   pinnedInputs: ReadonlyMap<string, unknown>,
-): AvailabilityTarget | undefined {
-  const { target } = bound.binding;
-  if (target && ("row" in target || "rowField" in target)) return;
-  if (selected?.kind === "object" || (selected === null && target === undefined)) {
-    if (effect === "write" && "unavailableForInput" in handler && handler.unavailableForInput) {
-      const known = new Map([...Object.entries(inputs), ...pinnedInputs]);
-      return { kind: "input", target: selected, input: resolvePinnedBoundParams(bound.binding, known, selected) };
-    }
-    if (handler.unavailable) return { kind: "single", target: selected };
-    return;
-  }
-  if (effect === "read" || !target || !("input" in target) ||
-    (!handler.unavailable && !("unavailableBatch" in handler && handler.unavailableBatch))) return;
+): AvailabilityCall[] | undefined {
+  const { binding } = bound;
+  if (!handler.availability || rowTargetBinding(binding) || rowParamBinding(binding)) return;
+  const known = new Map([...Object.entries(inputs), ...pinnedInputs]);
+  if (selected?.kind === "object" || (selected === null && binding.target === undefined))
+    return [{ target: selected, params: resolvePinnedBoundParams(binding, known, selected) }];
+  const { target } = binding;
+  if (effect === "read" || !target || !("input" in target)) return;
   const list = pinnedInputs.has(target.input) ? pinnedInputs.get(target.input) : inputs[target.input];
-  if (Array.isArray(list) && list.length) return {
-    kind: "batch", targets: list.map((item, index) => ({
-      target: placedObject(panelObjectRefSchema.parse(item)), rowKey: String(index),
-    })),
-  };
+  if (!Array.isArray(list) || !list.length) return;
+  return list.map(item => {
+    const object = placedObject(panelObjectRefSchema.parse(item));
+    return { target: object, params: resolvePinnedBoundParams(binding, known, object) };
+  });
 }
 
 type ActionDescription = {
@@ -416,7 +401,7 @@ type OperationDescription = ActionDescription | {
   name: string;
   target: PanelOwnerOperationDescriptor["target"];
   handler: PanelServerOperation;
-  availability: AvailabilityTarget | undefined;
+  calls: AvailabilityCall[] | undefined;
 };
 
 function prepareActionDescription(
@@ -450,204 +435,37 @@ export function prepareOperationDescriptions(placement: Placement, inputs: Recor
       kind: "platform", name: bound.name,
       handler: admitted.handler,
       target: admitted.descriptor,
-      availability: operationAvailabilityTarget(bound, admitted, inputs, pinnedInputs),
+      calls: availabilityCalls(bound, admitted, inputs, pinnedInputs),
     }] : [];
   });
 }
 
-async function resolveAdmittedOperationUnavailable(
-  actor: PanelOperationActor,
-  bound: BoundProjectionOperation,
-  result: OperationAdmission,
-  inputs: Record<string, unknown>,
-  pinnedInputs: ReadonlyMap<string, unknown>,
-): Promise<PanelOwnerOperationDescriptor["unavailable"]> {
-  const target = operationAvailabilityTarget(bound, result, inputs, pinnedInputs);
-  if (!target) return;
-  const host = operationHost(actor);
-  if (target.kind === "single") return result.handler.unavailable!(host, target.target);
-  const handler = result.handler as PanelWriteServerOperation;
-  if (target.kind === "input") return handler.unavailableForInput!(host, target.target, target.input);
-  const reasons = await resolveBatchUnavailableReasons(host, handler, target.targets);
-  // Mixed selections stay available because execution reports outcomes for individual items.
-  if (target.targets.every(({ rowKey }) => reasons.get(rowKey) !== undefined)) return reasons.get(target.targets[0].rowKey);
-}
-
-function rowTargetForBinding(
-  binding: ProjectionOperationBinding,
-  row: PanelRecord,
-  fallbackClassName: string | undefined,
-  inputs: Readonly<Record<string, unknown>>,
-): PanelRecordTarget | null | undefined {
-  const { target } = binding;
-  if (!target) return null;
-  if ("literal" in target || "input" in target) return fixedRowOperationTarget(target, inputs);
-  if ("row" in target) {
-    try {
-      return placedObject(panelRecordObjectRef(row, fallbackClassName));
-    } catch {
-      return undefined;
-    }
-  }
-  const raw = row.fields[target.rowField];
-  if (raw && typeof raw === "object" && !Array.isArray(raw) && "kind" in raw && raw.kind === "reference") {
-    const parsed = panelObjectRefSchema.safeParse({ className: raw.className, primaryKey: raw.primaryKey });
-    return parsed.success ? placedObject(parsed.data) : undefined;
-  }
-  const parsed = panelObjectRefSchema.safeParse(raw);
-  return parsed.success ? placedObject(parsed.data) : undefined;
-}
-
-export function fixedRowOperationTarget(
-  target: Extract<NonNullable<ProjectionOperationBinding["target"]>, { literal: unknown } | { input: string }>,
-  inputs: Readonly<Record<string, unknown>>,
-) {
-  if ("literal" in target) return placedObject(target.literal);
-  const parsed = panelObjectRefSchema.safeParse(inputs[target.input]);
-  return parsed.success ? placedObject(parsed.data) : undefined;
-}
-
-const ROW_AVAILABILITY_CONCURRENCY = 8;
-
-async function runWithConcurrency<T>(items: readonly T[], limit: number, work: (item: T) => Promise<void>): Promise<void> {
-  let cursor = 0;
-  async function worker() {
-    while (cursor < items.length) {
-      const index = cursor++;
-      await work(items[index]!);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-}
-
-export async function resolveBatchUnavailableReasons(
-  host: ReturnType<typeof operationHost>,
-  handler: PanelServerOperation,
-  targets: readonly { rowKey: string; target: PanelRecordTarget }[],
-): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>> {
-  if (targets.length === 0) return new Map();
-  if (handler.effect === "write" && handler.unavailableBatch) return handler.unavailableBatch(host, targets);
-  if (!handler.unavailable) return new Map();
-  const unavailable = handler.unavailable.bind(handler);
-  // Deduplicate identical targets (e.g. outer parent target shared across all 50 rows -> 1 check instead of 50).
-  const uniqueTargets = new Map<string, PanelRecordTarget>();
-  for (const { target } of targets) {
-    uniqueTargets.set(`${target.objectType}\u0000${target.primaryKey}`, target);
-  }
-  const reasonsByTarget = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
-  await runWithConcurrency([...uniqueTargets.entries()], ROW_AVAILABILITY_CONCURRENCY, async ([targetKey, target]) => {
-    const reason = await unavailable(host, target);
-    if (reason !== undefined) reasonsByTarget.set(targetKey, reason);
-  });
-  const reasonsByRowKey = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
-  for (const { rowKey, target } of targets) {
-    const reason = reasonsByTarget.get(`${target.objectType}\u0000${target.primaryKey}`);
-    if (reason !== undefined) reasonsByRowKey.set(rowKey, reason);
-  }
-  return reasonsByRowKey;
-}
-
-async function resolveRowBatchUnavailableReasons(
-  host: ReturnType<typeof operationHost>,
-  handler: PanelWriteServerOperation,
-  targets: readonly { rowKey: string; target: PanelRecordTarget }[],
-): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>> {
-  if (targets.length === 0) return new Map();
-  if (!handler.unavailableBatch) throw new Error(`Operation '${handler.handlerRef}' does not implement batch row availability`);
-  return handler.unavailableBatch(host, targets);
-}
+const skippedActionRefusals = new Set([
+  "ACTION_NOT_FOUND", "ACTION_NOT_EXECUTABLE", "ACTION_NOT_OBJECT_ACTION", "ACTION_TARGET_REQUIRED",
+  "ACTION_TARGET_MISMATCH", "ACTION_NOT_GRANTED", "ACTION_TARGET_OUT_OF_SCOPE", "ACTION_PRECONDITION_FAILED",
+]);
 
 /**
- * Compute per-row availability for every declared operation on a list projection in a single batch alongside
- * the list read response, eliminating per-row N+1 client requests.
+ * An object action's description within a formal page's second read: its execution definition, or nothing when the
+ * owner refuses the action itself. Placement denials have their own codes and refuse the read; a code-less denial
+ * here comes from the owner's form data-scope check.
  */
-export async function describeRowOperationsForRows(
-  actor: PanelOperationActor,
-  placement: Placement,
-  inputs: Readonly<Record<string, unknown>>,
-  rows: readonly PanelRecord[],
-  fallbackClassName?: string,
-): Promise<PanelRowOperationsMap | undefined> {
-  const host = operationHost(actor);
-  return presentRowOperationsForRows(placement.projection, inputs, rows, fallbackClassName, async (handler, binding, targets) => {
-    const writeAvailability = handler.effect === "write" && (handler.unavailableBatch || handler.unavailableForInput);
-    if (!handler.unavailable && !writeAvailability) return new Map();
-    const rowScoped = binding.target !== undefined && ("row" in binding.target || "rowField" in binding.target);
-    const rowBoundParams = Object.values(binding.params ?? {}).some(param => "row" in param || "rowField" in param);
-    const inspectInput = handler.effect === "write" && !rowScoped && !rowBoundParams ? handler.unavailableForInput : undefined;
-    const known = new Map(Object.entries(inputs));
-    const batchTargets = targets.map(entry => ({
-      ...entry,
-      input: resolvePinnedBoundParams(binding, known, entry.target, entry.row),
-    }));
-    if (inspectInput) {
-      const reasons = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
-      await runWithConcurrency(batchTargets, ROW_AVAILABILITY_CONCURRENCY, async ({ rowKey, target, input }) => {
-        reasons.set(rowKey, await inspectInput(host, target, input));
-      });
-      return reasons;
-    }
-    return rowScoped && handler.effect === "write"
-      ? resolveRowBatchUnavailableReasons(host, handler, batchTargets)
-      : resolveBatchUnavailableReasons(host, handler, batchTargets);
-  });
-}
-
-type RowOperationTargets = readonly { rowKey: string; row: PanelRecord; target: PanelRecordTarget }[];
-type RowOperationReasons = ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>;
-
-export async function presentRowOperationsForRows(
-  projection: ProductProjection,
-  inputs: Readonly<Record<string, unknown>>,
-  rows: readonly PanelRecord[],
-  fallbackClassName: string | undefined,
-  readReasons: (handler: PanelServerOperation, binding: ProjectionOperationBinding, targets: RowOperationTargets) =>
-    RowOperationReasons | Promise<RowOperationReasons>,
-): Promise<PanelRowOperationsMap | undefined> {
-  const boundOps = boundProjectionOperations(projection);
-  if (!boundOps.length || !rows.length) return undefined;
-  const result: Record<string, Record<string, { available: boolean; unavailable?: { reason: string } }>> = {};
-  const rowKeys = rows.map(row => panelRowOperationKey(row, fallbackClassName));
-
-  for (const bound of boundOps) {
-    if (bound.binding.operation.kind !== "PlatformOperation" || !bound.owner) continue;
-    const { handler } = bound.owner;
-    if (handler.effect !== "write" && !handler.unavailable) {
-      for (const rowKey of rowKeys) {
-        (result[rowKey] ??= {})[bound.name] = { available: true };
-      }
-      continue;
-    }
-
-    const rowEntries = rows.map((row, index) => {
-      const target = rowTargetForBinding(bound.binding, row, fallbackClassName, inputs);
-      const compatible = target === undefined || target === null
-        || operationAcceptsTargetType(target.objectType, bound.owner!.targetType, bound.owner!.declaration.targetTypes);
-      return {
-        rowKey: rowKeys[index]!,
-        row,
-        target,
-        compatible,
-      };
-    });
-
-    const validTargets = rowEntries.filter((entry): entry is RowOperationTargets[number] & { compatible: boolean } =>
-      entry.compatible && entry.target !== undefined && entry.target !== null);
-    const reasonsByRowKey = validTargets.length ? await readReasons(handler, bound.binding, validTargets) : new Map();
-    for (const { rowKey, target, compatible } of rowEntries) {
-      if (target === undefined) continue;
-      if (!compatible) {
-        (result[rowKey] ??= {})[bound.name] = { available: false };
-        continue;
-      }
-      const reason = target === null ? undefined : reasonsByRowKey.get(rowKey);
-      (result[rowKey] ??= {})[bound.name] = reason
-        ? { available: false, unavailable: panelOperationUnavailableSchema.parse(reason) }
-        : { available: true };
-    }
-  }
-
-  return Object.keys(result).length ? result : undefined;
+export function actionDescriptionRead({ actionId, object }: ObjectActionSelection) {
+  return {
+    read: { call: { type: ACTION, name: "executionDefinition", parameters: {
+      primaryKey: actionId,
+      ...(object && { object: { className: object.objectType, primaryKey: object.primaryKey } }),
+    } } } satisfies RegisteredDataReadItem,
+    present(result: JavaPanelReadResult) {
+      if (result.status === "empty"
+          || result.status !== "ready" && (result.code ? skippedActionRefusals.has(result.code) : result.status === "forbidden"))
+        return undefined;
+      const action = storedObjectActionSchema.parse(readyPayload(result).payload);
+      if (action.id !== actionId || (object ? action.target?.className !== object.objectType : action.target !== null))
+        throw new HttpError(502, "The execution definition does not match the admitted action and target", "PANEL_READ_OWNER_RESPONSE_INVALID");
+      return describeObjectAction({ name: action.name, declaration: objectActionDeclaration(action) });
+    },
+  };
 }
 
 export async function declaredDirectOperation(
@@ -683,7 +501,8 @@ export async function declaredDirectOperation(
   const admitted = await admitBoundOperation({ owner, credentials }, placement, bound, () => target, pinnedInputs);
   if (!admitted) throw new HttpError(400, `Select an eligible target for operation '${id}'`, "PANEL_SELECTION_REQUIRED");
   const { describe, action, ...current } = admitted;
-  const descriptor = await describe();
+  const form = current.handler.inputForm;
+  const descriptor = await describe(form && await readDirectInputSchema(form, factsContext({ owner, credentials })));
   if (current.effect === "read") return { ...current, descriptor, boundParams };
   const operation = panelWriteOperationSnapshotSchema.parse({
     ...descriptor, ...placement.nested, id, slot, ...(action && { action }),

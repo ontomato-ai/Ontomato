@@ -3,6 +3,9 @@ import { ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, WORKFLOW } fro
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { panelServerOperation, type PanelOperationHost, type PanelWriteServerOperation } from "../../product-panels/server-operations";
+import type { JavaPanelReadResult } from "../../product-panels/java-panel-reads";
+import type { RegisteredDataReadItem } from "../../product-panels/registered-data-read";
+import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 
 vi.mock("../../assistant/skills", () => ({
   readAssistantSkillView: vi.fn(), loadedSkillVersion: vi.fn(),
@@ -80,30 +83,36 @@ it("describes the lifecycle impact and provides the availability reason for the 
       total: 1,
     });
   }
-  await expect(write(ACTIVATE_WORKFLOW).unavailable?.(host("ACTIVE"), target)).resolves.toMatchObject({ reason: expect.stringContaining("already active") });
-  await expect(write(ACTIVATE_WORKFLOW).unavailable?.(host("ACTIVE", true), target)).resolves.toBeUndefined();
-  await expect(write(DEACTIVATE_WORKFLOW).unavailable?.(host("DRAFT"), target)).resolves.toMatchObject({ reason: expect.stringContaining("active workflow") });
-  await expect(write(DELETE_WORKFLOW).unavailable?.(host("ACTIVE"), target)).resolves.toMatchObject({ reason: expect.stringContaining("before deleting") });
+  const refusal = async (id: string, status: string, hasDraft = false) =>
+    (await refusalsOf(write(id), [target], () => ready({ id: "wf-1", status, hasDraft }))).refusals[0];
+  expect(await refusal(ACTIVATE_WORKFLOW, "ACTIVE")).toMatchObject({ reason: expect.stringContaining("already active") });
+  expect(await refusal(ACTIVATE_WORKFLOW, "ACTIVE", true)).toBeUndefined();
+  expect(await refusal(DEACTIVATE_WORKFLOW, "DRAFT")).toMatchObject({ reason: expect.stringContaining("active workflow") });
+  expect(await refusal(DELETE_WORKFLOW, "ACTIVE")).toMatchObject({ reason: expect.stringContaining("before deleting") });
 });
 
 
-it("checks lifecycle availability for a whole list page with one owner read", async () => {
-  const { host, request } = fakeHost(() => ({
-    success: true,
-    data: [
-      { id: "wf-1", name: "Restock", status: "ACTIVE" },
-      { id: "wf-2", name: "Draft", status: "DRAFT" },
-    ],
-  }));
+it("reads each workflow's lifecycle state, takes it from rows, and finds a selection with any missing workflow not found", async () => {
+  const states: Record<string, object> = {
+    "wf-1": { id: "wf-1", status: "ACTIVE", hasDraft: false }, "wf-2": { id: "wf-2", status: "DRAFT", hasDraft: false },
+  };
+  const answer = (item: RegisteredDataReadItem): JavaPanelReadResult => {
+    const state = states[item.call!.parameters.primaryKey as string];
+    return state ? ready(state) : { status: "error", code: "WORKFLOW_NOT_FOUND", error: "Workflow not found" };
+  };
   const operation = write(ACTIVATE_WORKFLOW);
-  const reasons = await operation.unavailableBatch?.(host, [
-    { target, rowKey: "row-1" },
-    { target: { ...target, primaryKey: "wf-2" }, rowKey: "row-2" },
-  ]);
-  expect(request).toHaveBeenCalledTimes(1);
-  expect(JSON.parse(String(request.mock.calls[0][1].body))).toEqual({});
-  expect(reasons?.get("row-1")?.reason).toContain("already active");
-  expect(reasons?.has("row-2")).toBe(false);
+  const second = { ...target, primaryKey: "wf-2" };
+  const page = await refusalsOf(operation, [target, second], answer);
+  expect(page.reads).toEqual(["wf-1", "wf-2"].map(primaryKey =>
+    ({ call: { type: WORKFLOW, name: "lifecycleState", parameters: { primaryKey } } })));
+  expect(page.refusals[0]?.reason).toContain("already active");
+  expect(page.refusals[1]).toBeUndefined();
+
+  const missing = await refusalsOf(operation, [second, { ...target, primaryKey: "wf-gone" }], answer);
+  expect(missing.refusals).toEqual([{ reason: en["panels.workflow.notFound"] }, { reason: en["panels.workflow.notFound"] }]);
+
+  expect(operation.availability!.row!({ primaryKey: "wf-1", label: "Restock", fields: { statusCode: "ACTIVE", hasDraft: true } }))
+    .toEqual({ status: "ACTIVE", hasDraft: true });
 });
 
 it("reports activation notes and submits each lifecycle action to its owner", async () => {

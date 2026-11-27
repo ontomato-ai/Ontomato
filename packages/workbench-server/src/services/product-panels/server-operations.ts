@@ -12,6 +12,8 @@ import {
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { isPlatformFormSaveOperation } from "@ontomato/contracts/platform-object-types";
 import type { PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
+import type { JavaPanelReadResult } from "./java-panel-reads";
+import type { RegisteredDataReadItem } from "./registered-data-read";
 import type { AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -66,12 +68,64 @@ export interface PanelOperationHost {
   requestWorkbench(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
   request(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
 }
+
+/** A record an operation's availability is decided for, or null for an operation without a target. */
+export type PanelOperationAvailabilityTarget = PanelRecordTarget | null;
+export type PanelOperationRefusal = NonNullable<PanelOwnerOperationDescriptor["unavailable"]>;
+
+/** Who an operation's availability facts are read for. */
+export interface PanelOperationFactsContext {
+  owner: AssistantOwner;
+  credentials: AssistantCredentials;
+  locale?: string;
+}
+
+/** Java read items and what their results give: the shape a registered data read has too. */
+export interface PanelOperationFactsRead<Facts> {
+  reads: readonly RegisteredDataReadItem[];
+  facts(results: readonly JavaPanelReadResult[]): Facts | Promise<Facts>;
+}
+
+/**
+ * Whether an operation can act and why not, declared once. The platform reads the facts for the targets a binding
+ * gives (fixed, selected, a list input, each row), within the formal page's second read or in one direct read elsewhere,
+ * and applies `refuse`, the operation's only copy of the rule.
+ */
+export interface PanelOperationAvailability<Shared = unknown, Facts = unknown> {
+  /** Facts that do not depend on the target, such as a management gate or visibility ranges. */
+  shared?: PanelOperationFactsRead<Shared>;
+  /**
+   * Facts that need Java read items per target, planned for the distinct targets and given one per target in order.
+   * The items may be built from Node's own stores, never from page parameters. A row binding on a formal page can only
+   * use them through `row` or facts its list carries back, because the rows are unknown when the read is planned.
+   */
+  read?(targets: readonly PanelOperationAvailabilityTarget[], context: PanelOperationFactsContext):
+    PanelOperationFactsRead<readonly Facts[]> | Promise<PanelOperationFactsRead<readonly Facts[]>>;
+  /** Facts from Node's own stores alone, one per target in order, for an operation without per-target Java reads. */
+  local?(targets: readonly PanelOperationAvailabilityTarget[], context: PanelOperationFactsContext, shared: Shared):
+    readonly Facts[] | Promise<readonly Facts[]>;
+  /** The same per-target facts as every row of the target's record type already carries them. */
+  row?(row: PanelRecord): Facts;
+  /** The rule: why the operation cannot act on this target with these bound parameters, or nothing. */
+  refuse(input: {
+    shared: Shared;
+    facts: Facts;
+    target: PanelOperationAvailabilityTarget;
+    params: Readonly<Record<string, unknown>>;
+    locale?: string;
+  }): PanelOperationRefusal | undefined;
+}
+
+/** An input schema that depends on owner facts: read items plus the schema their results give. */
+export interface PanelOperationInputForm {
+  reads: readonly RegisteredDataReadItem[];
+  schema(results: readonly JavaPanelReadResult[], locale?: string): PanelOwnerOperationDescriptor["inputSchema"];
+}
 interface OperationInputDescription {
   secretFields?: readonly string[];
   describeLocalInputSchema?(locale?: string): PanelOwnerOperationDescriptor["inputSchema"];
-  /** The owner's input schema with presentation annotations in the reader's locale. */
-  describeInputSchema?(host: PanelOperationHost, locale?: string):
-    PanelOwnerOperationDescriptor["inputSchema"] | Promise<PanelOwnerOperationDescriptor["inputSchema"]>;
+  /** The input schema as owner facts give it; the platform reads them with the operation's availability. */
+  inputForm?: PanelOperationInputForm;
 }
 interface ServerOperation extends OperationInputDescription {
   handlerRef: string;
@@ -79,17 +133,8 @@ interface ServerOperation extends OperationInputDescription {
   labelKey?: string;
   effect: "write";
   inspectImpact?: PanelImpactInspector;
-  /** The current reader's display reason for the bound target, or null for a targetless operation. */
-  unavailable?(host: PanelOperationHost, target: PanelRecordTarget | null): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
-  /** Include known operation parameters when the selection alone cannot determine availability. */
-  unavailableForInput?(
-    host: PanelOperationHost, target: PanelRecordTarget | null, input: Readonly<Record<string, unknown>>,
-  ): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
-  /** Optional batch availability lookup across a page of list rows to avoid per-row backend requests. */
-  unavailableBatch?(
-    host: PanelOperationHost,
-    targets: readonly { target: PanelRecordTarget; rowKey: string; row?: PanelRecord; input?: Readonly<Record<string, unknown>> }[],
-  ): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>>;
+  /** Whether the operation can act, in one declaration; absent means always available. */
+  availability?: PanelOperationAvailability;
   inputSchema: z.ZodType<Record<string, unknown>>;
   resultSchema: z.ZodTypeAny;
   projectResult?(data: Record<string, RuntimeJsonValue>, view: AssistantSkillView): Record<string, RuntimeJsonValue>;
@@ -160,7 +205,8 @@ export interface PanelReadServerOperation extends OperationInputDescription {
   resultSchema: z.ZodType<PanelReadOperationResult>;
   describeResultSections?: (locale?: string) =>
     Promise<readonly PanelReadOperationSectionDeclaration[] | undefined> | readonly PanelReadOperationSectionDeclaration[] | undefined;
-  unavailable?(host: PanelOperationHost, target: PanelRecordTarget | null): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
+  /** Whether the operation can act, in one declaration; absent means always available. */
+  availability?: PanelOperationAvailability;
   execute(host: PanelOperationHost, call: ReadCall): Promise<ReadResult>;
 }
 
@@ -259,19 +305,15 @@ export function panelServerOperationLabel(handler: PanelServerOperation, locale?
   return label;
 }
 
-export async function describeServerOperation(handler: PanelServerOperation, context: PanelOperationHost | string | undefined, slot?: string,
+export async function describeServerOperation(handler: PanelServerOperation, locale: string | undefined, slot?: string,
   target?: PanelOwnerOperationDescriptor["target"],
   inputSchema?: PanelOwnerOperationDescriptor["inputSchema"],
 ) {
-  const host = typeof context === "object" ? context : undefined;
-  const locale = typeof context === "string" ? context : host?.locale;
-  if (handler.describeInputSchema && !host && inputSchema === undefined)
+  if (handler.inputForm && inputSchema === undefined)
     throw new HttpError(422, `Operation '${handler.handlerRef}' needs owner input-schema facts`, "PANEL_OPERATION_READ_UNAVAILABLE");
   return describePanelOperationFromDeclaration(operationDeclaration(handler), {
     label: panelServerOperationLabel(handler, locale), slot, target,
-    inputSchema: inputSchema ?? (handler.describeInputSchema
-      ? await handler.describeInputSchema(host!, locale)
-      : handler.describeLocalInputSchema?.(locale)),
+    inputSchema: inputSchema ?? handler.describeLocalInputSchema?.(locale),
     resultSchema: runtimeJsonSchema(handler.resultSchema),
     ...(handler.effect === "read" && handler.describeResultSections && {
       resultSections: await handler.describeResultSections(locale),

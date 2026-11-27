@@ -12,6 +12,7 @@ import type { CurrentProductRow } from "../../../infrastructure/product-current"
 import type { PanelReadBatchCache } from "../member-path";
 import type { RegisteredDataReadContext } from "../registered-data-read";
 import type { PanelOperationHost } from "../server-operations";
+import { ready, refusalsOf } from "./availability-fixture";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
@@ -226,7 +227,7 @@ it("preserves picker options and uses the admitted range without another authori
   const readContext: RegisteredDataReadContext = {
     owner, credentials,
     selection: { kind: "platform", typeId: PRODUCT_PANEL, method: "options" },
-    params: { keyword, page }, inputs: {}, projection: {} as ProductProjection,
+    params: { keyword, page }, inputs: {}, rowOperations: [], projection: {} as ProductProjection,
     cache: { read: (_key: string, read: () => Promise<unknown>) => read() } as PanelReadBatchCache,
   };
   const options = await registration.plan(readContext);
@@ -284,8 +285,17 @@ it("allows the author to confirm and delete a broken panel after its Grants are 
   const operation = productCatalogServerOperations.find(op => op.handlerRef === "productPanels.delete");
   if (operation?.kind !== "action" || operation.targetInput === undefined) throw new Error("Missing targeted panel delete");
   const target = { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "author-panel" } as const;
-  await expect(operation.unavailable!(host, target)).resolves.toBeUndefined();
-  await expect(operation.unavailable!(host, { ...target, primaryKey: "reader-panel" })).resolves.toBeDefined();
+  // The reader's panel ranges come with the page's read; the stored panels are judged within them.
+  const ranges = {
+    USE: { fixed: true, authorId: null, objectIds: grantedIds.use, all: false },
+    EDIT: { fixed: false, authorId: owner.userId, objectIds: grantedIds.edit, all: false },
+  };
+  const { refusals, reads } = await refusalsOf(operation, [target, { ...target, primaryKey: "reader-panel" }],
+    () => ready(undefined, { PANEL: ranges }), { context: { ...actor, locale: "en" } });
+  expect(reads).toEqual([{ visibleKinds: [{ kind: "PANEL", verbs: ["USE", "EDIT"] }] }]);
+  expect(refusals[0]).toBeUndefined();
+  expect(refusals[1]).toBeDefined();
+  expect(mocks.ranges).not.toHaveBeenCalled();
   const impact = panelOperationImpactSchema.parse(await operation.inspectImpact!.inspect(host, [{ target, input: { revision: 4 } }]));
   expect(impact).toMatchObject({
     total: 1, objects: [{ target: { objectType: PRODUCT_PANEL, primaryKey: "author-panel" }, label: "Orders" }],

@@ -5,6 +5,7 @@ import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platfo
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
+import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 import { ontologyModelServerOperations } from "../model-operations";
 
 configureI18n({
@@ -660,49 +661,51 @@ describe("ontology model server operations", () => {
     });
   });
 
-  it("evaluates attribute delete availability in a single batch for row operations", async () => {
+  it("judges attribute delete for many targets from one attribute list read with its delete facts", async () => {
     const pk = { ...attributeView, name: "id", type: "varchar", primaryKey: true };
     const joined = { ...attributeView, name: "site_id", type: "varchar", primaryKey: false };
     const free = { ...attributeView, name: "note", type: "varchar", primaryKey: false };
-    const { host, requests } = owner(path => ({
-      status: 200,
-      body: path.includes("/relationships") ? [relationshipView] : [pk, joined, free],
-    }));
+    const targets = ["id", "site_id", "note"].map(name =>
+      ({ kind: "object" as const, objectType: ATTRIBUTE, primaryKey: JSON.stringify(["Device", name]) }));
 
-    const reasons = await deleteAttribute.unavailableBatch!(host, [
-      { rowKey: "r-pk", target: { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","id"]' } },
-      { rowKey: "r-joined", target: { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' } },
-      { rowKey: "r-free", target: { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","note"]' } },
-    ]);
+    const { refusals, reads } = await refusalsOf(deleteAttribute, targets, () =>
+      ready({ views: [pk, joined, free], relationshipFacts: { views: [relationshipView] } }));
 
-    expect(reasons.get("r-pk")?.reason).toMatch(/primary key/i);
-    expect(reasons.get("r-joined")?.reason).toContain("owns");
-    expect(reasons.has("r-free")).toBe(false);
-    // Single attributes read + single relationships read regardless of row count.
-    expect(requests).toHaveLength(2);
+    expect(reads).toEqual([{ call: { type: ATTRIBUTE, name: "list", parameters: { className: "Device", includeDeleteFacts: true } } }]);
+    expect(refusals[0]?.reason).toMatch(/primary key/i);
+    expect(refusals[1]?.reason).toContain("owns");
+    expect(refusals[2]).toBeUndefined();
   });
 
   it("blocks setting existing, disabled or non-text keys and deleting referenced or primary-key attributes", async () => {
     const eligible = { ...attributeView, type: "varchar" };
     const choices = [eligible, { ...eligible, primaryKey: true }, { ...eligible, enable: false }, attributeView];
     for (const [index, attribute] of choices.entries()) {
-      const { host } = owner(() => ({ status: 200, body: [attribute] }));
-      expect(Boolean(await setPrimaryKey.unavailable!(host, attributeTarget))).toBe(index !== 0);
-      if (attribute.primaryKey) expect(await deleteAttribute.unavailable!(host, attributeTarget)).toBeDefined();
+      const answer = () => ready({ views: [attribute], relationshipFacts: { views: [] } });
+      const set = await refusalsOf(setPrimaryKey, [attributeTarget], answer);
+      expect(set.reads).toEqual([{ call: { type: ATTRIBUTE, name: "list", parameters: { className: "Device" } } }]);
+      expect(Boolean(set.refusals[0])).toBe(index !== 0);
+      if (attribute.primaryKey) expect((await refusalsOf(deleteAttribute, [attributeTarget], answer)).refusals[0]).toBeDefined();
     }
-    const { host } = owner(path => ({
-      status: 200,
-      body: path.includes("/attributes?") ? [eligible] : [
+    const { refusals: [referenced] } = await refusalsOf(deleteAttribute, [attributeTarget], () => ready({
+      views: [eligible],
+      relationshipFacts: { views: [
         { ...relationshipView, fromField: "size" },
         { ...relationshipView, relationship: "reverse", fromclass: "Site", toclass: "Device", toField: "size" },
         { ...relationshipView, relationship: "unrelated", toField: "size" },
-      ],
+      ] },
     }));
-    const unavailable = await deleteAttribute.unavailable!(host, attributeTarget);
-    expect(unavailable?.reason).toContain("owns, reverse");
-    expect(unavailable?.reason).not.toContain("unrelated");
-    const failed = owner(() => ({ status: 500, body: { error: { code: "OWNER_FAILURE", message: "Failed" } } }));
-    await expect(deleteAttribute.unavailable!(failed.host, attributeTarget)).rejects.toMatchObject({ status: 500, code: "OWNER_FAILURE" });
+    expect(referenced?.reason).toContain("owns, reverse");
+    expect(referenced?.reason).not.toContain("unrelated");
+    // Relationships the owner could not list refuse with its message instead of failing the whole read.
+    const { refusals: [unlisted] } = await refusalsOf(deleteAttribute, [attributeTarget], () =>
+      ready({ views: [eligible], relationshipFacts: { error: "Relationships unavailable" } }));
+    expect(unlisted).toEqual({ reason: "Relationships unavailable" });
+    // The owner refusing the list read itself leaves the attribute unavailable; an owner failure fails the read.
+    const { refusals: [hidden] } = await refusalsOf(setPrimaryKey, [attributeTarget], () => ({ status: "forbidden", error: "No access" }));
+    expect(hidden?.reason).toBe(en["panels.ontologyModel.unavailable.attributeUnavailable"]);
+    await expect(refusalsOf(deleteAttribute, [attributeTarget], () => ({ status: "error", code: "OWNER_FAILURE", error: "Failed" })))
+      .rejects.toMatchObject({ response: { status: "error", code: "OWNER_FAILURE" } });
   });
 
   it("inspects object type deletion impact and propagates 404 errors", async () => {

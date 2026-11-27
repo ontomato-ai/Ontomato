@@ -66,8 +66,12 @@ import { assistantEvidenceReader } from "../../platform/diagnosis/observe/worksp
 import { buildTurnWorkspace } from "../../platform/diagnosis/observe/workspaces/builder";
 import { deleteWorkspace, isWorkspaceId, loadManifest } from "../../platform/diagnosis/observe/workspaces/store";
 import { HttpError } from "../../utils/errors";
+import { readyPayload } from "../product-panels/registered-data-read";
 import type {
   PanelImpactInspector,
+  PanelOperationAvailability,
+  PanelOperationAvailabilityTarget,
+  PanelOperationFactsRead,
   PanelOperationHost,
   PanelOperationTarget,
   PanelReadServerOperation,
@@ -205,42 +209,6 @@ function retentionUnavailableReason(locale: string | undefined, currentlyKept: b
   }
 }
 
-function retentionUnavailable(artifactType: "turn-workspace" | "autotest-run", wantKept: boolean) {
-  return {
-    async unavailable(host: PanelOperationHost, target: PanelRecordTarget | null) {
-      if (!target) return undefined;
-      const keptKeys = await getArtifactRetentionSnapshot();
-      return retentionUnavailableReason(host.locale, hasArtifactRetention(keptKeys, artifactType, target.primaryKey), wantKept);
-    },
-    async unavailableBatch(
-      host: PanelOperationHost,
-      targets: readonly { target: PanelRecordTarget; rowKey: string }[],
-    ) {
-      const keptKeys = await getArtifactRetentionSnapshot();
-      const reasons = new Map<string, { reason: string }>();
-      for (const { target, rowKey } of targets) {
-        const reason = retentionUnavailableReason(host.locale, hasArtifactRetention(keptKeys, artifactType, target.primaryKey), wantKept);
-        if (reason) reasons.set(rowKey, reason);
-      }
-      return reasons;
-    },
-  };
-}
-
-export function turnRetentionUnavailable(operation: string, locale: string | undefined, kept: boolean) {
-  if (operation === KEEP_TURN_EVIDENCE || operation === UNKEEP_TURN_EVIDENCE)
-    return retentionUnavailableReason(locale, kept, operation === KEEP_TURN_EVIDENCE);
-}
-
-export function autotestRunOperationUnavailable(
-  operation: string, locale: string | undefined, run: { runId: string; status: string; kept: boolean },
-) {
-  if (operation === DELETE_AUTOTEST_RUN) {
-    return isRunBusy(run.runId, run.status) ? { reason: tForLocale(locale, "panels.ops.errors.runBusy") } : undefined;
-  }
-  return retentionUnavailableReason(locale, run.kept, operation === KEEP_AUTOTEST_RUN);
-}
-
 function visibleTurnManifest(domainId: string, turnKey: string) {
   const manifest = loadManifest(turnKey);
   return manifest?.domainId === domainId ? manifest : undefined;
@@ -257,63 +225,88 @@ function caseArtifactHasEvidence(domainId: string, { runId, caseId }: ReturnType
   return artifactDir !== null && Boolean(loadManifestAtArtifactDir(artifactDir, "")?.evidence);
 }
 
-export function prepareOpsEvidenceAvailability(operation: string, domainId: string, ids: string[], locale?: string) {
-  if (operation === DOWNLOAD_AUTOTEST_CASE_ARTIFACT) {
-    const keys = ids.map(id => {
-      const key = parseAutotestCaseArtifactKey(id);
-      if (!isAutotestResultId(key.runId))
-        throw new HttpError(400, "Invalid case artifact key");
-      return key;
-    });
-    return {
-      type: AUTOTEST_CASE_ARTIFACT,
-      approval: workbenchManagement.opsRunsRead.id,
-      async read() {
-        return keys.map(key => {
-          const hasEvidence = caseArtifactHasEvidence(domainId, key);
-          return hasEvidence === undefined ? { reason: "Test run not found" } : downloadUnavailableReason(locale, hasEvidence);
-        });
-      },
-    };
-  }
-  if (operation === KEEP_AUTOTEST_RUN || operation === UNKEEP_AUTOTEST_RUN || operation === DELETE_AUTOTEST_RUN) {
-    if (ids.some(id => !isAutotestResultId(id))) throw new HttpError(400, "Invalid runId");
-    return {
-      type: AUTOTEST_RUN,
-      approval: workbenchManagement.opsRunsRead.id,
-      async read() {
-        const runs = ids.map(id => {
-          const meta = loadRunMetaForDomain(id, domainId);
-          if (!meta) throw new HttpError(403, tForLocale(locale, "panels.ops.errors.runNotFound"));
-          return meta;
-        });
-        const kept = operation === DELETE_AUTOTEST_RUN ? [] : await getArtifactRetentionSnapshot();
-        return runs.map(({ runId, status }) => autotestRunOperationUnavailable(operation, locale, {
-          runId, status, kept: hasArtifactRetention(kept, "autotest-run", runId),
-        }));
-      },
-    };
-  }
-  if (operation !== DOWNLOAD_TURN_EVIDENCE && operation !== KEEP_TURN_EVIDENCE && operation !== UNKEEP_TURN_EVIDENCE) return;
-  for (const id of ids) {
-    if (!parseTurnKey(id) || !isWorkspaceId(id)) throw new HttpError(400, "Invalid turnKey");
-  }
+/** The management gate of a turn's or a run's records, which their operations pass before Node reads their files. */
+function managementGate(type: string, operation: WorkbenchManagementOperation): PanelOperationFactsRead<string> {
   return {
-    type: TURN_EVIDENCE,
-    approval: workbenchManagement.opsTurnEvidenceRead.id,
-    async read() {
-      const manifests = ids.map(id => visibleTurnManifest(domainId, id));
-      const keptKeys = operation !== DOWNLOAD_TURN_EVIDENCE && manifests.some(Boolean) ? await getArtifactRetentionSnapshot() : [];
-      return ids.map((id, index) => {
-        const manifest = manifests[index];
-        if (!manifest) return { reason: "Turn workspace not found" };
-        return operation === DOWNLOAD_TURN_EVIDENCE
-          ? downloadUnavailableReason(locale, Boolean(manifest.evidence))
-          : turnRetentionUnavailable(operation, locale, hasArtifactRetention(keptKeys, "turn-workspace", id));
-      });
-    },
+    reads: [{ call: { type, name: "record", parameters: {} } }],
+    facts: ([result]) => z.literal(operation.id).parse(readyPayload(result!).payload),
   };
 }
+
+function turnKey(target: PanelOperationAvailabilityTarget) {
+  const id = target!.primaryKey;
+  if (!parseTurnKey(id) || !isWorkspaceId(id)) throw new HttpError(400, "Invalid turnKey");
+  return id;
+}
+
+/** The run in the reader's domain; one outside it is not found. */
+function domainRun(target: PanelOperationAvailabilityTarget, domainId: string, locale?: string) {
+  const id = target!.primaryKey;
+  if (!isAutotestResultId(id)) throw new HttpError(400, "Invalid runId");
+  const meta = loadRunMetaForDomain(id, domainId);
+  if (!meta) throw new HttpError(403, tForLocale(locale, "panels.ops.errors.runNotFound"));
+  return meta;
+}
+
+/** Keeping wants a turn not kept yet, releasing one kept; a turn outside the reader's domain is not found. */
+function turnRetentionAvailability(wantKept: boolean): PanelOperationAvailability<string, boolean | undefined> {
+  return {
+    shared: managementGate(TURN_EVIDENCE, workbenchManagement.opsTurnEvidenceRead),
+    async local(targets, { owner }) {
+      const keys = targets.map(turnKey);
+      const visible = keys.map(key => visibleTurnManifest(owner.domainId, key) !== undefined);
+      const kept = visible.some(Boolean) ? await getArtifactRetentionSnapshot() : [];
+      return keys.map((key, index) => visible[index] ? hasArtifactRetention(kept, "turn-workspace", key) : undefined);
+    },
+    row: row => row.fields.kept as boolean,
+    refuse: ({ facts: kept, locale }) => kept === undefined
+      ? { reason: "Turn workspace not found" } : retentionUnavailableReason(locale, kept, wantKept),
+  };
+}
+
+function runRetentionAvailability(wantKept: boolean): PanelOperationAvailability<string, boolean> {
+  return {
+    shared: managementGate(AUTOTEST_RUN, workbenchManagement.opsRunsRead),
+    async local(targets, { owner, locale }) {
+      const runs = targets.map(target => domainRun(target, owner.domainId, locale));
+      const kept = await getArtifactRetentionSnapshot();
+      return runs.map(({ runId }) => hasArtifactRetention(kept, "autotest-run", runId));
+    },
+    row: row => row.fields.kept as boolean,
+    refuse: ({ facts: kept, locale }) => retentionUnavailableReason(locale, kept, wantKept),
+  };
+}
+
+/** A run still running or writing artifacts cannot be deleted. */
+const runDeleteAvailability: PanelOperationAvailability<string, string> = {
+  shared: managementGate(AUTOTEST_RUN, workbenchManagement.opsRunsRead),
+  local: (targets, { owner, locale }) => targets.map(target => domainRun(target, owner.domainId, locale).status),
+  row: row => row.fields.status as string,
+  refuse: ({ facts: status, target, locale }) =>
+    isRunBusy(target!.primaryKey, status) ? { reason: tForLocale(locale, "panels.ops.errors.runBusy") } : undefined,
+};
+
+/** A turn downloads only with evidence; one outside the reader's domain is not found. */
+const turnDownloadAvailability: PanelOperationAvailability<string, boolean | undefined> = {
+  shared: managementGate(TURN_EVIDENCE, workbenchManagement.opsTurnEvidenceRead),
+  local: (targets, { owner }) => targets.map(target => {
+    const manifest = visibleTurnManifest(owner.domainId, turnKey(target));
+    return manifest && Boolean(manifest.evidence);
+  }),
+  refuse: ({ facts: hasEvidence, locale }) => hasEvidence === undefined
+    ? { reason: "Turn workspace not found" } : downloadUnavailableReason(locale, hasEvidence),
+};
+
+const caseArtifactDownloadAvailability: PanelOperationAvailability<string, boolean | undefined> = {
+  shared: managementGate(AUTOTEST_CASE_ARTIFACT, workbenchManagement.opsRunsRead),
+  local: (targets, { owner }) => targets.map(target => {
+    const key = parseAutotestCaseArtifactKey(target!.primaryKey);
+    if (!isAutotestResultId(key.runId)) throw new HttpError(400, "Invalid case artifact key");
+    return caseArtifactHasEvidence(owner.domainId, key);
+  }),
+  refuse: ({ facts: hasEvidence, locale }) => hasEvidence === undefined
+    ? { reason: "Test run not found" } : downloadUnavailableReason(locale, hasEvidence),
+};
 
 function isRunBusy(runId: string, status?: string): boolean {
   return getActiveRun()?.runId === runId || status === "running" || status === "stopping" || hasActiveRunArtifactWrites(runId);
@@ -436,7 +429,7 @@ export const opsDiagnosisWriteOperations = [
     resultSchema: emptyResultSchema,
     targetLabel: turnLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ops.done.kept", { name }),
-    ...retentionUnavailable("turn-workspace", true),
+    availability: turnRetentionAvailability(true),
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Keep acts on a selected turn evidence workspace");
       try {
@@ -469,7 +462,7 @@ export const opsDiagnosisWriteOperations = [
     resultSchema: emptyResultSchema,
     targetLabel: turnLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ops.done.unkept", { name }),
-    ...retentionUnavailable("turn-workspace", false),
+    availability: turnRetentionAvailability(false),
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Unkeep acts on a selected turn evidence workspace");
       try {
@@ -540,7 +533,7 @@ export const opsDiagnosisWriteOperations = [
     resultSchema: emptyResultSchema,
     targetLabel: runLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ops.done.kept", { name }),
-    ...retentionUnavailable("autotest-run", true),
+    availability: runRetentionAvailability(true),
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Keep acts on a selected test run");
       try {
@@ -573,7 +566,7 @@ export const opsDiagnosisWriteOperations = [
     resultSchema: emptyResultSchema,
     targetLabel: runLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ops.done.unkept", { name }),
-    ...retentionUnavailable("autotest-run", false),
+    availability: runRetentionAvailability(false),
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Unkeep acts on a selected test run");
       try {
@@ -607,32 +600,7 @@ export const opsDiagnosisWriteOperations = [
     targetLabel: runLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ops.done.runDeleted", { name }),
     inspectImpact: deleteAutotestRunImpact,
-    async unavailable(host: PanelOperationHost, target: PanelRecordTarget | null) {
-      if (!target) return undefined;
-      try {
-        const meta = loadRunMeta(target.primaryKey);
-        if (meta && meta.domainId === host.initiator.owner.domainId && isRunBusy(target.primaryKey, meta.status)) {
-          return { reason: tForLocale(host.locale, "panels.ops.errors.runBusy") };
-        }
-      } catch {
-        // Ignore invalid target lookup here; execute reports the refusal.
-      }
-      return undefined;
-    },
-    async unavailableBatch(host: PanelOperationHost, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
-      const reasons = new Map<string, { reason: string } | undefined>();
-      for (const { target, rowKey } of targets) {
-        try {
-          const meta = loadRunMeta(target.primaryKey);
-          if (meta && meta.domainId === host.initiator.owner.domainId && isRunBusy(target.primaryKey, meta.status)) {
-            reasons.set(rowKey, { reason: tForLocale(host.locale, "panels.ops.errors.runBusy") });
-          }
-        } catch {
-          // Ignore invalid target lookup.
-        }
-      }
-      return reasons;
-    },
+    availability: runDeleteAvailability,
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected test run");
       try {
@@ -779,11 +747,7 @@ export const opsDiagnosisReadOperations = [
     targetSchema: turnTargetSchema,
     inputSchema: emptyInputSchema,
     resultSchema: panelDownloadReceiptSchema,
-    async unavailable(host, target) {
-      if (!target) return undefined;
-      const manifest = visibleTurnManifest(host.initiator.owner.domainId, target.primaryKey);
-      if (manifest) return downloadUnavailableReason(host.locale, Boolean(manifest.evidence));
-    },
+    availability: turnDownloadAvailability,
     async execute(host, call) {
       const { primaryKey } = turnTargetSchema.parse(call.target);
       await verifyOwnedTurn(workbenchManagement.opsTurnEvidenceRead, host, primaryKey);
@@ -840,18 +804,7 @@ export const opsDiagnosisReadOperations = [
     targetSchema: caseArtifactTargetSchema,
     inputSchema: emptyInputSchema,
     resultSchema: panelDownloadReceiptSchema,
-    async unavailable(host, target) {
-      if (!target) return undefined;
-      try {
-        const hasEvidence = caseArtifactHasEvidence(
-          host.initiator.owner.domainId, parseAutotestCaseArtifactKey(target.primaryKey),
-        );
-        if (hasEvidence !== undefined) return downloadUnavailableReason(host.locale, hasEvidence);
-      } catch {
-        // Ignore lookup errors during availability check.
-      }
-      return undefined;
-    },
+    availability: caseArtifactDownloadAvailability,
     async execute(host, call) {
       const { primaryKey } = caseArtifactTargetSchema.parse(call.target);
       const { runId, caseId } = parseAutotestCaseArtifactKey(primaryKey);

@@ -34,12 +34,17 @@ import { defaultAgentSchema } from "@ontomato/contracts/default-agent";
 import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, currentProductUsedBy, deleteCurrentProduct, readCataloguePanel,
+  readCataloguePanelInRanges,
 } from "./catalog";
 import { readCurrentPanel, readCurrentPanelLabel, readCurrentProjection, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection } from "./current";
 import { applySubmittedFields } from "./submitted-form-values";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "./data-query-operations";
-import type { PanelImpactInspector, PanelOperationHost, PanelRecordTarget, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
+import { readyPayload } from "./registered-data-read";
+import type {
+  PanelImpactInspector, PanelOperationAvailability, PanelOperationHost, PanelRecordTarget, PanelWriteServerOperation,
+  SinglePanelOperationOutcome,
+} from "./server-operations";
 
 const savedId = productCurrentIdParamsSchema;
 const noData = z.object({}).strict();
@@ -237,6 +242,22 @@ export function panelDeleteRefusal(
   return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
 }
 
+type PanelRanges = Parameters<typeof readCataloguePanelInRanges>[2];
+
+/** A panel deletes for whoever may edit it, judged on the stored panel within the reader's panel ranges. */
+const panelDeletion: PanelOperationAvailability<PanelRanges, Awaited<ReturnType<typeof readCataloguePanelInRanges>>> = {
+  shared: {
+    reads: [{ visibleKinds: [{ kind: "PANEL", verbs: ["USE", "EDIT"] }] }],
+    facts: ([result]) => {
+      const { USE, EDIT } = readyPayload(result!).visibility!.PANEL!;
+      return { USE: USE!, EDIT: EDIT! };
+    },
+  },
+  local: (targets, { owner }, ranges) =>
+    Promise.all(targets.map(target => readCataloguePanelInRanges(owner.domainId, target!.primaryKey, ranges))),
+  refuse: ({ facts, locale }) => panelDeleteRefusal(facts, locale),
+};
+
 function productOperations(kind: "panel" | "projection", type: string, collection: string): PanelWriteServerOperation[] {
   const objectTarget = panelObjectIdentitySchema.extend({ kind: z.literal("object"), objectType: z.literal(type) });
   const { revision: updateRevision } = deleteProductCurrentQuerySchema.shape;
@@ -320,7 +341,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     inputSchema: z.ZodType<Input, z.ZodTypeDef, unknown>,
     resultSchema: z.ZodTypeAny,
     run: (actor: PanelOperationHost["executor"], primaryKey: string, input: Input) => Promise<{ primaryKey: string; data: OutcomeData }>,
-    extra?: Pick<PanelWriteServerOperation, "unavailable" | "unavailableBatch" | "inspectImpact">,
+    extra?: Pick<PanelWriteServerOperation, "availability" | "inspectImpact">,
   ): PanelWriteServerOperation {
     const handlerRef = `${collection}.${name}`;
     return {
@@ -349,17 +370,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
   }
 
   const panelCopyInputSchema = copyProductCurrentRequestSchema.extend({ template: z.boolean().optional() }).strict();
-  const panelDeleteUnavailable: PanelWriteServerOperation["unavailable"] | undefined = kind === "panel"
-    ? async (host, { primaryKey }: PanelRecordTarget) => {
-        const locale = host.locale ?? host.initiator.credentials.locale;
-        try {
-          return panelDeleteRefusal(await readCataloguePanel(host.initiator.owner, host.initiator.credentials, primaryKey), locale);
-        } catch (error) {
-          if (!(error instanceof HttpError && (error.status === 403 || error.status === 404))) throw error;
-          return panelDeleteRefusal(undefined, locale);
-        }
-      }
-    : undefined;
+  const panelDeleteAvailability = kind === "panel" ? panelDeletion : undefined;
 
   return [
     save,
@@ -374,7 +385,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
         const result = await deleteCurrentProduct(owner, credentials, kind, primaryKey, revision);
         return { primaryKey, data: runtimeJsonObjectSchema.parse(result) };
       },
-      { unavailable: panelDeleteUnavailable, inspectImpact: deleteProductImpact(kind, collection) }),
+      { availability: panelDeleteAvailability, inspectImpact: deleteProductImpact(kind, collection) }),
     ...(["grant", "revoke"] as const).map(name => action(name, changeProductObjectGrantSchema.omit({ remove: true }), noData,
       async ({ owner, credentials }, primaryKey, input) => {
         await changeCurrentProductGrant(owner, credentials, kind, primaryKey, { ...input, remove: name === "revoke" });
@@ -497,7 +508,7 @@ function applicationAction<Input extends Record<string, unknown>>(
   name: "delete" | "grant" | "share" | "addEntry" | "updateEntry" | "deleteEntry",
   inputSchema: z.ZodType<Input>,
   run: (actor: PanelOperationHost["executor"], id: string, input: Input) => Promise<void>,
-  extra?: Pick<PanelWriteServerOperation, "unavailable" | "unavailableBatch" | "inspectImpact">,
+  extra?: Pick<PanelWriteServerOperation, "availability" | "inspectImpact">,
 ): PanelWriteServerOperation {
   const handlerRef = `applications.${name}`;
   return {
@@ -623,6 +634,19 @@ export function applicationDeleteRefusal(canMaintain: boolean | undefined, local
     return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
 }
 
+const applicationDeleteAvailabilitySchema = z.object({ canMaintain: z.boolean() });
+
+/** An application deletes for whoever maintains it; one the catalogue no longer has cannot be judged. */
+const applicationDeletion: PanelOperationAvailability<undefined, boolean | undefined> = {
+  read: targets => ({
+    reads: targets.map(target => ({ call: { type: APPLICATION, name: "deleteAvailability", parameters: { primaryKey: target!.primaryKey } } })),
+    facts: results => results.map(result => result.status === "error" && result.code === "APPLICATION_NOT_FOUND"
+      ? undefined : applicationDeleteAvailabilitySchema.parse(readyPayload(result).payload).canMaintain),
+  }),
+  row: row => row.fields.canMaintain === true,
+  refuse: ({ facts, locale }) => applicationDeleteRefusal(facts, locale),
+};
+
 const applicationOperations: readonly PanelWriteServerOperation[] = [
   applicationSave,
   applicationAction(
@@ -652,27 +676,7 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
           };
         },
       },
-      async unavailable(host, { primaryKey }: PanelRecordTarget) {
-        const locale = host.locale ?? host.initiator.credentials.locale;
-        try {
-          const detail = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
-          return applicationDeleteRefusal(detail.canMaintain, locale);
-        } catch {
-          // Fail closed: an unreadable record must never report delete as available,
-          // while isolating sibling operations on the same projection from this failure.
-          return applicationDeleteRefusal(undefined, locale);
-        }
-      },
-      async unavailableBatch(host, targets) {
-        const locale = host.locale ?? host.initiator.credentials.locale;
-        const reasons = new Map<string, { reason: string }>();
-        for (const { rowKey, row } of targets) {
-          if (row!.fields.canMaintain !== true) {
-            reasons.set(rowKey, { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") });
-          }
-        }
-        return reasons;
-      },
+      availability: applicationDeletion,
     },
   ),
   applicationAction("addEntry", z.object({ entry: applicationPanelUseSchema }).strict(),

@@ -9,6 +9,7 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { ObjectDecisionRequest, ObjectVisibilityRange } from "../../product-governance/authorization";
 import { operationHost } from "../operation-host";
+import { refusalsOf } from "./availability-fixture";
 
 const mocks = vi.hoisted(() => ({
   summaries: vi.fn(), countVisible: vi.fn(), findAgent: vi.fn(),
@@ -51,6 +52,15 @@ const [save, remove, grant, revoke, share] = agentDefinitionOperations;
 const policy = { policyId: "analyst-policy" };
 const storedGrants = [{ ...policy, name: "Analysts", level: "EDIT" }];
 const cannotDeleteSystemAgent = "Built-in system agents cannot be deleted.";
+
+/** A system agent's delete refusal reads nothing from Java. */
+async function deleteRefusal(id: string) {
+  const { refusals: [refusal], reads } = await refusalsOf(remove, [target(id)], () => {
+    throw new Error("A system agent's delete reads no Java facts");
+  }, { context: { ...requester, locale: "en" } });
+  expect(reads).toEqual([]);
+  return refusal;
+}
 const local = [preset, custom, builder, diagnosis];
 const definition = (id: string, ownerId: string | null = null) => ({
   target: { domainId: owner.domainId, kind: "AGENT", id },
@@ -210,7 +220,7 @@ it.each(systemIds)("checks view and edit separately for system agent %s", async 
   await expect(save.execute(host, target(id), input, "intent")).resolves.toMatchObject({ kind: "refusal", code: saveCode });
   await expect(grant.execute(host, target(id), { ...policy, verb: "edit" })).resolves.toMatchObject({ kind: "refusal", code: "FORBIDDEN" });
   await expect(directory.grants(id)).rejects.toMatchObject({ status: 403 });
-  await expect(remove.unavailable(host, target(id))).resolves.toEqual({ reason: cannotDeleteSystemAgent });
+  expect(await deleteRefusal(id)).toEqual({ reason: cannotDeleteSystemAgent });
   expect(mocks.saveBuilder).not.toHaveBeenCalled();
   expect(mocks.saveDiagnosis).not.toHaveBeenCalled();
   if (id === retrievalId) {
@@ -252,7 +262,7 @@ it.each(systemIds)("exposes only the model as an editable field for %s", async i
   ]);
   expect(form.fields[2].control).toMatchObject({ kind: "reference", objectType: "platform:ModelOption" });
   const host = operationHost(requester);
-  await expect(remove.unavailable(host, target(id))).resolves.toEqual({ reason: cannotDeleteSystemAgent });
+  expect(await deleteRefusal(id)).toEqual({ reason: cannotDeleteSystemAgent });
   await expect(remove.execute(host, target(id))).resolves.toEqual({
     kind: "refusal", code: "SYSTEM_AGENT_READ_ONLY", message: cannotDeleteSystemAgent,
   });

@@ -5,6 +5,7 @@ import {
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
+import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 import { m5ServerOperations } from "../panel-operations";
 
 /*
@@ -186,13 +187,11 @@ describe("metric and function panel server operations", () => {
   it("reads the system-metric delete reason from its owner and allows an ordinary metric", async () => {
     const operation = action(DELETE_METRIC_VIEW);
     const reason = "系统自带指标不能删除";
-    const protectedMetric = hostWith(() => Response.json({ success: true, data: { reason } }));
-    expect(await operation.unavailable!(protectedMetric.host, metricTarget)).toEqual({ reason });
-    expect(protectedMetric.sent[0]?.path).toBe("/api/data-query/metricView/queryById");
-    expect(JSON.parse(String(protectedMetric.sent[0]?.init.body))).toEqual({ id: "m1", purpose: "delete-availability" });
+    const protectedMetric = await refusalsOf(operation, [metricTarget], () => ready({ reason }));
+    expect(protectedMetric.refusals).toEqual([{ reason }]);
+    expect(protectedMetric.reads).toEqual([{ call: { type: METRIC_VIEW, name: "deleteRefusal", parameters: { primaryKey: "m1" } } }]);
 
-    const ordinary = hostWith(() => Response.json({ success: true, data: { reason: null } }));
-    expect(await operation.unavailable!(ordinary.host, metricTarget)).toBeUndefined();
+    expect((await refusalsOf(operation, [metricTarget], () => ready({ reason: null }))).refusals).toEqual([undefined]);
   });
 
   it("describes the metric delete impact with the bindings it takes along", async () => {
@@ -429,16 +428,14 @@ describe("metric and function panel server operations", () => {
 
   it("says why the function delete is unavailable in the owner's words, and nothing when the owner would allow it", async () => {
     const remove = action(DELETE_FUNCTION);
-    const referenced = hostWith(() => Response.json({ success: true, data: { reason: "Function referenced by MetricView cannot be modified or deleted" } }));
-    expect(await remove.unavailable!(referenced.host, functionTarget))
-      .toEqual({ reason: "Function referenced by MetricView cannot be modified or deleted" });
-    expect(referenced.sent[0]?.path).toBe("/api/data-query/function/deleteRefusal");
-    expect(JSON.parse(String(referenced.sent[0]?.init.body))).toEqual({ id: "f1" });
+    const reason = "Function referenced by MetricView cannot be modified or deleted";
+    const referenced = await refusalsOf(remove, [functionTarget], () => ready({ reason }));
+    expect(referenced.refusals).toEqual([{ reason }]);
+    expect(referenced.reads).toEqual([{ call: { type: FUNCTION, name: "deleteRefusal", parameters: { primaryKey: "f1" } } }]);
 
-    const free = hostWith(() => Response.json({ success: true, data: { reason: null } }));
-    expect(await remove.unavailable!(free.host, functionTarget)).toBeUndefined();
-    const missing = hostWith(() => Response.json({ success: false, code: "FUNCTION_NOT_FOUND", message: "Function not found" }));
-    await expect(remove.unavailable!(missing.host, functionTarget)).rejects.toMatchObject({ code: "FUNCTION_NOT_FOUND" });
+    expect((await refusalsOf(remove, [functionTarget], () => ready({ reason: null }))).refusals).toEqual([undefined]);
+    await expect(refusalsOf(remove, [functionTarget], () => ({ status: "error", code: "FUNCTION_NOT_FOUND", error: "Function not found" })))
+      .rejects.toMatchObject({ response: { status: "error", code: "FUNCTION_NOT_FOUND" } });
   });
 
   it("describes the function delete impact with the owner's reference rule", async () => {

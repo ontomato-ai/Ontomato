@@ -153,7 +153,7 @@ it("uses one authenticated registration lookup and one batch, without reading a 
     });
     collectUse("panel", { id: entry.use.panelId, domainId: viewer.domainId, ownerId: "author" });
     collectUse("projection", { id: "builtin-product-catalogue", domainId: null, ownerId: null });
-    return { inputs: { search: "registered input" } };
+    return { inputs: { search: "registered input" }, projection: {} };
   });
   mocks.prepare.mockImplementationOnce(async (_credentials, _placement, _datum, inputs) => ({
     declaration: { result: "panelRecordList" }, params: inputs, selection: { typeId: OBJECT_TYPE, method: "list" },
@@ -757,7 +757,7 @@ it("uses only the admitted personal owner and directory facts for the workspace 
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { typeId, method, params } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result: typeId === PRODUCT_PANEL ? "panelRecord" : "panelRecordList" },
       params, selection: { typeId, method } });
   }
@@ -851,7 +851,7 @@ it("reads registered gallery sources by category and preserves favorites orderin
   const run = async (cases: { params: Record<string, unknown>; reply: Record<string, unknown> }[]) => {
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
     for (const { params } of cases) {
-      mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+      mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
       mocks.prepare.mockResolvedValueOnce({
         declaration: { result: "panelRecordQuery" }, params, selection: { typeId: APPLICATION, method: "available" },
       });
@@ -925,7 +925,7 @@ it("keeps agent directory scopes and exact record grants in the registered batch
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { result, ...selection } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params: {}, selection: { ...selection, typeId: AGENT_DEFINITION } });
   }
   mocks.read.mockImplementationOnce(async () => {
@@ -1119,7 +1119,7 @@ it("presents agent grant rows from the admitted agent-access batch without a sep
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const primaryKey of agents) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelRecordList" }, params: {},
       selection: { typeId: AGENT_DEFINITION, method: "grantRows", primaryKey },
@@ -1166,7 +1166,7 @@ it.each([0, 1])("adds the retriever count %i to the visible Workbench definition
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
-  mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+  mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelRecordQuery" }, params: {},
     selection: { typeId: AGENT_DEFINITION, method: "count" } });
   mocks.read.mockResolvedValueOnce({ viewer, results: [
@@ -1193,7 +1193,7 @@ it("counts Node-owned components only using the second call's visibility range",
   const range = { fixed: false, all: false, objectIds: ["domain-component-one"], authorId: null };
   const ready = { status: "ready" as const, value: { rows: [], total: 2 } };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
-  mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+  mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelRecordQuery" }, params: {}, selection: { typeId: SDK_COMPONENT, method: "count" } });
   mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "ready", visibility: { COMPONENT: { USE: range } } }] });
   mocks.components.mockResolvedValueOnce(ready.value);
@@ -1208,7 +1208,7 @@ it("counts Node-owned components only using the second call's visibility range",
 it("counts the P1 skill library behind the Java read gate without locating sources", async () => {
   const value = { rows: [], total: 2 };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
-  mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+  mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelRecordQuery" }, params: {}, selection: { typeId: SKILL, method: "count" } });
   mocks.read.mockResolvedValueOnce({ viewer, results: [{ status: "ready", payload: true }] });
   mocks.skills.mockResolvedValueOnce({ registry: { getSkills: () => [{}, {}] } });
@@ -1255,7 +1255,7 @@ it("uses the P1 skill editor decision for a draft and the stored agent before re
   try {
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
     for (const [method, agentTarget] of [["options", "draft"], ["options", agentId], ["resolve", agentId]]) {
-      mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+      mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
       mocks.prepare.mockResolvedValueOnce({
         declaration: { result: "panelOptionList" }, selection: { typeId: SKILL, method },
         params: { agentTarget, values: [unavailable, selected], ownerFacts: { ownerId: "browser" } },
@@ -1723,7 +1723,7 @@ it("reads favorites and sessions with compiled parameters and only contacts Runt
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { params, result, ...selection } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection });
   }
   mocks.read.mockResolvedValueOnce({ viewer, results: cases.map(() => ({ status: "ready" })) });
@@ -1769,7 +1769,7 @@ it("reads OpsKnowledge files only with the second batch item's management approv
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { method, params, result } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection: { typeId: OPS_KNOWLEDGE, method } });
   }
   mocks.read.mockImplementationOnce(async () => {
@@ -1854,7 +1854,7 @@ it("keeps feedback reads within the verified domain and requires the feedback ba
   try {
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
     for (const { params, result, response: _response, ...selection } of cases) {
-      mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+      mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
       mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection: { typeId: FEEDBACK_RECORD, ...selection } });
     }
     mocks.read.mockImplementationOnce(async () => {
@@ -1962,7 +1962,7 @@ it("uses the matching batch management approval for ops reads and preserves file
     ];
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
     for (const { params, result, response: _response, ...selection } of cases) {
-      mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+      mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
       mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection });
     }
     mocks.read.mockResolvedValueOnce({ viewer, results: cases.map(({ response }) => response) });
@@ -1999,7 +1999,7 @@ it("renders the registered ops DSL draft only after its read approval, keeping t
   const draft = '{"problem":"current draft"}';
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const values of [undefined, undefined, { dsl: draft }]) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelFormDescription" }, params: { values, changedField: "/dsl" },
       selection: { typeId: DSL_QUERY, method: "form" },
@@ -2283,7 +2283,7 @@ it("presents registered audit and settings facts without extra owner requests", 
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { params, result, response: _response, ...selection } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection });
   }
   mocks.read.mockResolvedValueOnce({ viewer, results: cases.map(({ response }) => response) });
@@ -2378,7 +2378,7 @@ it("presents BusinessKnowledge entries, counts and forms from the registered bat
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { params, result, response: _response, ...selection } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection: { typeId: BUSINESS_KNOWLEDGE, ...selection } });
   }
   mocks.read.mockResolvedValueOnce({ viewer, results: cases.map(({ response }) => response) });
@@ -2419,7 +2419,7 @@ it("presents one authorized application catalogue page without a second owner re
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
-  mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+  mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.prepare.mockResolvedValueOnce({
     declaration: { result: "panelRecordQuery" }, params, selection: { typeId: APPLICATION, method: "query" },
   });
@@ -2460,7 +2460,7 @@ it("reads application detail with the admitted frame label and preserves masked 
   const ids = [primaryKey, "app-missing", "app-no-entry"];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const id of ids) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelRecord" }, params: {}, selection: { typeId: APPLICATION, method: "record", primaryKey: id },
     });
@@ -2533,7 +2533,7 @@ it("labels application panel references with USE or EDIT and expands graph edges
   const PANEL = { USE: range(framePanelId, "panel-use"), EDIT: range("panel-edit", "panel-child") };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { method, id, result } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params: {}, selection: { typeId: APPLICATION, method, primaryKey: id } });
   }
   mocks.read.mockResolvedValueOnce({ viewer, results: [
@@ -2646,7 +2646,7 @@ it("reads registered product panel and projection contents with their original v
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { typeId, method, key, result, params } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result }, params: params ?? {}, selection: { typeId, method, primaryKey: key },
     });
@@ -2741,7 +2741,7 @@ it("uses registered catalogue owner facts for drafts, grants, record sharing and
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { type, name, key, result, params } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result }, params: params ?? {}, selection: { typeId: type, method: name, primaryKey: key },
     });
@@ -2868,7 +2868,7 @@ it("resolves catalogue author candidates before pagination and searches only the
   const placement = { status: "ready" };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { typeId, params } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelRecordQuery" }, params, selection: { typeId, method: "query" },
     });
@@ -3149,7 +3149,7 @@ it("keeps application entries and a masked missing application as separate batch
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const id of [primaryKey, missing]) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "applicationEntries" },
       selection: { typeId: APPLICATION, method: "entries", primaryKey: id },
@@ -3200,7 +3200,7 @@ it("names admitted application entry rows with same-item USE or EDIT and local d
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const id of [primaryKey, "app-missing"]) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelRecordList" },
       selection: { typeId: APPLICATION, method: "entryRows", primaryKey: id },
@@ -3423,7 +3423,7 @@ it("presents admitted application forms with existing draft IDs and domain agent
   ]);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { params, ...selection } of checks) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelFormDescription" }, params, selection: { typeId: APPLICATION, ...selection },
     });
@@ -3610,7 +3610,7 @@ it("presents owner facts with the compiled search, cursor and selected object in
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { selection, params, result } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection });
   }
   mocks.read.mockResolvedValueOnce({ viewer, results: cases.map(({ payload }) => ({ status: "ready", payload })) });
@@ -3636,7 +3636,7 @@ it("localizes a missing workflow while preserving other owner errors and refusal
   const missing = { status: "error", code: "WORKFLOW_NOT_FOUND", error: "Workflow not found" };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const method of ["grantCaseScopedSteps", "grantDirect", "grantInForce", "grantSuperseded"]) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelRecordList" }, params: {}, selection: { typeId: WORKFLOW, method, primaryKey: "restock" },
     });
@@ -3678,7 +3678,7 @@ it("plans operation descriptions with registered data, preserving siblings of ma
       } },
     };
   });
-  for (let i = 0; i < 3; i++) mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+  for (let i = 0; i < 3; i++) mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.prepare.mockImplementationOnce(() => z.string().parse(42));
   mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelRecordQuery" }, params: {}, selection: { typeId: OBJECT_TYPE, method: "count" } });
   mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelRecordQuery" }, params: {}, selection: { typeId: OBJECT_TYPE, method: "count" } });
@@ -3761,7 +3761,7 @@ it("joins mixed operation facts in one read batch and keeps binding skips separa
   mocks.resolve.mockResolvedValueOnce(placement(operations));
   mocks.resolve.mockResolvedValueOnce(placement({ remove: operations.removeMetric }));
   mocks.resolve.mockResolvedValueOnce(placement({ approve: operations.approve }));
-  mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+  mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
   mocks.prepare.mockResolvedValueOnce({
     declaration: { result: "panelRecordQuery" }, params: {}, selection: { typeId: OBJECT_TYPE, method: "count" },
   });
@@ -3992,7 +3992,7 @@ it("presents masked adapter facts without coupling the connection form to the on
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const plan of [record, form, routing, routing, invalid]) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce(plan);
   }
   mocks.read.mockResolvedValueOnce({ viewer, results: [
@@ -4040,7 +4040,7 @@ it("presents registered model options and resolves the selected references in th
   vi.stubGlobal("fetch", fetch);
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const plan of [options, resolve, options]) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce(plan);
   }
   mocks.read.mockResolvedValueOnce({ viewer, results: [
@@ -4105,7 +4105,7 @@ it("reads published MCP declarations after batch admission using the server requ
   const run = async (items: typeof cases, requestLocation: typeof location | undefined) => {
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry: mcpEntry }] });
     for (const { method, primaryKey, result } of items) {
-      mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+      mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
       mocks.prepare.mockResolvedValueOnce({
         declaration: { result }, params: {}, selection: { typeId: PUBLISHED_MCP_SERVICE, method, primaryKey },
       });
@@ -4192,7 +4192,7 @@ it("uses the verified MCP scope and keeps tools and configured forms behind thei
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { params, result, response: _response, ...selection } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection: { ...selection, typeId: EXTERNAL_MCP_SERVICE } });
   }
   mocks.read.mockImplementationOnce(async () => {
@@ -4293,7 +4293,7 @@ it("reads external MCP services using only the batch management approval and AGE
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const { method, primaryKey, result } of cases) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params: {},
       selection: { typeId: EXTERNAL_MCP_SERVICE, method, primaryKey } });
   }
@@ -4399,7 +4399,7 @@ it("reads SDK releases and current domain components with only the returned COMP
   try {
     mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
     for (const { params, result, response: _response, ...selection } of cases) {
-      mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+      mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
       mocks.prepare.mockResolvedValueOnce({ declaration: { result }, params, selection: { ...selection, typeId: SDK_COMPONENT } });
     }
     mocks.read.mockImplementationOnce(async () => {
@@ -4621,7 +4621,7 @@ it("reads detail bindings and forms using one batch item's management and panel 
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const member of members) {
     const form = member === "detailPanelForm";
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: form ? "panelFormDescription" : "panelRecord" },
       selection: {
@@ -5010,7 +5010,7 @@ it("presents the five registered business graph reads with the owner's sample, v
   ] as const;
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const [method, result, params] of reads) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result }, params, selection: { kind: "platform", typeId: OBJECT_TYPE, method },
     });
@@ -5168,7 +5168,7 @@ it("preserves denied favorite placements and real owner failures, including an e
   const pinned = [{ className: "Customer", primaryKey: "c1", title: "Saved name" }];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const objects of [pinned, pinned, pinned, []]) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({
       declaration: { result: "panelRecordList" }, selection: { typeId: FAVORITE, method: "list" }, params: { targetGroup: "objects" },
     });
@@ -5734,7 +5734,7 @@ it("maps execution user option pages and repeated selected IDs from one register
   const unavailable = { primaryKey: deleted, value: deleted, label: deleted, unavailable: { reason: texts("deleted") } };
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
   for (const [method, params] of [["options", first], ["options", second], ["resolve", { values }]] as const) {
-    mocks.resolve.mockResolvedValueOnce({ inputs: {} });
+    mocks.resolve.mockResolvedValueOnce({ inputs: {}, projection: {} });
     mocks.prepare.mockResolvedValueOnce({ declaration: { result: "panelOptionList" },
       params, selection: { typeId: USER, method } });
   }

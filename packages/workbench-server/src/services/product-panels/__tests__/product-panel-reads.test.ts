@@ -22,8 +22,10 @@ const copyCurrentProductMock = vi.hoisted(() => vi.fn());
 const deleteCurrentProductMock = vi.hoisted(() => vi.fn());
 const readCurrentPanelMock = vi.hoisted(() => vi.fn());
 const readCataloguePanelMock = vi.hoisted(() => vi.fn());
+const readCataloguePanelInRangesMock = vi.hoisted(() => vi.fn());
 const backendPostMock = vi.hoisted(() => vi.fn());
 
+import { ready, refusalsOf } from "./availability-fixture";
 vi.mock("../catalog", () => {
   const listCurrentProductRecords: typeof import("../catalog").listCurrentProductRecords = async (owner, viewer, kind) => {
     const records: Awaited<ReturnType<typeof listCurrentProductRecords>> = new Map();
@@ -47,6 +49,7 @@ vi.mock("../catalog", () => {
     listCurrentProductNames,
     listProjectionFilterFacets: listProjectionFilterFacetsMock,
     readCataloguePanel: readCataloguePanelMock,
+    readCataloguePanelInRanges: readCataloguePanelInRangesMock,
     currentProductUsedBy: currentProductUsedByMock,
     currentProductGrants: currentProductGrantsMock,
     copyCurrentProduct: copyCurrentProductMock,
@@ -445,12 +448,15 @@ describe("createProductPanelReadAdapter", () => {
       template: true,
     });
 
-    readCataloguePanelMock.mockResolvedValueOnce({ panel: { ...samplePanel, editable: false } });
-    expect(await deleteOp!.unavailable?.(host as never, { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "orders-panel" }))
-      .toEqual({ reason: en["panels.productCatalog.application.readOnly"] });
+    const ranges = { USE: { fixed: true, authorId: null, objectIds: [], all: true }, EDIT: { fixed: false, authorId: "u", objectIds: [], all: false } };
+    const deleteRefusal = async () => (await refusalsOf(deleteOp!, [{ kind: "object", objectType: PRODUCT_PANEL, primaryKey: "orders-panel" }],
+      () => ready(undefined, { PANEL: ranges }), { context: { ...actor, locale: "en" } })).refusals[0];
+    readCataloguePanelInRangesMock.mockResolvedValueOnce({ panel: { ...samplePanel, editable: false } });
+    expect(await deleteRefusal()).toEqual({ reason: en["panels.productCatalog.application.readOnly"] });
+    expect(readCataloguePanelInRangesMock).toHaveBeenLastCalledWith(owner.domainId, "orders-panel", ranges);
 
-    expect(await deleteOp!.unavailable?.(host as never, { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "orders-panel" }))
-      .toBeUndefined();
+    readCataloguePanelInRangesMock.mockResolvedValueOnce({ panel: samplePanel });
+    expect(await deleteRefusal()).toBeUndefined();
   });
 
   it("forwards projection componentId and objectType filters and exposes localized facet options", async () => {

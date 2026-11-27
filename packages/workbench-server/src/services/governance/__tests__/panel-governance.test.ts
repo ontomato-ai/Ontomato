@@ -39,6 +39,7 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { platformTypeEntries } from "../../product-panels/type-table";
 import { describeServerOperation, registeredPanelOperation, type PanelOperationHost, type PanelServerOperation } from "../../product-panels/server-operations";
+import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 import { governanceServerOperations } from "../panel-operations";
 import { createGovernanceReadAdapters } from "../panel-reads";
 
@@ -341,9 +342,8 @@ describe("governance panel server operations", () => {
   });
 
   it("declares password inputs as secrets and displays a masked reset input", async () => {
-    const { host } = hostWith(() => Response.json({}));
     expect(registeredPanelOperation(`${USER}.save`)?.declaration.secretFields).toEqual(["/loginPasswd"]);
-    const reset = await describeServerOperation(targetedActionOp(RESET_USER_PASSWORD), host);
+    const reset = await describeServerOperation(targetedActionOp(RESET_USER_PASSWORD), undefined);
     expect(reset.secretFields).toEqual(["/newPassword"]);
     expect(panelSchemaSecretPaths(reset.inputSchema)).toEqual(["/newPassword"]);
     expect(splitPanelSecrets({ newPassword: "FixturePassword!" }, reset.secretFields!).redacted).toEqual({});
@@ -488,53 +488,26 @@ describe("governance panel server operations", () => {
     expect(batchReceipt).not.toHaveProperty("secret");
     expect(JSON.stringify(batchReceipt)).not.toContain("otm_1");
 
-    const { host: nonAdminHost } = hostWith(path => {
-      if (path === "/api/data-query/panel/governance/users/api-key/batch/unavailable") {
-        return Response.json({ success: true, data: { reason: "Domain administrators only" } });
-      }
-      return Response.json({ success: true, data: {} });
-    });
-    const batchHandler = registeredPanelOperation(ISSUE_USER_API_KEY_BATCH)!.handler;
-    if (batchHandler.effect !== "write") throw new Error("Expected write handler");
-    expect(await batchHandler.unavailable?.(nonAdminHost, null)).toEqual({ reason: "Domain administrators only" });
+    const nonAdmin = await refusalsOf(registeredPanelOperation(ISSUE_USER_API_KEY_BATCH)!.handler, [null],
+      () => ready({ [ISSUE_USER_API_KEY_BATCH]: ["Domain administrators only"] }));
+    expect(nonAdmin.refusals).toEqual([{ reason: "Domain administrators only" }]);
+    expect(nonAdmin.reads).toEqual([{ call: { type: USER, name: "operationRefusals", parameters: {
+      inspections: [{ name: ISSUE_USER_API_KEY_BATCH, operation: ISSUE_USER_API_KEY_BATCH, ids: null }],
+    } } }]);
   });
 
 
-  it("checks member row operation availability in one owner request per operation", async () => {
-    const { host, sent } = hostWith((path, body) => {
-      if (path === "/api/data-query/panel/governance/users/remove/batch/unavailable") {
-        return Response.json({ success: true, data: { "u-admin": { reason: "Built-in administrator cannot be removed" } } });
-      }
-      if (path === "/api/data-query/panel/governance/users/api-key/rows/unavailable") {
-        return Response.json({ success: true, data: body.mode === "generate" ? { "u-2": { reason: "API key already exists" } } : { "u-1": { reason: "No API key" } } });
-      }
-      return Response.json({ success: false, code: "UNEXPECTED", message: `Unexpected path ${path}` });
-    });
-    const rows = [
-      { target: { kind: "object" as const, objectType: USER, primaryKey: "u-1" }, rowKey: "row-1" },
-      { target: { kind: "object" as const, objectType: USER, primaryKey: "u-2" }, rowKey: "row-2" },
-      { target: { kind: "object" as const, objectType: USER, primaryKey: "u-admin" }, rowKey: "row-admin" },
-    ];
-
-    const remove = anyWriteOp(REMOVE_USER);
-    const removeReasons = await remove.unavailableBatch?.(host, rows);
-    expect(removeReasons?.get("row-admin")).toEqual({ reason: "Built-in administrator cannot be removed" });
-    expect(removeReasons?.has("row-1")).toBe(false);
-
-    const generate = anyWriteOp(GENERATE_USER_API_KEY);
-    const generateReasons = await generate.unavailableBatch?.(host, rows);
-    expect(generateReasons?.get("row-2")).toEqual({ reason: "API key already exists" });
-
-    const revoke = anyWriteOp(REVOKE_USER_API_KEY);
-    const revokeReasons = await revoke.unavailableBatch?.(host, rows);
-    expect(revokeReasons?.get("row-1")).toEqual({ reason: "No API key" });
-
-    const calls = sent.map(({ path, body }) => [path, body]);
-    expect(calls).toEqual([
-      ["/api/data-query/panel/governance/users/remove/batch/unavailable", { ids: ["u-1", "u-2", "u-admin"] }],
-      ["/api/data-query/panel/governance/users/api-key/rows/unavailable", { ids: ["u-1", "u-2", "u-admin"], mode: "generate" }],
-      ["/api/data-query/panel/governance/users/api-key/rows/unavailable", { ids: ["u-1", "u-2", "u-admin"], mode: "revoke" }],
-    ]);
+  it("reads each member operation's refusals for all its targets in one owner read", async () => {
+    const targets = ["u-1", "u-2", "u-admin"].map(primaryKey => ({ kind: "object" as const, objectType: USER, primaryKey }));
+    const refusals = { [REMOVE_USER]: [null, null, "Built-in administrator cannot be removed"],
+      [GENERATE_USER_API_KEY]: [null, "API key already exists", null], [REVOKE_USER_API_KEY]: ["No API key", null, null] };
+    for (const [operation, reasons] of Object.entries(refusals)) {
+      const decided = await refusalsOf(anyWriteOp(operation), targets, () => ready({ [operation]: reasons }));
+      expect(decided.reads).toEqual([{ call: { type: USER, name: "operationRefusals", parameters: {
+        inspections: [{ name: operation, operation, ids: ["u-1", "u-2", "u-admin"] }],
+      } } }]);
+      expect(decided.refusals).toEqual(reasons.map(reason => reason === null ? undefined : { reason }));
+    }
   });
 
   it("handles policy permission mutations and organization membership/grant mutations", async () => {
@@ -793,13 +766,7 @@ describe("governance panel server operations", () => {
       "/panel/governance/roles/policy-candidates",
     ]);
 
-    const { host, sent } = hostWith((path) => {
-      if (path.endsWith("/panel/governance/roles/assign/unavailable")) {
-        return new Response(
-          JSON.stringify({ success: true, data: { reason: "Managed by domain lifecycle" } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
+    const { host, sent } = hostWith(() => {
       return new Response(
         JSON.stringify({ success: true, data: { id: "r-1" } }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -807,10 +774,10 @@ describe("governance panel server operations", () => {
     });
 
     for (const opId of [ADD_ROLE_MEMBERS, REMOVE_ROLE_MEMBERS, ADD_ROLE_POLICIES, REMOVE_ROLE_POLICIES]) {
-      const op = targetedActionOp(opId);
-      expect(op).toBeDefined();
-      const unavailable = await op.unavailable!(host, { kind: "object", objectType: ROLE, primaryKey: "r-member" });
-      expect(unavailable).toEqual({ reason: "Managed by domain lifecycle" });
+      const { refusals, reads } = await refusalsOf(targetedActionOp(opId), [{ kind: "object", objectType: ROLE, primaryKey: "r-member" }],
+        () => ready({ reason: "Managed by domain lifecycle" }));
+      expect(reads).toEqual([{ call: { type: ROLE, name: "assignRefusal", parameters: { primaryKey: "r-member" } } }]);
+      expect(refusals).toEqual([{ reason: "Managed by domain lifecycle" }]);
     }
 
     const addPoliciesResult = await targetedActionOp(ADD_ROLE_POLICIES).execute(

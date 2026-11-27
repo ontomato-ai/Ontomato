@@ -4,7 +4,10 @@ import { formFieldErrorSchema } from "@ontomato/contracts/form-fields";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
-import type { PanelOperationHost, PanelOperationTarget, PanelRecordTarget, SinglePanelOperationOutcome } from "./server-operations";
+import { readyPayload } from "./registered-data-read";
+import type {
+  PanelOperationAvailability, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, SinglePanelOperationOutcome,
+} from "./server-operations";
 
 export const ownerEnvelopeSchema = z.object({
   success: z.boolean(),
@@ -39,21 +42,15 @@ export async function ownerPost<Envelope>(
 
 export const deleteRefusalPayloadSchema = z.object({ reason: z.string().min(1).max(500).nullable() }).strict();
 
-const deleteAvailabilitySchema = z.discriminatedUnion("success", [
-  ownerEnvelopeSchema.extend({
-    success: z.literal(true),
-    data: deleteRefusalPayloadSchema,
-  }),
-  ownerEnvelopeSchema.extend({ success: z.literal(false), code: ownerRefusalCodeSchema }),
-]);
-
-export async function ownerDeleteUnavailable(
-  host: DataQueryOperationHost, path: string, body: unknown, fallbackCode: string,
-  fallbackMessage = "The owner could not read the target",
-) {
-  const result = await ownerPost(host, path, body, deleteAvailabilitySchema);
-  if (!result.success) throw new HttpError(422, result.message ?? fallbackMessage, result.code ?? fallbackCode);
-  return result.data.reason === null ? undefined : { reason: result.data.reason };
+/** A refusal its Java owner answers for each target, `{ reason }` or a null reason, read by a per-target read item. */
+export function refusalRead(type: string, name: string): PanelOperationAvailability<undefined, z.infer<typeof deleteRefusalPayloadSchema>> {
+  return {
+    read: targets => ({
+      reads: targets.map(target => ({ call: { type, name, parameters: { primaryKey: target!.primaryKey } } })),
+      facts: results => results.map(result => deleteRefusalPayloadSchema.parse(readyPayload(result).payload)),
+    }),
+    refuse: ({ facts }) => facts.reason === null ? undefined : { reason: facts.reason },
+  };
 }
 
 /** The owner's record for one target; an unreadable target is the owner's error, never an id standing in for a name. */

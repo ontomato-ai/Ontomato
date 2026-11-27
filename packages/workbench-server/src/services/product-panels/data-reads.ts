@@ -6,7 +6,10 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import {
+  authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField,
+  type DirectProjectionData, type PanelRecord, type PanelRecordQuery,
+} from "@ontomato/contracts/panel-projection";
 import { DASHBOARD_CARD, type PlatformReadDeclaration } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { tApp } from "../../i18n";
@@ -250,7 +253,7 @@ export async function readResolvedPanelOwner(
     return readSelectedPanelOwner(reader, selection, params, projection);
 
   const modelRead = !isGraph && retrievalScopeId !== undefined
-    ? (await import("./scoped-model-reads")).prepareScopedModelRead(selection, params, projection, viewer.locale)
+    ? (await import("./scoped-model-reads")).prepareScopedModelRead(selection, params, viewer.locale)
     : undefined;
   const ownerRead = isGraph ? undefined : modelRead ?? prepareCustomerDataRead(selection, params, viewer.locale);
   const scopedFavorites = retrievalScopeId !== undefined && isFavoriteObjectRead(selection, params);
@@ -315,52 +318,35 @@ export async function readPanelMemberOperationDescriptions(
   return { status: "ready", value: runtimeJsonObjectSchema.parse(value) };
 }
 
+/** The record type a list's rows fall back to when a row names none: the read's declared row type, else its source's. */
+export function rowFallbackClassName(projection: ProductProjection, dataName: string, declaration: PlatformReadDeclaration) {
+  const datum = projection.data[dataName];
+  if (declaration.rowType) return declaration.rowType;
+  if (!datum) return undefined;
+  if ("type" in datum.source) return datum.source.type.id;
+  if ("literal" in datum.source.object) return datum.source.object.literal.className;
+  const input = projection.inputs[datum.source.object.input];
+  return input?.kind === "object" ? input.objectType : undefined;
+}
+
 export async function presentPanelMemberRead(
   actor: PanelOperationActor, placement: PanelReadPlacement, dataName: string, inputs: ReadInputs,
   outcome: ProjectionDataReadOutcome,
 ): Promise<ProductPanelReadResponse> {
   const { projection } = placement;
   if (outcome.status === "empty") return { status: "empty" };
-  let rowOperations = outcome.rowOperations;
-  if (
-    projection.operations && Object.keys(projection.operations).length > 0
-    && (outcome.declaration.result === "panelRecordList"
-      || outcome.declaration.result === "panelRecordQuery")
-  ) {
-    const datum = projection.data[dataName];
-    // Prefer the read declaration's explicit cross-type `rowType` so server rowOperations keys and
-    // row targets align with ObjectList's `directReadRowType` fallback for records without `row.className`.
-    const fallbackClassName = outcome.declaration.rowType
-      ?? (datum
-        ? ("type" in datum.source
-            ? datum.source.type.id
-            : ("literal" in datum.source.object
-                ? datum.source.object.literal.className
-                : (projection.inputs[datum.source.object.input]?.kind === "object"
-                    ? (projection.inputs[datum.source.object.input] as { kind: "object"; objectType: string }).objectType
-                    : undefined)))
-        : undefined);
-    const rows = outcome.declaration.result === "panelRecordList"
-      ? (outcome.value as import("@ontomato/contracts/panel-projection").PanelRecord[])
-      : (outcome.value as import("@ontomato/contracts/panel-projection").PanelRecordQuery).rows;
-    const { describeRowOperationsForRows } = await import("./direct-operations");
-    const described = new Set(Object.values(rowOperations ?? {}).flatMap(row => Object.keys(row)));
-    const operations = Object.fromEntries(Object.entries(projection.operations).filter(([name]) => !described.has(name)));
-    if (Object.keys(operations).length) {
-      const additional = await describeRowOperationsForRows(actor, { ...placement, projection: { ...projection, operations } },
-        inputs, rows, fallbackClassName);
-      if (additional) {
-        rowOperations = { ...rowOperations };
-        for (const [key, operations] of Object.entries(additional)) {
-          rowOperations[key] = { ...rowOperations[key], ...operations };
-        }
-      }
-    }
-  }
-  const { rereadAfterMs } = outcome;
+  const { declaration, value, rereadAfterMs } = outcome;
+  const rows = declaration.result === "panelRecordList" ? value as PanelRecord[]
+    : declaration.result === "panelRecordQuery" ? (value as PanelRecordQuery).rows : undefined;
+  const [{ readDirectRowOperations }, { boundProjectionOperations }] = await Promise.all([
+    import("./operation-availability"), import("./operation-bindings"),
+  ]);
+  const rowOperations = rows && await readDirectRowOperations(
+    { owner: actor.owner, credentials: actor.credentials, locale: actor.credentials.locale },
+    boundProjectionOperations(projection), inputs, rows, rowFallbackClassName(projection, dataName, declaration));
   return {
     status: "ready",
-    value: outcome.value,
+    value,
     ...(rereadAfterMs !== undefined && { rereadAfterMs }),
     ...(rowOperations && { rowOperations }),
   };

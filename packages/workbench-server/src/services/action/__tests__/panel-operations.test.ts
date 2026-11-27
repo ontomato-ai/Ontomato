@@ -5,6 +5,7 @@ import { DATA_ADAPTER_CONFIG } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { describeServerOperation, operationDeclaration, type PanelOperationHost } from "../../product-panels/server-operations";
+import { inputSchemaOf, ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 import { m6ServerOperations } from "../panel-operations";
 
 vi.mock("../../assistant/skills", () => ({}));
@@ -126,7 +127,7 @@ describe("action panel server operations", () => {
     const options = operation.inputSchema.shape.status.options.map((value, index) => ({
       value, label: labels[index], description: null, disabled: false, disabledReason: null,
     }));
-    const { host, sent } = hostWith(() => Response.json({ success: true, data: {
+    const form = {
       fields: [{
         path: "/status", label: title, required: false, readOnly: false,
         valueSchema: { type: "string", enum: options.map(option => option.value) },
@@ -135,11 +136,12 @@ describe("action panel server operations", () => {
       errors: [],
       values: {},
       save: { method: "POST", path: "/api/data-query/action/save", bodySchema: {} },
-    } }));
+    };
+    const reads: unknown[] = [];
+    const inputSchema = inputSchemaOf(operation.inputForm, item => { reads.push(item); return ready(form); }, locale);
+    const descriptor = await describeServerOperation(operation, locale, undefined, undefined, inputSchema);
 
-    const descriptor = await describeServerOperation(operation, { ...host, locale });
-
-    expect(sent[0]?.path).toBe("/api/data-query/action/definitionForm");
+    expect(reads).toEqual([{ call: { type: ACTION, name: "createForm", parameters: {} } }]);
     expect(descriptor.inputSchema).toMatchObject({
       required: ["status"],
       properties: { status: {
@@ -258,12 +260,10 @@ describe("action panel server operations", () => {
   });
 
   it("reads the system-action delete reason from its owner", async () => {
-    const operation = action(DELETE_ACTION);
     const reason = "系统自带动作不能删除";
-    const { host, sent } = hostWith(() => Response.json({ success: true, data: { reason } }));
-    expect(await operation.unavailable!(host, actionTarget)).toEqual({ reason });
-    expect(sent[0]?.path).toBe("/api/data-query/action/queryById");
-    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ id: "a1", purpose: "delete-availability" });
+    const { refusals, reads } = await refusalsOf(action(DELETE_ACTION), [actionTarget], () => ready({ reason }));
+    expect(refusals).toEqual([{ reason }]);
+    expect(reads).toEqual([{ call: { type: ACTION, name: "deleteRefusal", parameters: { primaryKey: "a1" } } }]);
   });
 
   it("deletes by id, keeps an explicit owner code as the refusal and an unclassified delete as a failure", async () => {

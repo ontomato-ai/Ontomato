@@ -13,8 +13,9 @@ import type {
   PanelBatchCalls, PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
+import { readyPayload } from "../product-panels/registered-data-read";
 import {
-  affected, ownerDeleteUnavailable, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
+  affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, refusalRead, remove, save, savedIdSchema, targetLabel,
   valuesForTarget, type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
 import { readRefusal } from "./object-actions";
@@ -64,12 +65,6 @@ const statusInputSchema = z.object({
     "Target publication status (PENDING_REVIEW, PUBLISHED, or UNUSED)",
   ),
 }).strict();
-
-async function describeStatusInputSchema(host: Host) {
-  const result = await ownerPost(host, "/action/definitionForm", { target: { kind: "draft" }, changedField: null }, ownerEnvelopeSchema);
-  if (!result.success) throw readRefusal(result, "ACTION_READ_FAILED", "The owner could not read the action definition form");
-  return renderActionStatusInputSchema(actionStatusFieldSchema.parse(result.data));
-}
 
 export const actionStatusFieldSchema = panelFormDescriptionSchema.transform((form, context) => {
   const status = form.fields.find(field => field.path === "/status");
@@ -263,8 +258,7 @@ export const m6ServerOperations = [
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/action/queryById", "ACTION_UNAVAILABLE"),
     done: (host, name) => tForLocale(host.locale, "panels.action.deleted", { name }),
     inspectImpact: deleteActionImpact,
-    unavailable: (host: Host, target: PanelRecordTarget) => ownerDeleteUnavailable(host, "/action/queryById",
-      { id: target.primaryKey, purpose: "delete-availability" }, "ACTION_UNAVAILABLE"),
+    availability: refusalRead(ACTION, "deleteRefusal"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected action");
       return remove(host, "/action/delete", target, "ACTION_DELETE_FAILED");
@@ -327,7 +321,10 @@ export const m6ServerOperations = [
     targetType: ACTION,
     targetSchema: actionObjectTarget,
     inputSchema: statusInputSchema,
-    describeInputSchema: describeStatusInputSchema,
+    inputForm: {
+      reads: [{ call: { type: ACTION, name: "createForm", parameters: {} } }],
+      schema: results => renderActionStatusInputSchema(actionStatusFieldSchema.parse(readyPayload(results[0]!).payload)),
+    },
     inspectImpact: publishActionImpact,
     resultSchema: savedIdSchema,
     targetInput: "action",

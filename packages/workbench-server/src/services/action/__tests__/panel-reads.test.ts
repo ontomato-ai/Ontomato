@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { annotatedCodeSchema } from "@ontomato/contracts/annotated-code";
 import { ACTION } from "@ontomato/contracts/panel-client-requests";
-import { panelOperationDeclarationSchema, panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
+import { panelOperationDeclarationSchema } from "@ontomato/contracts/panel-operations";
 import { panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -741,31 +741,11 @@ describe("action catalog reads", () => {
     expect(sent.map(request => request.body)).toEqual([{ purpose: "execute", status: "PUBLISHED" }, { purpose: "execute", status: "PUBLISHED" }]);
   });
 
-  it("describes the status change and the delete from the catalog operations", async () => {
-    const statusField = {
-      path: "/status", label: "Publication state", required: false, readOnly: false,
-      control: { kind: "select", options: [{
-        value: "PUBLISHED", label: "Live", description: null, disabled: false, disabledReason: null,
-      }] },
-      valueSchema: { type: "string", enum: ["PUBLISHED"] },
-    };
-    const sent = ownerAnswering({ "/action/definitionForm": ok({ ...form, fields: [statusField] }) });
+  it("describes the delete from the catalog operations", async () => {
     const adapter = createActionReadAdapter(owner, viewer);
 
-    const status = await adapter["actions.setStatus.describe"]();
     const remove = await adapter["actions.delete.describe"]();
 
-    expect(panelOwnerOperationDescriptorSchema.parse(status)).toEqual(status);
-    expect(status).toMatchObject({
-      handlerRef: "actions.setStatus", label: "Change status", effect: "write", batch: true,
-      target: { source: "input", input: "action" },
-      inputSchema: { properties: { status: {
-        title: statusField.label, oneOf: [{ const: "PUBLISHED", title: statusField.control.options[0].label }],
-      } } },
-    });
-    expect((status.inputSchema.properties as { status: Record<string, unknown> }).status.description).toBeUndefined();
-    expect(sent).toEqual([{ path: "/action/definitionForm", body: { target: { kind: "draft" }, changedField: null } }]);
-    expect(status.inspectImpact?.handlerRef).toBe(`${status.handlerRef}.inspect-impact`);
     expect(remove).toMatchObject({
       handlerRef: "actions.delete", label: "Delete", effect: "write", batch: false,
       target: { source: "input", input: "action" }, inspectImpact: { handlerRef: "actions.delete.inspect-impact" },

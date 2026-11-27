@@ -8,8 +8,9 @@ import { type PanelOperationCall, panelFormTargetSchema } from "@ontomato/contra
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
+import { readyPayload } from "../product-panels/registered-data-read";
 import type {
-  PanelBatchCalls, PanelImpactInspector, PanelOperationHost, PanelOperationTarget,
+  PanelBatchCalls, PanelImpactInspector, PanelOperationAvailability, PanelOperationHost, PanelOperationTarget,
   PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 
@@ -131,6 +132,15 @@ export function approveUnavailableReason(host: Pick<PanelOperationHost, "locale"
   return undefined;
 }
 
+const approveAvailability: PanelOperationAvailability<undefined, { status: number } | undefined> = {
+  read: targets => ({
+    reads: [{ call: { type: BUSINESS_KNOWLEDGE, name: "approvalStatuses", parameters: { ids: targets.map(target => target!.primaryKey) } } }],
+    facts: ([result]) => z.array(z.number().int().nullable()).length(targets.length).parse(readyPayload(result!).payload)
+      .map(status => status === null ? undefined : { status }),
+  }),
+  refuse: ({ facts, locale }) => approveUnavailableReason({ locale }, facts),
+};
+
 /** One approval under its single rule: the entry read from the domain's list, rewritten whole with status 1. */
 async function approveOne(
   host: ApproveHost, entries: Record<string, KnowledgeEntry>, target: PanelRecordTarget,
@@ -243,18 +253,7 @@ export const m7ServerOperations = [
     targetInput: "knowledge",
     targetLabel: knowledgeTitle,
     done: (host, name) => tForLocale(host.locale, "panels.knowledge.approved", { name }),
-    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
-      return approveUnavailableReason(host, await readEntry(host, target.primaryKey));
-    },
-    async unavailableBatch(host: PanelOperationHost, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
-      const entries = await readEntries(host);
-      const reasons = new Map<string, { reason: string }>();
-      for (const { target, rowKey } of targets) {
-        const reason = approveUnavailableReason(host, entries[target.primaryKey]);
-        if (reason) reasons.set(rowKey, reason);
-      }
-      return reasons;
-    },
+    availability: approveAvailability,
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Approve acts on a selected entry");
       return approveOne(host, await readEntries(host), target);

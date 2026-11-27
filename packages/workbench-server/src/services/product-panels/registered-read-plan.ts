@@ -1,26 +1,20 @@
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductPanelReadRequest, ProductPanelReadResponse, ProductPanelReadSource } from "@ontomato/contracts/panel-host";
 import type { PanelRecord, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
-import {
-  APPLICATION, APPLICATION_DELETE_DRAFT, ATTRIBUTE, AUTOTEST_RUN, TURN_EVIDENCE, USER, WORKFLOW,
-  type PlatformReadDeclaration,
-} from "@ontomato/contracts/platform-object-types";
+import type { PlatformReadDeclaration } from "@ontomato/contracts/platform-object-types";
 import { ZodError } from "zod";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 import { HttpError } from "../../utils/errors";
-import { presentAutotestRunRowOperations, presentTurnEvidenceRetentionRows } from "../ops-diagnosis/panel-operation-reads";
-import { presentWorkflowLifecycleRows } from "../workflow/panel-operation-reads";
 import { personalEntry, withPanelReadRegistration } from "./application-use";
-import { presentRowOperationsForRows } from "./direct-operations";
-import { effectiveInputs, panelMemberReadRefusal, panelReadUseCollector, prepareProjectionDataRead, projectionDataReadOutcome, resolveReadMember } from "./data-reads";
-import { prepareGovernanceListRows } from "./governance-list-row-operations";
-import { locateViaJava, readViaJava, type JavaPanelLocateRef, type JavaPanelRead } from "./java-panel-reads";
-import { memberQueryOperationParams, memberQueryPayloadSchema, presentMemberQueryRowOperations } from "./member-query-presentation";
-import { PanelReadBatchCache } from "./member-path";
-import { operationHost } from "./operation-host";
-import { attributeDeleteRowBindings, presentAttributeDeleteRows } from "./registered-attribute-reads";
 import {
-  defaultRegisteredJavaCall, readyPayload, RegisteredDataReadFailure, registeredDataReadKey,
+  effectiveInputs, panelMemberReadRefusal, panelReadUseCollector, prepareProjectionDataRead, projectionDataReadOutcome, resolveReadMember,
+  rowFallbackClassName,
+} from "./data-reads";
+import { locateViaJava, readViaJava, type JavaPanelLocateRef, type JavaPanelRead } from "./java-panel-reads";
+import { PanelReadBatchCache } from "./member-path";
+import { planRowOperations } from "./operation-availability";
+import { boundProjectionOperations } from "./operation-bindings";
+import {
+  defaultRegisteredJavaCall, javaReadItem, readyPayload, RegisteredDataReadFailure, registeredDataReadKey,
   type RegisteredDataReadContext, type RegisteredDataReadPlan,
 } from "./registered-data-read";
 import { registeredDataReads } from "./registered-data-reads";
@@ -50,10 +44,6 @@ function refusal(error: unknown): ProductPanelReadResponse {
   return error.status === 403
     ? { status: "forbidden", reason: error.message }
     : { status: "error", message: error.message, ...(error.code && { code: error.code }) };
-}
-
-function javaCall(call: { type: string; name: string; parameters: Record<string, unknown> }): NonNullable<JavaPanelRead["call"]> {
-  return { ...call, parameters: runtimeJsonObjectSchema.parse(call.parameters) };
 }
 
 function defaultDataReadPlan(context: RegisteredDataReadContext): RegisteredDataReadPlan {
@@ -93,42 +83,33 @@ export async function prepareRegisteredDataReads(
       const placement = { ...resolved, slot: request.memberPath.at(-1)!.member };
       if ("operations" in request) {
         const inputs = effectiveInputs(placement.projection, placement.member, resolved.inputs);
-        const { calls, visibilityRead, present } = await prepareRegisteredOperationRead(placement, inputs, viewer, credentials);
+        const { reads, present } = await prepareRegisteredOperationRead(placement, inputs, viewer, credentials);
         const admittedPath = path();
-        const reads: JavaPanelRead[] = calls.map(call => ({ ...admittedPath, call }));
-        if (visibilityRead) reads.push({ ...admittedPath, visibleKinds: visibilityRead });
-        return { ok: true as const, kind: "operations" as const, reads: reads.length ? reads : [admittedPath], presentOperations: present };
+        return {
+          ok: true as const, kind: "operations" as const, presentOperations: present, readCount: reads.length,
+          // Without facts to read, the placement is still admitted in the batch.
+          reads: reads.length ? reads.map(item => ({ ...admittedPath, ...javaReadItem(item) })) : [admittedPath],
+        };
       }
       const prepared = await prepareProjectionDataRead(credentials, placement, request.dataName, resolved.inputs,
         request.runtimeParams, "component" in resolved ? resolved.component : undefined);
-      const { selection, params, inputs } = prepared;
+      const { selection, params, inputs, declaration } = prepared;
       const registration = registrationFor(selection);
+      const rows = declaration.result === "panelRecordList" || declaration.result === "panelRecordQuery"
+        ? await planRowOperations(boundProjectionOperations(placement.projection), inputs,
+          { owner: viewer, credentials, locale: credentials.locale }, registration?.carries ?? [])
+        : undefined;
       const readContext: RegisteredDataReadContext = {
-        owner: viewer, credentials, selection, params, inputs,
+        owner: viewer, credentials, selection, params, inputs, rowOperations: rows?.carried ?? [],
         projection: placement.projection, cache, ...(location && { location }),
       };
-      const governanceRows = prepareGovernanceListRows(selection, prepared.declaration, placement.projection);
-      const deleteBindings = selection.typeId === ATTRIBUTE && selection.method === "list"
-        ? attributeDeleteRowBindings(placement.projection) : {};
-      const attributeDelete = Object.keys(deleteBindings).length > 0;
       const dataPlan = registration ? await registration.plan(readContext) : defaultDataReadPlan(readContext);
       const admittedPath = path();
-      const rowOperationParameters = {
-        ...governanceRows?.parameters,
-        ...(attributeDelete && { includeDeleteFacts: true }),
-        ...(selection.typeId === USER && selection.method === "query" && memberQueryOperationParams(placement.projection, inputs)),
+      const reads = [...dataPlan.reads, ...rows?.reads ?? []].map(item => ({ ...admittedPath, ...javaReadItem(item) }));
+      return {
+        ok: true as const, kind: "data" as const, reads, dataPlan, prepared, readContext,
+        rows: rows && { ...rows, rowType: rowFallbackClassName(placement.projection, request.dataName, declaration) },
       };
-      const reads = dataPlan.reads.map((item, itemIndex) => ({
-        ...admittedPath,
-        ...(item.visibleKinds && { visibleKinds: item.visibleKinds }),
-        ...(item.call && {
-          call: javaCall(itemIndex === 0 && Object.keys(rowOperationParameters).length > 0
-            ? { ...item.call, parameters: { ...item.call.parameters, ...rowOperationParameters } }
-            : item.call),
-        }),
-      }));
-      return { ok: true as const, kind: "data" as const, reads, dataPlan, prepared, placement,
-        readContext, attributeDelete: attributeDelete ? deleteBindings : undefined, governanceRows };
     } catch (error) {
       // A path error must not disclose a definition that the reader cannot use.
       const result = error instanceof ZodError || error instanceof URIError
@@ -160,7 +141,6 @@ export async function runPreparedDataReads(
 ): Promise<ProductPanelReadResponse[]> {
   const { viewer, plans } = prepared;
   const reads = plans.flatMap<JavaPanelRead>(plan => {
-    if (plan.kind === "operations") return plan.reads;
     if (!plan.ok) return plan.read ? [plan.read] : [];
     return plan.reads;
   });
@@ -168,20 +148,11 @@ export async function runPreparedDataReads(
   const results = batch?.results ?? [];
   let index = 0;
   return Promise.all(plans.map(async (plan): Promise<ProductPanelReadResponse> => {
-    if (plan.kind === "operations") {
-      const start = index;
-      index += plan.reads.length;
-      try {
-        return await plan.presentOperations(results.slice(start, index));
-      } catch (error) {
-        return refusal(error);
-      }
-    }
     if (!plan.ok) {
       if (plan.read) {
         index += 1;
         try {
-          readyPayload(results[index - 1]);
+          readyPayload(results[index - 1]!);
         } catch (error) {
           if (error instanceof RegisteredDataReadFailure) return error.response;
           throw error;
@@ -189,75 +160,21 @@ export async function runPreparedDataReads(
       }
       return plan.result;
     }
-    const readResults = results.slice(index, index + plan.reads.length);
-    index += plan.reads.length;
+    const readResults = results.slice(index, index += plan.reads.length);
     try {
-      const payload = await plan.dataPlan.present(readResults, { ...plan.readContext, ...(batch && { javaViewer: batch.viewer }) });
-      const { selection: { typeId, method }, declaration, inputs } = plan.prepared;
-      let answer: ProductPanelReadResponse;
-      if (plan.governanceRows) {
-        const { value, rowRefusals } = plan.governanceRows.unpack(payload);
-        answer = await presentReadOutcome(declaration, value);
-        if (answer.status === "ready") {
-          const rowOperations = await plan.governanceRows.present(answer.value, inputs, rowRefusals);
-          answer = { ...answer, ...(rowOperations && { rowOperations }) };
-        }
-      } else if (typeId === USER && method === "query") {
-        const { query, rowRefusals } = memberQueryPayloadSchema.parse(payload);
-        answer = await presentReadOutcome(declaration, query);
-        if (answer.status === "ready") {
-          const { rows } = answer.value as PanelRecordQuery;
-          const rowOperations = await presentMemberQueryRowOperations(
-            plan.placement.projection, inputs, rows, declaration.rowType ?? typeId, rowRefusals,
-          );
-          answer = { ...answer, ...(rowOperations && { rowOperations }) };
-        }
-      } else {
-        answer = await presentReadOutcome(declaration, payload);
+      if (plan.kind === "operations") {
+        if (!plan.readCount) readyPayload(readResults[0]!);
+        return await plan.presentOperations(readResults.slice(0, plan.readCount));
       }
-      if (answer.status === "ready" && typeId === APPLICATION && method === "builderProjects") {
-        const { projection } = plan.placement;
-        const operations = Object.fromEntries(Object.entries(projection.operations ?? {}).filter(([, { operation, target }]) =>
-          operation.kind === "PlatformOperation" && target && "row" in target
-          && (operation.id === APPLICATION_DELETE_DRAFT || operation.id === "applications.delete")));
-        const host = operationHost({ owner: viewer, credentials });
-        const rowOperations = await presentRowOperationsForRows(
-          { ...projection, operations }, inputs, answer.value as PanelRecord[], APPLICATION,
-          (handler, _binding, targets) => handler.effect === "write" ? handler.unavailableBatch!(host, targets) : new Map(),
-        );
-        return { ...answer, ...(rowOperations && { rowOperations }) };
-      }
-      if (answer.status === "ready" && plan.dataPlan.rowOperations) {
-        const firstPayload = readResults[0]?.status === "ready" ? readResults[0].payload : undefined;
-        const rowOperations = await plan.dataPlan.rowOperations(firstPayload, inputs, (answer.value as PanelRecordQuery).rows);
-        return { ...answer, ...(rowOperations && { rowOperations }) };
-      }
-      if (answer.status === "ready" && typeId === WORKFLOW && (method === "list" || method === "query")) {
-        const rows = method === "list" ? answer.value as PanelRecord[] : (answer.value as PanelRecordQuery).rows;
-        const rowOperations = await presentWorkflowLifecycleRows(plan.placement.projection, inputs, rows, credentials.locale);
-        return { ...answer, ...(rowOperations && { rowOperations }) };
-      }
-      if (answer.status === "ready" && plan.attributeDelete) {
-        const rowOperations = await presentAttributeDeleteRows(
-          { ...plan.placement.projection, operations: plan.attributeDelete },
-          readResults[0]?.status === "ready" ? readResults[0].payload : undefined,
-          answer.value as PanelRecord[], credentials.locale,
-        );
-        return { ...answer, ...(rowOperations && { rowOperations }) };
-      }
-      if (answer.status === "ready" && typeId === TURN_EVIDENCE && method === "list") {
-        const rowOperations = await presentTurnEvidenceRetentionRows(
-          plan.placement.projection, inputs, answer.value as PanelRecord[], credentials.locale,
-        );
-        return { ...answer, ...(rowOperations && { rowOperations }) };
-      }
-      if (answer.status === "ready" && typeId === AUTOTEST_RUN && method === "list") {
-        const rowOperations = await presentAutotestRunRowOperations(
-          plan.placement.projection, inputs, answer.value as PanelRecord[], credentials.locale,
-        );
-        return { ...answer, ...(rowOperations && { rowOperations }) };
-      }
-      return answer;
+      const dataResults = readResults.slice(0, plan.dataPlan.reads.length);
+      const payload = await plan.dataPlan.present(dataResults, { ...plan.readContext, ...(batch && { javaViewer: batch.viewer }) });
+      const { declaration } = plan.prepared;
+      const answer = await presentReadOutcome(declaration, payload);
+      if (answer.status !== "ready" || !plan.rows) return answer;
+      const rows = declaration.result === "panelRecordList" ? answer.value as PanelRecord[] : (answer.value as PanelRecordQuery).rows;
+      const rowOperations = await plan.rows.present(readResults.slice(plan.dataPlan.reads.length), rows, plan.rows.rowType,
+        plan.dataPlan.rowFacts?.(dataResults));
+      return { ...answer, ...(rowOperations && { rowOperations }) };
     } catch (error) {
       return presentationFailure(error);
     }

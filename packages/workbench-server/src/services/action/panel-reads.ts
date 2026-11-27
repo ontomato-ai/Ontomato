@@ -9,7 +9,7 @@ import {
   annotatedCodeSchema, type AnnotatedCode, type AnnotatedCodeDetail, type AnnotatedCodeDetailPart,
   type AnnotatedCodeSegment, type AnnotatedCodeSummarySection, type AnnotatedCodeTone,
 } from "@ontomato/contracts/annotated-code";
-import { ACTION, DELETE_ACTION, SET_ACTION_STATUS, TRIAL_ACTION } from "@ontomato/contracts/panel-client-requests";
+import { ACTION, DELETE_ACTION, TRIAL_ACTION } from "@ontomato/contracts/panel-client-requests";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { UnavailableObjectAction } from "@ontomato/contracts/platform-type-table";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
@@ -26,7 +26,6 @@ import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { objectActionDeclaration, readRefusal, storedObjectActionSchema } from "./object-actions";
 import { sandboxPermissionPresentation } from "../product-panels/sandbox-permission";
-import { operationHost } from "../product-panels/operation-host";
 import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
 
 /*
@@ -888,7 +887,7 @@ export function createActionPanelReadPresenter(locale?: string) {
   };
 }
 
-export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
+export function createActionReadAdapter(_reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
   const owner = actionOwner(viewer);
   const present = createActionPanelReadPresenter(viewer.locale);
   const readAction = (name: string, id: string) => owner(name, "/action/queryById", { id });
@@ -944,14 +943,11 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
     },
     /** The published object Actions for an author's type table: `readObjectActions` as this viewer. */
     objectActions: (objectType?: string) => readObjectActions(viewer, objectType),
-    [`${SET_ACTION_STATUS}.describe`]() {
-      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), operationHost({ owner: reader, credentials: viewer }));
-    },
     [`${TRIAL_ACTION}.describe`]() {
-      return describeServerOperation(panelServerOperation(TRIAL_ACTION), operationHost({ owner: reader, credentials: viewer }));
+      return describeServerOperation(panelServerOperation(TRIAL_ACTION), viewer.locale);
     },
     [`${DELETE_ACTION}.describe`]() {
-      return describeServerOperation(panelServerOperation(DELETE_ACTION), operationHost({ owner: reader, credentials: viewer }));
+      return describeServerOperation(panelServerOperation(DELETE_ACTION), viewer.locale);
     },
   };
 }

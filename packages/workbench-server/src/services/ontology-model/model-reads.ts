@@ -44,7 +44,7 @@ import {
   type ObjectTypeView,
   type RelationshipView,
 } from "./model-views";
-import { ontologyModelServerOperations } from "./model-operations";
+import { attributeFactsOf, ontologyModelServerOperations } from "./model-operations";
 
 /** Java's form endpoints return fields, values and save metadata without an errors array. */
 const modelFormSchema = panelFormDescriptionSchema.omit({ errors: true });
@@ -526,10 +526,30 @@ function ontologyModelRegistration(typeId: string, method: string): RegisteredDa
   };
 }
 
+/** The attribute list carries its rows' delete and set-primary-key facts, the same list read those operations make. */
+const attributeListRegistration: RegisteredDataReadRegistration = {
+  typeId: ATTRIBUTE, method: "list",
+  carries: [DELETE_ATTRIBUTE, SET_PRIMARY_KEY],
+  plan(context) {
+    const call = defaultRegisteredJavaCall(context);
+    const includeDeleteFacts = context.rowOperations.includes(DELETE_ATTRIBUTE);
+    return {
+      reads: [{ call: includeDeleteFacts ? { ...call, parameters: { ...call.parameters, includeDeleteFacts } } : call }],
+      present: results => renderReadPayload(readyPayload(results[0]).payload,
+        value => presentOntologyModelRegisteredRead(ATTRIBUTE, "list", value, context)),
+      rowFacts(results) {
+        const factsOf = attributeFactsOf(results[0]);
+        return (_operation, target) => factsOf(target.primaryKey);
+      },
+    };
+  },
+};
+
 export const ontologyModelDataReadRegistrations: RegisteredDataReadRegistration[] = [
   ...(["list", "record", "form", "createForm", "inlineForm", "options", "resolve"] as const).map(method =>
     ontologyModelRegistration(OBJECT_TYPE, method)),
-  ...(["list", "record", "form", "createForm", "inlineForm"] as const).map(method =>
+  attributeListRegistration,
+  ...(["record", "form", "createForm", "inlineForm"] as const).map(method =>
     ontologyModelRegistration(ATTRIBUTE, method)),
   ...(["list", "record", "form", "createForm"] as const).map(method =>
     ontologyModelRegistration(RELATIONSHIP, method)),

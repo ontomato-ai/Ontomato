@@ -9,6 +9,7 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
+import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 
 const mocks = vi.hoisted(() => ({
   filterReadableAgentDefinitions: vi.fn(),
@@ -64,6 +65,18 @@ const host: PanelOperationHost = {
     throw new Error("Skill delete does not call workbench HTTP");
   },
 };
+
+const allowed = { allowed: true };
+const denied = { allowed: false, code: "PERMISSION_DENIED", reason: "Skill operation denied" };
+
+/** The delete refusal for one skill as the reader, its library-change decision read answering `decision`. */
+async function deleteRefusal(primaryKey: string, decision: object = allowed, locale = "en") {
+  const context = { owner: actor.owner, credentials: { ...actor.credentials, locale }, locale };
+  const { refusals: [refusal], reads } = await refusalsOf(deleteOp, [{ kind: "object", objectType: SKILL, primaryKey }],
+    () => ready(decision), { context });
+  expect(reads).toEqual([{ call: { type: SKILL, name: "deleteAccess", parameters: {} } }]);
+  return refusal;
+}
 
 async function installDomainSkill(name: string, description = "Domain skill") {
   const dir = path.join(root, "data", "domain-skills", domain, name);
@@ -132,7 +145,7 @@ describe("skill panel server operations", () => {
     mocks.filterReadableAgentDefinitions.mockResolvedValue(new Set([agent1]));
 
     const target = { kind: "object" as const, objectType: SKILL, primaryKey: "custom-skill" };
-    await expect(deleteOp.unavailable(host, target)).resolves.toBeUndefined();
+    expect(await deleteRefusal("custom-skill")).toBeUndefined();
     expect(await deleteOp.targetLabel(host, target)).toBe("custom-skill");
     expect(await deleteOp.inspectImpact!.inspect(host, [{ target, input: {} }])).toEqual({
       summary: "This deletes the selected skill and removes its references from 1 agent(s).",
@@ -192,7 +205,7 @@ describe("skill panel server operations", () => {
     const target = { kind: "object" as const, objectType: SKILL, primaryKey: "protected-check" };
     await expect(deleteOp.inspectImpact.inspect(host, [{ target, input: {} }]))
       .rejects.toMatchObject({ status: 403, code: "PERMISSION_DENIED" });
-    await expect(deleteOp.unavailable(host, target)).resolves.toHaveProperty("reason");
+    expect(await deleteRefusal("protected-check", denied)).toEqual({ reason: "Skill operation denied" });
     expect(await deleteOp.execute(host, target)).toEqual({
       kind: "refusal",
       code: "PERMISSION_DENIED",
@@ -207,14 +220,10 @@ describe("skill panel server operations", () => {
       executor: { owner: actor.owner, credentials: { token: "op-token", locale: "zh-CN" } },
     };
 
-    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "protected-check" })).toBeUndefined();
-    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" })).toEqual({
-      reason: "内置技能随产品提供，不能删除",
-    });
-    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "knowledge-governance" })).toEqual({
-      reason: "内置技能随产品提供，不能删除",
-    });
-    expect(await deleteOp.unavailable!(host, { kind: "object", objectType: SKILL, primaryKey: "missing-skill" })).toBeUndefined();
+    expect(await deleteRefusal("protected-check", allowed, "zh-CN")).toBeUndefined();
+    expect(await deleteRefusal("builtin-skill", allowed, "zh-CN")).toEqual({ reason: "内置技能随产品提供，不能删除" });
+    expect(await deleteRefusal("knowledge-governance", allowed, "zh-CN")).toEqual({ reason: "内置技能随产品提供，不能删除" });
+    expect(await deleteRefusal("missing-skill")).toBeUndefined();
 
     for (const primaryKey of ["builtin-skill", "knowledge-governance", "ops-diagnosis"]) {
       expect(await deleteOp.execute(
@@ -314,16 +323,15 @@ describe("skill panel server operations", () => {
   it("marks generated skills unavailable for export and refuses direct export calls", async () => {
     const target = { kind: "object" as const, objectType: SKILL, primaryKey: "knowledge-governance" };
     expect(skillExportOperation.handlerRef).toBe(EXPORT_SKILL);
-    await expect(skillExportOperation.unavailable!(host, target)).resolves.toEqual({
-      reason: "Generated skills have no package files to export",
-    });
+    const exportRefusals = async (primaryKey: string) => (await refusalsOf(skillExportOperation,
+      [{ ...target, primaryKey }], () => { throw new Error("Export availability reads nothing from Java"); })).refusals;
+    expect(await exportRefusals("knowledge-governance")).toEqual([{ reason: "Generated skills have no package files to export" }]);
     await expect(skillExportOperation.execute(host, { target, input: {} })).rejects.toMatchObject({
       status: 422,
       code: "SKILL_EXPORT_UNAVAILABLE",
     });
 
-    const fileBacked = { ...target, primaryKey: "ontomato-page-operator" };
-    await expect(skillExportOperation.unavailable!(host, fileBacked)).resolves.toBeUndefined();
+    expect(await exportRefusals("ontomato-page-operator")).toEqual([undefined]);
   });
   });
 });

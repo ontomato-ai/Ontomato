@@ -14,9 +14,12 @@ import {
   SET_PRIMARY_KEY,
 } from "@ontomato/contracts/platform-object-types";
 import { tForLocale } from "../../i18n";
+import { readyPayload } from "../product-panels/registered-data-read";
 import { HttpError } from "../../utils/errors";
+import type { JavaPanelReadResult } from "../product-panels/java-panel-reads";
 import type {
   PanelImpactInspector,
+  PanelOperationAvailability,
   PanelOperationHost,
   PanelOperationTarget,
   PanelRecordTarget,
@@ -41,7 +44,6 @@ const classDeletionSchema = z.object({ relationships: z.array(z.string()) }).str
 const deletionImpactSchema = z.object({ relationships: z.array(relationshipViewSchema) }).strict();
 const setPrimaryKeyResultSchema = z.object({ attributes: z.array(attributeViewSchema) }).strict();
 const attributeListSchema = z.array(attributeViewSchema);
-const relationshipListSchema = z.array(relationshipViewSchema);
 
 const objectTypePath = (className: string) => `/object-type?className=${encodeURIComponent(className)}`;
 const attributesPath = (className: string) => `/attributes?className=${encodeURIComponent(className)}`;
@@ -171,13 +173,6 @@ const relationshipTargetLabel = (host: PanelOperationHost, target: PanelRecordTa
     return view.desc || view.relationship;
   });
 
-async function attributeForAvailability(host: PanelOperationHost, className: string, name: string) {
-  const response = await host.request(`${modelPath}${attributesPath(className)}`, {});
-  if (response.status === 403 || response.status === 404) return undefined;
-  if (!response.ok) throw await modelReadError(response);
-  return attributeListSchema.parse(await response.json()).find(view => view.name === name);
-}
-
 export function attributeOperationRefusal(
   operation: typeof DELETE_ATTRIBUTE | typeof SET_PRIMARY_KEY, view: AttributeView | undefined, locale?: string,
 ) {
@@ -205,6 +200,54 @@ export function attributeReferenceRefusal(relationships: ReadonlySet<string> | u
   if (relationships?.size) return { reason: tForLocale(locale, "panels.ontologyModel.unavailable.attributeInUse", {
     relationships: [...relationships].join(", "),
   }) };
+}
+
+const attributeFactsSchema = z.object({
+  views: z.array(attributeViewSchema),
+  relationshipFacts: z.union([z.object({ views: z.array(relationshipViewSchema) }), z.object({ error: z.string() })]).optional(),
+});
+
+/** An attribute as delete and set-primary-key judge it: its view, and with delete facts the relationships using it. */
+export interface AttributeFacts {
+  view?: AttributeView;
+  relationships?: ReadonlySet<string>;
+  relationshipError?: string;
+}
+
+/** Each attribute's facts from an attribute list read, by primary key; the attribute list carries the same for its rows. */
+export function attributeFactsOf(result: JavaPanelReadResult): (primaryKey: string) => AttributeFacts {
+  // The model owner's own read refusal (empty, or a denial without a placement code) leaves every attribute unavailable.
+  if (result.status === "empty" || (result.status === "forbidden" && !result.code)) return () => ({});
+  const { views, relationshipFacts } = attributeFactsSchema.parse(readyPayload(result).payload);
+  const attributes = new Map(views.map(view => [attributeIdentity(view).primaryKey, view]));
+  const uses = relationshipFacts && "views" in relationshipFacts ? attributeRelationshipUses(relationshipFacts.views) : undefined;
+  const relationshipError = relationshipFacts && "error" in relationshipFacts ? relationshipFacts.error : undefined;
+  return primaryKey => ({
+    view: attributes.get(primaryKey), relationships: uses?.get(primaryKey), ...(relationshipError && { relationshipError }),
+  });
+}
+
+function attributeAvailability(operation: typeof DELETE_ATTRIBUTE | typeof SET_PRIMARY_KEY): PanelOperationAvailability<undefined, AttributeFacts> {
+  return {
+    read: targets => {
+      const classes = new Set(targets.map(target => parseAttributePrimaryKey(target!.primaryKey).className));
+      return {
+        reads: [{ call: { type: ATTRIBUTE, name: "list", parameters: {
+          ...(classes.size === 1 && { className: [...classes][0] }),
+          ...(operation === DELETE_ATTRIBUTE && { includeDeleteFacts: true }),
+        } } }],
+        facts: ([result]) => {
+          const factsOf = attributeFactsOf(result!);
+          return targets.map(target => factsOf(target!.primaryKey));
+        },
+      };
+    },
+    refuse: ({ facts, locale }) => {
+      const refusal = attributeOperationRefusal(operation, facts.view, locale);
+      if (refusal || operation !== DELETE_ATTRIBUTE) return refusal;
+      return facts.relationshipError ? { reason: facts.relationshipError } : attributeReferenceRefusal(facts.relationships, locale);
+    },
+  };
 }
 
 const deleteObjectTypeImpact: PanelImpactInspector = {
@@ -624,52 +667,7 @@ export const ontologyModelServerOperations = [
     targetLabel: attributeTargetLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ontologyModel.attributeDeleted", { name }),
     inspectImpact: deleteImpact(DELETE_ATTRIBUTE, "panels.confirmation.deleteAttributeImpact", ATTRIBUTE, attributeTargetLabel),
-    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
-      const { className, name } = parseAttributePrimaryKey(target.primaryKey);
-      const view = await attributeForAvailability(host, className, name);
-      const refusal = attributeOperationRefusal(DELETE_ATTRIBUTE, view, host.locale);
-      if (refusal) return refusal;
-      const relationships = await readModelView(host,
-        `/relationships?className=${encodeURIComponent(className)}`, relationshipListSchema);
-      return attributeReferenceRefusal(attributeRelationshipUses(relationships).get(attributeIdentity({ className, name }).primaryKey), host.locale);
-    },
-    async unavailableBatch(
-      host: PanelOperationHost,
-      targets: readonly { rowKey: string; target: PanelRecordTarget }[],
-    ) {
-      const reasons = new Map<string, { reason: string }>();
-      if (!targets.length) return reasons;
-      const parsed = targets.map(entry => ({
-        rowKey: entry.rowKey,
-        ...parseAttributePrimaryKey(entry.target.primaryKey),
-      }));
-      const classes = [...new Set(parsed.map(entry => entry.className))];
-      const attrPath = classes.length === 1 ? attributesPath(classes[0]!) : "/attributes";
-      const relPath = classes.length === 1
-        ? `/relationships?className=${encodeURIComponent(classes[0]!)}`
-        : "/relationships";
-      const [attrResp, relResp] = await Promise.all([
-        host.request(`${modelPath}${attrPath}`, {}),
-        host.request(`${modelPath}${relPath}`, {}),
-      ]);
-      if (!attrResp.ok && attrResp.status !== 403 && attrResp.status !== 404) {
-        throw await modelReadError(attrResp);
-      }
-      if (!relResp.ok && relResp.status !== 403 && relResp.status !== 404) {
-        throw await modelReadError(relResp);
-      }
-      const attributes = attrResp.ok ? attributeListSchema.parse(await attrResp.json()) : [];
-      const relationships = relResp.ok ? relationshipListSchema.parse(await relResp.json()) : [];
-      const attrByKey = new Map(attributes.map(view => [attributeIdentity(view).primaryKey, view]));
-      const usedBy = attributeRelationshipUses(relationships);
-      for (const { rowKey, className, name } of parsed) {
-        const key = attributeIdentity({ className, name }).primaryKey;
-        const refusal = attributeOperationRefusal(DELETE_ATTRIBUTE, attrByKey.get(key), host.locale)
-          ?? attributeReferenceRefusal(usedBy.get(key), host.locale);
-        if (refusal) reasons.set(rowKey, refusal);
-      }
-      return reasons;
-    },
+    availability: attributeAvailability(DELETE_ATTRIBUTE),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const key = parseAttributePrimaryKey(target.primaryKey);
       const result = await postModelWrite(host, "/attribute/delete", key, emptyResultSchema);
@@ -739,11 +737,7 @@ export const ontologyModelServerOperations = [
     inspectImpact: setPrimaryKeyImpact,
     targetLabel: attributeTargetLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ontologyModel.primaryKeySet", { name }),
-    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
-      const { className, name } = parseAttributePrimaryKey(target.primaryKey);
-      const view = await attributeForAvailability(host, className, name);
-      return attributeOperationRefusal(SET_PRIMARY_KEY, view, host.locale);
-    },
+    availability: attributeAvailability(SET_PRIMARY_KEY),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const key = parseAttributePrimaryKey(target.primaryKey);
       const result = await postModelWrite(

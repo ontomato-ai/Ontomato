@@ -9,6 +9,7 @@ import { createObjectDetailReadAdapter } from "../object-detail-reads";
 import { objectDetailOperations } from "../object-detail-operations";
 import { clearObjectDetail, setObjectDetail } from "../object-detail-write";
 import type { PanelOperationHost } from "../server-operations";
+import { ready, refusalsOf } from "./availability-fixture";
 
 const state = vi.hoisted(() => ({
   permission: vi.fn(), getMapping: vi.fn(), getPanel: vi.fn(), allowed: vi.fn(),
@@ -90,8 +91,10 @@ it("offers a nullable panel reference and saves or clears through the binding ow
   expect(clearObjectDetail).toHaveBeenCalledWith(owner, credentials, "Customer");
   await clear.execute(host, target);
   expect(clearObjectDetail).toHaveBeenCalledTimes(2);
+  const clearRefusal = async (canConfigure: boolean) => (await refusalsOf(clear, [target], () => ready(canConfigure),
+    { context: { owner, credentials, locale: "en" } })).refusals[0];
+  expect(await clearRefusal(true)).toBeUndefined();
   state.getMapping.mockResolvedValueOnce(null);
-  expect(await clear.unavailable(host, target)).toHaveProperty("reason");
-  state.permission.mockRejectedValueOnce(new HttpError(403, "Denied"));
-  expect(await clear.unavailable(host, target)).toHaveProperty("reason");
+  expect(await clearRefusal(true)).toEqual({ reason: en["panels.objectDetail.unconfigured"] });
+  expect(await clearRefusal(false)).toEqual({ reason: en["panels.objectDetail.configureForbidden"] });
 });

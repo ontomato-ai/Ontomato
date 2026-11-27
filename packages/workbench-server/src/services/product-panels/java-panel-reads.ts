@@ -26,6 +26,13 @@ export interface JavaPanelRead {
   timeoutMs?: number;
 }
 
+/**
+ * A read without an application placement: Java compares no registration and admits no use, and each owner judges the
+ * verified person by itself. It serves pages that have no registered placement (candidates, previews, an agent's own
+ * reads) and operation facts; data-query reads are not available to it.
+ */
+export type JavaDirectPanelRead = Pick<JavaPanelRead, "call" | "visibleKinds"> & { source: { kind: "direct" } };
+
 
 export function stableJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -94,9 +101,11 @@ export function locateViaJava(entries: readonly JavaPanelLocateRef[], credential
   }));
 }
 
-export async function readViaJava(viewer: JavaPanelViewer, reads: readonly JavaPanelRead[], credentials: AssistantCredentials, retrievalScopeId?: string) {
+export async function readViaJava(
+  viewer: JavaPanelViewer, reads: readonly (JavaPanelRead | JavaDirectPanelRead)[], credentials: AssistantCredentials, retrievalScopeId?: string,
+) {
   const { userId, domainId } = viewer;
-  const uniqueReads: JavaPanelRead[] = [];
+  const uniqueReads: (JavaPanelRead | JavaDirectPanelRead)[] = [];
   const sharedReads = new Map<string, number>();
   const indexes = reads.map(read => {
     const key = stableJson(read);

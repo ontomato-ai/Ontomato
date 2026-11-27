@@ -9,7 +9,6 @@ import { requireFormFieldNames } from "../../utils/form-field-names";
 import { readRefusal } from "../action/object-actions";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
-import { operationHost } from "../product-panels/operation-host";
 import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
 import { defaultReadRegistration, ownerReadRegistration, presentedRegisteredDataRead, type ContextualReadyPayloadOptions, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
 import {
@@ -305,7 +304,7 @@ export function createWorkflowPanelReadPresenter(locale?: string) {
   };
 }
 
-export function createWorkflowReadAdapter(reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
+export function createWorkflowReadAdapter(_reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
   const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
   const base = config.dataQuery.baseUrl.replace(/\/$/, "");
   const t = workflowText(viewer.locale);
@@ -351,7 +350,7 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
   }
 
   const describe = (operation: string) =>
-    describeServerOperation(panelServerOperation(operation), operationHost({ owner: reader, credentials: viewer }));
+    describeServerOperation(panelServerOperation(operation), viewer.locale);
 
   return {
     list,

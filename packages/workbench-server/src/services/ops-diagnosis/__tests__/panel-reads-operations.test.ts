@@ -33,7 +33,11 @@ import { HttpError } from "../../../utils/errors";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import { buildTurnWorkspace } from "../../../platform/diagnosis/observe/workspaces/builder";
 import { loadManifest, saveManifest } from "../../../platform/diagnosis/observe/workspaces/store";
-import { describeServerOperation, panelServerOperation, type PanelOperationHost, type PanelReadServerOperation, type PanelWriteServerOperation } from "../../product-panels/server-operations";
+import {
+  describeServerOperation, panelServerOperation, type PanelOperationAvailabilityTarget, type PanelOperationHost, type PanelReadServerOperation,
+  type PanelServerOperation, type PanelWriteServerOperation,
+} from "../../product-panels/server-operations";
+import { ready, refusalsOf } from "../../product-panels/__tests__/availability-fixture";
 import { unwrapReadDirective } from "../../product-panels/read-directive";
 import { platformTypeEntries } from "../../product-panels/type-table";
 import {
@@ -145,6 +149,14 @@ vi.mock("../../../config/application", async importOriginal => {
 
 const jsonHeaders = new Headers({ "content-type": "application/json" });
 const backendJson = (payload: unknown) => ({ headers: jsonHeaders, text: JSON.stringify(payload) });
+
+/** An operation's refusal for one target as the reader in domain-a, its management gate read answering the operation id. */
+async function refusalFor(operation: PanelServerOperation, target: PanelOperationAvailabilityTarget, management: { id: string }) {
+  const context = { owner: { domainId: "domain-a", userId: "user-1" }, credentials: { token: "tok", locale: "en" }, locale: "en" };
+  const { refusals: [refusal], reads } = await refusalsOf(operation, [target], () => ready(management.id), { context });
+  expect(reads).toEqual([{ call: { type: target!.objectType, name: "record", parameters: {} } }]);
+  return refusal;
+}
 
 function makeHost(domainId = "domain-a", locale = "en"): PanelOperationHost {
   const actor = { owner: { domainId, userId: "user-1" }, credentials: { token: "tok", locale } };
@@ -293,14 +305,17 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     const unkeepOp = objectWrite(UNKEEP_TURN_EVIDENCE);
     const target = { kind: "object" as const, objectType: TURN_EVIDENCE, primaryKey: turnA };
 
-    expect(await keepOp.unavailable?.(host, target)).toBeUndefined();
-    expect(await unkeepOp.unavailable?.(host, target)).toBeDefined();
+    const turnRead = workbenchManagement.opsTurnEvidenceRead;
+    expect(await refusalFor(keepOp, target, turnRead)).toBeUndefined();
+    expect(await refusalFor(unkeepOp, target, turnRead)).toBeDefined();
     expect(await keepOp.execute(host, target, {}, "i1")).toMatchObject({ kind: "success" });
-    expect(await keepOp.unavailable?.(host, target)).toBeDefined();
-    expect(await unkeepOp.unavailable?.(host, target)).toBeUndefined();
+    expect(await refusalFor(keepOp, target, turnRead)).toBeDefined();
+    expect(await refusalFor(unkeepOp, target, turnRead)).toBeUndefined();
+    // A turn of another domain is not found rather than judged.
+    expect(await refusalFor(keepOp, { ...target, primaryKey: turnOther }, turnRead)).toEqual({ reason: "Turn workspace not found" });
 
     const downloadOp = objectRead(DOWNLOAD_TURN_EVIDENCE);
-    expect(await downloadOp.unavailable?.(host, target)).toBeUndefined();
+    expect(await refusalFor(downloadOp, target, turnRead)).toBeUndefined();
     const downloaded = await downloadOp.execute(host, { target, input: {} });
     expect(downloaded.kind).toBe("file");
     if (downloaded.kind === "file") {
@@ -481,7 +496,8 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     const keepRun = objectWrite(KEEP_AUTOTEST_RUN);
     const unkeepRun = objectWrite(UNKEEP_AUTOTEST_RUN);
     expect(await keepRun.execute(host, runTarget, {}, "r1")).toMatchObject({ kind: "success" });
-    expect(await unkeepRun.unavailable?.(host, runTarget)).toBeUndefined();
+    expect(await refusalFor(unkeepRun, runTarget, workbenchManagement.opsRunsRead)).toBeUndefined();
+    expect(await refusalFor(objectRead(DOWNLOAD_AUTOTEST_CASE_ARTIFACT), caseTarget, workbenchManagement.opsRunsRead)).toBeUndefined();
 
     const downloadRun = objectRead(DOWNLOAD_AUTOTEST_RUN);
     expect((await downloadRun.execute(host, { target: runTarget, input: {} })).kind).toBe("file");
@@ -508,11 +524,11 @@ describe("Observe and Autotest panel owner reads and operations", () => {
       expect(unwrapReadDirective(settled).directive).toBeUndefined();
     }
     const deleteRunOp = objectWrite(DELETE_AUTOTEST_RUN);
-    expect(await deleteRunOp.unavailable?.(host, runTarget)).toBeDefined();
+    expect(await refusalFor(deleteRunOp, runTarget, workbenchManagement.opsRunsRead)).toBeDefined();
     expect(await deleteRunOp.execute(host, runTarget, {}, "r2")).toMatchObject({ kind: "refusal", code: "RUN_BUSY" });
 
     mocks.activeRun = null;
-    expect(await deleteRunOp.unavailable?.(host, runTarget)).toBeUndefined();
+    expect(await refusalFor(deleteRunOp, runTarget, workbenchManagement.opsRunsRead)).toBeUndefined();
     expect(await deleteRunOp.execute(host, runTarget, {}, "r3")).toMatchObject({ kind: "success" });
     expect(await runAdapter.list()).toEqual([]);
   });
@@ -546,7 +562,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     );
 
     const call = { target: { kind: "draft" as const }, input: { draft: { dsl: DEFAULT_DSL_QUERY_TEXT }, parameters: {} } };
-    const descriptor = await describeServerOperation(executeOp, host, "executeDsl");
+    const descriptor = await describeServerOperation(executeOp, host.locale, "executeDsl");
     expect(descriptor.resultSections?.map(({ id }) => id)).toEqual(["table", "raw"]);
 
     mocks.backendPost.mockRejectedValueOnce(new BackendUnavailableError("dsl/executeV1"));

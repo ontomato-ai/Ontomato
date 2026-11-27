@@ -10,6 +10,7 @@ import { HttpError } from "../../utils/errors";
 import type {
   PanelImpactInspector,
   PanelOperationActor,
+  PanelOperationAvailability,
   PanelOperationHost,
   PanelOperationTarget,
   PanelRecordTarget,
@@ -18,6 +19,9 @@ import type {
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import type { PanelUploadedFile } from "../product-panels/upload-store";
+import { skillWriteRestriction } from "../../core/skills/types";
+import { objectDecisionSchema, type Decision } from "../product-governance/authorization";
+import { readyPayload } from "../product-panels/registered-data-read";
 
 /*
  * The skill owner as panel server operations. `skills.import` takes the skill ZIP the reader staged and installs it
@@ -38,11 +42,12 @@ const generatedBuiltinSkillNames = new Set(
   builtinSkillEntries().filter(entry => entry.source.kind === "generated").map(entry => entry.skill.name),
 );
 
-export function generatedSkillExportRefusal(primaryKey: string, locale?: string) {
-  return generatedBuiltinSkillNames.has(primaryKey)
-    ? { reason: tForLocale(locale, "panels.skill.generatedExportUnavailable") }
-    : undefined;
-}
+/** A generated built-in skill has no package to export. */
+const exportAvailability: PanelOperationAvailability<undefined, boolean> = {
+  local: targets => targets.map(target => generatedBuiltinSkillNames.has(target!.primaryKey)),
+  refuse: ({ facts: generated, locale }) =>
+    generated ? { reason: tForLocale(locale, "panels.skill.generatedExportUnavailable") } : undefined,
+};
 
 const deleteInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
@@ -53,6 +58,25 @@ export function skillDeleteRefusal(restriction: SkillWriteRestriction, locale?: 
     ? tForLocale(locale, "panels.skill.readOnlyPublic")
     : tForLocale(locale, "panels.skill.readOnlyProvider", { provider: restriction.providerName }) };
 }
+
+/** Deleting needs the reader's right to change the library and a skill that is not read-only. */
+const deleteAvailability: PanelOperationAvailability<Decision, SkillWriteRestriction> = {
+  shared: {
+    reads: [{ call: { type: SKILL, name: "deleteAccess", parameters: {} } }],
+    facts: ([result]) => objectDecisionSchema.parse(readyPayload(result!).payload),
+  },
+  async local(targets, { owner, credentials }, decision) {
+    if (!decision.allowed) return targets.map(() => null);
+    const { readSkillView } = await import("./view");
+    const { registry } = await readSkillView(owner.domainId, credentials);
+    return targets.map(target => {
+      const skill = registry.getSkillById(target!.primaryKey);
+      return skill ? skillWriteRestriction(skill) : null;
+    });
+  },
+  refuse: ({ shared: decision, facts: restriction, locale }) =>
+    decision.allowed ? skillDeleteRefusal(restriction, locale) : { reason: decision.reason },
+};
 
 const loadSkillManager = async () => (await import("./skill-manager")).skillManager;
 
@@ -174,42 +198,7 @@ export const skillServerOperations = [
     targetLabel: async (_host: PanelOperationHost, target: PanelRecordTarget) => target.primaryKey,
     done: (host, name) => tForLocale(host.locale, "panels.skill.deleted", { name }),
     inspectImpact: deleteSkillImpact,
-    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
-      const skillManager = await loadSkillManager();
-      const { owner, credentials } = host.initiator;
-      let restriction;
-      try { restriction = await skillManager.getDeleteSkillRestriction(owner.domainId, target.primaryKey, credentials); }
-      catch (error) {
-        if (!(error instanceof HttpError)) throw error;
-        if (error.code === "SKILL_NOT_FOUND") return undefined;
-        if (error.code === "PERMISSION_DENIED") return { reason: error.message };
-        throw error;
-      }
-      return skillDeleteRefusal(restriction, host.locale);
-    },
-    async unavailableBatch(host: PanelOperationHost, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
-      const skillManager = await loadSkillManager();
-      const { owner, credentials } = host.initiator;
-      let restrictions;
-      try {
-        restrictions = await skillManager.getDeleteSkillRestrictions(
-          owner.domainId,
-          targets.map(({ target }) => target.primaryKey),
-          credentials,
-        );
-      } catch (error) {
-        if (error instanceof HttpError && error.code === "PERMISSION_DENIED") {
-          return new Map(targets.map(({ rowKey }) => [rowKey, { reason: error.message }]));
-        }
-        throw error;
-      }
-      const reasons = new Map<string, { reason: string } | undefined>();
-      for (const { target, rowKey } of targets) {
-        const refusal = skillDeleteRefusal(restrictions.get(target.primaryKey) ?? null, host.locale);
-        if (refusal) reasons.set(rowKey, refusal);
-      }
-      return reasons;
-    },
+    availability: deleteAvailability,
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected skill");
       const { owner, credentials } = host.executor;
@@ -252,10 +241,7 @@ export const skillExportOperation = {
   targetSchema: skillObjectTarget,
   inputSchema: deleteInputSchema,
   resultSchema: panelDownloadReceiptSchema,
-  async unavailable({ executor: { credentials }, locale }, target) {
-    if (!target) return;
-    return generatedSkillExportRefusal(target.primaryKey, locale ?? credentials.locale);
-  },
+  availability: exportAvailability,
   async execute({ executor: { owner, credentials } }, call) {
     const { primaryKey } = skillObjectTarget.parse(call.target);
     const skillManager = await loadSkillManager();

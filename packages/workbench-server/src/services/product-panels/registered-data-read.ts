@@ -1,5 +1,5 @@
-import type { PanelRowOperationsMap, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import type { PanelRecord } from "@ontomato/contracts/panel-projection";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 import type { ProductOwner } from "../product-governance/service-authentication";
@@ -22,15 +22,14 @@ export interface RegisteredDataReadContext {
   /** The viewer identity returned by the Java read batch, when presentment happens after that batch. */
   javaViewer?: JavaPanelViewer;
   location?: { protocol: string; headers: Record<string, unknown> };
+  /** The operations, among those the registration carries, whose facts this page's rows need from this read. */
+  rowOperations: readonly string[];
 }
 
 export interface RegisteredOwnerReadPlan {
   call?: RegisteredJavaCall;
   visibility?: readonly PanelReadVisibility[];
   present(payload: unknown, ranges: PanelReadRanges | undefined): unknown | Promise<unknown>;
-  rowOperations?(
-    payload: unknown, inputs: Readonly<Record<string, unknown>>, rows: readonly PanelRecord[],
-  ): Promise<PanelRowOperationsMap | undefined>;
 }
 
 export interface RegisteredLocalDataRead {
@@ -48,13 +47,22 @@ export interface RegisteredDataReadItem {
   visibleKinds?: readonly PanelReadVisibility[];
 }
 
+export function javaReadItem(item: RegisteredDataReadItem): Pick<JavaPanelRead, "call" | "visibleKinds"> {
+  return {
+    ...(item.visibleKinds && { visibleKinds: item.visibleKinds }),
+    ...(item.call && { call: { ...item.call, parameters: runtimeJsonObjectSchema.parse(item.call.parameters) } }),
+  };
+}
+
+/** An operation's facts for one row's target, as the list read carried them back. */
+export type CarriedRowFacts = (operation: string, target: { objectType: string; primaryKey: string }) => unknown;
+
 /** The only read shape a registration contributes to the platform. */
 export interface RegisteredDataReadPlan {
   reads: readonly RegisteredDataReadItem[];
   present(results: readonly JavaPanelReadResult[], context: RegisteredDataReadContext): unknown | Promise<unknown>;
-  rowOperations?(
-    payload: unknown, inputs: Readonly<Record<string, unknown>>, rows: readonly PanelRecord[],
-  ): Promise<PanelRowOperationsMap | undefined>;
+  /** The facts of `context.rowOperations` this read carried back, by each row's target. */
+  rowFacts?(results: readonly JavaPanelReadResult[]): CarriedRowFacts;
 }
 
 export interface RegisteredDataReadRegistration {
@@ -62,6 +70,11 @@ export interface RegisteredDataReadRegistration {
   typeId?: string;
   method?: string;
   kind?: "customer";
+  /**
+   * Operations whose availability facts this list can carry back for its rows: the same facts the operation's own read
+   * gives, so the operation's rule decides. The platform asks only for the ones a page needs, in `rowOperations`.
+   */
+  carries?: readonly string[];
   plan(context: RegisteredDataReadContext): RegisteredDataReadPlan | Promise<RegisteredDataReadPlan>;
 }
 
@@ -128,7 +141,6 @@ export function ownerReadPlan(ownerRead: RegisteredOwnerReadPlan, readyOptions?:
       const { payload, visibility } = readyPayload(results[0], contextualReadyOptions(readyOptions, _context));
       return ownerRead.present(payload, visibility);
     },
-    ...(ownerRead.rowOperations && { rowOperations: ownerRead.rowOperations }),
   };
 }
 

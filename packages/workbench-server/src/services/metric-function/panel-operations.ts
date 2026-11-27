@@ -15,7 +15,7 @@ import type {
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import {
-  affected, ownerDeleteUnavailable, ownerEnvelopeSchema, ownerPost, ownerRecord, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
+  affected, ownerEnvelopeSchema, ownerPost, ownerRecord, ownerWriteFailure, refusalRead, remove, save, savedIdSchema, targetLabel,
   valuesForTarget, type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
 
@@ -210,8 +210,7 @@ export const m5ServerOperations = [
     targetInput: "metric",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
     inspectImpact: deleteMetricViewImpact,
-    unavailable: (host: Host, target: PanelRecordTarget) => ownerDeleteUnavailable(host, "/metricView/queryById",
-      { id: target.primaryKey, purpose: "delete-availability" }, "METRIC_VIEW_UNAVAILABLE"),
+    availability: refusalRead(METRIC_VIEW, "deleteRefusal"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected metric");
       return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_FAILED");
@@ -292,8 +291,7 @@ export const m5ServerOperations = [
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
     done: (host, name) => tForLocale(host.locale, "panels.function.deleted", { name }),
     inspectImpact: deleteFunctionImpact,
-    unavailable: (host: Host, target: PanelRecordTarget) => ownerDeleteUnavailable(host, "/function/deleteRefusal",
-      { id: target.primaryKey }, "FUNCTION_UNAVAILABLE", "The function cannot be read"),
+    availability: refusalRead(FUNCTION, "deleteRefusal"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
       return remove(host, "/function/delete", target, "FUNCTION_DELETE_FAILED");

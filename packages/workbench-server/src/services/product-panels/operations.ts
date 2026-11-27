@@ -35,9 +35,8 @@ import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller"
 import { publishObjectChanged } from "../agent-host/presentation";
 import { mergeObjectActionBoundParams } from "../action/object-actions";
 import { readCurrentPanelRecord } from "./current";
-import {
-  declaredDirectOperation, resolveBatchUnavailableReasons, type DeclaredDirectOperationOptions, type PlacedOperationTarget,
-} from "./direct-operations";
+import { declaredDirectOperation, factsContext, type DeclaredDirectOperationOptions, type PlacedOperationTarget } from "./direct-operations";
+import { refuseDirect } from "./operation-availability";
 import { requireRegisteredPanelRoot } from "./member-path";
 import { requirePanelUseEntry } from "./application-use";
 import {
@@ -744,9 +743,10 @@ function batchOutcome(value: unknown, calls: readonly PanelBatchCalls[number][])
 async function partitionBatch(
   host: PanelOperationHost, { owner, calls }: Extract<CheckedInvocation, { calls: PanelBatchCalls }>,
 ) {
-  const reasons = await resolveBatchUnavailableReasons(host, owner, calls.map(({ target }, index) =>
-    ({ target, rowKey: String(index) })));
-  const executable = calls.filter((_, index) => !reasons.get(String(index)));
+  const reasons = owner.availability
+    ? await refuseDirect(owner.availability, factsContext(host.initiator), calls.map(({ target, input }) => ({ target, params: input })))
+    : [];
+  const executable = calls.filter((_, index) => !reasons[index]);
   return { executable, reasons };
 }
 
@@ -762,7 +762,7 @@ async function executeAvailableBatch(
 
   let executedIndex = 0;
   const item = ({ target }: PanelBatchCalls[number], index: number) => {
-    const unavailable = reasons.get(String(index));
+    const unavailable = reasons[index];
     const outcome: BatchItemOperationOutcome = unavailable
       ? { kind: "skipped", reason: unavailable.reason }
       : executed!.kind === "batch" ? executed!.items[executedIndex++]!.outcome : executed!;
