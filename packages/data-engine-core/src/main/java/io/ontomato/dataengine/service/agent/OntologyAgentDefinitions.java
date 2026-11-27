@@ -111,9 +111,34 @@ public class OntologyAgentDefinitions {
    * such a run. The values are the ones the former host-side loop guard used.
    */
   static final Map<String, Object> TOOL_LOOP_POLICY = Map.of("maxCalls", 100, "maxSameShape", 12);
+  public static final int RETRIEVAL_OPENING_KNOWLEDGE_LIMIT = 10;
+
+  private static List<SkillVersion> preload(List<SkillVersion> skills, Map<String, Object> target) {
+    return skills.stream()
+        .map(skill -> skill.skill().equals(target) ? new SkillVersion(skill.skill(), skill.digest(), true) : skill)
+        .toList();
+  }
+
+  private JSONObject baseDefinition(String domain, long remainingMs, List<SkillVersion> skills) {
+    return JSONObject.of(
+        "skills",
+        skills,
+        "externalMcp",
+        List.of(),
+        "sandbox",
+        Map.of(
+            "limits",
+            Map.of(
+                "memoryBytes",
+                16L * 1024 * 1024 * 1024,
+                "wallTimeMs",
+                Math.max(1, remainingMs),
+                "cpuSeconds",
+                Math.max(1, (remainingMs + 999) / 1000))));
+  }
 
   public JSONObject generation(String domain, String kind, String prompt, String language, long remainingMs, List<SkillVersion> skills) {
-    var definition = definition(domain, language, remainingMs, skills);
+    var definition = baseDefinition(domain, remainingMs, preload(skills, GENERATION_SKILL));
     definition.put("toolCallPolicy", TOOL_LOOP_POLICY);
     definition.put("agentId", OntologyGenerationService.agentId(kind));
     definition.put(
@@ -121,8 +146,6 @@ public class OntologyAgentDefinitions {
     definition.put(
         "systemPrompt",
         prompt
-            + "\n\n"
-            + resource("ontology-skills/ontology-generation/SKILL.md")
             + "\n\n"
             + JSON.parseObject(
                 resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class));
@@ -144,15 +167,13 @@ public class OntologyAgentDefinitions {
   }
 
   public JSONObject metricView(String domain, String prompt, String language, long remainingMs, List<SkillVersion> skills) {
-    var definition = definition(domain, language, remainingMs, skills);
+    var definition = baseDefinition(domain, remainingMs, preload(skills, METRICVIEW_SKILL));
     definition.put("toolCallPolicy", TOOL_LOOP_POLICY);
     definition.put("agentId", METRICVIEW_AGENT);
     definition.put("modelId", models.modelId(domain, METRICVIEW_AGENT));
     definition.put(
         "systemPrompt",
         prompt
-            + "\n\n"
-            + resource("ontology-skills/metricview-generation/SKILL.md")
             + "\n\n"
             + JSON.parseObject(
                 resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class));
@@ -163,33 +184,18 @@ public class OntologyAgentDefinitions {
     String markdown =
         JSON.parseObject(
             resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class);
-    return JSONObject.of(
-        "agentId", OntologyAgentStore.RETRIEVER,
-        "systemPrompt",
-        prompt(language, "data-retrieval", "system") + "\n\n" + markdown,
-        "modelId",
-        models.modelId(domain, OntologyAgentStore.RETRIEVER),
-        "skills",
-        skills,
-        "externalMcp",
-        List.of(),
-        "sandbox",
-        Map.of(
-            "limits",
-            Map.of(
-                "memoryBytes",
-                16L * 1024 * 1024 * 1024,
-                "wallTimeMs",
-                Math.max(1, remainingMs),
-                "cpuSeconds",
-                Math.max(1, (remainingMs + 999) / 1000))));
+    var definition = baseDefinition(domain, remainingMs, preload(skills, DATASET_SKILL));
+    definition.put("agentId", OntologyAgentStore.RETRIEVER);
+    definition.put("systemPrompt", prompt(language, "data-retrieval", "system") + "\n\n" + markdown);
+    definition.put("modelId", models.modelId(domain, OntologyAgentStore.RETRIEVER));
+    return definition;
   }
   /**
    * The conversational action creator: the action maker task prompt plus the generation skill, in
    * a persistent session. It has a write sandbox and can revise the files from the previous turn.
    */
   public JSONObject actionCreation(String domain, String prompt, String language, long remainingMs, List<SkillVersion> skills) {
-    var value = definition(domain, language, remainingMs, skills);
+    var value = baseDefinition(domain, remainingMs, preload(skills, GENERATION_SKILL));
     value.put("toolCallPolicy", TOOL_LOOP_POLICY);
     value.put("agentId", ActionCreationService.AGENT);
     value.put("modelId", models.modelId(domain, ActionCreationService.AGENT));
@@ -198,8 +204,6 @@ public class OntologyAgentDefinitions {
     value.put(
         "systemPrompt",
         prompt
-            + "\n\n"
-            + resource("ontology-skills/ontology-generation/SKILL.md")
             + "\n\n"
             + JSON.parseObject(
                 resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class)

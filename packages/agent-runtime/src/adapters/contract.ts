@@ -35,6 +35,8 @@ export interface HarnessPlugin {
   readonly id: HarnessEngineId;
   /** The rows of `CAPABILITIES.md` this engine answers, with the program version they were verified on. */
   readonly capabilities: HarnessCapabilities;
+  /** Where this engine's skill catalog presents one mounted skill, when it differs from the mount itself. */
+  readonly skillCatalogDirectory?: (directories: HarnessDirectories, name: string) => string;
   /**
    * Open or resume native state without running a prompt. The runtime commits the returned reference
    * before it calls startTurn. Throws rather than silently replacing a referenced session.

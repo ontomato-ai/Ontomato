@@ -44,6 +44,7 @@ import type {
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeStore, digest, canonical, type Scope } from "./store";
 import {
+  preloadedSkillDocument,
   SkillRegistry,
   type RuntimeHost,
   type InstalledSkill,
@@ -272,7 +273,7 @@ export class AgentRuntime {
         answerMessageId: null,
         workspaceCommit: null,
         resolvedSkills: skills.map(
-          ({ directory: _directory, ...registered }) => registered,
+          ({ directory: _directory, skillDocument: _skillDocument, ...registered }) => registered,
         ),
       };
       const accepted = await this.store.admit(
@@ -697,8 +698,17 @@ export class AgentRuntime {
         engineTools: bound.engineTools,
         signal,
         previousContext: () => this.previousContext(scope, run.sessionId),
-        prompt: () => ({
-          system: [request.definition.systemPrompt, processLanguageInstruction(run.language)].filter(Boolean).join("\n\n"),
+        prompt: (directories) => ({
+          system: [
+            ...skills.filter(skill => skill.preload).map(skill => preloadedSkillDocument(
+              skill.skill.name,
+              plugin.skillCatalogDirectory?.(directories, skill.skill.name)
+                ?? directories.skills.find(({ name }) => name === skill.skill.name)!.directory,
+              skill.skillDocument,
+            )),
+            request.definition.systemPrompt,
+            processLanguageInstruction(run.language),
+          ].filter(Boolean).join("\n\n"),
         }),
       });
       active.workspace = engine.sandbox.hostWorkspace;
