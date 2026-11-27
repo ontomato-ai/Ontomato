@@ -546,6 +546,33 @@ describe("ApplicationFrameHost single persistent outer frame", () => {
     wrapper.unmount();
   });
 
+  it("waits for a late entry decision instead of caching the native frame port", async () => {
+    manualFrameSurfaceReady = true;
+    catalogApplications.value = [
+      { id: "ontology", framePanelId: ontologyFrameId },
+      { id: "app-b", framePanelId: appBFrameId, panelUses: [appBHomeUse] },
+    ];
+    const pendingResolve = deferred<ApplicationOpenResponse>();
+    resolveApplicationEntryMock.mockReturnValueOnce(pendingResolve.promise);
+
+    const { wrapper } = await mountPlatformShell("/ontology/playground");
+    await flushPromises();
+
+    expect(framePanelHostCalls).toHaveLength(0);
+    expect(builtinFramePanelHostCalls).toHaveLength(0);
+    expect(wrapper.find("[data-panel-loading-placeholder]").exists()).toBe(true);
+
+    pendingResolve.resolve(resolutionOf("ontology", playgroundUse, [playgroundUse, objectsUse], ontologyFrameId));
+    await flushPromises();
+
+    expect(builtinFramePanelHostCalls).toHaveLength(0);
+    expect(framePanelHostCalls).toEqual([
+      { applicationId: "ontology", framePanelId: ontologyFrameId, useId: playgroundUse.id },
+    ]);
+    expect(wrapper.find(`[data-frame-panel="${ontologyFrameId}"]`).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it("resets frame state on cross-application switch and cleanly restores the page slot when entering an unframed route", async () => {
     resolveApplicationEntryMock.mockImplementation(async ({ path }) => {
       if (path === objectsUse.path) return resolutionOf("ontology", objectsUse, [playgroundUse, objectsUse], ontologyFrameId);

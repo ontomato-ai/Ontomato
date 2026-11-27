@@ -661,6 +661,16 @@ export function builtinFramePanelHost(
     coded: (source, run, target) => {
       const { global } = workbenchI18n();
       const navRouter = router ?? platformRouter();
+      let localReadReported = false;
+      const refuseNativePanelRead = () => {
+        const failure = new Error("Native frame does not read panel data");
+        if (!localReadReported) {
+          localReadReported = true;
+          console.error(failure);
+          run.failed(failure);
+        }
+        return Promise.resolve({ status: "forbidden" as const, reason: failure.message });
+      };
       return mountCoded({
         manifest: source.panel.manifest,
         run,
@@ -673,7 +683,7 @@ export function builtinFramePanelHost(
         preloadComponentIds: panelProjectionComponentIds(source.panel.manifest),
         ...(frameDomainComponents ? { panelDomainComponents: frameDomainComponents } : {}),
         use: null,
-        read: () => Promise.resolve({ status: "forbidden", reason: "Native frame does not read panel data" }),
+        read: refuseNativePanelRead,
         confirmOperation: () => Promise.reject(new Error("A native frame runs no panel operations")),
         expandPageComposer: expandDeclaredComposer,
         navigate: panelNavigator(navRouter),
