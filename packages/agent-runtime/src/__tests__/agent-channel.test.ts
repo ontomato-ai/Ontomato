@@ -111,11 +111,14 @@ function presentationAdmission(activeRunId: string | null = null) {
 }
 
 it.each([
-  { bound: "account-E", provider: "account-E", starts: true },
-  { bound: "account-E", provider: "account-F", starts: false },
-  { bound: null, provider: "account-F", starts: false },
-  { bound: null, provider: null, starts: true },
-])("starts a continued run only as the account it is bound to (bound $bound, provider $provider)", async ({ bound, provider, starts: started }) => {
+  { kind: "live" as const, held: "account-A", provider: "account-A", refused: false },
+  { kind: "live" as const, held: "account-A", provider: "account-B", refused: false },
+  { kind: "live" as const, held: null, provider: "account-B", refused: false },
+  { kind: "preview" as const, held: "account-A", provider: "account-A", refused: false },
+  { kind: "preview" as const, held: "account-A", provider: "account-B", refused: true },
+  { kind: "preview" as const, held: null, provider: "account-B", refused: true },
+  { kind: "preview" as const, held: null, provider: null, refused: false },
+])("continues a $kind run holding $held under the provider's choice $provider only when live", async ({ kind, held, provider, refused }) => {
   const { port, prepares, starts, intents, submit } = presentationAdmission();
   let chosen: string | null = "account-F";
   const answer = globalThis.fetch;
@@ -124,19 +127,26 @@ it.each([
     const prepared = await (await answer(url, init)).json();
     return Response.json({ ...prepared, executionActor: chosen === null ? null : { userId: chosen, domainId: scope.domainId } });
   });
-  // A person's message opens the run: nothing is bound or inherited, so the provider chooses and the run starts as its choice.
+  // A person's message opens the run: nothing is held or inherited, so the provider chooses and the run starts as its choice.
   await submit();
   expect(prepares[0]!.executionActor).toBeNull();
   expect(starts.mock.calls[0]?.[5]).toMatchObject({ executionActor: { userId: "account-F" } });
-  // A continued run carries the account it is bound to; the provider is told it and must keep it.
+  // A continued run holds its conversation's account, offered to its provider. A live one starts as whatever the provider
+  // now chooses (its agent's configuration changed from A to B, say) and records it; a preview's must keep it.
   chosen = provider;
-  intents.set(runId, { ...intents.get(runId)!, executionUserId: bound, status: "starting", error: null });
+  const continued = intents.get(runId)!;
+  intents.set(runId, { ...continued, executionUserId: held, status: "starting", error: null,
+    channel: { ...continued.channel, authority: { ...continued.channel.authority, executionKind: kind } } });
   const prepared = port.prepare(intents.get(runId)!);
-  if (started) await prepared;
-  else await expect(prepared).rejects.toMatchObject({ status: 403, code: "EXECUTION_ACCOUNT_CHANGED" });
-  expect(prepares.at(-1)!.executionActor).toEqual(bound === null ? null : { userId: bound, domainId: scope.domainId });
-  expect(starts).toHaveBeenCalledTimes(started ? 2 : 1);
-  if (started) expect((starts.mock.calls[1]?.[5] as RuntimeStartRunRequest).executionActor ?? null).toEqual(bound === null ? null : { userId: bound, domainId: scope.domainId });
+  if (refused) await expect(prepared).rejects.toMatchObject({ status: 403, code: "EXECUTION_ACCOUNT_CHANGED" });
+  else await prepared;
+  expect(prepares.at(-1)!.executionActor).toEqual(held === null ? null : { userId: held, domainId: scope.domainId });
+  expect(starts).toHaveBeenCalledTimes(refused ? 1 : 2);
+  if (!refused) {
+    expect((starts.mock.calls[1]?.[5] as RuntimeStartRunRequest).executionActor ?? null)
+      .toEqual(provider === null ? null : { userId: provider, domainId: scope.domainId });
+    expect(intents.get(runId)!.executionUserId).toBe(provider);
+  }
 });
 
 it.each([
@@ -1033,34 +1043,56 @@ describe("an input runs with its sender's identity, never its recipient's", () =
     expect(runtime.inputReceived).toHaveBeenCalledWith(scope, runId, expect.anything());
   });
 
-  it("starts a run for a child's message with the child's authority and root, never its creator's wider ones", async () => {
+  it("starts a preview run for a preview child's message with the child's authority, root and account, never its creator's wider ones", async () => {
     const fixture = live();
     const creator = fixture.intents.get(runId)!;
-    creator.channel = { ...creator.channel, authority: { classNames: [], executionKind: "live" } };
+    creator.channel = { ...creator.channel, authority: { classNames: [], executionKind: "preview" } };
     creator.executionUserId = "creator-account";
     const childRoot = { session: source.session, runId: previewRunId };
     const child = { ...fixture.childRun, executionUserId: "child-account",
-      channel: { ...fixture.childRun.channel, authority: { classNames: ["Orders"], executionKind: "live" as const }, root: childRoot } };
+      channel: { ...fixture.childRun.channel, authority: { classNames: ["Orders"], executionKind: "preview" as const }, root: childRoot } };
     const sent = await fixture.port.execute(scope, child, { op: "send", session: "parent", message: "Progress", steer: true });
     const queued = (sent as { taskId: string | null }).taskId;
     expect(queued).not.toBeNull();
     expect(fixture.runtime.inputReceived).not.toHaveBeenCalled();
     const started = fixture.intents.get(queued!)!;
-    expect(started.channel.authority).toEqual({ classNames: ["Orders"], executionKind: "live" });
+    expect(started.channel.authority).toEqual({ classNames: ["Orders"], executionKind: "preview" });
     expect(started.channel.root).toEqual(childRoot);
-    // A live run's execution account is its own conversation's, which its agent chose; a preview's carries the sender's.
-    expect(started.executionUserId).toBe("creator-account");
+    expect(started.executionUserId).toBe("child-account");
   });
 
-  it("merges a child's message into its creator's run only when that run reaches no further than the child", async () => {
+  it("steers a live message into the running live run whatever accounts and classes the two runs have", async () => {
     const fixture = live();
     const creator = fixture.intents.get(runId)!;
-    creator.executionUserId = "child-account";
+    creator.channel = { ...creator.channel, authority: { classNames: [], executionKind: "live" } };
+    creator.executionUserId = "creator-account";
     const child = { ...fixture.childRun, executionUserId: "child-account",
-      channel: { ...fixture.childRun.channel, authority: humanChannel.authority } };
+      channel: { ...fixture.childRun.channel, authority: { classNames: ["Orders"], executionKind: "live" as const } } };
     const sent = await fixture.port.execute(scope, child, { op: "send", session: "parent", message: "Progress", steer: true });
     expect((sent as { taskId: string | null }).taskId).toBeNull();
     expect(fixture.runtime.inputReceived).toHaveBeenCalledWith(scope, runId, expect.anything());
+  });
+
+  it("steers a live parent's message into its running child whose account and classes differ", async () => {
+    const fixture = live();
+    const parentRunId = "abababab-abab-4bab-8bab-abababababab";
+    const parentSession = { providerId: "registered-custom", sessionId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd" };
+    // The running run of the conversation is the child's own, delegated by a parent in another conversation.
+    const running = fixture.intents.get(runId)!;
+    running.channel = { ...running.channel, authority: { classNames: ["Orders"], executionKind: "live" },
+      requestedBy: { session: parentSession, runId: parentRunId } };
+    running.executionUserId = "child-account";
+    const parentRun = { ...run, id: parentRunId, sessionId: parentSession.sessionId, status: "running" as const, executionUserId: "parent-account",
+      channel: { ...humanChannel, authority: { classNames: [], executionKind: "live" as const } } };
+    vi.mocked(fixture.port.facts.binding).mockImplementation(async (_scope, id) => ({
+      agent: context.agent, actor: context.actor, parent: id === sessionId ? { session: parentSession, runId: parentRunId } : null,
+    }));
+    Object.assign(fixture.runtime.store, { run: vi.fn(async () => ({ run: parentRun })) });
+    vi.spyOn(fixture.port.facts, "latest").mockResolvedValue(running);
+    const sent = await fixture.port.execute(scope, parentRun, { op: "send", session: source.session, message: "Use last year", steer: true });
+    expect((sent as { taskId: string | null }).taskId).toBeNull();
+    expect(fixture.runtime.inputReceived).toHaveBeenCalledWith(scope, runId, expect.anything());
+    expect(fixture.intents.size).toBe(3);
   });
 
   it("follows up left-over input as the run it was given to, not as the run that just stopped", async () => {

@@ -277,13 +277,14 @@ export class AgentChannel {
       const parent = intent.channel.requestedBy;
       const preview = intent.channel.authority.executionKind === "preview";
       const parentAccount = parent ? (await this.facts.intent(this.scope(parent.session, scope.domainId), parent.runId)).executionUserId ?? null : undefined;
-      // Bound, and kept by the provider: the account an intent already holds (its conversation's, which a continuation or
-      // a retry keeps), and for a preview's delegated run the delegating run's (null being the initiator's own), so the
-      // preview carries its identity and permissions down. A live delegated run is not bound: its provider chooses as it
-      // always has, offered the delegating run's account (DataRAG's agents run delegated work as it; Workbench's agents
-      // choose from their own configuration). A top-level preview run's provider chooses too.
-      const bound = intent.executionUserId!==undefined ? intent.executionUserId : preview ? parentAccount : undefined;
-      const offered = bound!==undefined ? bound : preview ? undefined : parentAccount ?? null;
+      // The account the intent already holds (its conversation's), else its delegating run's (null being the
+      // initiator's own). Only a preview's run is bound to it, delegated or continued, and its provider must keep it: the
+      // preview carries its identity and permissions down. A live run's provider is offered it as before and chooses
+      // (DataRAG's agents run delegated work as it; Workbench's agents choose from their current configuration), and the
+      // run records what it chose. A top-level preview run's provider chooses too.
+      const account = intent.executionUserId!==undefined ? intent.executionUserId : parentAccount;
+      const bound = preview ? account : undefined;
+      const offered = preview ? bound : account ?? null;
       const request: AgentPrepareRequest = { mode: "run",
         ...(offered!==undefined && { executionActor: offered===null ? null : { userId: offered, domainId: scope.domainId } }), language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, userRecipient: intent.channel.userRecipient ?? null, context: intent.context, presentationBinding };
       const { presentationCallback, ...prepared } = runtimeStartRunRequestSchema.parse(
@@ -362,10 +363,10 @@ export class AgentChannel {
    * A result and an answer are addressed by contract: each is the input of the run it reports or answers to and
    * continues that run, with that run's authority, root and execution account (an answer to a preview's question is
    * that preview's input; a preview's answer to a live run's question is refused before anything is written). Any other
-   * input is bounded by its sender (`senderRun` for a run's message): it joins a running or waiting run only when that
-   * run reaches no further than the sender — the same identity and execution context, classes within the sender's, the
-   * same execution account — and a run it starts takes the sender's authority, root, human recipient and account, never
-   * the recipient's.
+   * input is bounded by its sender (`senderRun` for a run's message): it joins a running or waiting run of its identity —
+   * within a preview only one that reaches no further than the sender (execution context, classes within the sender's,
+   * execution account) — and a run it starts takes the sender's authority, root and human recipient, never the
+   * recipient's; a preview's also takes the sender's execution account, a live one continues its conversation's own.
    */
   private async accept(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentInput, options: {
     requestedBy?: AgentExecutionRef; resultRecipientRunId?: string; targetRunId?: string; steer?: boolean; external?: ExternalAgentCaller;
@@ -426,7 +427,9 @@ export class AgentChannel {
       };
       const sameSource = (candidate: AgentRunIntent) => {
         if (candidate.channel.authority.executionKind !== identity) return false;
-        if (!addressedInput && !withinSender(candidate)) return false;
+        // Within a preview, an ordinary input joins only a run that reaches no further than its sender; live inputs of
+        // the same identity join as they always have.
+        if (identity === "preview" && !addressedInput && !withinSender(candidate)) return false;
         if (web) {
           return Boolean(web.channel.userRecipient) === Boolean(candidate.channel.userRecipient)
             && Boolean(web.channel.requestedBy) === Boolean(candidate.channel.requestedBy)

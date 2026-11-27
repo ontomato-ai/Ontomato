@@ -111,11 +111,12 @@ it.each([
   { kind: "preview" as const, offered: "parent-account", userRecipient: false, runsAs: "parent-account" },
   { kind: "preview" as const, offered: "parent-account", userRecipient: true, runsAs: "parent-account" },
   { kind: "preview" as const, offered: null, userRecipient: false, runsAs: null },
-])("runs a $kind delegated run offered $offered as $runsAs", async ({ kind, offered, userRecipient, runsAs }) => {
+])("runs a $kind delegated or continued run offered $offered as $runsAs", async ({ kind, offered, userRecipient, runsAs }) => {
   const agent = await mocks.agent();
   mocks.agent.mockResolvedValue({ ...agent, execution_user_id: "agent-account" });
   mocks.resolveExecution.mockResolvedValue({ credentials: { apiKey: "resolved-key" } });
-  // A live delegated run is chosen by this agent's own configuration; a preview's keeps the account the runtime binds.
+  // A live run, delegated or continuing a conversation that ran as another account before the agent's configuration
+  // changed, runs as this agent's current configuration; a preview's keeps the account the runtime binds.
   const request = { ...preparation(), authority: { classNames: [], executionKind: kind },
     executionActor: offered === null ? null : { userId: offered, domainId: owner.domainId } };
   if (userRecipient) request.userRecipient = { session: request.root.session, actor: request.actor };
