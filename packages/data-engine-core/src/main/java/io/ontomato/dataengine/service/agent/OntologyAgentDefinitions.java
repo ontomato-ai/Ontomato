@@ -63,7 +63,7 @@ public class OntologyAgentDefinitions {
   public List<SkillVersion> publish() throws Exception {
     var analyst = code.registerSkill();
     var files = new ArrayList<Map<String, String>>();
-    for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "scripts/query-package.mjs", "scripts/probe.mjs", "references/dataset.md"))
+    for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "scripts/query-package.mjs", "references/dataset.md"))
       files.add(
           Map.of("path", path, "content", resource("ontology-skills/data-retrieval/" + path)));
     sourceContract(files);

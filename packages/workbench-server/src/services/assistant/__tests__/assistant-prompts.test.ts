@@ -63,14 +63,14 @@ describe("default assistant prompts", () => {
     expect(skill).toContain('op: "read"');expect(skill).toContain('op: "send"');
     expect(skill).toContain("notification");
     for(const command of ["dataset-desc","classes","schema <class>...","relationships <class>...","knowledge <question>",
-      "start-retrieval \"<complete question>\"","run-metric <id> --revision"])
+      "start-retrieval \"<question>\"","run-metric <id> --revision"])
       expect(skill).toContain(command);
     expect(skill).not.toMatch(/`metrics <question>|recall-metrics|op: "list"|op: "start"/);
-    expect(skill).toMatch(/Run `start-retrieval[^`]*` once with the complete question[\s\S]*starts the\s+retriever and recalls published metrics concurrently/);
-    expect(skill).toMatch(/end\s+this turn\. Do not read, poll or sleep/);
+    expect(skill).toMatch(/Run `start-retrieval[^`]*` once\.[\s\S]*starts the\s+retriever and recalls published metrics at the same time/);
+    expect(skill).toMatch(/end\s+this turn\.[\s\S]*there is\s+nothing to poll, read or wait for/);
     expect(skill).not.toMatch(/progress check|binding result|Both branches/i);
-    expect(skill).toMatch(/Cite every dataset the conclusion relies\s+on/);
-    expect(skill).toContain("The host supplies ONTOMATO_ONTOLOGY_URL");
+    expect(skill).toMatch(/Cite each dataset the answer relies\s+on/);
+    expect(skill).toContain("The host supplies the ontology URL");
     expect(skill).toContain('op: "cancel"');
     expect(skill).not.toMatch(/node[^\r\n`]*\bagent\b|--follow|--files|--reply-to|retriever-cancel/);
   });

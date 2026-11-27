@@ -55,7 +55,7 @@ service credential. The enterprise distribution includes a separate login helper
 
 ## Commands
 
-Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
+Run `node <this-skill>/ontomato.mjs <command>` from the workspace root, where `<this-skill>` is the directory this SKILL.md is in; `@file` arguments are relative to the workspace root. JSON accepts `@file`.
 
 | Command | API and result |
 | --- | --- |

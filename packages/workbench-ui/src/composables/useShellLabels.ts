@@ -131,7 +131,6 @@ return computed<ShellLabels>(() => ({
     join: t("assistant.lineageRoleJoin"),
   },
   truncatedRows: (limit) => t("assistant.datasetTruncatedRows", { limit }),
-  datasetUncheckedConditions: (conditions) => t("assistant.datasetUncheckedConditions", { conditions: conditions.join(" / ") }),
   filterColumn: (column) => t("assistant.datasetFilterColumn", { column }),
   filterSearch: t("assistant.datasetFilterSearch"),
   filterAll: t("assistant.datasetFilterAll"),
