@@ -39,7 +39,7 @@ export async function prepareBuilderSourceFacts(
   const describeRows = Object.keys(operations).length > 0;
   const rollback = method === "sourceReleases" && describeRows;
   const project = await prepareBuilderProjectFacts(owner, appId, {
-    live: method === "sourceFiles" || method === "sourceFile" || rollback, status: rollback,
+    live: method === "sourceFiles" || method === "sourceFile" || rollback,
   });
 
   async function withRows<T>(

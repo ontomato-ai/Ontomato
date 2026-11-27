@@ -60,6 +60,7 @@ public class VectorResourceController {
 		ret.put("success", true);
 		return ret;
 	}
+	@PreviewAccess
 	@PostMapping("/vectorResource/delete")
 	@ResponseBody
 	public JSONObject delete(@RequestBody JSONObject param, HttpServletRequest request) throws Exception {
@@ -77,6 +78,7 @@ public class VectorResourceController {
         }
         return JSONObject.of("success", true);
     }
+	@PreviewAccess
 	@PostMapping("/vectorResource/upload")
 	@ResponseBody
 	public JSONObject upload(

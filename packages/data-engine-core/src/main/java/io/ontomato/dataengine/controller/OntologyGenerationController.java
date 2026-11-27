@@ -90,6 +90,7 @@ public class OntologyGenerationController {
     platform.close(AgentJson.id(run), AgentJson.id(body.getString("sessionId")),
         new Owner(AgentJson.text(body, "ownerId"), AgentJson.text(body, "domainId")), AgentJson.text(body, "outcome"));
   }
+  @PreviewAccess
   @PostMapping("/{run}/authoring/{kind}/{operation}")
   public Object externalAuthoring(@PathVariable String run, @PathVariable String kind,
       @PathVariable String operation, @RequestBody Map<String, Object> input,
@@ -100,12 +101,14 @@ public class OntologyGenerationController {
     return platform.operateExternal(AgentJson.id(run), kind, operation, body, access.current(request));
   }
 
+  @PreviewAccess
   @GetMapping("/{run}/helpers")
   public Object helpers(@PathVariable String run, HttpServletRequest request) throws Exception {
     owner(run, request);
     return JSONObject.of("markdown", PythonHelperDocs.markdown());
   }
 
+  @PreviewAccess
   @GetMapping("/runtime-context")
   public Object runtimeContext(HttpServletRequest request) throws Exception {
     String run = request.getHeader("X-Ontomato-Run-Id");
@@ -116,6 +119,7 @@ public class OntologyGenerationController {
     var gate = store.one("SELECT kind FROM ontology_generations WHERE run_id=?", uuid(run));
     return JSONObject.of("runId", run, "kind", gate.getString("kind"));
   }
+  @PreviewAccess
   @PostMapping("/gates")
   public Object open(@RequestBody Map<String, Object> input, HttpServletRequest request) {
     access.authenticated(request);
@@ -153,6 +157,7 @@ public class OntologyGenerationController {
     return owner;
   }
 
+  @PreviewAccess
   @GetMapping("/{run}/source")
   public Object source(@PathVariable String run, HttpServletRequest request) throws Exception {
     return JSONObject.of("source", operations.source(run, owner(run, request)));
@@ -163,6 +168,7 @@ public class OntologyGenerationController {
    * action-creation agent, so chat can refresh the right-hand structured definition without
    * changing the action code.
    */
+  @PreviewAccess
   @PostMapping("/{run}/explainDraft")
   public Object explainDraft(@PathVariable String run, HttpServletRequest request) throws Exception {
     Owner owner = owner(run, request);
@@ -175,6 +181,7 @@ public class OntologyGenerationController {
     return drafts.explainLatest(row.getString("session_id"), lang, owner);
   }
 
+  @PreviewAccess
   @PostMapping("/{run}/test")
   public Object test(
       @PathVariable String run, @RequestBody JSONObject body, HttpServletRequest request)
@@ -183,6 +190,7 @@ public class OntologyGenerationController {
     return operations.test(run, owner(run, request), body);
   }
 
+  @PreviewAccess
   @PostMapping("/{run}/prepare")
   public Object prepare(
       @PathVariable String run, @RequestBody JSONObject body, HttpServletRequest request)
@@ -191,11 +199,13 @@ public class OntologyGenerationController {
     return operations.prepare(run, owner(run, request), body);
   }
 
+  @PreviewAccess
   @PostMapping("/{run}/reset")
   public Object reset(@PathVariable String run, HttpServletRequest request) throws Exception {
     return operations.reset(run, owner(run, request));
   }
 
+  @PreviewAccess
   @PostMapping("/{run}/query")
   public Object query(
       @PathVariable String run, @RequestBody JSONObject body, HttpServletRequest request)
@@ -204,6 +214,7 @@ public class OntologyGenerationController {
     return operations.query(run, owner(run, request), body);
   }
 
+  @PreviewAccess
   @PostMapping("/{run}/close")
   public Object close(@PathVariable String run, HttpServletRequest request) throws Exception {
     Owner owner = owner(run, request);

@@ -1,4 +1,3 @@
-import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
   AGENT_DEFINITION, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, MODEL_OPTION, SKILL, USER,
@@ -748,7 +747,7 @@ const platformPanelOwners: Record<string, (reader: PanelOwnerReader) => Record<s
   },
   [TRIGGER]: ({ owner, viewer, batchCache }) => {
     const schedules = createScheduledTaskReadAdapter(owner, viewer, undefined,
-      batchCache && (load => batchCache.scheduleApplications(viewer.headers?.[EXECUTION_CONTEXT_HEADER], load)));
+      batchCache && (load => batchCache.scheduleApplications(load)));
     return {
       count: () => schedules.count(),
       list: () => schedules.list(),

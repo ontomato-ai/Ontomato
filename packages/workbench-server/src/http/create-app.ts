@@ -81,6 +81,7 @@ import {
 import { startArtifactCleanupScheduler } from "../platform/diagnosis/artifact-retention-cleanup";
 import { initializeConnection } from "../infrastructure/connection";
 import { requestLogger as accessLogger, errorHandler } from "../api/middleware";
+import { previewAccess } from "../api/preview-access";
 import { getDefaultLocale, tApp } from "../i18n/index";
 import { echartDir } from "../content/layout";
 import { mountWebDist } from "./web-dist";
@@ -220,6 +221,7 @@ export function createWorkbenchApp(): Express {
       next,
     );
   });
+  app.use("/api", previewAccess);
   app.use("/api/praxis", createPraxisRouter());
   app.use(`/api${browserEventsPath}`, browserEventsRouter);
 

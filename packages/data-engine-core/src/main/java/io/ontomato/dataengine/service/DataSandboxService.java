@@ -382,7 +382,7 @@ public class DataSandboxService {
     private JSONObject bindClasses(List<String> classes, String domain) {
       var config = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(configs.get(domain)));
       var adapter=getDataAdapter(domain);
-      if(!adapter.supportsSandbox(classes)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,"PREVIEW_WRITE_FORBIDDEN");
+      if(!adapter.supportsSandbox(classes)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,"SANDBOX_UNSUPPORTED");
       var hashes = new JSONObject();
       var connections=config.getJSONObject("dataAdapterConnections");
       connections.forEach((name,connection)->hashes.put(name,connectionHash(connection)));

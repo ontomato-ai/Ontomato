@@ -416,6 +416,7 @@ public class BusinessConfigController {
 			}
 		}
 	}
+    @PreviewAccess
     @GetMapping("/businessConfig/generalForm")
     @Owned
     public JSONObject generalForm(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String locale) {

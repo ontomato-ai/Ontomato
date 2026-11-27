@@ -84,8 +84,8 @@ export class PanelReadBatchCache {
     return memoize(this.reads, key, load);
   }
 
-  scheduleApplications(previewHeader: string | undefined, load: () => Promise<ScheduledApplicationsStatus>) {
-    return memoize(this.scheduledApplications, previewHeader, load);
+  scheduleApplications(load: () => Promise<ScheduledApplicationsStatus>) {
+    return memoize(this.scheduledApplications, "scheduled-applications", load);
   }
 
   async prefetch(targets: readonly Target[]) {

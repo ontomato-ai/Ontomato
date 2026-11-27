@@ -142,10 +142,11 @@ class QueryGrantScopeTest {
     doAnswer(call -> null).when(executions).requireMember("domain", "user");
     doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Query permission revoked")).when(identity).requireQueryAccess("user", "domain");
     assertBlocked(filter, request(token));
+    doAnswer(call -> null).when(identity).requireQueryAccess("user", "domain");
 
     var override = request(token);
-    override.addHeader(PreviewExecution.HEADER, "{}");
-    assertBlocked(filter, override);
+    override.addHeader(PreviewExecution.HEADER, "{\"kind\":\"preview\"}");
+    assertAdmitted(filter, override);
   }
 
   private static MockHttpServletRequest request(String token) {
@@ -162,6 +163,13 @@ class QueryGrantScopeTest {
     assertEquals(403, response.getStatus());
     assertNull(request.getAttribute(QueryGrantService.ATTRIBUTE));
     verifyNoInteractions(chain);
+  }
+
+  private static void assertAdmitted(QueryGrantFilter filter, MockHttpServletRequest request) throws Exception {
+    var response = new MockHttpServletResponse();
+    var chain = mock(jakarta.servlet.FilterChain.class);
+    filter.doFilter(request, response, chain);
+    verify(chain).doFilter(request, response);
   }
 
   private static void rejected(HttpStatus status, org.junit.jupiter.api.function.Executable call) {

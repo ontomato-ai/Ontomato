@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.controller.PreviewAccess;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.core.bean.R;
@@ -261,6 +262,7 @@ public class ApplicationController {
         throw ApplicationCatalog.bad("Supply either path or both applicationId and useId");
     }
 
+    @PreviewAccess
     @GetMapping("/platform/applications/registered-entry")
     public R<JSONObject> registeredEntry(HttpServletRequest request, @RequestParam String applicationId,
             @RequestParam String useId) {
@@ -332,6 +334,7 @@ public class ApplicationController {
         catalog.reconcileBuiltins(service, batch.applications());
         return R.of(Map.of("serviceId", service, "applicationIds", batch.applications().stream().map(ApplicationCatalog.Builtin::id).toList()));
     }
+    @PreviewAccess
     @GetMapping(value = "/platform/applications", params = "purpose=navigation")
     public R<?> navigation(@RequestParam(defaultValue = "false") boolean countOnly) {
         var user = current();

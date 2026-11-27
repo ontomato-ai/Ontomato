@@ -587,7 +587,7 @@ export async function prepareBuilderPanelFacts(
 ): Promise<PreparedOwnerReadFacts | undefined> {
   const { typeId, method, primaryKey } = selection;
   if (typeId !== APPLICATION || (method !== "builderProject" && method !== "builderPublishForm")) return;
-  const project = await prepareBuilderProjectFacts(owner, primaryKey!, { live: true, status: true });
+  const project = await prepareBuilderProjectFacts(owner, primaryKey!, { live: true });
   const values = method === "builderPublishForm" ? builderFormValues(params) : undefined;
   const defaultCommit = method === "builderPublishForm" ? paramsSchema.workspaceCommit.optional().parse(params.defaultCommit) : undefined;
   const adapter = new ApplicationBuilderReadAdapter(owner, credentials);

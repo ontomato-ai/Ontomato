@@ -230,6 +230,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+    @PreviewAccess
 	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getMetas")
     @ResponseBody
@@ -460,6 +461,7 @@ public class AdminController {
         }
         return row;
     }
+	@PreviewAccess
 	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getschemamarkdown")
 	@ResponseBody
@@ -475,6 +477,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getschemamarkdown-v2")
 	@ResponseBody
@@ -490,6 +493,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@GetMapping("/admin/getDatasetDesc")
 	@ResponseBody
@@ -506,6 +510,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@GetMapping("/admin/getAllClassNames")
 	@ResponseBody
@@ -528,6 +533,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getSchemaByClassName")
 	@ResponseBody
@@ -544,6 +550,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@PostMapping("/admin/getRelationshipByClassNames")
 	@ResponseBody
@@ -751,6 +758,7 @@ public class AdminController {
     private static JSONObject knowledgeEntryFacts(KnowledgeEntity entry) {
         return knowledgeSearchFacts(entry).fluentPut("knowledgeID", entry.getKnowledgeID());
     }
+    @PreviewAccess
 	@ManagementEndpoint(Operations.KNOWLEDGE_READ)
 	@PostMapping("/admin/getBussinessKnowledge")
     @ResponseBody
@@ -772,6 +780,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@ManagementEndpoint(Operations.KNOWLEDGE_READ)
 	@PostMapping("/admin/bussinessKnowledge/form")
 	@ResponseBody
@@ -788,6 +797,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@ManagementEndpoint(Operations.KNOWLEDGE_READ)
 	@PostMapping("/admin/getbussinessknowledgemarkdown")
 	@ResponseBody
@@ -804,6 +814,7 @@ public class AdminController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@ManagementEndpoint(OntologyModelController.Operations.READ)
 	@GetMapping("/admin/getSchema")
 	@ResponseBody

@@ -274,10 +274,10 @@ class ActionTrialServiceTest {
   void sandboxProvisioningRefusalDoesNotRecordACodeFailure() {
     when(actions.queryById(ACTION)).thenReturn(action(Action.STATUS_PENDING_REVIEW));
     when(sandboxes.open(eq(DOMAIN), eq(USER), anyString(), anyLong(), eq(List.of())))
-        .thenThrow(new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "PREVIEW_WRITE_FORBIDDEN"));
+        .thenThrow(new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "SANDBOX_UNSUPPORTED"));
     var unsupported = assertThrows(OwnerRefusal.class, () -> trial(null, null));
     assertEquals("ACTION_TRIAL_SANDBOX_UNAVAILABLE", unsupported.code());
-    assertTrue(unsupported.getMessage().contains("PREVIEW_WRITE_FORBIDDEN"));
+    assertTrue(unsupported.getMessage().contains("SANDBOX_UNSUPPORTED"));
 
     doThrow(new SandboxException(HttpStatus.UNPROCESSABLE_ENTITY, "SANDBOX_SCHEMA_FAILED: permission denied for schema"))
         .when(sandboxes).reset(SANDBOX, DOMAIN);

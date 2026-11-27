@@ -189,7 +189,7 @@ export function builderFactPayload(result: JavaPanelReadResult) {
 }
 
 export async function prepareBuilderProjectFacts(
-  owner: AssistantOwner, appId: string, { live, status }: { live: boolean; status: boolean },
+  owner: AssistantOwner, appId: string, { live }: { live: boolean },
 ) {
   const { project, draft } = await locateBuilderProject(owner, appId);
   const facts: { call: NonNullable<JavaPanelRead["call"]> }[] = [];

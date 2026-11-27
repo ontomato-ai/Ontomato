@@ -119,7 +119,10 @@ class ActionRuntimeGrantBoundaryTest {
 
         request = request(QUERY, token);
         request.addHeader(PreviewExecution.HEADER, "{\"kind\":\"preview\"}");
-        reject(request, 403);
+        // The preview identity never affects reads; the grant still owns the execution target.
+        var previewResponse = new MockHttpServletResponse();
+        filter.doFilter(request, previewResponse, mock(FilterChain.class));
+        assertEquals(200, previewResponse.getStatus());
 
         var computation = new ActionRuntimeGrant("domain", "operator", "compute", null, null);
         var computeToken = start(computation, ExecutionTarget.LIVE, List.of());

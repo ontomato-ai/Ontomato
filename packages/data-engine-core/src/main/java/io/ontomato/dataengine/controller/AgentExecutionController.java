@@ -23,6 +23,7 @@ public class AgentExecutionController {
     this.authentication = authentication;
     this.settings = settings;
   }
+  @PreviewAccess
   @GetMapping("/platform/agent-execution/options")
   public AgentExecutionSettings.Options options(HttpServletRequest request,
       @RequestParam(defaultValue = "") String keyword, @RequestParam(defaultValue = "1") int pageNum,

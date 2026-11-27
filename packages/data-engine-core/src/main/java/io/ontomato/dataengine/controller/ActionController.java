@@ -305,6 +305,7 @@ public class ActionController {
 		}
 		return ret;
 	}
+    @PreviewAccess
 	@PostMapping("/action/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
@@ -545,6 +546,7 @@ public class ActionController {
 	private List<JSONObject> executionCatalog(SubjectContext subject, List<Action> candidates) {
 		return candidates.stream().filter(visibleActions(subject, true)).map(ActionController::executionDefinition).toList();
 	}
+    @PreviewAccess
 	@PostMapping("/action/queryList")
     @ResponseBody
     public JSONObject queryList(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
@@ -586,11 +588,13 @@ public class ActionController {
 
 	@org.springframework.beans.factory.annotation.Autowired
 	private io.ontomato.dataengine.service.SandboxPermissionService sandboxPermissions;
+	@PreviewAccess
 	@GetMapping("/action/sandboxCapability")
 	public JSONObject sandboxCapability() {
 		User user = SystemUtils.getCurUser();
 		return JSONObject.of("success", true, "data", sandboxPermissions.read(user.getDomainId()));
 	}
+	@PreviewAccess
 	@PostMapping("/action/definitionForm")
 	@ResponseBody
 	public JSONObject definitionForm(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -608,6 +612,7 @@ public class ActionController {
 		return ret;
 	}
 
+	@PreviewAccess
 	@PostMapping("/action/setStatus")
 	@ResponseBody
 	public JSONObject setStatus(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -656,6 +661,7 @@ public class ActionController {
 		return ids;
 	}
 
+	@PreviewAccess
 	@PostMapping("/action/re-explain")
 	@ResponseBody
 	public JSONObject reExplainActions(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
@@ -680,6 +686,7 @@ public class ActionController {
 		}
 		return ret;
 	}
+	@PreviewAccess
 	@GetMapping("/action/export")
 	public ResponseEntity<byte[]> exportActions(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		try {
@@ -710,6 +717,7 @@ public class ActionController {
 		}
 		return ret;
 	}
+    @PreviewAccess
 	@PostMapping("/action/find")
     @ResponseBody
     public JSONObject find(@RequestBody JSONObject param) {
@@ -754,6 +762,7 @@ public class ActionController {
 	 * An Action's form: without {@code values} its fields and their initial text from the bound {@code parameters};
 	 * with them the field errors, or the typed parameters that {@code /action/execute} then takes.
 	 */
+    @PreviewAccess
 	@PostMapping("/action/form")
     @ResponseBody
     public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param,
@@ -780,6 +789,7 @@ public class ActionController {
 		return ret;
 	}
 
+	@PreviewAccess
 	@PostMapping("/action/trial")
 	public JSONObject trial(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
 			jakarta.servlet.http.HttpServletRequest executionRequest,
