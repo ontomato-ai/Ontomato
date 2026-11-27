@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { App } from "vue";
 import type { Router } from "vue-router";
 import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
+import { homeStateSchema } from "@ontomato/contracts/platform-home";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import {
@@ -42,6 +43,9 @@ const NODE_ANSWERS: Readonly<Record<string, unknown>> = {
   "GET /assistant/sessions": agentHostSessionPageSchema.parse({ sessions: [], nextCursor: null }),
   "GET /observe/agent/agents": agentHostAgentListSchema.parse({ agents: [AGENT] }),
   "GET /observe/agent/sessions": agentHostSessionPageSchema.parse({ sessions: [], nextCursor: null }),
+  "GET /platform/home": homeStateSchema.parse({
+    favorites: [], dashboardIds: [], recentApplications: [], recentConversations: [],
+  }),
   "GET /workbench-appearance": { brand: { name: "Ontomato", subtitle: "", logo: "" } } satisfies WorkbenchAppearance,
   "GET /workspaces": { items: [] },
 };
@@ -254,7 +258,7 @@ describe("the open-source platform's rail", () => {
     await open("/ontology/objects");
     // Every row on the rail that switches the shell opens somewhere. The personal workspace keeps its address while
     // its rail entry is hidden for now.
-    const rows = [...document.querySelectorAll<HTMLElement>(".rail-row:not(.external):not(.unavailable)")];
+    const rows = [...document.querySelectorAll<HTMLButtonElement>("nav.platform-rail .rail-item > button.rail-row")];
     expect(rows.length).toBeGreaterThan(1);
 
     let previous = landedAt();
