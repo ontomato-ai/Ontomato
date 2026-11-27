@@ -481,93 +481,43 @@ function completedDelivery(files: unknown[] = []) {
   return { status: "completed" as const, settled: true, process: { mode: "none" as const }, results: [], files };
 }
 
-it("wait returns a direct child's final reply and mapped delivered files, and the consumed result is not notified again", async () => {
-  const { runtime, channel: port } = channel();
-  const child = delegatedChild("completed");
-  const parentIntent: AgentRunIntent = { id: runId, session: source.session, channel: context, inputId, language: "en", status: "running", createdAt: new Date(0).toISOString(), error: null, cancelled: false };
-  vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: child });
-  vi.mocked(port.facts.intent).mockImplementation(async (_scope, id) => id === child.id ? child : parentIntent);
-  const callback = vi.spyOn(port, "callback").mockResolvedValue(completedDelivery([{ id: inputId, name: "delivered.dataset.json", mediaType: "application/json", href: "/file" }]));
-  const deliver = vi.spyOn(port, "deliver").mockResolvedValue({ messageId: inputId, taskId: null, sessionRef: source.session });
-
-  const result = await port.execute(scope, run, { op: "wait", taskId: child.id });
-
-  expect(callback).toHaveBeenCalledWith(child, "read", undefined);
-  expect(runtime.linkAgentFiles).toHaveBeenCalledWith(scope, sessionId, "live", scope, child.session.sessionId, child.id,
-    [{ id: inputId, name: "delivered.dataset.json", mediaType: "application/json", href: "/file" }]);
-  expect(result).toEqual({
-    taskId: child.id,
-    state: "delivered",
-    outcome: "completed",
-    content: "Saved final reply",
-    files: [{ id: inputId, name: "delivered.dataset.json", path: `outputs/agents/${inputId}/${inputId}-delivered.dataset.json` }],
-  });
-
-  await (port as unknown as { notify(scope: Scope, runId: string): Promise<void> }).notify(scope, child.id);
-  expect(deliver).not.toHaveBeenCalled();
-});
-
-
-it("wait sleeps on session events rather than polling and wakes for a later delivery", async () => {
+it("wait wakes for a delivered result notification without reading the delivery itself", async () => {
   const { channel: port } = channel();
   const child = delegatedChild();
   vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: child });
-  const callback = vi.spyOn(port, "callback")
-    .mockResolvedValueOnce({ status: "running", settled: false, process: { mode: "none" }, results: [], files: [] })
-    .mockResolvedValueOnce(completedDelivery());
-  vi.spyOn(port.facts, "pending").mockResolvedValue([]);
+  const callback = vi.spyOn(port, "callback");
+  const pending = vi.spyOn(port.facts, "pending").mockResolvedValue([]);
 
   const waiting = port.execute(scope, run, { op: "wait", taskId: child.id });
-  await vi.waitFor(() => expect(callback).toHaveBeenCalledTimes(1));
+  await new Promise(resolve => setImmediate(resolve));
+  expect(callback).not.toHaveBeenCalled();
+  pending.mockResolvedValue([{ id: inputId, runId: null, intentId: runId, messageSeq: 8, contextSeq: null, message: deliveredResult }]);
   (port as unknown as { emitChange(scope: Scope, sessionId: string): void }).emitChange(scope, sessionId);
 
-  await expect(waiting).resolves.toMatchObject({ state: "delivered", outcome: "completed", content: "Saved final reply" });
-  expect(callback).toHaveBeenCalledTimes(2);
+  await expect(waiting).resolves.toEqual({ taskId: child.id, state: "input-available", message: "New input is available in this run." });
+  expect(callback).not.toHaveBeenCalled();
 });
 
-it("wait returns early with the question when the child asks the waiting run", async () => {
+it("wait returns when a question or another input reaches the waiting run", async () => {
   const { channel: port } = channel();
   const child = delegatedChild();
   vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: child });
-  vi.spyOn(port, "callback").mockResolvedValue({ status: "running", settled: false, process: { mode: "none" }, results: [], files: [] });
-  const question = { ...notification, kind: "agent-question" as const, content: "Which period?", defaultAssumption: "Current year" };
-  vi.spyOn(port.facts, "pending").mockResolvedValue([{ id: inputId, runId: null, intentId: runId, messageSeq: 8, contextSeq: null, message: question }]);
-
-  await expect(port.execute(scope, run, { op: "wait", taskId: child.id })).resolves.toEqual({
-    taskId: child.id,
-    state: "interrupted",
-    reason: "question",
-    question: { requestId: inputId, message: "Which period?", defaultAssumption: "Current year" },
-  });
+  const pending = vi.spyOn(port.facts, "pending");
+  pending.mockResolvedValueOnce([{ id: inputId, runId: null, intentId: runId, messageSeq: 8, contextSeq: null, message: { ...notification, kind: "agent-question" as const } }]);
+  await expect(port.execute(scope, run, { op: "wait", taskId: child.id })).resolves.toMatchObject({ state: "input-available" });
+  pending.mockResolvedValueOnce([{ id: inputId, runId: null, intentId: runId, messageSeq: 8, contextSeq: null, message: { role: "user", content: "Use a narrower period", timestamp: 2 } }]);
+  await expect(port.execute(scope, run, { op: "wait", taskId: child.id })).resolves.toMatchObject({ state: "input-available" });
 });
-
-it("wait returns early when another input reaches the waiting run", async () => {
-  const { channel: port } = channel();
-  const child = delegatedChild();
-  vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: child });
-  vi.spyOn(port, "callback").mockResolvedValue({ status: "running", settled: false, process: { mode: "none" }, results: [], files: [] });
-  vi.spyOn(port.facts, "pending").mockResolvedValue([{ id: inputId, runId: null, intentId: runId, messageSeq: 8, contextSeq: null, message: { role: "user", content: "Use a narrower period", timestamp: 2 } }]);
-
-  await expect(port.execute(scope, run, { op: "wait", taskId: child.id })).resolves.toEqual({
-    taskId: child.id,
-    state: "interrupted",
-    reason: "input",
-  });
-});
-
 
 it("aborts a waiting tool call with its run signal", async () => {
   const { channel: port } = channel();
   const child = delegatedChild();
   vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: child });
-  const callback = vi.spyOn(port, "callback").mockResolvedValue({ status: "running", settled: false, process: { mode: "none" }, results: [], files: [] });
   vi.spyOn(port.facts, "pending").mockResolvedValue([]);
   const controller = new AbortController();
-
   const waiting = port.execute(scope, run, { op: "wait", taskId: child.id }, controller.signal);
-  await vi.waitFor(() => expect(callback).toHaveBeenCalled());
+  await new Promise(resolve => setImmediate(resolve));
   controller.abort();
-
   await expect(waiting).rejects.toBe(controller.signal.reason);
 });
 
