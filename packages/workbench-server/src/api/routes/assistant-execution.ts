@@ -17,8 +17,9 @@ import { z } from "zod";
 import { context, wrap } from "../utils/agent-host";
 import { proxyResponse } from "../utils/proxy";
 import { config } from "../../config/application";
+import { getApiConfig } from "../../config/data-query-api";
 import { environment } from "../../config/environment";
-import { buildBackendHeaders } from "../../utils/backend-client";
+import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import {assistantRetrievalOperationSchema} from "@ontomato/contracts/assistant-retrieval";
 import { pageCatalogRequestSchema, pageDescriptionRequestSchema, pageSearchRequestSchema } from "@ontomato/contracts/page-context";
@@ -133,6 +134,24 @@ assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
   if (!retrievalScopeId) throw new HttpError(403, "Retrieval scope is unavailable for this run", "FORBIDDEN");
   const value=await new OntologyRetrievalClient(owner,retrievalScopeId,credentials).executeOperation(operation);
   if(operation.operation==="close")res.status(204).end();else res.json(value);
+}));
+
+const knowledgeSubmissionSchema = z.object({
+  title: z.string().trim().min(1),
+  text: z.string().trim().min(1),
+  quote: z.string().trim().min(1),
+}).strict();
+
+assistantExecutionRouter.post("/:runId/knowledge-submit", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const input = knowledgeSubmissionSchema.parse(req.body);
+  const { owner, credentials: initiator } = context(req);
+  const { run, credentials } = await credentialsForRun(owner, runId, initiator);
+  const result = await backendPost("knowledge-submit",
+    getApiConfig().baseUrl!.replace(/\/$/, "") + "/ontology/knowledge-submissions",
+    { ...input, source: { sessionId: run.sessionId, runId } },
+    { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, {...credentials.headers, "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken, "X-Domain-Id": owner.domainId}), retries: 1 });
+  res.json(JSON.parse(result.text));
 }));
 
 function callbackRun(req: Request, callback: RuntimeCallback | undefined) {

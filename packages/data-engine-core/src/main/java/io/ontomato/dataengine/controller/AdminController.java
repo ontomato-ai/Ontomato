@@ -23,6 +23,7 @@ import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.KnowledgeTagConfig;
 import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.service.OwnerRefusal;
+import io.ontomato.dataengine.service.agent.PendingKnowledgeService;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import io.ontomato.dataengine.util.SystemUtils;
@@ -82,6 +83,9 @@ public class AdminController {
 
 	@Autowired
 	private KnowledgeTagConfig knowledgeTagConfig;
+
+	@Autowired
+	private PendingKnowledgeService pendingKnowledgeService;
 
 	@ManagementEndpoint(OntologyModelController.Operations.CHANGE)
 	@PostMapping("/admin/editdatasetdesc")
@@ -677,8 +681,10 @@ public class AdminController {
         return new WorkbenchPanelRead(BussinessKnowledgeForm.OBJECT_TYPE, "query", (subject, parameters) -> {
             management.require(subject, Operations.KNOWLEDGE_READ);
             var entries = new JSONObject();
-            readKnowledgeEntries(subject.identity().domainId())
-                    .forEach((id, entry) -> entries.put(id, knowledgeEntryFacts(entry)));
+            String domainId = subject.identity().domainId();
+            var submissions = pendingKnowledgeService.submissions(domainId);
+            readKnowledgeEntries(domainId)
+                    .forEach((id, entry) -> entries.put(id, knowledgeEntryFacts(entry, submissions)));
             String lang = LocaleContextHolder.getLocale().toLanguageTag();
             return JSONObject.of("entries", entries, "text", BussinessKnowledgeForm.entryText(lang, langService));
         });
@@ -703,7 +709,7 @@ public class AdminController {
             var entry = readKnowledgeEntries(subject.identity().domainId()).get(id);
             if (entry == null) throw new OwnerRefusal("KNOWLEDGE_UNAVAILABLE", "Business knowledge " + id + " is not in this domain");
             String lang = LocaleContextHolder.getLocale().toLanguageTag();
-            return JSONObject.of("entry", knowledgeEntryFacts(entry), "text", BussinessKnowledgeForm.entryText(lang, langService));
+            return JSONObject.of("entry", knowledgeEntryFacts(entry, pendingKnowledgeService.submissions(subject.identity().domainId())), "text", BussinessKnowledgeForm.entryText(lang, langService));
         });
     }
 
@@ -748,8 +754,15 @@ public class AdminController {
                 "knowledgeTags", entry.getKnowledgeTags(), "status", entry.getStatus());
     }
 
-    private static JSONObject knowledgeEntryFacts(KnowledgeEntity entry) {
-        return knowledgeSearchFacts(entry).fluentPut("knowledgeID", entry.getKnowledgeID());
+    private static JSONObject knowledgeEntryFacts(KnowledgeEntity entry, Map<String, JSONObject> submissions) {
+        var facts = knowledgeSearchFacts(entry).fluentPut("knowledgeID", entry.getKnowledgeID());
+        var submission = submissions.get(entry.getKnowledgeID());
+        if (submission != null)
+            facts.put("submission", JSONObject.of(
+                    "sessionId", submission.getString("session_id"),
+                    "runId", submission.getString("run_id"),
+                    "quote", submission.getString("quote")));
+        return facts;
     }
 	@ManagementEndpoint(Operations.KNOWLEDGE_READ)
 	@PostMapping("/admin/getBussinessKnowledge")
@@ -764,8 +777,11 @@ public class AdminController {
 		try {
 			User user = SystemUtils.getCurUser();
 			Map<String, KnowledgeEntity> bussinessKnowledges = readKnowledgeEntries(user.getDomainId());
+			var submissions = pendingKnowledgeService.submissions(user.getDomainId());
+			var entries = new JSONObject();
+			bussinessKnowledges.forEach((id, entry) -> entries.put(id, knowledgeEntryFacts(entry, submissions)));
 			ret.put("success", true);
-			ret.put("data", bussinessKnowledges);
+			ret.put("data", entries);
 		} catch (Exception e) {
 			ret.put("success", false);
 			ret.put("message", e.getMessage());

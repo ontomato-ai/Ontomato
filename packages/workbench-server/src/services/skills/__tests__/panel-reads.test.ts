@@ -171,12 +171,12 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
   const adapter = createSkillReadAdapter(owner, credentials);
 
   const page1 = panelRecordQuerySchema.parse(await adapter.query({ size: 2 }));
-  expect(page1.total).toBe(13);
+  expect(page1.total).toBe(14);
   expect(page1.nextCursor).toBe("2");
   expect(page1.rows).toHaveLength(2);
 
   const page2 = panelRecordQuerySchema.parse(await adapter.query({ cursor: "2", size: 2 }));
-  expect(page2.total).toBe(13);
+  expect(page2.total).toBe(14);
   expect(page2.nextCursor).toBe("4");
   expect(page2.rows).toHaveLength(2);
 
@@ -193,6 +193,7 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
     "ontomato-page-operator",
     "ontomato-analyst-assistant",
     "ontology-query",
+    "knowledge-submit",
     "ontomato-app-builder",
     "ops-diagnosis",
     "data-retrieval",

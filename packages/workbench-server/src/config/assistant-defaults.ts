@@ -5,6 +5,7 @@ import type { RuntimeSkillSelection } from "@ontomato/contracts/agent-runtime-sk
 export const defaultAssistantSkills: RuntimeSkillSelection[] = [
   { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant", preload: true },
   { namespace: { kind: "provider", provider: "ontology" }, name: "ontology-query" },
+  { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-submit" },
   { namespace: { kind: "provider", provider: "workbench" }, name: "assistant-report" },
   ...ARTIFACT_CHART_SKILLS,
   PAGE_OPERATOR_SKILL,

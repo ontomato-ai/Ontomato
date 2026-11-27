@@ -10,7 +10,7 @@ import { environment } from "../../config/environment";
 import { isQueryRuntimeGrant } from "../../utils/assistant-credentials";
 import { HttpError } from "../../utils/errors";
 
-export const executionCallbackPurpose = z.enum(["workbench", "ontology", "authoring", "panels", "retrieval"]);
+export const executionCallbackPurpose = z.enum(["workbench", "ontology", "authoring", "panels", "retrieval", "knowledge-submit"]);
 const scopeSchema = z.discriminatedUnion("purpose", [
   z.object({ purpose: z.literal("execution"), capability: executionCallbackPurpose }).strict(),
   z.object({ purpose: z.literal("governance"), sessionId: z.string().uuid() }).strict(),
@@ -69,7 +69,7 @@ function permits(scope: CallbackScope, runId: string, path: string): boolean {
   switch (scope.purpose) {
     case "execution": {
       const endpoint = `/api/assistant/executions/${runId}/${scope.capability}`;
-      return scope.capability === "retrieval" ? path === endpoint : path.startsWith(endpoint + "/");
+      return scope.capability === "retrieval" || scope.capability === "knowledge-submit" ? path === endpoint : path.startsWith(endpoint + "/");
     }
     case "governance":
       return path === `/api/assistant/sessions/${scope.sessionId}/governance-window`;

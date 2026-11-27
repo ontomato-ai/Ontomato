@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 /** One entry as the owner keeps it. */
-type OwnerEntry = { knowledgeID: string; knowledgeTitle: string; knowledgeText: string; knowledgeTags: string[]; status: number };
+type OwnerEntry = { knowledgeID: string; knowledgeTitle: string; knowledgeText: string; knowledgeTags: string[]; status: number; submission?: { sessionId: string; runId: string; quote: string } };
 /** The owner's whole-domain list, in the owner's own order. */
 const entries: Record<string, OwnerEntry> = {
   "k-1": { knowledgeID: "k-1", knowledgeTitle: "Order rule", knowledgeText: "Orders need a customer", knowledgeTags: ["Business"], status: 1 },
@@ -115,6 +115,30 @@ it("queries the whole domain with the owner's labels and status names", async ()
   // The labels and status names come from the owner's blank form, not from a second source here.
   expect(sent.map(item => item.path)).toEqual(["/admin/getBussinessKnowledge", "/admin/bussinessKnowledge/form"]);
   expect(JSON.parse(String(sent[1]?.init.body))).toEqual({ target: { kind: "draft" }, changedField: null });
+});
+
+it("shows the submission conversation and user wording with a submitted entry", async () => {
+  const submitted = {
+    ...entries,
+    "k-2": { ...entries["k-2"], submission: { sessionId: "session-1", runId: "run-1", quote: "学院算到学校这一级" } },
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith("/admin/getBussinessKnowledge")) return Response.json({ success: true, data: submitted });
+    return Response.json({ success: true, data: draftForm });
+  }));
+  const reads = createBusinessKnowledgeReadAdapter(viewer);
+
+  const record = await reads.record("k-2");
+
+  expect(record.fields).toMatchObject({
+    submissionConversation: "session-1 / run-1",
+    submissionQuote: "学院算到学校这一级",
+  });
+  expect(record.fieldLabels).toMatchObject({
+    submissionConversation: "Conversation",
+    submissionQuote: "User wording",
+  });
 });
 
 it("searches as the page did, ranks by title hits, filters by status, and returns the complete match without cursor paging", async () => {

@@ -35,6 +35,7 @@ vi.mock("../../../config/environment", () => ({
 vi.mock("../../../config/query-settings", () => ({ getQueryTimeoutMs: () => 900_000 }));
 vi.mock("../skills", () => ({
   needsRetrievalScope: (skills: unknown[]) => skills.length > 0,
+  needsKnowledgeSubmit: () => false,
   hasGovernanceSkill: mocks.hasGovernance,
   prepareAssistantSkills: mocks.skills,
 }));
@@ -144,6 +145,7 @@ async function assertNarrowedCallbacks(callbacks: RuntimeBusinessCallbacks) {
     generation: "/runtime-context",
     retrieval: "",
     governance: "",
+    knowledgeSubmit: "",
   };
   for (const [key, entry] of Object.entries(callbacks) as [keyof RuntimeBusinessCallbacks, NonNullable<RuntimeBusinessCallbacks[keyof RuntimeBusinessCallbacks]>][]) {
     const declaredPrefix = new URL(entry.baseUrl).pathname;
