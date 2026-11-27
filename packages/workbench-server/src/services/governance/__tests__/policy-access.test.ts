@@ -149,11 +149,12 @@ describe("policy access", () => {
         workflowSteps: [expect.objectContaining({ workflowId: "approval", version: 2, stepNo: 1 })],
       }),
     ]));
-    for (const fixed of ["builtin-product-orders", "@ontomato/sdk:ObjectList", "preset-agent", "preset:regular"]) {
+    for (const fixed of ["builtin-product-orders", "preset-agent", "preset:regular"]) {
       expect(candidates).toContainEqual(expect.objectContaining({
         id: fixed, fixedByDistribution: true, distributionRule: "builtin_asset", grantable: false, defaultSelected: false,
       }));
     }
+    expect(candidates.some(candidate => candidate.id === "@ontomato/sdk:ObjectList")).toBe(false);
     expect(candidates.some(candidate => candidate.id === "unrelated")).toBe(false);
     expect(structuredField(record, "targetPolicyRoleIds")).toEqual(["role-1", "role-2"]);
     expect(query).toHaveBeenCalledWith(expect.stringContaining("product_object_details"), [domainId]);
@@ -243,6 +244,8 @@ describe("policy access", () => {
         { kind: "ACTION", id: "step-only", verb: "EXECUTE" },
       ]),
     }, expect.anything());
+    const inspectBody = post.mock.calls.find(([, url]) => url.endsWith("/access:inspect"))?.[2] as { items: Array<{ kind: string; id: string }> };
+    expect(inspectBody.items.some(item => item.kind === "COMPONENT" && item.id === "@ontomato/sdk:ObjectList")).toBe(false);
     expect(structuredField(record, "entry")).toMatchObject({ id: entryId, label: "Orders", allowed: false });
     expect(structuredField(record, "items")).toEqual(expect.arrayContaining([{ ...standalone, label: "Submit order" }]));
     expect(structuredField(record, "missingGrantableItems")).toEqual([{ kind: "PROJECTION", id: "order-list", verb: "USE", label: "Order list" }]);
