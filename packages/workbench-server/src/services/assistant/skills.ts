@@ -36,7 +36,7 @@ function assistantSkillOption(entry: SkillEntry, locale?: string): AssistantSkil
   const { title, description } = skillManager.describeSkill(entry, locale);
   return {
     skill, title, description,
-    ...(entry.selectionRestricted ? { unavailable: { reason: tForLocale(locale, "assistant.skills.unavailable.reason") } } : {}),
+    ...(entry.selectionRestricted ? { unavailable: { reason: tForLocale(locale, "assistant.skills.systemRestricted.reason") } } : {}),
   };
 }
 

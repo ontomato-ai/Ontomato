@@ -139,50 +139,10 @@ function errorValue(error) {
 }
 
 async function startRetrieval(args) {
-  const intentFile = option(args, "--intent");
-  const queryIntent = intentFile ? readJson(intentFile) : undefined;
   const question = args.join(" ");
   if (!question.trim()) throw new Error("start-retrieval requires the complete question");
-  if (intentFile) {
-    if (!queryIntent || queryIntent.schema !== "ontomato.query-intent.v1" ||
-        Object.keys(queryIntent).some(key => !["schema", "conditions", "outputs"].includes(key)))
-      throw new Error("Intent file must contain only schema, conditions and outputs; pass the question as the command argument");
-    if (!Array.isArray(queryIntent.conditions) || queryIntent.conditions.some(condition =>
-        typeof condition?.quote !== "string" || !condition.quote.trim() || !question.includes(condition.quote)))
-      throw new Error("Each intent condition quote must be copied verbatim from the complete question");
-    const nonblank = value => typeof value === "string" && !!value.trim();
-    const fields = (value, allowed) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => allowed.includes(key));
-    const ids = new Set();
-    for (const condition of queryIntent.conditions) {
-      if (!fields(condition, ["id", "quote", "mapping"]) || !nonblank(condition.id) || ids.has(condition.id) || !Object.hasOwn(condition, "mapping"))
-        throw new Error("Each intent condition requires a unique id, quote and mapping (null when unknown)");
-      ids.add(condition.id);
-      const mapping = condition.mapping;
-      if (mapping !== null && (!fields(mapping, ["className", "field", "operator", "value"]) ||
-          !nonblank(mapping.className) || !nonblank(mapping.field) ||
-          !["=", "!=", ">", ">=", "<", "<=", "in", "like"].includes(mapping.operator) || !Object.hasOwn(mapping, "value")))
-        throw new Error("Intent mapping requires className, field, a supported operator and value; use null for unknown mappings");
-    }
-    if (queryIntent.conditions.length > 64 || !Array.isArray(queryIntent.outputs) || !queryIntent.outputs.length || !queryIntent.outputs.every(nonblank))
-      throw new Error("Intent requires at most 64 conditions and nonempty output descriptions");
-  }
-  const descriptor = JSON.parse(fs.readFileSync(path.join(dir, "retriever-ref.json"), "utf8"));
-  const retrieverRef = descriptor.ref ?? descriptor;
-  const acceptsIntent = entry => entry.contextSchema?.properties?.queryIntent?.type === "object";
-  let intentStatus;
-  const start = async () => {
-    if (queryIntent && descriptor.ref) {
-      if (!acceptsIntent(descriptor)) intentStatus = "unsupported_by_retriever";
-    } else if (queryIntent) {
-      const directory = await sendAgentCommand({ op: "list" }, { cfg, headers, signal: AbortSignal.timeout(2000) }).catch(() => null);
-      if (!Array.isArray(directory?.agents)) intentStatus = "capability_check_unavailable";
-      else if (!directory.agents.some(item =>
-        item?.ref?.providerId === retrieverRef.providerId && item.ref?.agentId === retrieverRef.agentId &&
-        acceptsIntent(item))) intentStatus = "unsupported_by_retriever";
-    }
-    return sendAgentCommand({ op: "start", agent: retrieverRef, message: question,
-      ...(queryIntent && !intentStatus ? { context: { queryIntent } } : {}) }, { cfg, headers });
-  };
+  const retrieverRef = JSON.parse(fs.readFileSync(path.join(dir, "retriever-ref.json"), "utf8"));
+  const start = async () => sendAgentCommand({ op: "start", agent: retrieverRef, message: question }, { cfg, headers });
   const [retrieverResult, recallResult] = await Promise.allSettled([
     start(),
     recallMetrics(question),
@@ -190,7 +150,6 @@ async function startRetrieval(args) {
   console.log(JSON.stringify({
     retriever: retrieverResult.status === "fulfilled" ? retrieverResult.value : errorValue(retrieverResult.reason),
     recall: recallResult.status === "fulfilled" ? recallResult.value : errorValue(recallResult.reason),
-    ...(intentStatus ? { queryIntentStatus: intentStatus, queryIntentApplied: false } : {}),
   }));
   if (retrieverResult.status === "rejected" || recallResult.status === "rejected") process.exitCode = 1;
 }

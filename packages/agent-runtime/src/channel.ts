@@ -87,8 +87,8 @@ function smallDataset(name: string, bytes: Buffer) {
   try { decoded = JSON.parse(bytes.toString("utf8")); } catch { return undefined; }
   const parsed = datasetPayloadSchema.safeParse(decoded);
   if (!parsed.success || parsed.data.rows.length > 10) return undefined;
-  const { rows, columns, assumptions, selfCheck, truncation, queryCoverage } = parsed.data;
-  const summary = { rows, columns, assumptions, selfCheck, truncation, queryCoverage };
+  const { rows, columns, assumptions, selfCheck, truncation } = parsed.data;
+  const summary = { rows, columns, assumptions, selfCheck, truncation };
   return Buffer.byteLength(JSON.stringify(summary)) <= 4_096 ? summary : undefined;
 }
 

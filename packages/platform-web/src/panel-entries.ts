@@ -1,11 +1,14 @@
 import type { NavigationGuard, RouteLocationNormalizedLoaded, RouteRecordRaw, Router } from "vue-router";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
+import { ApiRequestError } from "@ontomato/workbench-ui";
 import { isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { isNativeApplicationEntry, type ApplicationOpenResponse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
 import { resolveApplicationEntry } from "./panel-host";
 import { startPage } from "./shell";
+import { clearEntryResolutionFailure, entryResolutionFailureFor, noteEntryResolutionFailure } from "./entry-resolution-failure";
+import EntryResolutionFailure from "./EntryResolutionFailure.vue";
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -86,8 +89,9 @@ export async function readAndServePanelEntries(router: Router, address?: string)
       const resolved = await resolveApplicationEntry({ path });
       serveOpenedEntry(router, resolved);
       return resolved;
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof ApiRequestError && (error.status === 403 || error.status === 404)) return null;
+      throw error;
     }
   }
   await useApplicationCatalog().refresh();
@@ -96,11 +100,11 @@ export async function readAndServePanelEntries(router: Router, address?: string)
 }
 
 /**
- * The platform's last route: an address no page of its own serves. It draws nothing and redirects nowhere by itself —
- * `panelEntryGuard` decides where such an address goes, so a landing that is itself such an address (a deployment's
- * start page that a panel has taken over) cannot send the router round in a loop.
+ * The platform's last route: an address no page of its own serves. It draws the read failure recorded for that
+ * address and redirects nowhere by itself — `panelEntryGuard` decides where such an address goes, so a landing that
+ * is itself such an address (a deployment's start page that a panel has taken over) cannot send the router round in a loop.
  */
-export const unknownAddressRoute: RouteRecordRaw = { ...platformRoutes.unknown, component: { render: () => null } };
+export const unknownAddressRoute: RouteRecordRaw = { ...platformRoutes.unknown, component: EntryResolutionFailure };
 
 /*
  * A built-in application's panel entry at its own address (big main's ruling, 2026-11-21: one panel route serves every
@@ -118,9 +122,15 @@ export function panelEntryGuard(router: Router): NavigationGuard {
     let resolved: ApplicationOpenResponse;
     try {
       resolved = await resolveApplicationEntry({ path: to.path });
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiRequestError && (error.status === 403 || error.status === 404)) {
+        clearEntryResolutionFailure(to.path);
+      } else {
+        noteEntryResolutionFailure(to.path, error);
+      }
       return true;
     }
+    clearEntryResolutionFailure(to.path);
     serveOpenedEntry(router, resolved);
     to.meta.openedPanelEntry = resolved;
     const landing = panelUsePath(resolved.use.path);
@@ -157,9 +167,16 @@ export function addressLandingGuard(router: Router): NavigationGuard {
         ...nativeApps.filter((app) => app.id !== "ontology"),
       ];
       for (const candidate of ordered) {
-        const app = candidate.panelUses !== undefined
-          ? candidate
-          : await catalog.ensureApplication(candidate.id).catch(() => candidate);
+        let app;
+        try {
+          app = candidate.panelUses !== undefined
+            ? candidate
+            : await catalog.ensureApplication(candidate.id);
+        } catch (error) {
+          noteEntryResolutionFailure(to.path, error);
+          return true;
+        }
+        clearEntryResolutionFailure(to.path);
         const first = app.panelUses?.find(use => !isNativeApplicationEntry(use));
         if (first) {
           servePanelEntries(router);
@@ -172,6 +189,7 @@ export function addressLandingGuard(router: Router): NavigationGuard {
       sentToLanding = null;
       return true;
     }
+    if (entryResolutionFailureFor(to.path)) return true;
     const start = startPage();
     if (!unknown(start)) return start;
     if (sentToLanding === to.fullPath) {

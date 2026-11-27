@@ -21,6 +21,7 @@ const labels = {
   stop: "Stop",
   agent: "Agent",
   newConversation: "New chat",
+  pageAgentUnavailable: "This page's agent is unavailable",
   pageContext: (page: { label: string; url: string }) => `Current page: ${page.label} (${page.url})`,
   pageContextAddress: (url: string) => `Current page: ${url}`,
   selectionContext: (selection: string) => `Selected: ${selection}`,
@@ -545,6 +546,7 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
   const agentId = ref<string | null>(assistant);
   const sessionId = ref<string | null>(existingSessionId);
   const leftConversation = vi.fn(() => void display.close());
+  const errors: string[] = [];
   const served: PageComposerExpand[] = [];
   const Host = defineComponent({
     setup() {
@@ -562,6 +564,7 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
           workbench, client: host, labels, nav, agentPicker: true, title: workbench.label, display,
           agentId: agentId.value, "onUpdate:agentId": (id: string | null) => (agentId.value = id),
           sessionId: sessionId.value, "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
+          onError: (message: string) => errors.push(message),
         });
     },
   });
@@ -596,11 +599,12 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
   expect(leftConversation).not.toHaveBeenCalled();
   expect(written()).toContain("Review the pending knowledge");
 
-  // An agent the page does not offer: the composer only opens, on the agent it has.
-  served.at(-1)!({ target: { kind: "id", id: analyst }, prefill: "Not for this page" });
+  // An agent the page does not offer: refuse without switching agents, prefilling, or submitting, and emit pageAgentUnavailable.
+  await served.at(-1)!({ target: { kind: "id", id: analyst }, prefill: "Not for this page", submit: true });
   await settle();
   expect(agentId.value).toBe(governance);
   expect(written()).not.toContain("Not for this page");
+  expect(errors).toEqual([labels.pageAgentUnavailable]);
 
   // A preset the page offers, named by the server's answer: a new conversation with that candidate takes the sentence.
   served.at(-1)!({ target: { kind: "preset", agentKind: "regular" }, prefill: "Back to the assistant" });

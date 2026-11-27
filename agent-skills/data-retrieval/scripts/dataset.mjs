@@ -1,23 +1,22 @@
 import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
-import { collectPackage, relatedCountPackage, relatedEntityQuery, uniqueRelatedKey } from "./query-package.mjs";
+import { collectPackage } from "./query-package.mjs";
 
 const base = process.env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
 if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
 const [command, entry, ...flags] = process.argv.slice(2);
 const active = flags.includes("--active");
 const args = flags.filter(flag => flag !== "--active");
-if (!["deliver", "related-count", "preview", "begin", "close"].includes(command))
-  throw new Error("Use deliver @query or related-count @spec, with --meta @delivery.json [--out outputs/result.dataset.json]");
+if (!["deliver", "preview", "begin", "close"].includes(command))
+  throw new Error("Use deliver @query with --meta @delivery.json [--out outputs/result.dataset.json]");
 const json = async (file) => JSON.parse(await readFile(file.replace(/^@/, ""), "utf8"));
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
-  if (!["--meta", "--params", "--out", "--schema"].includes(args[i]) || !args[i + 1] || options[args[i]])
+  if (!["--meta", "--params", "--out"].includes(args[i]) || !args[i + 1] || options[args[i]])
     throw new Error("Invalid or duplicate delivery option: " + args[i]);
   options[args[i]] = args[i + 1];
 }
-if (options["--schema"] && command !== "related-count") throw new Error("--schema belongs to related-count");
 const headers = {
   ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK } : {}),
   "content-type": "application/json", tk: process.env.ONTOMATO_TK ?? "",
@@ -32,38 +31,7 @@ if (command === "begin") input = await json(entry);
 else if (command !== "close") {
   if (!options["--meta"]) throw new Error("--meta @delivery.json is required");
   const { columnLabels, ...description } = await json(options["--meta"]);
-  let queryPackage;
-  if (command === "related-count") {
-    const spec = await json(entry);
-    let schema;
-    if (options["--schema"]) schema = await json(options["--schema"]);
-    else {
-      const response = await fetch(`${base}/ontology/query/schema`, {
-        method: "POST", headers, redirect: "error",
-        body: JSON.stringify({ classNames: [spec.objectClass, spec.relatedClass] }),
-      });
-      if (!response.ok) throw new Error(`Cannot load related-count schema (HTTP ${response.status})`);
-      schema = await response.json();
-    }
-    for (const [key, classKey] of [["objectKey", "objectClass"], ["relatedKey", "relatedClass"]]) {
-      if (spec[key] !== undefined) continue;
-      const keys = schema.classes?.find(item => item.className === spec[classKey])?.attrs
-        ?.filter(field => field.primaryKey === true);
-      if (keys?.length !== 1) throw new Error(`Cannot resolve a unique primary key for ${classKey}`);
-      spec[key] = keys[0].name;
-    }
-    if (spec.matchField !== undefined) {
-      if (Object.hasOwn(spec, "value")) throw new Error("Use value or matchField/matchValue, never both");
-      const response = await fetch(`${base}/ontology/query/execute-dsl`, {
-        method: "POST", headers, redirect: "error", body: JSON.stringify({ dsl: relatedEntityQuery(spec, schema) }),
-      });
-      if (!response.ok) throw new Error(`Cannot resolve related object (HTTP ${response.status})`);
-      spec.value = uniqueRelatedKey(await response.json());
-    }
-    queryPackage = relatedCountPackage(spec, schema);
-  } else {
-    queryPackage = await collectPackage(entry);
-  }
+  const queryPackage = await collectPackage(entry);
   input = { ...description, recipe: {
     kind: "package", package: queryPackage,
     parameters: options["--params"] ? await json(options["--params"]) : {}, columnLabels,
@@ -149,6 +117,5 @@ await writeFile(temporary, await call(`/${state.id}/runs/${state.runId}/outputs/
 await rename(temporary, output);
 console.log(JSON.stringify({ path: target, rowCount: result.dataset.rows.length, columns: result.dataset.columns,
   truncation: result.dataset.truncation, receiptId: result.dataset.execution.receiptId,
-  ...(result.dataset.queryCoverage ? { queryCoverage: result.dataset.queryCoverage } : {}),
   ...(result.dataset.rows.length <= 10 ? { rows: result.dataset.rows } : {}),
   packageSha256: result.dataset.recipe.packageSha256 }));

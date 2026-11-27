@@ -122,6 +122,58 @@ it("hides a template banner whose bound field has no value, and draws it once th
   expect(notice.get("aside").text()).toBe("2 followed cards are unavailable.");
 });
 
+it("keeps a hideWhenEmpty template banner whose read failed, while forbidden, awaiting and empty stay hidden", async () => {
+  const i18n = createI18n({ legacy: false, locale: "en", messages: { en: publicEn } });
+  const datum = shallowRef<MemberDataState>({ status: "error", message: "Card status read failed" });
+  const member: PanelMemberContext = {
+    key: "cardsNotice",
+    projection: {
+      id: "cardsNotice",
+      name: "Unavailable dashboard cards notice",
+      description: "",
+      visibility: "domain",
+      domainId: "default",
+      ownerId: "owner",
+      editable: false,
+      revision: 1,
+      createdAt: "",
+      updatedAt: "",
+      componentId: "@ontomato/sdk:InfoBanner",
+      config: {},
+      inputs: {},
+      outputs: {},
+      data: {
+        record: {
+          read: "dashboardCardsStatus",
+          source: { object: { literal: { className: "platform:Favorite", primaryKey: "dashboardCardsStatus" } } },
+          params: {},
+        },
+      },
+    },
+    inputs: computed(() => ({})),
+    operations: computed(() => ({ status: "ready", value: {} })),
+    data: { use: () => computed(() => datum.value), read: async () => datum.value },
+  };
+  const notice = mount(InfoBanner, {
+    props: { template: "{missingCount} followed cards are unavailable.", hideWhenEmpty: true },
+    global: { plugins: [i18n], provide: { [panelMemberKey as symbol]: () => member } },
+  });
+
+  // A failed read is not "no content": the banner stays where it is and says why.
+  expect(notice.get("aside").attributes("data-state")).toBe("error");
+  expect(notice.get("aside").text()).toContain("Card status read failed");
+
+  for (const hidden of [
+    { status: "forbidden" },
+    { status: "awaiting" },
+    { status: "empty" },
+  ] as MemberDataState[]) {
+    datum.value = hidden;
+    await nextTick();
+    expect(notice.find("aside").exists(), hidden.status).toBe(false);
+  }
+});
+
 it("collapses its direct member host when empty and restores it when populated", async () => {
   const i18n = createI18n({ legacy: false, locale: "en", messages: { en: publicEn } });
   const projection: DirectProjectionRecord = {

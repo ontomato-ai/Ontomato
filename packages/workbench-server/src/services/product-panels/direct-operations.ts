@@ -522,11 +522,11 @@ async function runWithConcurrency<T>(items: readonly T[], limit: number, work: (
 
 export async function resolveBatchUnavailableReasons(
   host: ReturnType<typeof operationHost>,
-  handler: PanelWriteServerOperation,
+  handler: PanelServerOperation,
   targets: readonly { rowKey: string; target: PanelRecordTarget }[],
 ): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>> {
   if (targets.length === 0) return new Map();
-  if (handler.unavailableBatch) return handler.unavailableBatch(host, targets);
+  if (handler.effect === "write" && handler.unavailableBatch) return handler.unavailableBatch(host, targets);
   if (!handler.unavailable) return new Map();
   const unavailable = handler.unavailable.bind(handler);
   // Deduplicate identical targets (e.g. outer parent target shared across all 50 rows -> 1 check instead of 50).
@@ -570,10 +570,11 @@ export async function describeRowOperationsForRows(
 ): Promise<PanelRowOperationsMap | undefined> {
   const host = operationHost(actor);
   return presentRowOperationsForRows(placement.projection, inputs, rows, fallbackClassName, async (handler, binding, targets) => {
-    if (!handler.unavailable && !handler.unavailableBatch && !handler.unavailableForInput) return new Map();
+    const writeAvailability = handler.effect === "write" && (handler.unavailableBatch || handler.unavailableForInput);
+    if (!handler.unavailable && !writeAvailability) return new Map();
     const rowScoped = binding.target !== undefined && ("row" in binding.target || "rowField" in binding.target);
     const rowBoundParams = Object.values(binding.params ?? {}).some(param => "row" in param || "rowField" in param);
-    const inspectInput = !rowScoped && !rowBoundParams ? handler.unavailableForInput : undefined;
+    const inspectInput = handler.effect === "write" && !rowScoped && !rowBoundParams ? handler.unavailableForInput : undefined;
     const known = new Map(Object.entries(inputs));
     const batchTargets = targets.map(entry => ({
       ...entry,
@@ -586,7 +587,7 @@ export async function describeRowOperationsForRows(
       });
       return reasons;
     }
-    return rowScoped
+    return rowScoped && handler.effect === "write"
       ? resolveRowBatchUnavailableReasons(host, handler, batchTargets)
       : resolveBatchUnavailableReasons(host, handler, batchTargets);
   });
@@ -600,7 +601,7 @@ export async function presentRowOperationsForRows(
   inputs: Readonly<Record<string, unknown>>,
   rows: readonly PanelRecord[],
   fallbackClassName: string | undefined,
-  readReasons: (handler: PanelWriteServerOperation, binding: ProjectionOperationBinding, targets: RowOperationTargets) =>
+  readReasons: (handler: PanelServerOperation, binding: ProjectionOperationBinding, targets: RowOperationTargets) =>
     RowOperationReasons | Promise<RowOperationReasons>,
 ): Promise<PanelRowOperationsMap | undefined> {
   const boundOps = boundProjectionOperations(projection);
@@ -611,7 +612,7 @@ export async function presentRowOperationsForRows(
   for (const bound of boundOps) {
     if (bound.binding.operation.kind !== "PlatformOperation" || !bound.owner) continue;
     const { handler } = bound.owner;
-    if (handler.effect !== "write") {
+    if (handler.effect !== "write" && !handler.unavailable) {
       for (const rowKey of rowKeys) {
         (result[rowKey] ??= {})[bound.name] = { available: true };
       }

@@ -5,7 +5,7 @@ import { assistantAgentsQuerySchema, type PageSkillContext } from "@ontomato/con
 import { createAgentHostClient } from "../host";
 import type { ShellLabels } from "../types";
 import { pageCounterKey, type PageCounter } from "../page-counter";
-import { servePageComposerKey, type PageComposerExpand } from "../page-composer-entry";
+import { entryAgent, servePageComposerKey, type PageComposerExpand } from "../page-composer-entry";
 import PageComposer from "../components/PageComposer.vue";
 
 // The composer's own agent control: the test reads who the page offers and who is selected, which is the point.
@@ -140,23 +140,61 @@ it("offers every agent to a page without a skill, and keeps the remembered one",
   expect(drawn.shown().agentId).toBe("remembered");
 });
 
-it("names the page's configuration error with the service's reason, rather than choosing another agent", async () => {
+it("names the page's configuration error in place with the service's reason, disables sending, and chooses no other agent", async () => {
   const drawn = draw({
     pageAgents: async () => Promise.reject(Object.assign(new Error("The page's default agent is unavailable"), { code: "PAGE_DEFAULT_AGENT_UNAVAILABLE" })),
   });
   await new Promise((resolve) => setTimeout(resolve));
 
-  expect(drawn.errors).toEqual([`${labels.pageAgentUnavailable} The page's default agent is unavailable`]);
-  // No agent, no composer: the page cannot be asked to work on what it cannot do.
-  expect(drawn.root.querySelector(".page-ask")).toBeNull();
+  const expected = `${labels.pageAgentUnavailable} The page's default agent is unavailable`;
+  expect(drawn.errors).toEqual([expected]);
+  // The composer stays in place with the reason visible, disabled, and without substituting another agent.
+  expect(drawn.root.querySelector(".page-ask")).not.toBeNull();
+  expect(drawn.root.querySelector('.page-ask [role="alert"]')?.textContent).toBe(expected);
+  expect(seen).toHaveLength(0);
+  expect(box(drawn.root)?.disabled).toBe(true);
+  expect(drawn.root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+  drawn.root.querySelector("form")?.dispatchEvent(new Event("submit", { cancelable: true }));
+  await settle();
+  expect(drawn.ask).not.toHaveBeenCalled();
 });
 
-it("shows the service's own error when the candidates could not be read at all", async () => {
-  // A broken connection is not a misconfigured page: the reader sees what went wrong.
+it("hides the composer without error when candidate access is forbidden (403 or FORBIDDEN)", async () => {
+  for (const reason of [
+    Object.assign(new Error("Access denied to page entrance"), { status: 403 }),
+    Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }),
+  ]) {
+    const drawn = draw({ pageAgents: async () => Promise.reject(reason) });
+    await settle();
+
+    expect(drawn.errors).toEqual([]);
+    expect(drawn.root.querySelector(".page-ask")).toBeNull();
+    expect(seen).toHaveLength(0);
+    expect(drawn.served).toHaveLength(0);
+  }
+});
+
+it("keeps the composer in place with the service error disabled when candidates fail to load", async () => {
+  // A broken connection is not an empty candidate list: the composer stays in place, shows why, and disables sending.
   const drawn = draw({ pageAgents: async () => Promise.reject(new Error("Failed to fetch")) });
   await new Promise((resolve) => setTimeout(resolve));
 
   expect(drawn.errors).toEqual(["Failed to fetch"]);
+  expect(drawn.root.querySelector(".page-ask")).not.toBeNull();
+  expect(drawn.root.querySelector('.page-ask [role="alert"]')?.textContent).toBe("Failed to fetch");
+  expect(seen).toHaveLength(0);
+  expect(box(drawn.root)?.disabled).toBe(true);
+  expect(drawn.root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+  expect(drawn.ask).not.toHaveBeenCalled();
+});
+
+it("hides the composer without error when the page legitimately returns no enabled candidates", async () => {
+  const drawn = draw({ pageAgents: async () => ({ agents: [] }) });
+  await settle();
+
+  expect(drawn.errors).toEqual([]);
+  expect(drawn.root.querySelector(".page-ask")).toBeNull();
+  expect(drawn.served).toHaveLength(0);
 });
 
 it("re-queries candidates when the displayed member path changes and clears previous candidates on switch", async () => {
@@ -249,19 +287,48 @@ it("opens on a panel's entry, takes the agent it names among the candidates and 
   localStorage.removeItem("ontomato.shell.composerCollapsed");
 });
 
-it("only opens for an entry naming no candidate, keeping its own agent and its text", async () => {
-  const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant")], defaultAgentId: "assistant" }) });
-  await settle();
+it("reports an unavailable target explicitly in entryAgent instead of returning a silent fallback", () => {
+  const candidates = [agent("assistant", "Assistant"), { ...agent("disabled", "Disabled"), enabled: false }];
+  expect(entryAgent({ kind: "page-default" }, candidates, "assistant", undefined)).toEqual({ ok: true, agentId: "assistant" });
+  expect(entryAgent({ kind: "page-default" }, candidates, null, undefined)).toEqual({
+    ok: false, reason: "unavailable", target: { kind: "page-default" },
+  });
+  expect(entryAgent({ kind: "id", id: "disabled" }, candidates, "assistant", undefined)).toEqual({
+    ok: false, reason: "unavailable", target: { kind: "id", id: "disabled" },
+  });
+  expect(entryAgent({ kind: "preset", agentKind: "analysis" }, candidates, "assistant", { regular: "assistant" })).toEqual({
+    ok: false, reason: "unavailable", target: { kind: "preset", agentKind: "analysis" },
+  });
+});
 
-  for (const target of [{ kind: "id", id: "stranger" }, { kind: "preset", agentKind: "knowledge-governance" }] as const) {
-    drawn.served.at(-1)!({ target, prefill: "Not for this agent" });
+it("refuses an entry naming no candidate without opening, reusing the current agent, prefilling, or submitting", async () => {
+  localStorage.setItem("ontomato.shell.composerCollapsed", "true");
+  try {
+    const drawn = draw({ pageAgents: async () => ({ agents: [agent("assistant", "Assistant")] }) });
     await settle();
-    expect(drawn.shown().agentId).toBe("assistant");
-    expect(box(drawn.root)!.value).toBe("");
+    expect(box(drawn.root)).toBeNull();
+
+    for (const target of [
+      { kind: "page-default" },
+      { kind: "id", id: "stranger" },
+      { kind: "preset", agentKind: "knowledge-governance" },
+    ] as const) {
+      await drawn.served.at(-1)!({ target, prefill: "Not for this agent", submit: true, newSession: true });
+      await settle();
+      expect(box(drawn.root)).toBeNull();
+      expect(drawn.ask).not.toHaveBeenCalled();
+    }
+    expect(drawn.errors).toEqual([
+      labels.pageAgentUnavailable,
+      labels.pageAgentUnavailable,
+      labels.pageAgentUnavailable,
+    ]);
+  } finally {
+    localStorage.removeItem("ontomato.shell.composerCollapsed");
   }
 });
 
-it("takes the preset an entry names when the page says which candidate it is, and only opens for one it does not offer", async () => {
+it("takes the preset an entry names when the page says which candidate it is, and refuses one it does not offer", async () => {
   const drawn = draw({
     pageAgents: async () => ({
       agents: [agent("assistant", "Assistant"), agent("governance", "Knowledge governance")],
@@ -276,12 +343,13 @@ it("takes the preset an entry names when the page says which candidate it is, an
   expect(drawn.shown().agentId).toBe("governance");
   expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
 
-  // A preset that is no candidate here: the composer opens on the agent it has, its text untouched.
-  drawn.served.at(-1)!({ target: { kind: "preset", agentKind: "analysis" }, prefill: "Not for this page" });
+  // A preset that is no candidate here: keep the current agent and text untouched, do not submit, and surface the error.
+  await drawn.served.at(-1)!({ target: { kind: "preset", agentKind: "analysis" }, prefill: "Not for this page", submit: true });
   await settle();
   expect(drawn.shown().agentId).toBe("governance");
   expect(box(drawn.root)!.value).toBe("Review the pending knowledge");
   expect(drawn.ask).not.toHaveBeenCalled();
+  expect(drawn.errors).toEqual([labels.pageAgentUnavailable]);
 });
 
 it("holds an entry made while the page's candidates are being read, and applies it once they arrive", async () => {
@@ -306,16 +374,20 @@ it("holds an entry made while the page's candidates are being read, and applies 
   expect(drawn.ask).not.toHaveBeenCalled();
 });
 
-it("drops an entry that waited when the page's candidates could not be read", async () => {
+it("drops an entry that waited and keeps the composer visible in an error disabled state when candidates fail to read", async () => {
   let fail: (reason: Error) => void = () => {};
   const drawn = draw({ pageAgents: () => new Promise((_, reject) => { fail = reject; }) });
   await settle();
-  drawn.served.at(-1)!({ target: { kind: "page-default" }, prefill: "Not sent anywhere" });
+  drawn.served.at(-1)!({ target: { kind: "page-default" }, prefill: "Not sent anywhere", submit: true });
   fail(new Error("Failed to fetch"));
   await settle();
-  // The page says why it has no composer; the entry does not come back later.
+  // The composer stays in place explaining the read failure; the waiting entry is neither filled nor sent.
   expect(drawn.errors).toEqual(["Failed to fetch"]);
-  expect(box(drawn.root)).toBeNull();
+  expect(drawn.root.querySelector(".page-ask")).not.toBeNull();
+  expect(drawn.root.querySelector('.page-ask [role="alert"]')?.textContent).toBe("Failed to fetch");
+  expect(box(drawn.root)?.disabled).toBe(true);
+  expect(box(drawn.root)?.value).toBe("");
+  expect(drawn.ask).not.toHaveBeenCalled();
   expect(drawn.served).toHaveLength(0);
 });
 

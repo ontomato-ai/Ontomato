@@ -854,9 +854,15 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
     const label = item.labelKey ? panel.t(item.labelKey) : item.label ?? item.operation;
     const availability = rowOps[item.operation];
     const descriptor = admittedOperationDescriptors.value[item.operation];
-    const unavailable = availability ? !availability.available : !descriptor;
-    if (unavailable && item.hideWhenUnavailable) continue;
-    const reason = availability?.unavailable?.reason ?? (descriptor ? undefined : t("platform.operationUnavailable"));
+    // A failed operations read is not the owner refusing the operation: the action stays, disabled, saying why. Only
+    // an owner's explicit per-row refusal is hidden by `hideWhenUnavailable`.
+    const operations = operationsState.value;
+    const readFailure = operations.status === "error" && availability?.available !== false ? operations.message : undefined;
+    const unavailable = readFailure !== undefined || (availability ? !availability.available : !descriptor);
+    if (unavailable && item.hideWhenUnavailable && readFailure === undefined) continue;
+    const reason = readFailure
+      ?? availability?.unavailable?.reason
+      ?? (descriptor ? undefined : t("platform.operationUnavailable"));
     const binding = member.projection.operations?.[item.operation];
     const opTarget = binding
       ? resolveRowOperationTarget(binding, row, rowObjectType, member.inputs.value)

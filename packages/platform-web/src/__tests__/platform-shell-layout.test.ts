@@ -49,14 +49,17 @@ installWorkbenchI18n({
 describe("PlatformShellLayout home shortcuts refresh", () => {
   let homeRequests: string[] = [];
   let favoriteIds: string[] = [];
+  let homeFails = false;
 
   beforeEach(() => {
     homeRequests = [];
     favoriteIds = ["app-a"];
+    homeFails = false;
     vi.stubGlobal("fetch", async (input: string | URL) => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname === "/api/platform/home") {
         homeRequests.push(url.pathname + url.search);
+        if (homeFails) return Response.json({ error: { message: "home unavailable" } }, { status: 500 });
         return Response.json({
           favorites: favoriteIds.map((id) => ({ kind: "application", id })),
           dashboardIds: [],
@@ -73,6 +76,40 @@ describe("PlatformShellLayout home shortcuts refresh", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+
+
+  it("reports a shortcut read failure without blocking platform startup", async () => {
+    homeFails = true;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/home", component: { render: () => h("div", "home") } }],
+    });
+    await router.push("/home");
+    const host = {
+      access: { ready: true, error: null, canEnter: () => true, verifyEntry: async () => "allowed", load: async () => {} },
+      navigation: computed(() => ({ groups: [], pages: [] })),
+      account: null,
+      preferences: {
+        locales: ["en"], locale: ref("en"), setLocale: () => {}, theme: ref<"light" | "dark">("light"), setTheme: () => {},
+      },
+      blocked: computed(() => null),
+    };
+    const wrapper = mount(PlatformShellLayout, {
+      global: {
+        plugins: [router, createI18n({ legacy: false, locale: "en", missingWarn: false })],
+        provide: providePlatformHost(host as never),
+      },
+    });
+    try {
+      await flushPromises();
+      expect(wrapper.get(".platform-layout-double").attributes("data-pinned")).toBe("");
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      wrapper.unmount();
+    }
   });
 
   it("reads /api/platform/home on mount and HOME_PREFERENCES_CHANGED without re-fetching on route changes", async () => {

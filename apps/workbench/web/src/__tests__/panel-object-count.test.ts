@@ -19,6 +19,7 @@ import { noOperations } from "./panel-frame";
  * - Multi-metric `items` evaluated against a single datum read (1 request for multiple stats).
  * - Localized labels via `labelKey` (panel.t / i18n) and `label` fallback.
  * - Lightweight visual states: loading (`…`), empty (`0`), forbidden / error / awaiting (`—` + title).
+ * - A badge whose read failed marks the failure in its place, explained on hover and keyboard focus.
  */
 
 const meta = {
@@ -361,10 +362,9 @@ it("renders bare numeral in badge appearance and omits DOM nodes while unavailab
   expect(loadingToReady.instance.outputs.count?.total).toBe(19);
   resetMount();
 
-  // Forbidden, error, omitted total, and paged empty without owner total render zero DOM nodes in badge appearance.
+  // Forbidden, omitted total, and paged empty without owner total render zero DOM nodes in badge appearance.
   for (const response of [
     { status: "forbidden" } as ProductPanelReadResponse,
-    { status: "error", message: "boom" } as ProductPanelReadResponse,
     ready({ rows: [{ primaryKey: "f-1", label: "One", fields: {} }] }),
     { status: "empty" } as ProductPanelReadResponse,
   ]) {
@@ -419,4 +419,55 @@ it("renders bare numeral in badge appearance and omits DOM nodes while unavailab
     expect(el?.querySelector(".sdk-object-count-value")?.textContent?.trim()).toBe("7");
     expect(el?.querySelector(".sdk-object-count-label")?.textContent?.trim()).toBe("Tasks");
   });
+});
+
+it("marks a failed badge read in place, explained on hover and focus, while forbidden stays silent", async () => {
+  const badgeProjection: DirectProjection = {
+    ...meta,
+    id: "badge-failure-count",
+    name: "Badge failure count",
+    componentId: "@ontomato/sdk:ObjectCount",
+    inputs: {},
+    outputs: {},
+    config: { appearance: "badge", label: "Tasks" },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: FEEDBACK_RECORD } }, read: "query", params: {} } },
+  };
+
+  const failed = mountCount(badgeProjection, () => ({ status: "error", message: "Count service unreachable" }));
+  const badge = await vi.waitFor(() => {
+    const el = failed.container.querySelector<HTMLElement>(".sdk-object-count-badge");
+    expect(el?.getAttribute("data-state")).toBe("error");
+    return el!;
+  });
+  // A failure is not a count: no numeral or dash stands in for it, and nothing is published.
+  expect(badge.textContent?.trim()).toBe("");
+  expect(badge.querySelector("svg")).not.toBeNull();
+  expect(failed.instance.outputs.count?.total ?? null).toBeNull();
+
+  const trigger = badge.closest<HTMLElement>(".sdk-unavailable-trigger")!;
+  expect(trigger.getAttribute("tabindex")).toBe("0");
+  expect(trigger.getAttribute("aria-label")).toBe("Tasks: Count service unreachable");
+  trigger.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+  await vi.waitFor(() => {
+    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain("Count service unreachable");
+  });
+  resetMount();
+
+  // Only a failure is focusable: a ready badge is the bare numeral.
+  const counted = mountCount(badgeProjection, () => ready({ rows: [], total: 4 }));
+  await vi.waitFor(() => {
+    expect(counted.container.querySelector(".sdk-object-count-badge")?.textContent?.trim()).toBe("4");
+  });
+  expect(counted.container.querySelector(".sdk-unavailable-trigger")).toBeNull();
+  expect(counted.container.querySelector("[tabindex]")).toBeNull();
+  resetMount();
+
+  // A reader without permission still sees nothing.
+  const forbidden = mountCount(badgeProjection, () => ({ status: "forbidden" }));
+  await vi.waitFor(() => expect(forbidden.reads).toHaveLength(1));
+  await nextTick();
+  await nextTick();
+  expect(forbidden.container.querySelector(".sdk-object-count")).toBeNull();
+  expect(forbidden.container.querySelector(".sdk-unavailable-trigger")).toBeNull();
 });

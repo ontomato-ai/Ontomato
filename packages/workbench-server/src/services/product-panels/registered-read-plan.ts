@@ -363,7 +363,7 @@ export async function runPreparedDataReads(
           const host = operationHost({ owner: viewer, credentials });
           const rowOperations = await presentRowOperationsForRows(
             { ...projection, operations }, plan.prepared.inputs, answer.value as PanelRecord[], APPLICATION,
-            (handler, _binding, targets) => handler.unavailableBatch!(host, targets),
+            (handler, _binding, targets) => handler.effect === "write" ? handler.unavailableBatch!(host, targets) : new Map(),
           );
           return { ...answer, ...(rowOperations && { rowOperations }) };
         }

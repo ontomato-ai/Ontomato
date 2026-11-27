@@ -9,7 +9,6 @@ const labels = {
   datasetLineage: "Lineage", showLineage: "Show graph", hideLineage: "Hide graph",
   lineageFields: "Fields", lineageOperations: "Calculations", lineageOutputs: "Result columns",
   truncatedRows: (limit: number) => `First ${limit} rows only`,
-  datasetUncheckedConditions: (conditions: string[]) => `Unverified: ${conditions.join(", ")}`,
   filterColumn: (column: string) => `Filter ${column}`, filterSearch: "Search", filterAll: "All", filterEmpty: "(Empty)",
 };
 
@@ -25,13 +24,6 @@ it("states a dataset's queries and conditions under its table and opens the grap
       { value: 1, recorded: "2024-12-30T00:00:00+08:00" },
       { value: 2, recorded: "2024-12-30T14:35:12+08:00" },
     ],
-    queryIntent: { schema: "ontomato.query-intent.v1", outputs: ["Staff count"], conditions: [
-      { id: "date", quote: "hired this year", mapping: null },
-      { id: "status", quote: "active staff", mapping: null },
-    ] },
-    queryCoverage: { status: "partial", checks: [], conditions: [
-      { id: "date", status: "unmapped" }, { id: "status", status: "present" },
-    ] },
     truncation: { truncated: true, rowLimit: 500, truncationHint: "for the model" },
     sourceAnalysis: {
       schema: "ontomato.query-subgraph.v1",
@@ -57,8 +49,8 @@ it("states a dataset's queries and conditions under its table and opens the grap
     expect(root.querySelector('[title="2024-12-30T00:00:00+08:00"]')?.textContent).toBe("2024-12-30");
     expect(root.querySelector('[title="2024-12-30T14:35:12+08:00"]')?.textContent).toBe("2024-12-30 14:35:12");
     const notes = [...root.querySelectorAll(".partial")];
-    expect(notes.map(note => note.textContent?.trim())).toEqual(["Unverified: hired this year", "First 500 rows only"]);
-    expect(notes[1].compareDocumentPosition(root.querySelector("table")!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(notes.map(note => note.textContent?.trim())).toEqual(["First 500 rows only"]);
+    expect(notes[0].compareDocumentPosition(root.querySelector("table")!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(root.querySelector(".lineage-queries")?.textContent).toContain("Staff by college");
     expect(root.querySelector(".lineage-filter")?.textContent).toBe("Status = active");
     expect(root.querySelector(".test-graph")).toBeNull();

@@ -7360,6 +7360,7 @@ defineExpose({
   flex-direction: column;
   gap: var(--spacing-sm);
   min-height: 106px;
+  min-width: 0;
   padding: var(--spacing-lg);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
 }
@@ -7541,7 +7542,7 @@ defineExpose({
   display: grid;
   font-size: var(--text-xs);
   gap: var(--spacing-xs) var(--spacing-md);
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   margin: 0;
 }
 .sdk-object-list-card-field-label {
@@ -7552,6 +7553,12 @@ defineExpose({
   margin: 0;
   min-width: 0;
   word-break: break-word;
+}
+.sdk-object-list-card-field-value :is(.sdk-object-list-tag, .sdk-object-list-card-value) {
+  box-sizing: border-box;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .sdk-object-list-card-tags {
   display: inline-flex;

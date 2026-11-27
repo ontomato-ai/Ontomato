@@ -155,44 +155,6 @@ class JacksonAgentBoundaryTest {
   }
 
   @Test
-  void retrievalPreparePreservesAnExplicitlyUnknownConditionMapping() throws Exception {
-    var retrieval = mock(OntologyRetrievalService.class);
-    when(retrieval.prepareRun(anyString(), anyString(), any(), anyString(), any(), anyString(), any()))
-        .thenAnswer(call -> {
-          var input = call.getArgument(2, JSONObject.class);
-          var context = call.getArgument(4, JSONObject.class);
-          return OntologyRetrievalService.input(JSONObject.of("question", input.getString("content"),
-              "queryIntent", context.getJSONObject("queryIntent")));
-        });
-    var controller = new AgentChannelController(mock(AgentCaller.class), null, null, null,
-        mock(WorkbenchServiceAuthentication.class), retrieval, null, null, null, null, null, null);
-    var mvc = MockMvcBuilders.standaloneSetup(controller)
-        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key))
-        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-    String request = """
-        {"mode":"run","language":"en","agent":{"providerId":"ontology","agentId":"%s"},
-         "sessionId":"11111111-1111-4111-8111-111111111111","runId":"22222222-2222-4222-8222-222222222222",
-         "inputId":"33333333-3333-4333-8333-333333333333","actor":{},"authority":{"executionKind":"live"},
-         "root":{"runId":"22222222-2222-4222-8222-222222222222"},
-         "input":{"role":"notification","kind":"agent-message","content":"Count active staff"},
-         "context":{"queryIntent":{"schema":"ontomato.query-intent.v1",
-           "conditions":[{"id":"employment","quote":"active","mapping":null}],"outputs":["Count"]}}}
-        """.formatted(OntologyAgentStore.RETRIEVER);
-
-    var response = mvc.perform(post("/platform/agent-channel/prepare")
-        .header("X-Domain-Id", "domain-a").contentType(MediaType.APPLICATION_JSON).content(request))
-        .andExpect(status().isOk()).andReturn().getResponse();
-    var condition = JSON.parseObject(response.getContentAsString()).getJSONObject("queryIntent")
-        .getJSONArray("conditions").getJSONObject(0);
-    assertTrue(condition.containsKey("mapping"));
-    assertNull(condition.get("mapping"));
-
-    mvc.perform(post("/platform/agent-channel/prepare").header("X-Domain-Id", "domain-a")
-        .contentType(MediaType.APPLICATION_JSON).content(request.replace(",\"mapping\":null", "")))
-        .andExpect(status().isBadRequest());
-  }
-
-  @Test
   void httpDatasetSettlementAcceptsNestedRecipeAndParameterObjects() throws Exception {
     var authorization = mock(QueryAccessService.class);
     var user = new QueryAccessService.GrantUser("reader", "domain-a");

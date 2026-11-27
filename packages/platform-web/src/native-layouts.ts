@@ -73,13 +73,14 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
   return applications.filter(app => isPlatformCatalogApplication(app) && (app.kind === "connected" || isPanelApplication(app)
     || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])
     || Boolean(app.panelUses?.length)
-    || (app.panelUses === undefined && Boolean(app.framePanelId)))).map((app) => {
+    || Boolean(app.framePanelId))).map((app) => {
     const embedded = app.kind === "connected";
     const panels = isPanelApplication(app);
     const applicationRoute = embedded || panels;
     const hasLegacyLayout = Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!]);
-    // A native application's panel entries stand where its menu table lists their addresses.
-    const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
+    const detailLoaded = app.panelUses !== undefined;
+    // Entry names, icons and menu placement are entry-table facts: use them only after the application's detail arrived.
+    const entries = !panels && !embedded && detailLoaded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
       id: panelUsePath(use.path),
       label: localizedApplicationText(use.names, locale) ?? use.pageKey,
       ...(use.icon ? { icon: use.icon } : {}),
@@ -89,14 +90,12 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
-    const firstPanelPath = firstVisiblePanelPath(app);
+    const firstPanelPath = detailLoaded ? firstVisiblePanelPath(app) : null;
     const declaredHome = app.entry.home ?? layout.home;
     const admittedHome = app.entry.home ?? (layout.home && app.entryPaths?.some(path => panelUsePath(path) === layout.home)
       ? declaredHome : undefined);
     const entryHome = layout.entryHome
-      ? (app.panelUses === undefined
-        ? app.entry.path
-        : (app.panelUses.some(use => panelUsePath(use.path) === layout.entryHome) ? layout.entryHome : undefined))
+      ? (app.entryPaths?.some(path => panelUsePath(path) === layout.entryHome) ? layout.entryHome : undefined)
       : (!applicationRoute && !hasLegacyLayout && firstPanelPath ? firstPanelPath : undefined);
     return { ...layout, entryHome, entries, id: app.id, label: localizedApplicationText(app.names, locale) ?? app.id, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : localizedApplicationText(app.descriptions, locale) ?? null), icon: app.icon, rail: app.rail, category: app.category,
       allowStandalone: app.allowStandalone,
@@ -104,6 +103,6 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       ...(app.singleEntry !== undefined ? { singleEntry: app.singleEntry } : {}),
       built: app.kind === "product" && panels,
       prefix: applicationRoute ? applicationRootPath(app.id) : app.entry.path,
-      home: applicationRoute ? applicationRootPath(app.id) : admittedHome ?? firstPanelPath ?? undefined };
+      home: applicationRoute ? applicationRootPath(app.id) : admittedHome ?? firstPanelPath ?? app.entry.path };
   });
 }
