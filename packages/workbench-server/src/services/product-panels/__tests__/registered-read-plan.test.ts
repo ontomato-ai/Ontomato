@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
-  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, AGENT_SESSION, APPLICATION, APPLICATION_DELETE_DRAFT, APPROVE_KNOWLEDGE, ATTRIBUTE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET,
+  ACTION, ACTIVATE_WORKFLOW, ADD_ROLE_MEMBERS, ADD_ROLE_POLICIES, AGENT_DEFINITION, AGENT_SESSION, APPLICATION, APPLICATION_DELETE_DRAFT, APPROVE_KNOWLEDGE, ATTRIBUTE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET,
   APPLICATION_RESTART_BUILD_TEST, APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_ROLLBACK_BUILDER_RELEASE, APPLICATION_SYNC_BUILDER_SOURCE,
   AUTOTEST_RUN, BUSINESS_KNOWLEDGE, CLEAR_OBJECT_DETAIL_PANEL, DASHBOARD, DASHBOARD_CARD, DATA_ADAPTER_CONFIG, DEACTIVATE_WORKFLOW,
   DELETE_ACTION, DELETE_AGENT, DELETE_ATTRIBUTE, DELETE_AUTOTEST_RUN, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_ORG_UNIT,
@@ -12,7 +12,7 @@ import {
   KEEP_TURN_EVIDENCE, METRIC_VIEW, MODEL_CONNECTION, MODEL_ENTRY, MODEL_OPTION, MODEL_USAGE, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, OPS_KNOWLEDGE, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
   PERMISSION_POLICY, PRODUCT_PANEL, PRODUCT_PROJECTION, PUBLISHED_MCP_SERVICE, RECENT_VISIT, REGENERATE_USER_API_KEY,
-  RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_USER, RESET_USER_PASSWORD, REVOKE_USER_API_KEY, ROLE, SDK_COMPONENT, SET_ACTION_STATUS,
+  RELATIONSHIP, REMOVE_ORG_MEMBERSHIP, REMOVE_ROLE_MEMBERS, REMOVE_ROLE_POLICIES, REMOVE_USER, RESET_USER_PASSWORD, REVOKE_USER_API_KEY, ROLE, SDK_COMPONENT, SET_ACTION_STATUS,
   SET_PRIMARY_KEY, SKILL, TRIGGER, TURN_EVIDENCE, UNKEEP_AUTOTEST_RUN, UNKEEP_TURN_EVIDENCE, USER, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -3050,6 +3050,44 @@ it("describes fixed governance delete targets from the owner batch without reque
     ...targets.map(({ type, id }) => ({ type, name: "deleteRefusal", parameters: { primaryKey: id } })), undefined,
   ]);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("describes all role assignment operations with the selected role's owner refusal", async () => {
+  const bindings = { addMembers: ADD_ROLE_MEMBERS, removeMembers: REMOVE_ROLE_MEMBERS,
+    addPolicies: ADD_ROLE_POLICIES, removePolicies: REMOVE_ROLE_POLICIES };
+  const selections = [
+    { primaryKey: "ordinary", result: { status: "ready", payload: { reason: null } } },
+    { primaryKey: "reserved", result: { status: "ready", payload: { reason: "Managed by domain membership" } } },
+    { primaryKey: "missing", result: { status: "error", code: "ROLE_NOT_FOUND", error: "Role not found" } },
+  ];
+  mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
+  for (const { primaryKey } of selections) {
+    mocks.resolve.mockResolvedValueOnce({
+      panel: { manifest: { state: {}, members: {} } },
+      member: { inputs: { role: { literal: { className: ROLE, primaryKey } } } },
+      projection: {
+        inputs: { role: { kind: "object", objectType: ROLE } },
+        operations: Object.fromEntries(Object.entries(bindings).map(([name, id]) =>
+          [name, { operation: { kind: "PlatformOperation", id }, target: { input: "role" } }])),
+      },
+      inputs: {},
+    });
+  }
+  mocks.read.mockResolvedValueOnce({ viewer, results: selections.map(({ result }) => result) });
+
+  const prepared = await prepareRegisteredDataReads(credentials, selections.map(() => ({
+    source, memberPath: [{ member: "roleAssignments" }], operations: true, inputs: {},
+  })));
+  const [ordinary, reserved, missing] = await runPreparedDataReads(credentials, prepared);
+  expect(ordinary).toMatchObject({ status: "ready", value: Object.fromEntries(Object.entries(bindings)
+    .map(([name, handlerRef]) => [name, { handlerRef }])) });
+  for (const name of Object.keys(bindings)) {
+    expect(ordinary).not.toHaveProperty(`value.${name}.unavailable`);
+    expect(reserved).toHaveProperty(`value.${name}.unavailable.reason`, "Managed by domain membership");
+  }
+  expect(missing).toEqual({ status: "error", code: "ROLE_NOT_FOUND", message: "Role not found" });
+  expect((mocks.read.mock.lastCall![1] as JavaPanelRead[]).map(({ call }) => call))
+    .toEqual(selections.map(({ primaryKey }) => ({ type: ROLE, name: "assignRefusal", parameters: { primaryKey } })));
 });
 
 it("keeps application entries and a masked missing application as separate batch items", async () => {
