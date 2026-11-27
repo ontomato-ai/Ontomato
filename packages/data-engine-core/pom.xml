@@ -84,6 +84,7 @@
         <resource><directory>src/main/resources</directory></resource>
         <resource><directory>../contracts/src</directory><includes><include>service-logging-format.json</include><include>service-logging-fixtures.json</include></includes></resource>
         <resource><directory>../../agent-skills/ontology-query</directory><targetPath>ontology-skills/ontology-query</targetPath></resource>
+        <resource><directory>../../agent-skills/ontomato-analyst-assistant</directory><targetPath>ontology-skills/ontomato-analyst-assistant</targetPath></resource>
         <resource><directory>../../agent-skills/ontology-generation</directory><targetPath>ontology-skills/ontology-generation</targetPath></resource>
         <resource><directory>../../agent-skills/metricview-generation</directory><targetPath>ontology-skills/metricview-generation</targetPath></resource>
         <resource><directory>../../agent-skills/knowledge-governance</directory><targetPath>ontology-skills/knowledge-governance</targetPath></resource>

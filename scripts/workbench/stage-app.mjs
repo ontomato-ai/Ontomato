@@ -147,8 +147,7 @@ async function main() {
     const sharedRoot = resolve(shared.absolute, "../..");
     const javaApplications = JSON.parse(readFileSync(new URL("java-applications.json", import.meta.url), "utf8"));
     await prepareBuiltinPanels(root, sharedRoot, members, javaApplications);
-    for (const skill of ["ontomato-app-builder", "ontomato-analyst-assistant", "ontology-query"])
-      cpSync(join(sharedRoot, "agent-skills", skill), join(STAGE, "agent-skills", skill), { recursive: true });
+    cpSync(join(sharedRoot, "agent-skills/ontomato-app-builder"), join(STAGE, "agent-skills/ontomato-app-builder"), { recursive: true });
   }
   const provider = record.yamlProvider || "@ontomato/workbench-server";
   const server = members.find((member) => member.name === provider);

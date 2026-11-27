@@ -7,7 +7,8 @@ import { workbenchBuiltinSkillRoot } from "./builtin-paths";
 const workbenchSkill = (name: string): RuntimeSkillRef => ({ namespace: { kind: "provider", provider: "workbench" }, name });
 const ontologySkill = (name: string): RuntimeSkillRef => ({ namespace: { kind: "provider", provider: "ontology" }, name });
 
-function fileBackedSkill(name: string, description: string, selectionRestricted = false, skill: RuntimeSkillRef = workbenchSkill(name)): SkillEntry {
+function fileBackedSkill(name: string, description: string, selectionRestricted = false): SkillEntry {
+  const skill = workbenchSkill(name);
   const root = workbenchBuiltinSkillRoot(skill);
   return {
     skill,
@@ -41,8 +42,8 @@ export function builtinSkillEntries(): SkillEntry[] {
     fileBackedSkill("application-design", "Design coherent Ontomato applications and demos using the platform SDK, shared theme and reusable product assets."),
     fileBackedSkill("ontomato-agent-builder", "Create and edit Ontomato agent definitions (prompt, model, skills, classes and external MCP services) on the agent settings page through live page tools or direct CLI outside the platform."),
     fileBackedSkill("ontomato-page-operator", "Discover applications and pages, read the current page, fill forms, and invoke declared page operations."),
-    fileBackedSkill("ontomato-analyst-assistant", "Answer business data questions: delegate them to the data retriever, reuse a published metric when one fits, and explain the dataset the answer relies on.", false, ontologySkill("ontomato-analyst-assistant")),
-    fileBackedSkill("ontology-query", "Query ontology structure, DSL syntax, stored values, business knowledge and published metrics through Ontomato.", false, ontologySkill("ontology-query")),
+    generatedSkill("ontomato-analyst-assistant", "Answer business data questions: delegate them to the data retriever, reuse a published metric when one fits, and explain the dataset the answer relies on."),
+    generatedSkill("ontology-query", "Query ontology structure, DSL syntax, stored values, business knowledge and published metrics through Ontomato."),
     fileBackedSkill("ontomato-app-builder", "Compose and check panel application source with the Ontomato SDK. Use when building a panel or moving an existing page into the product layer.", true),
     fileBackedSkill("ops-diagnosis", "Diagnose an Ontomato question or service fault using authorized read-only evidence: service logs, runtime sessions and artifacts, configuration, health, metadata, DSL queries and operations knowledge.", true),
     generatedSkill("data-retrieval", "Deliver a query logic package as a dataset by rerunning it through Ontomato under the user's authorization.", true),

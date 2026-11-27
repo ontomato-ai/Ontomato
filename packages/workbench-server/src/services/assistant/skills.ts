@@ -1,5 +1,4 @@
 import { configuredAssistantSkills } from "./skill-selection";
-import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
 import { isPageOperatorSkill, runtimeSkillKey, type RuntimeSkillRef, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import type { CurrentPageContext } from "@ontomato/contracts/page-context";
@@ -10,7 +9,7 @@ import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
 import { readSkillView, type SkillView } from "../skills/view";
 import { builtinSkillEntries } from "../skills/builtin-catalog";
-import { publishSkill, publishSkillPackage } from "../agent-runtime/skills";
+import { publishOntologySkill, publishSkill, publishSkillPackage } from "../agent-runtime/skills";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { requirePanelEntry } from "../product-panels/application-use";
@@ -120,12 +119,14 @@ export function loadedSkillVersion(ref: RuntimeSkillRef, loaded: readonly Runtim
 }
 
 async function publishSelectedSkill(domainId: string, ref: RuntimeSkillRef, view: AssistantSkillView): Promise<RuntimeSkillVersion> {
-  const key = runtimeSkillKey(ref);
-  if (key === runtimeSkillKey(GOVERNANCE_SKILL)) return publishGovernanceSkill(domainId);
-
   const entry = view.registry.getSkillByRef(ref);
-  if (!entry || entry.selectionRestricted || entry.source.kind === "generated")
+  if (!entry || entry.selectionRestricted)
     throw new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
+  if (entry.source.kind === "generated") {
+    if (ref.namespace.kind === "provider" && ref.namespace.provider === "ontology")
+      return publishOntologySkill(domainId, ref.name);
+    throw new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
+  }
   const { skill, digest } = entry.source.kind === "public"
     ? await publishSkill(entry.source.path, ref)
     : await publishSkillPackage(await entry.provide(), domainId);

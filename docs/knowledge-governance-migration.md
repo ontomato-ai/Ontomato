@@ -26,7 +26,7 @@ conversational governance definition or model selection.
   its own 600-second window. Records are created only when the skill requests a window.
 - Java `POST .../platform-windows/:runId/close` closes the window using service
   authentication. Node saves only the returned record reference in its accepted turn.
-  `POST .../skill-package` publishes the capability-owned skill with the same service boundary.
+  `POST /platform/ontology-skills/package` publishes a named ontology-owned skill with the same service boundary.
 - `GET .../:recordId/work`, `GET .../:recordId/sources/:sourceId`, and existing
   `POST .../:recordId/runs/:runId/actions/:action` retain the data-service ownership rules.
 - Every platform action checks the bound run via service-authenticated Node
