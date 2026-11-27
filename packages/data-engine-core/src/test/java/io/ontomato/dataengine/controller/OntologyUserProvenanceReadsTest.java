@@ -54,7 +54,7 @@ class OntologyUserProvenanceReadsTest {
     void readsEachOwnerOnlyForRealMembersAndCountsVisibleAuthorshipBeforeTruncating() {
         when(members.memberIdentitiesInDomain("domain", Set.of("member", "missing")))
             .thenReturn(List.of(new SubjectDirectory.MemberIdentity("member", "alice", "Alice")));
-        var viewer = OntologyFunctionDependencyReads.definitionViewer(subject);
+        var viewer = subject.asJavaUser();
         var hidden = action("hidden", "Hidden", "member", "member");
         var first = action("first", "First", "\tmember\u00A0", "member");
         var second = action("second", "Same", "member", "other");

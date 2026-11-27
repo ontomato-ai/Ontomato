@@ -67,6 +67,16 @@ public final class AuthorizationService {
             return javaUserId.equals(userId) ? this
                     : new SubjectContext(identity, roles, policyRefsByRole, objectPolicyIds, managementPolicyIds, liveDataPermission, userId);
         }
+
+        /**
+         * The same person identified by the Java user ID, for owners whose records name Java users as authors. A
+         * Workbench placement's identity is its own principal, so in OSS the two differ ({@code system}, {@code admin}).
+         */
+        public SubjectContext asJavaUser() {
+            return identity.userId().equals(javaUserId) ? this
+                    : new SubjectContext(new VerifiedIdentity(identity.domainId(), javaUserId, identity.limit()), roles,
+                            policyRefsByRole, objectPolicyIds, managementPolicyIds, liveDataPermission, javaUserId);
+        }
     }
 
     public record Decision(boolean allowed, String code, String reason) {

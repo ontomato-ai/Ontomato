@@ -11,6 +11,7 @@ import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import org.springframework.stereotype.Service;
 
+/** The actions' authorization entry: actions record Java users as their authors, so it judges the person by the Java user ID. */
 @Service
 public class ActionAuthorization {
     private final AuthorizationService authorization;
@@ -30,16 +31,16 @@ public class ActionAuthorization {
     }
 
     public void requireCreate(SubjectContext subject) {
-        require(authorization.decide(subject, new Create(Kind.ACTION)));
+        require(decide(subject, new Create(Kind.ACTION)));
     }
 
     public boolean allowsDefinition(SubjectContext subject, Action action) {
-        return authorization.decide(subject, object(action, Verb.VIEW)).allowed()
-                || authorization.decide(subject, object(action, Verb.EDIT)).allowed();
+        return decide(subject, object(action, Verb.VIEW)).allowed()
+                || decide(subject, object(action, Verb.EDIT)).allowed();
     }
 
     public void requireEdit(SubjectContext subject, Action action) {
-        require(authorization.decide(subject, object(action, Verb.EDIT)));
+        require(decide(subject, object(action, Verb.EDIT)));
     }
 
     public void requireDefinition(SubjectContext subject, Action action) {
@@ -58,7 +59,7 @@ public class ActionAuthorization {
     }
 
     private ActionDecision decide(SubjectContext subject, Action action, ActionPath path, ExecutionTarget target) {
-        var result = authorization.decideAction(subject,
+        var result = authorization.decideAction(subject.asJavaUser(),
                 new AuthorizationService.Action(target(action), path, target, ownership(action)));
         if (!result.decision().allowed() || result.admission().unrestricted()) return result;
         if (action.getTarget() == null) return outsideScope();
@@ -70,6 +71,10 @@ public class ActionAuthorization {
                 .filter(match -> action.getTarget().className().equals(match.className()) && fields.contains(match.field()))
                 .toList();
         return matches.isEmpty() ? outsideScope() : new ActionDecision(result.decision(), new Admission(false, matches));
+    }
+
+    private Decision decide(SubjectContext subject, Request request) {
+        return authorization.decide(subject.asJavaUser(), request);
     }
 
     private static ActionDecision outsideScope() {

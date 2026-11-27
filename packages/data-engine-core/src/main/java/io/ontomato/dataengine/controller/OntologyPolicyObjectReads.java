@@ -117,7 +117,7 @@ class OntologyPolicyObjectReads {
             if (!scope.outgoing() || !targetKinds.containsAll(scope.kinds())) throw badScope();
             var ids = grants(subject.identity().domainId(), scope).stream()
                     .map(grant -> grant.target().id()).collect(Collectors.toSet());
-            return directory.apply(OntologyFunctionDependencyReads.definitionViewer(subject), ids);
+            return directory.apply(subject.asJavaUser(), ids);
         });
     }
 

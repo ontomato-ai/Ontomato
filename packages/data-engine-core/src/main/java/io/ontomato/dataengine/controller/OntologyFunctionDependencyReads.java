@@ -12,7 +12,6 @@ import io.ontomato.dataengine.service.OntologyNeighborFacts.Link;
 import io.ontomato.dataengine.service.OntologyNeighborFacts.Name;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
-import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
@@ -54,7 +53,7 @@ class OntologyFunctionDependencyReads {
     WorkbenchPanelRead ontologyActionFunction() {
         return new WorkbenchPanelRead(ONTOLOGY, "action.uses-function", (subject, parameters) -> {
             var scope = dependencyScope(parameters, ACTION);
-            var viewer = definitionViewer(subject);
+            var viewer = subject.asJavaUser();
             var rows = actions.functionDependencies(viewer.identity().domainId(), scope.centerId(), scope.outgoing()).stream()
                 .filter(ref -> actionAuthorization.allowsDefinition(viewer, ref.definition()))
                 .map(ref -> {
@@ -71,7 +70,7 @@ class OntologyFunctionDependencyReads {
             var scope = OntologyNeighborScope.parse(parameters, WORKFLOW, ACTION);
             if (!scope.outgoing())
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected a Workflow center");
-            var viewer = definitionViewer(subject);
+            var viewer = subject.asJavaUser();
             return actions.workflowStepDefinitions(viewer.identity().domainId(), scope.centerId()).stream()
                 .filter(action -> actionAuthorization.allowsDefinition(viewer, action))
                 .map(action -> new Name(action.getId(), action.getName(), null, action.getStatus())).toList();
@@ -84,7 +83,7 @@ class OntologyFunctionDependencyReads {
             var scope = OntologyNeighborScope.parse(parameters, POLICY, ACTION);
             if (!scope.outgoing())
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected a permission policy center");
-            var viewer = definitionViewer(subject);
+            var viewer = subject.asJavaUser();
             var domain = viewer.identity().domainId();
             var ids = store.policyActionGrants(domain, scope.centerId()).stream()
                 .map(grant -> grant.target().id()).collect(Collectors.toSet());
@@ -98,7 +97,7 @@ class OntologyFunctionDependencyReads {
     WorkbenchPanelRead ontologyMetricFunction() {
         return new WorkbenchPanelRead(ONTOLOGY, "metric-view.uses-function", (subject, parameters) -> {
             var scope = dependencyScope(parameters, METRIC_VIEW);
-            var viewer = definitionViewer(subject);
+            var viewer = subject.asJavaUser();
             var rows = metrics.functionDependencies(viewer.identity().domainId(), scope.centerId(), scope.outgoing()).stream()
                 .filter(ref -> definitions.canRead(viewer, access(ref.definition(), Verb.USE)))
                 .map(ref -> {
@@ -114,7 +113,7 @@ class OntologyFunctionDependencyReads {
         return new WorkbenchPanelRead(ONTOLOGY, "functionCenter", (subject, parameters) -> {
             if (!(parameters.get("primaryKey") instanceof String id) || id.isEmpty())
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected a Function center ID");
-            return functionNames(definitionViewer(subject), id);
+            return functionNames(subject.asJavaUser(), id);
         });
     }
 
@@ -138,7 +137,7 @@ class OntologyFunctionDependencyReads {
             if (!scope.outgoing())
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected an outgoing object type dependency");
             management.require(subject, OntologyModelController.Operations.READ);
-            var ids = objectTypeDependencies(definitionViewer(subject), scope, source).stream()
+            var ids = objectTypeDependencies(subject.asJavaUser(), scope, source).stream()
                 .flatMap(row -> row.classNames().stream()).collect(Collectors.toSet());
             return model.modelObjectTypeEndpoints(subject.identity().domainId(), ids);
         });
@@ -147,7 +146,7 @@ class OntologyFunctionDependencyReads {
     private WorkbenchPanelRead objectTypeRelation(String relation, String source) {
         return new WorkbenchPanelRead(ONTOLOGY, relation, (subject, parameters) -> {
             var scope = OntologyNeighborScope.parse(parameters, source, OBJECT_TYPE);
-            var rows = objectTypeDependencies(definitionViewer(subject), scope, source);
+            var rows = objectTypeDependencies(subject.asJavaUser(), scope, source);
             var links = rows.stream().flatMap(row -> row.classNames().stream()
                 .map(id -> new Link(row.name().id(), id))).toList();
             return new OntologyNeighborFacts(links, rows.stream().map(ObjectTypeDependency::name).toList(), List.of());
@@ -203,10 +202,4 @@ class OntologyFunctionDependencyReads {
             .map(function -> new Name(function.getId(), function.getName(), null, function.getOperation())).toList();
     }
 
-    static SubjectContext definitionViewer(SubjectContext subject) {
-        // Definition lists use the original Java user ID for author and coauthor admission.
-        var identity = new VerifiedIdentity(subject.identity().domainId(), subject.javaUserId(), subject.identity().limit());
-        return new SubjectContext(identity, subject.roles(), subject.policyRefsByRole(), subject.objectPolicyIds(),
-            subject.managementPolicyIds(), subject.liveDataPermission(), subject.javaUserId());
-    }
 }

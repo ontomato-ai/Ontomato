@@ -390,10 +390,8 @@ public class ApplicationCatalog {
     }
 
     private ApplicationSubject catalogueSubject(SubjectContext subject) {
-        // OSS application records belong to Java's admin; Workbench placements use system.
-        var identity = new VerifiedIdentity(subject.identity().domainId(), subject.javaUserId(), subject.identity().limit());
-        return new ApplicationSubject(new SubjectContext(identity, subject.roles(), subject.policyRefsByRole(),
-            subject.objectPolicyIds(), subject.managementPolicyIds(), subject.liveDataPermission(), subject.javaUserId()));
+        // Application records name Java users as owners and authors.
+        return new ApplicationSubject(subject.asJavaUser());
     }
 
     private JSONObject catalogue(ApplicationSubject subject, String search, String scope, String cursor, Integer page,

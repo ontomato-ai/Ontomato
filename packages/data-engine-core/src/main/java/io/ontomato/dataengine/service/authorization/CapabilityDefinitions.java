@@ -14,6 +14,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * The capability definitions' authorization entry: functions, metrics, triggers and workflows record Java users as
+ * their authors, so every decision here judges the person by the Java user ID.
+ */
 @Service
 public class CapabilityDefinitions {
     private final AuthorizationService authorization;
@@ -42,11 +46,11 @@ public class CapabilityDefinitions {
     }
 
     private Decision readDecision(SubjectContext subject, ObjectAccess use) {
-        var decision = authorization.decide(subject, use);
+        var decision = decide(subject, use);
         if (decision.allowed()) return decision;
-        var view = authorization.decide(subject, new ObjectAccess(use.target(), Verb.VIEW, use.ownerFacts()));
+        var view = decide(subject, new ObjectAccess(use.target(), Verb.VIEW, use.ownerFacts()));
         if (view.allowed()) return view;
-        var edit = authorization.decide(subject, new ObjectAccess(use.target(), Verb.EDIT, use.ownerFacts()));
+        var edit = decide(subject, new ObjectAccess(use.target(), Verb.EDIT, use.ownerFacts()));
         return edit.allowed() ? edit : decision;
     }
 
@@ -60,7 +64,7 @@ public class CapabilityDefinitions {
     }
 
     public Decision decide(SubjectContext subject, Request request) {
-        return authorization.decide(subject, request);
+        return authorization.decide(subject.asJavaUser(), request);
     }
 
     public static ObjectAccess access(MetricView metric, Verb verb) {

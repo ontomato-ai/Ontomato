@@ -80,7 +80,7 @@ class OntologyUserProvenanceReads {
                 .map(SubjectDirectory.MemberIdentity::id).collect(Collectors.toSet());
             // The OSS self-node can open an empty graph directory but is not a directory member.
             if (existing.isEmpty()) return Map.of();
-            return UserDefinitionProvenance.summarize(source.read(OntologyFunctionDependencyReads.definitionViewer(subject), existing),
+            return UserDefinitionProvenance.summarize(source.read(subject.asJavaUser(), existing),
                 existing, limit);
         });
     }
