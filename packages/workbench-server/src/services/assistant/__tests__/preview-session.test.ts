@@ -5,6 +5,7 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
 import { assistantService } from "../service";
 import { assistantStore, type AgentRow, type SessionRow } from "../store";
+import { HttpError } from "../../../utils/errors";
 
 const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), prepare: vi.fn() }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
@@ -41,6 +42,7 @@ beforeEach(() => {
   vi.spyOn(assistantStore, "session").mockImplementation(async () => persisted!);
   mocks.query.mockImplementation(async (sql: string, params: unknown[]) => {
     if (sql.includes("SELECT id FROM assistant_sessions")) return { rowCount: persisted ? 1 : 0 };
+    if (sql.includes("SELECT session_id FROM assistant_turns")) return { rows: [] };
     if (sql.includes("INSERT INTO assistant_sessions")) {
       persisted = {
         id: sessionId, domain_id: owner.domainId, owner_id: owner.userId, agent_id: agentId, workspace_id: params[5],
@@ -83,6 +85,33 @@ it("runs a message a preview sends as the preview, and a live conversation sent 
   expect(await sentAuthority(live)).toBe("live");
 });
 
+it("refuses a replayed create that names the conversation with another identity, either way", async () => {
+  await assistantService.create(sessionId, owner, { agentId }, preview);
+  await expect(assistantService.create(sessionId, owner, { agentId }, live)).rejects.toMatchObject({ status: 409, code: "IDEMPOTENCY_CONFLICT" });
+  await expect(assistantService.create(sessionId, owner, { agentId }, preview)).resolves.toMatchObject({ replayed: true });
+  persisted = undefined;
+  await assistantService.create(sessionId, owner, { agentId }, live);
+  await expect(assistantService.create(sessionId, owner, { agentId }, preview)).rejects.toMatchObject({ status: 409, code: "IDEMPOTENCY_CONFLICT" });
+  // The live conversation stays live for a live message after the refused replay.
+  expect(await sentAuthority(live)).toBe("live");
+});
+
+it("lets a preview stop only a preview's run", async () => {
+  await assistantService.create(sessionId, owner, { agentId }, live);
+  let identity = "live";
+  const request = vi.spyOn(RuntimeClient.prototype, "request").mockImplementation(async (path: string) =>
+    path.includes("/intents/") ? { channel: { authority: { classNames: [], executionKind: identity } } } : {});
+  vi.spyOn(RuntimeClient.prototype, "run").mockRejectedValue(new HttpError(404, "Run not found", "NOT_FOUND"));
+  await expect(assistantService.cancel(sessionId, runId, owner, preview)).rejects.toMatchObject({ status: 422, code: "PREVIEW_WRITE_FORBIDDEN" });
+  expect(request.mock.calls.some(([path]) => String(path).endsWith("/cancel"))).toBe(false);
+  identity = "preview";
+  await expect(assistantService.cancel(sessionId, runId, owner, preview)).resolves.toEqual({ run: null });
+  // A live caller stops the live run as before, without asking for its identity.
+  request.mockClear();
+  await expect(assistantService.cancel(sessionId, runId, owner, live)).resolves.toEqual({ run: null });
+  expect(request.mock.calls.some(([path]) => String(path).includes("/intents/"))).toBe(false);
+});
+
 const authority = { classNames: [], executionKind: "preview" as const };
 const parent = { session: { providerId: "workbench", sessionId: "55555555-5555-4555-8555-555555555555" }, runId: "66666666-6666-4666-8666-666666666666" };
 
@@ -106,4 +135,7 @@ it("prepares a preview run, a person's own or a delegated one, as the same previ
   expect((await assistantService.prepare(delegated, owner, live)).authority).toMatchObject({ executionKind: "preview" });
   const liveBody = { ...body, authority: { classNames: [], executionKind: "live" as const } };
   expect((await assistantService.prepare(liveBody, owner, live)).authority).toMatchObject({ executionKind: "live" });
+  // A run prepared in a conversation stored as the preview's is the preview's, whatever authority reached the provider.
+  vi.mocked(assistantStore.create).mockResolvedValue({ row: { id: sessionId, workspace_id: null, preview: true }, replayed: true } as never);
+  expect((await assistantService.prepare(liveBody, owner, live)).authority).toMatchObject({ executionKind: "preview" });
 });

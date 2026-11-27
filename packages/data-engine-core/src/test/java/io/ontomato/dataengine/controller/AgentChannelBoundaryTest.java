@@ -200,6 +200,52 @@ class AgentChannelBoundaryTest {
     assertEquals(List.of("preview","live"),sent.getAllValues().stream().map(request->request.getJSONObject("authority").getString("executionKind")).toList());
   }
 
+  @Test void aRunsOwnCommandRunsAsThatRunWithItsClassScopeNeverAsAnExternalUser() throws Exception {
+    var runtime=mock(AgentRuntimeClient.class);
+    var access=mock(OntologyAgentAccess.class);
+    var owner=new OntologyAgentStore.Owner("U","a");
+    when(access.authenticated(any())).thenReturn(new OntologyAgentAccess.Context(owner,null,"tk",null,"en",null,null));
+    var actor=JSONObject.of("id",SESSION,"domainId","a");
+    when(runtime.run("a",RUN)).thenReturn(JSONObject.of("run",JSONObject.of("channel",JSONObject.of("actor",actor,
+        "authority",JSONObject.of("classNames",List.of("Orders"),"executionKind","preview")))));
+    var controller=new AgentChannelController(callers,directory,store,runtime,mock(WorkbenchServiceAuthentication.class),mock(OntologyRetrievalService.class),mock(RetrievalTasks.class),mock(ActionCreationService.class),mock(OntologyGenerationService.class),access,mock(io.ontomato.dataengine.service.LangService.class),mock(io.ontomato.dataengine.service.RuntimeCodeClient.class));
+    var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var start=JSONObject.of("op","start","agent",JSONObject.of("providerId","workbench","agentId","analyst"),"message","How many orders?");
+    mvc.perform(post("/platform/agent-channel/commands").header("X-Ontomato-Run-Id",RUN)
+        .contentType(MediaType.APPLICATION_JSON).content(start.toJSONString())).andExpect(status().isOk());
+    // The caller's own run, which decides the child's classes, identity and delegation: no external caller is opened.
+    verify(callers).authorize(actor,owner);
+    verify(runtime).json("a",RUN,"/v1/channel/runs/"+RUN+"/commands","POST",JSONObject.of("command",start),null);
+    verify(callers,never()).open(anyString(),any(OntologyAgentAccess.Context.class));
+    // A run that is not the caller's is not found, and nothing is forwarded.
+    doThrow(AgentHttpException.missing()).when(callers).authorize(actor,owner);
+    mvc.perform(post("/platform/agent-channel/commands").header("X-Ontomato-Run-Id",RUN)
+        .contentType(MediaType.APPLICATION_JSON).content(start.toJSONString())).andExpect(status().isNotFound());
+    verify(runtime,times(1)).json(eq("a"),eq(RUN),eq("/v1/channel/runs/"+RUN+"/commands"),eq("POST"),any(),isNull());
+  }
+
+  @Test void aPreviewStopsOnlyAPreviewsRun() throws Exception {
+    var runtime=mock(AgentRuntimeClient.class);
+    var access=mock(OntologyAgentAccess.class);
+    var host=mock(OntologyAgentHost.class);
+    var owner=new OntologyAgentStore.Owner("U","a");
+    when(access.forSession(any(),eq(SESSION))).thenReturn(new OntologyAgentAccess.Context(owner,null,"tk",null,"en",null,null));
+    var intent=(java.util.function.Function<String,JSONObject>)kind->JSONObject.of("channel",JSONObject.of("authority",JSONObject.of("classNames",List.of(),"executionKind",kind)));
+    String path="/v1/channel/sessions/"+SESSION+"/intents/"+RUN;
+    when(runtime.json("a",RUN,path,"GET",null,null)).thenReturn(intent.apply("live"));
+    var mvc=MockMvcBuilders.standaloneSetup(new OntologyAgentController(host,access,runtime,mock(OntologyRetrievalService.class)))
+        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    String cancel="/ontology/ai/sessions/"+SESSION+"/runs/"+RUN+"/cancel";
+    var refused=mvc.perform(post(cancel).header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"{\"kind\":\"preview\"}"))
+        .andExpect(status().isUnprocessableEntity()).andReturn().getResponse().getContentAsString();
+    assertTrue(refused.contains(io.ontomato.dataengine.service.PreviewExecution.WRITE_CODE), refused);
+    verify(host,never()).cancel(any(),any(),any());
+    mvc.perform(post(cancel)).andExpect(status().isOk());
+    when(runtime.json("a",RUN,path,"GET",null,null)).thenReturn(intent.apply("preview"));
+    mvc.perform(post(cancel).header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"{\"kind\":\"preview\"}")).andExpect(status().isOk());
+    verify(host,times(2)).cancel(SESSION,RUN,owner);
+  }
+
   @Test void callerRestorationUsesTheExecutorPermissionWithoutReplacingTheInitiator() {
     var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class);
     when(jdbc.queryForList(anyString(),any(Object[].class))).thenReturn(java.util.List.of(java.util.Map.of("user_id","U","domain_id","a","deadline",new java.sql.Timestamp(System.currentTimeMillis()+60000))));

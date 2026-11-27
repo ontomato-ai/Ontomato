@@ -13,6 +13,7 @@ import type { AgentRuntime } from "./runtime";
 import type { Scope, MessageRow } from "./store";
 import { ChannelStore } from "./channel-store";
 import { RuntimeError, safeMessage } from "./errors";
+import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
 import { datasetPayloadSchema } from "@ontomato/contracts/data-retrieval";
 
@@ -257,7 +258,7 @@ export class AgentChannel {
     this.emitChange(scope,sessionId);
     // Existing transport credentials are scoped to this live delivery; no executor key or new credential store.
     this.remember(origin.channel,credential);
-    await this.deliver(source.session,channel.actor,{...received.message as AgentNotification,answerId:received.id},{steer:true});
+    await this.deliver(source.session,channel.actor,{...received.message as AgentNotification,answerId:received.id},{steer:true,targetRunId:source.runId});
     return {input:received,replayed,pendingQuestions:await this.facts.pendingQuestions(scope,sessionId),
       delivery:{messageId:received.id,sessionRef:{providerId:channel.agent.providerId,sessionId},runId:question.record.runId,delivery:"receipt" as const,status:"completed" as const}};
   }
@@ -329,11 +330,16 @@ export class AgentChannel {
     void this.prepare(intent).catch(error => runtimeLogger.error("Agent preparation failed", runtimeDiagnostic(error)));
   }
   /** All inputs share receipt, admission and safe-boundary consumption. */
+  /**
+   * `targetRunId` is the run the input is addressed to (the run whose question it answers, or the creator a delegated
+   * agent writes to); `resultRecipientRunId` the run a result is reported to. Either decides the input's identity when no
+   * caller channel or delegating run does.
+   */
   private async accept(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentInput, options: {
-    requestedBy?: AgentExecutionRef; resultRecipientRunId?: string; steer?: boolean; external?: ExternalAgentCaller;
+    requestedBy?: AgentExecutionRef; resultRecipientRunId?: string; targetRunId?: string; steer?: boolean; external?: ExternalAgentCaller;
     web?: {runId:string;channel:AgentRunContext;language:string;context:AgentRunIntent["context"];credential:AgentCredential;executionUserId?:string|null;presentationBinding?:PresentationBinding};
   } = {}) {
-    const {requestedBy,resultRecipientRunId,steer=false,external,web}=options, scope=this.scope(target,actor.domainId);
+    const {requestedBy,resultRecipientRunId,targetRunId,steer=false,external,web}=options, scope=this.scope(target,actor.domainId);
     let launch: AgentRunIntent | undefined;
     const accepted=await this.runtime.locked(scope,target.sessionId,async (): Promise<{delivery:AgentInputDelivery | null;input:MessageRow;replayed:boolean}> => {
       if(input.role === "notification" && input.kind === "agent-result" && "session" in input.source) {
@@ -361,26 +367,33 @@ export class AgentChannel {
       if(queued && input.role==="notification" && input.kind==="agent-message" && !steer) throw new RuntimeError(409,"SESSION_BUSY","Use steer to insert an ordinary message into a running session");
       if(web && input.role==="notification" && input.replyTo && !(await this.facts.pendingQuestions(scope,target.sessionId)).some(question=>question.requestId===input.replyTo)) throw new RuntimeError(400,"INVALID_REPLY","replyTo must identify a pending question for this conversation's user");
       const openRun=session.activeRunId && this.runtime.acceptsInput(scope,session.activeRunId) ? session.activeRunId : null;
-      // An input joins a run only when it would run with the same identity: a preview's input never steers a live run,
-      // nor a live input a preview's; it queues as its own run instead.
+      const addressed=resultRecipientRunId ?? targetRunId;
+      const previous = web ? null : addressed
+        ? await this.facts.intent(scope,addressed)
+        : await this.facts.latest(scope,target.sessionId);
+      const requesterRun=requestedBy ? (await this.runtime.store.run(this.scope(requestedBy.session,actor.domainId),requestedBy.runId)).run : null;
+      const requester=requesterRun?.channel;
+      // The identity the input runs with, from trusted facts only: the caller's own channel, the run that delegates it, or
+      // the run it is addressed to. It joins a run only with the same identity: a preview's input never steers or merges
+      // into a live run, nor a live input into a preview's; it queues as a run of its own instead.
+      const identity=(web?.channel.authority ?? external?.authority ?? requester?.authority ?? previous!.channel.authority).executionKind;
       const sameSource = (candidate: AgentRunIntent) => {
+        if (candidate.channel.authority.executionKind !== identity) return false;
         if (web) {
           return Boolean(web.channel.userRecipient) === Boolean(candidate.channel.userRecipient)
             && Boolean(web.channel.requestedBy) === Boolean(candidate.channel.requestedBy)
-            && web.channel.actor.domainId === candidate.channel.actor.domainId
-            && web.channel.authority.executionKind === candidate.channel.authority.executionKind;
+            && web.channel.actor.domainId === candidate.channel.actor.domainId;
         }
         if (external) {
           return !candidate.channel.userRecipient
             && !candidate.channel.requestedBy
-            && external.actor.domainId === candidate.channel.actor.domainId
-            && external.authority.executionKind === candidate.channel.authority.executionKind;
+            && external.actor.domainId === candidate.channel.actor.domainId;
         }
         return true;
       };
       let existingRun: string | null = null;
       for (const candidate of [openRun, waiting]) {
-        if (candidate && ((!web && !external) || sameSource(await this.facts.intent(scope, candidate)))) {
+        if (candidate && sameSource(await this.facts.intent(scope, candidate))) {
           existingRun = candidate;
           break;
         }
@@ -391,14 +404,9 @@ export class AgentChannel {
         if(running) await this.runtime.inputReceived(scope,existingRun,received);
         return {input:received,replayed:false,delivery:{messageId:received.id,sessionRef:target,runId:existingRun,delivery:"steer",status:running?"running":"starting"}};
       }
-      const previous = web ? null : resultRecipientRunId
-        ? await this.facts.intent(scope,resultRecipientRunId)
-        : await this.facts.latest(scope,target.sessionId);
       const sender=input.role === "notification" && "session" in input.source ? await this.facts.intent(this.scope(input.source.session,scope.domainId),input.source.runId) : null;
       if(sender?.cancelled || (previous?.cancelled && !requestedBy && !external)) return {input:received,delivery:null,replayed:false};
       const runId=web?.runId ?? randomUUID();
-      const requesterRun=requestedBy ? (await this.runtime.store.run(this.scope(requestedBy.session,actor.domainId),requestedBy.runId)).run : null;
-      const requester=requesterRun?.channel;
       const channel:AgentRunContext=web?.channel ?? {agent:binding.agent,actor:requestedBy || external || (input.role === "notification" && "kind" in input.source && input.source.kind === "user") ? actor : previous!.channel.actor,authority:external?.authority ?? requester?.authority ?? previous!.channel.authority,
         requestedBy:external?null:requestedBy ?? previous!.channel.requestedBy,root:external?{session:target,runId}:requester?.root ?? previous!.channel.root,
         userRecipient:external ? null : requester?.userRecipient ?? previous?.channel.userRecipient ?? null};
@@ -423,7 +431,7 @@ export class AgentChannel {
     const {id,runId,messageSeq,contextSeq,message}=accepted.input;
     return {...accepted,input:{id,runId,messageSeq,contextSeq,message},pendingQuestions:await this.facts.pendingQuestions(scope,target.sessionId)};
   }
-  async deliver(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentNotification, options:{requestedBy?:AgentExecutionRef;resultRecipientRunId?:string;steer?:boolean;external?:ExternalAgentCaller}={}) {
+  async deliver(target: AgentSessionRef, actor: AgentRunContext["actor"], input: AgentNotification, options:{requestedBy?:AgentExecutionRef;resultRecipientRunId?:string;targetRunId?:string;steer?:boolean;external?:ExternalAgentCaller}={}) {
     const accepted=await this.accept(target,actor,input,options);
     return {messageId:accepted.input.id,taskId:accepted.delivery?.delivery==="run"?accepted.delivery.runId:null,sessionRef:target};
   }
@@ -563,15 +571,23 @@ export class AgentChannel {
       const child = !!source && binding.parent?.session.providerId === source.session.providerId && binding.parent.session.sessionId === source.session.sessionId;
       const parent = own?.parent?.session.providerId === target.providerId && own.parent.session.sessionId === target.sessionId;
       if (source && !child && !parent) throw new RuntimeError(403,"FORBIDDEN","Messages may only address your creator or a session you created");
+      // An answer goes to the run that asked; a message to the creator, to the run that created this one.
+      let targetRunId = parent ? own!.parent!.runId : undefined;
       if (command.replyTo) {
         const question = await this.facts.question(scope.domainId,command.replyTo);
         if (!("session" in question.source) || question.source.session.providerId !== target.providerId || question.source.session.sessionId !== target.sessionId) throw new RuntimeError(400,"INVALID_REPLY","The question was sent by another conversation");
+        targetRunId = question.source.runId;
       }
-      return this.deliver(target,channel.actor,input,{requestedBy:child?source:undefined,steer:command.steer===true || !!command.replyTo,...(external?{external}:{})});
+      return this.deliver(target,channel.actor,input,{requestedBy:child?source:undefined,targetRunId,steer:command.steer===true || !!command.replyTo,...(external?{external}:{})});
     }
     const entry = await this.facts.task(scope.domainId,command.taskId);
     if (!entry || (source?!await this.accessible(entry.intent,source.session,scope.domainId):channel.actor.id!==entry.intent.channel.actor.id)) throw new RuntimeError(403, "FORBIDDEN", "Execution is outside your delegation tree");
-    if (command.op === "cancel") { await this.cancel(entry.scope, entry.intent); return { taskId: command.taskId, accepted: true }; }
+    if (command.op === "cancel") {
+      // Stopping a run changes a formal run's state: a preview stops only a preview's run.
+      if (channel.authority.executionKind === "preview" && entry.intent.channel.authority.executionKind !== "preview")
+        throw new RuntimeError(422, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE);
+      await this.cancel(entry.scope, entry.intent); return { taskId: command.taskId, accepted: true };
+    }
     const intent = entry.intent;
     const questions=await this.facts.questions(entry.scope,{session:intent.session,runId:intent.id});
     if (intent.status === "starting" || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(entry.scope,intent.id))) return { taskId:intent.id,sessionRef:intent.session,status:intent.status,error:intent.error,questions,files:[] };

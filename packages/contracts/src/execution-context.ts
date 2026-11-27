@@ -26,10 +26,14 @@ type PlatformService = "" | "/data-query";
  * - Praxis, through Node's `/praxis`, starts a workflow run (`/runs`), advances one (`/runs/{id}/tick`), changes its case
  *   (`/runs/{id}/case/submit|fill|close`) or its business target (`/runs/{id}/acts-on`), and decides or reassigns a step
  *   (`/steps/{id}/decide|assign`).
- * - Node carries a prepared panel operation out as the caller at `/panel-operations/intents/{id}/dispatch`.
+ * - Node carries a prepared panel operation out as the caller at `/panel-operations/intents/{id}/dispatch`, and starts,
+ *   stops or deletes a formal test run at `/observe/autotest/runs`, `/observe/autotest/runs/{id}/stop` and
+ *   `DELETE /observe/autotest/runs/{id}`.
  * - Agent runs a preview starts are the preview's, so what they execute is refused at the entries above: Node's
- *   `/assistant/sessions` and `/assistant/sessions/{id}/runs`, DataRAG's `/ontology/ai/sessions/{id}/runs` and the
- *   agent channel's `/platform/agent-channel/commands`.
+ *   `/assistant/sessions`, `/observe/agent/sessions` and `/observe/diagnoses` conversations and their `/runs`, DataRAG's
+ *   `/ontology/ai/sessions/{id}/runs` and the agent channel's `/platform/agent-channel/commands`.
+ * - Stopping an agent run (`/assistant|observe/agent/sessions/{id}/runs/{run}/cancel`,
+ *   `/ontology/ai/sessions/{id}/runs/{run}/cancel`) carries the identity too: a preview stops only a preview's run.
  *
  * `/action/trial`, `/metricView/test` and `/ontology/ai/generation/…` write only inside the run's own sandbox.
  */
@@ -40,10 +44,18 @@ const previewEntries: readonly (readonly [service: PlatformService, method: stri
   ["/data-query", "POST", /^\/platform\/triggers\/[^/]+\/runs$/iu],
   ["/data-query", "POST", /^\/ontology\/ai\/sessions\/[^/]+\/runs$/iu],
   ["/data-query", "POST", /^\/platform\/agent-channel\/commands$/iu],
+  ["/data-query", "POST", /^\/ontology\/ai\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],
   ["", "POST", /^\/praxis\/(?:runs|runs\/[^/]+\/(?:tick|acts-on|case\/(?:submit|fill|close))|steps\/[^/]+\/(?:decide|assign))$/iu],
   ["", "POST", /^\/panel-operations\/intents\/[^/]+\/dispatch$/iu],
   ["", "POST", /^\/assistant\/sessions$/iu],
   ["", "POST", /^\/assistant\/sessions\/[^/]+\/runs$/iu],
+  ["", "POST", /^\/(?:assistant|observe\/agent)\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],
+  ["", "POST", /^\/observe\/agent\/sessions$/iu],
+  ["", "POST", /^\/observe\/agent\/sessions\/[^/]+\/runs$/iu],
+  ["", "POST", /^\/observe\/diagnoses$/iu],
+  ["", "POST", /^\/observe\/autotest\/runs$/iu],
+  ["", "POST", /^\/observe\/autotest\/runs\/[^/]+\/stop$/iu],
+  ["", "DELETE", /^\/observe\/autotest\/runs\/[^/]+$/iu],
 ];
 
 /** A path's percent-decoded spelling, or none when its encoding is malformed: no owner routes such a path. */

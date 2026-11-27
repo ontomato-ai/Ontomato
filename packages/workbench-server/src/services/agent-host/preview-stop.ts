@@ -1,0 +1,17 @@
+import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
+import type { AgentRunIntent } from "@ontomato/contracts/agent-channel";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { HttpError } from "../../utils/errors";
+import type { AgentHostOwner } from "./types";
+
+/**
+ * A preview stops only a preview's run. Stopping a live run changes a formal run, so it is refused by the run's own
+ * identity, as the runtime holds it, whoever owns the conversation.
+ */
+export async function requirePreviewMayStop(owner: AgentHostOwner, sessionId: string, runId: string, credentials: AssistantCredentials) {
+  if (credentials.executionKind !== "preview") return;
+  const intent = await new RuntimeClient(owner.domainId, undefined, owner.userId)
+    .request(`/v1/channel/sessions/${sessionId}/intents/${runId}`) as AgentRunIntent;
+  if (intent.channel.authority.executionKind !== "preview") throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
+}

@@ -38,6 +38,7 @@ import {
   storedDataset,
 } from "@ontomato/contracts/data-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
+import { requirePreviewMayStop } from "../agent-host/preview-stop";
 import { withDomainSkills } from "../skills/operations";
 import {
   getPostgresPool,
@@ -333,8 +334,8 @@ export const assistantService = {
     });
     await assistantStore.admitted(id,message);
     // A run keeps the identity it was started or delegated with: an App Builder run is always the preview's, any other
-    // agent's when its caller's run was.
-    const preview = isAppBuilderKind(a.kind) || authority.executionKind === "preview";
+    // agent's when its caller's run was or its conversation was opened as the preview's.
+    const preview = isAppBuilderKind(a.kind) || authority.executionKind === "preview" || session.preview;
     return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: preview ? "preview" : "live" } };
   },
   async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {
@@ -438,6 +439,7 @@ export const assistantService = {
     credentials: AssistantCredentials,
   ) {
     await assistantStore.session(sessionId, owner);
+    await requirePreviewMayStop(owner, sessionId, id, credentials);
     const existing = (
       await db().query(
         `SELECT session_id FROM ${table("assistant_turns")} WHERE id=$1`,

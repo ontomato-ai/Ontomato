@@ -426,13 +426,16 @@ to `outputs`. Standalone CLI `--follow` consumes SSE; platform-worker `read --fo
 sending any request because deliveries and questions notify the caller session.
 No external provider registration endpoint is introduced.
 
-Both channel command routes (`/v1/channel/commands` and
-`/v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands`), task events/files and
-provider callbacks carry no preview execution semantics.
-Requests carrying an execution-context header (`X-Ontomato-Execution-Context`) are refused with
-422 `PREVIEW_WRITE_FORBIDDEN` before side effects. Native agent commands and run-scoped script
-commands also refuse preview authority (`422 PREVIEW_WRITE_FORBIDDEN`). Existing host prepare
-restrictions remain in force; a preview run never becomes live delegation.
+Channel commands never read an execution-context header: a command runs with its caller's
+channel authority. A preview run delegates as itself (the agent it starts inherits the same preview
+authority, classes and delegation); an external caller's authority is the one its host states.
+`/v1/channel/runs/:runId/commands` lets a host forward a command one of its runs sent it, so it runs
+as that run rather than as an external caller. A preview stops (`cancel`) only a preview's run;
+stopping a live one is refused with 422 `PREVIEW_WRITE_FORBIDDEN`.
+An input joins a running or waiting run only when it runs with the same identity — the caller's
+channel, the delegating run, or the run it is addressed to (an answer's asking run, a result's
+recipient, a delegated agent's creator); otherwise it queues as a run of its own.
+See `execution-context.md`.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 
 Failed preparations are projected from the existing admission intent in `preparationFailures`.

@@ -25,7 +25,10 @@ below the API root. There is no list of entries a preview may call.
 | `POST /praxis/runs` (start), `/praxis/runs/{id}/tick` (advance), `/praxis/runs/{id}/case/submit\|fill\|close`, `/praxis/runs/{id}/acts-on`, `/praxis/steps/{id}/decide\|assign` | Praxis, through Node's `/api/praxis` | Refused before the body is read: no run, ledger entry, case, step or tick is touched |
 | `POST /panel-operations/intents/{id}/dispatch` | Node | The operation it carries out is the caller's; an Action it executes is refused at `/action/execute` |
 | `POST /assistant/sessions`, `POST /assistant/sessions/{id}/runs` | Node | Not refused: the conversation and its runs become the preview's (below) |
-| `POST /ontology/ai/sessions/{id}/runs`, `POST /platform/agent-channel/commands` | DataRAG | Not refused: the agent run started there runs as the preview |
+| `POST /ontology/ai/sessions/{id}/runs`, `POST /platform/agent-channel/commands` | DataRAG | Not refused: the agent run started there runs as the preview; a command a run forwards runs as that run |
+| `POST /observe/agent/sessions`, `/observe/agent/sessions/{id}/runs`, `/observe/diagnoses` | Node | Not refused: the legacy diagnosis conversation and its runs become the preview's, as an assistant conversation does |
+| `POST /observe/autotest/runs`, `/observe/autotest/runs/{id}/stop`, `DELETE /observe/autotest/runs/{id}` | Node | Refused before the runner hears of it: starting, stopping or deleting a formal test run (case sets are definitions and stay open) |
+| `POST /assistant/sessions/{id}/runs/{run}/cancel`, `/observe/agent/sessions/{id}/runs/{run}/cancel`, DataRAG's `/ontology/ai/sessions/{id}/runs/{run}/cancel` | Node, DataRAG | A preview stops only a preview's run, judged by the run's own identity; stopping a live run is refused |
 
 Not running, so never marked: `/writeFunctionOperation/query`, `/action/trial`,
 `/metricView/test|testExecute` and `/ontology/ai/generation/…` (they write only inside the run's own
@@ -50,16 +53,19 @@ percent-decoding (a malformed encoding is read as spelled), with repeated or a t
   turns it back into the header only on a server-side operation's request to a DataRAG entry above.
   The Praxis route passes it on only for the Praxis entries above. A page operation a preview run prepared keeps
   the marker in its intent, so it is refused whoever confirms and dispatches it.
-- A conversation opened with the identity is stored as the preview's (`assistant_sessions.preview`):
+- A conversation opened with the identity is stored as the preview's (`assistant_sessions.preview`,
+  `ops_sessions.preview` for legacy diagnosis); a replayed create naming the other identity is
+  refused (409), and a provider preparing a run in a stored conversation keeps its stored identity:
   every run in it runs with preview authority, wherever it is later sent from, and so does a run a
-  preview sends into any conversation. Its callbacks then carry the identity as above. A preview's
-  message to a conversation whose live run is still going never joins that run: the agent runtime
-  queues it as a run of its own, with the preview's authority (and a live message never joins a
-  preview's run).
+  preview sends into any conversation. Its callbacks then carry the identity as above. An input
+  joins a running or waiting run only with the same identity, taken from trusted facts (the caller's
+  channel, the delegating run, or the run it answers or reports to); a preview's message, answer or
+  agent result never joins a live run, and a live one never a preview's — it queues as its own run.
 - A preview run delegates as itself: the agent channel starts the agent it asks for with the same
-  preview authority, and each provider (Node, DataRAG's ontology agents) prepares the delegated run
-  keeping it. The delegated agent reads live data as usual; what it runs is refused at the entries
-  above.
+  preview authority and class scope, and each provider (Node, DataRAG's ontology agents) prepares the
+  delegated run keeping it. A command a run sends through DataRAG's agent channel entry is forwarded
+  as that run's own (`/v1/channel/runs/{runId}/commands`), never rebuilt as an external user's. The
+  delegated agent reads live data as usual; what it runs is refused at the entries above.
 - A preview's conversation entry (a panel candidate's, or a preview frame's) reaches the page's
   composer marked as the preview's: whichever composer takes it opens a new conversation of the
   preview's own, never the reader's open one.

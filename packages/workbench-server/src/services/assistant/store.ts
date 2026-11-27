@@ -325,7 +325,14 @@ export const assistantStore = {
       updatedAt: row.updatedAt.toISOString(),
     };
   },
+  /**
+   * A replayed public create must name the same conversation, its preview identity included. A provider preparing a run
+   * in an existing conversation (`fromChannel`) takes the conversation as stored: its preview identity stays the one it
+   * was opened with.
+   */
   async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string, fromChannel = false, preview = false) {
+    const same = (row: SessionRow, workspace: string | null) =>
+      row.agent_id === agentId && row.workspace_id === workspace && (fromChannel || row.preview === preview);
     return transaction(async (tx) => {
     await lockSessionClaim(tx, id);
     const existing = await tx.query(
@@ -334,7 +341,7 @@ export const assistantStore = {
     );
     if (existing.rowCount) {
       const row = await this.session(id, owner, tx);
-      if (row.agent_id !== agentId || row.workspace_id !== (workspaceId ?? null))
+      if (!same(row, workspaceId ?? null))
         throw new HttpError(
           409,
           "Idempotency key reused",
@@ -354,7 +361,7 @@ export const assistantStore = {
       [id, owner.domainId, owner.userId, agentId, origin, boundWorkspace, preview],
     );
     const row = await this.session(id, owner, tx);
-    if (row.agent_id !== agentId || row.workspace_id !== boundWorkspace)
+    if (!same(row, boundWorkspace))
       throw new HttpError(
         409,
         "Idempotency key reused",

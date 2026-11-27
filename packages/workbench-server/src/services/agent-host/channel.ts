@@ -66,8 +66,8 @@ export const agentChannelService = {
     // Legacy "observe" provider compatibility layer for `/api/observe/agent/*` and pre-migration ops_sessions.
     if (provider === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID) throw new HttpError(404, "Agent not found", "NOT_FOUND");
-      await createDiagnosis(body.sessionId, owner, credentials, null, true);
-      prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body));
+      await createDiagnosis(body.sessionId, owner, credentials, null, true, body.authority.executionKind === "preview");
+      prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body), body.authority);
     } else {
       prepared = await assistantService.prepare(body,owner,credentials);
     }

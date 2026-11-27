@@ -39,7 +39,7 @@ beforeEach(() => {
     if (sql.includes("INSERT INTO assistant_sessions")) {
       persisted = {
         id: sessionId, domain_id: owner.domainId, owner_id: owner.userId, agent_id: agentId, workspace_id: params[5],
-        title: "", origin: "user", created_at: now, updated_at: now,
+        preview: params[6], title: "", origin: "user", created_at: now, updated_at: now,
       } as SessionRow;
       return { rowCount: 1 };
     }
