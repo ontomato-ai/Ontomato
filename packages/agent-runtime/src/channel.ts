@@ -10,7 +10,7 @@ import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values
 import type { AgentTask } from "@ontomato/contracts/agent-tasks";
 import type { PlatformTool } from "./platform-tools";
 import type { AgentRuntime } from "./runtime";
-import type { Scope, MessageRow } from "./store";
+import { sessionClosing, type Scope, type MessageRow } from "./store";
 import { ChannelStore } from "./channel-store";
 import { RuntimeError, safeMessage } from "./errors";
 import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
@@ -387,6 +387,7 @@ export class AgentChannel {
           return {input:original,replayed:true,delivery:{messageId:original.id,sessionRef:target,runId:intent.id,delivery:intent.inputId===original.id?"run":"steer",status:intent.status==="starting"?"starting":"running"}};
         }
       }
+      if(await this.runtime.store.closing(scope,target.sessionId)) throw sessionClosing();
       const binding=await this.facts.binding(scope,target.sessionId);
       if(binding.actor.domainId!==actor.domainId) throw new RuntimeError(403,"CROSS_DOMAIN","Cross-domain messages are forbidden");
       if(web && binding.agent.agentId!==web.channel.agent.agentId) throw new RuntimeError(409,"AGENT_CHANGED","Session belongs to another agent");
@@ -490,6 +491,8 @@ export class AgentChannel {
     intent.status = run.stopReason === "aborted" ? "cancelled" : run.stopReason === "error" ? "failed" : "completed";
     intent.error = run.errorMessage;
     await this.facts.update(scope, intent);
+    // A session being deleted starts nothing more: what it has queued is deleted with it.
+    if (await this.runtime.store.closing(scope, run.sessionId)) return;
     const next = await this.facts.claimNext(scope, run.sessionId);
     if (next) return next;
     if (intent.cancelled) return;

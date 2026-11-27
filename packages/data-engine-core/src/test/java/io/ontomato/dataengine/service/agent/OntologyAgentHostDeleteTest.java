@@ -80,6 +80,25 @@ class OntologyAgentHostDeleteTest {
     verify(store, times(2)).beginClosing(SESSION, owner);
   }
 
+  @Test void aSecondDeletionCannotTakeTheRightToCloseAndNeverReopensTheConversation() throws Exception {
+    doThrow(new AgentHttpException(409, "SESSION_CLOSING", "The conversation is already being deleted"))
+        .when(store).beginClosing(SESSION, owner);
+    var refused = assertThrows(AgentHttpException.class, () -> host.delete(SESSION, owner, true));
+    assertEquals("SESSION_CLOSING", refused.code());
+    verify(store, never()).endClosing(any());
+    verifyNoInteractions(runtime, generation);
+  }
+
+  @Test void theRightToCloseIsTakenAtomicallyByOneDeletionOnly() {
+    var real = mock(OntologyAgentStore.class, CALLS_REAL_METHODS);
+    doReturn(JSONObject.of("id", SESSION)).when(real).session(SESSION, owner);
+    doReturn(1).when(real).update(eq("UPDATE ontology_agent_sessions SET closing=true WHERE id=? AND NOT closing"), any());
+    real.beginClosing(SESSION, owner);
+    // Already closing: the conditional update changes no row, and the second deletion is refused.
+    doReturn(0).when(real).update(eq("UPDATE ontology_agent_sessions SET closing=true WHERE id=? AND NOT closing"), any());
+    assertEquals("SESSION_CLOSING", assertThrows(AgentHttpException.class, () -> real.beginClosing(SESSION, owner)).code());
+  }
+
   @Test void aDeletionThatFailsLeavesTheConversationAdmittingRunsAgain() throws Exception {
     doThrow(new AgentHttpException(409, "SESSION_BUSY", "busy")).when(generation).close(SESSION, RUN, owner);
     assertThrows(AgentHttpException.class, () -> host.delete(SESSION, owner, false));

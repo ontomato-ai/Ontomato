@@ -15,7 +15,9 @@ const mocks = vi.hoisted(() => ({
   readModel: vi.fn(),
   publicSkills: vi.fn(),
   publishSkill: vi.fn(),
+  resolve: vi.fn(),
 }));
+vi.mock("../../assistant/execution-setting", () => ({ resolveAgentExecution: mocks.resolve }));
 
 vi.mock("../../../infrastructure/postgres", () => ({
   getPostgresPool: () => ({ query: mocks.query }),
@@ -175,6 +177,49 @@ it("declares narrowed observe-evidence businessCallback and strips addresses/cre
     headers: { "X-Ontomato-Callback-Credential": cred, "X-Ontomato-Run-Id": runId },
   });
   expect(barePrefix.status).toBe(401);
+});
+
+it("runs a delegated diagnosis as the execution account it is bound to, and its evidence callback reads as that account", async () => {
+  mocks.resolve.mockResolvedValue({ executionUserId: "executor", credentials: { apiKey: "executor-key", locale: "en" } });
+  let stored: { fingerprint: string; definition: unknown } | undefined;
+  mocks.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+    if (sql.includes("FROM ops_sessions"))
+      return { rows: [{ id: sessionId, domain_id: "domain", owner_id: "user", title: "", target: null, created_at: new Date(), updated_at: new Date() }] };
+    const row = () => ({ id: runId, session_id: sessionId, fingerprint: stored!.fingerprint, definition: stored!.definition, language: "en" });
+    if (sql.includes("SELECT * FROM ops_run_intents")) return { rows: stored ? [row()] : [] };
+    if (sql.includes("INSERT INTO ops_run_intents")) {
+      stored = { fingerprint: String(params?.[2]), definition: JSON.parse(String(params?.[3])) };
+      return { rows: [row()] };
+    }
+    return { rows: [] };
+  });
+  const owner = { domainId: "domain", userId: "user" };
+  const prepare = (bound?: { userId: string; domainId: string } | null) => prepareDiagnosis(sessionId, runId,
+    { role: "user", content: "Check logs", timestamp: 1 }, owner, { token: "initiator-token", locale: "en" }, undefined, undefined, bound);
+  const app = express();
+  app.use(unwrapCallbackCredential);
+  app.all("*", (req, res) => { res.json({ tk: req.headers.tk ?? null, apiKey: req.headers["x-api-key"] ?? null }); });
+  const server = app.listen(0, "127.0.0.1");
+  servers.push(server);
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const evidence = async (credential: string) => (await fetch(`${base}/api/observe/evidence/logs/workbench`, {
+    headers: { "X-Ontomato-Callback-Credential": credential, "X-Ontomato-Run-Id": runId },
+  })).json();
+
+  const delegated = runtimeStartRunRequestSchema.parse(await prepare({ userId: "executor", domainId: "domain" }));
+  expect(delegated.executionActor).toEqual({ userId: "executor", domainId: "domain" });
+  expect(mocks.resolve).toHaveBeenCalledWith({ id: DIAGNOSIS_AGENT_ID, execution_user_id: "executor" }, owner, expect.objectContaining({ token: "initiator-token" }));
+  expect(await evidence(delegated.businessCallbacks!.workbench!.credential)).toEqual({ tk: null, apiKey: "executor-key" });
+
+  // Bound to the initiator's own account, or opened at the top: the initiator's credential, no account resolved.
+  mocks.resolve.mockClear();
+  for (const bound of [null, undefined]) {
+    const own = runtimeStartRunRequestSchema.parse(await prepare(bound));
+    expect(own.executionActor ?? null).toBeNull();
+    expect(await evidence(own.businessCallbacks!.workbench!.credential)).toEqual({ tk: "initiator-token", apiKey: null });
+  }
+  expect(mocks.resolve).not.toHaveBeenCalled();
 });
 
 it("ops.mjs uses forwarded path and callback credential in platform mode, and /api/observe/evidence + tk outside", async () => {

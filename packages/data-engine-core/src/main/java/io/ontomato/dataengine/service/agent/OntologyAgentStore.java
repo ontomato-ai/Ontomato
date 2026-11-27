@@ -143,13 +143,18 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
       throw new AgentHttpException(409, "SESSION_CLOSING", "The conversation is being deleted");
   }
 
-  /** From this commit on the conversation admits no run; what it holds now is all its deletion has to judge and close. */
+  /**
+   * Takes the right to close the conversation, atomically: from this commit on it admits no run, and what it holds now
+   * is all its deletion has to judge and close. A conversation another deletion is already closing is refused, so only
+   * the deletion that took the right ever reopens it.
+   */
   public void beginClosing(String sessionId, Owner owner) {
     session(sessionId, owner);
-    update("UPDATE ontology_agent_sessions SET closing=true WHERE id=?", uuid(sessionId));
+    if (update("UPDATE ontology_agent_sessions SET closing=true WHERE id=? AND NOT closing", uuid(sessionId)) == 0)
+      throw new AgentHttpException(409, "SESSION_CLOSING", "The conversation is already being deleted");
   }
 
-  /** A deletion that did not complete leaves the conversation admitting runs again. */
+  /** The deletion that took the right to close the conversation and did not complete lets it admit runs again. */
   public void endClosing(String sessionId) {
     update("UPDATE ontology_agent_sessions SET closing=false WHERE id=?", uuid(sessionId));
   }

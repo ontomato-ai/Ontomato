@@ -792,6 +792,10 @@ export class AgentRuntime {
       return ids;
     });
   }
+  /** Stops admitting anything to these sessions, each inside its own admission lock, or lets them admit again. */
+  async setSessionsClosing(scope: Scope, ids: readonly string[], closing: boolean) {
+    for (const id of ids) await this.locked(scope, id, () => this.store.setClosing(scope, id, closing));
+  }
   /** `onlyPreviewRuns`: the host deletes on a preview's behalf, which deletes nothing that holds a live run. */
   async deleteSession(scope: Scope, id: string, onlyPreviewRuns: boolean) {
     await this.files.withLock(() =>

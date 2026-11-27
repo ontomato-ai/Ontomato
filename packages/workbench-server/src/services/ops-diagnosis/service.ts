@@ -1,7 +1,7 @@
 import { agentHostSendResultSchema, type AgentHostAgentList } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { openAgentCaller } from "../agent-host/caller";
-import type { AgentInput, AgentRunContext } from "@ontomato/contracts/agent-channel";
+import type { AgentExecutionActorRef, AgentInput, AgentRunContext } from "@ontomato/contracts/agent-channel";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readDiagnosisModel } from "./model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
@@ -27,6 +27,7 @@ import { HttpError } from "../../utils/errors";
 import type { AgentHostOwner, AgentHostService } from "../agent-host/types";
 import { agentAllowed, requireAgent } from "../assistant/authorization";
 import { assistantStore } from "../assistant/store";
+import { agentExecutionCredentials, executionActor } from "../assistant/execution";
 import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
 import { requirePreviewMayStop } from "../agent-host/run-identity";
 
@@ -193,9 +194,14 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
   },
 };
 
-/** `authority` is the run's as delegated or sent; a conversation opened as the preview's keeps every run in it the preview's. */
+/**
+ * `authority` is the run's as delegated or sent; a conversation opened as the preview's keeps every run in it the
+ * preview's. `bound` is the execution account a delegated or continued run is bound to (null being its initiator's own):
+ * the run executes, and its evidence callback reads, as that account. A top-level diagnosis (`bound` absent) runs as its
+ * initiator.
+ */
 export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials, reader?: AgentVisibilityReader,
-  authority?: AgentRunContext["authority"]): Promise<RuntimeStartRunRequest> {
+  authority?: AgentRunContext["authority"], bound?: AgentExecutionActorRef | null): Promise<RuntimeStartRunRequest> {
   await requireDiagnosisAgent(owner, credentials);
   const message = input.content;
   const row = await diagnosisSession(session, owner);
@@ -239,10 +245,13 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
   if (intent.fingerprint !== fingerprint(definition.data.skills))
     throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
   await db().query(`UPDATE ${table("ops_sessions")} SET title=CASE WHEN title='' THEN $2 ELSE title END,updated_at=now() WHERE id=$1`, [session, message]);
+  const executionUserId = bound?.userId ?? null;
+  const execution = await agentExecutionCredentials(DIAGNOSIS_AGENT_ID, executionUserId, owner, credentials);
   const evidencePath = "/api/observe/evidence";
   const baseUrl = environment.agentRuntime().callbackUrl.replace(/\/$/, "") + evidencePath;
   return {
     ...(authority && { authority: { ...authority, executionKind: row.preview ? "preview" as const : authority.executionKind } }),
+    executionActor: executionActor(executionUserId, owner.domainId),
     language: intent.language,
     input,
     definition: definition.data,
@@ -254,8 +263,8 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
           scope: { purpose: "diagnosis-evidence" },
           runId: run,
           expiresAt: Date.now() + definition.data.sandbox.limits.wallTimeMs,
-          token: credentials.token ?? "",
-          apiKey: credentials.apiKey ?? "",
+          token: execution.token ?? "",
+          apiKey: execution.apiKey ?? "",
         }).value,
       },
     },

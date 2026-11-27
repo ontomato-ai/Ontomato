@@ -46,8 +46,8 @@ public class OntologyAgentHost {
   /**
    * Deletes the conversation with its runs. Closing begins before anything is judged: from then on the conversation
    * admits no run, so on a preview's behalf every run it holds — each the runtime has admitted or queued, and each this
-   * host enumerates to close — is checked as the preview's before any is cancelled, closed or removed. A deletion that
-   * does not complete leaves the conversation admitting runs again.
+   * host enumerates to close — is checked as the preview's before any is cancelled, closed or removed. Only the deletion
+   * that took the right to close it (a concurrent one is refused) reopens it when it does not complete.
    */
   public void delete(String session, Owner owner, boolean preview) throws Exception {
     String agent = store.session(session, owner).getString("agent_id");

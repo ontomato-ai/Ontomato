@@ -33,6 +33,9 @@ export interface Scope {
  * native engine and its resume reference, and never see another identity's.
  */
 export type ExecutionLane = "live" | "preview";
+export function sessionClosing() {
+  return new RuntimeError(409, "SESSION_CLOSING", "The conversation is being deleted");
+}
 export function runLane(run: { channel?: { authority: { executionKind: ExecutionLane } } | null }): ExecutionLane {
   return run.channel?.authority.executionKind ?? "live";
 }
@@ -188,6 +191,7 @@ export class RuntimeStore {
       }
       await c.query(`ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS channel jsonb;
         ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS preparing_run_id uuid;
+        ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS closing boolean NOT NULL DEFAULT false;
         ALTER TABLE ${this.table("admissions")} ADD COLUMN IF NOT EXISTS intent jsonb;
         ALTER TABLE ${this.table("messages")} ALTER COLUMN run_id DROP NOT NULL;`);
       if (!versions.some(row => row.version === 5)) {
@@ -487,6 +491,7 @@ export class RuntimeStore {
           "Session already has an active run",
         );
       if (!reserved && session.preparing_run_id) throw new RuntimeError(409,"SESSION_BUSY","Session has a preparing execution intent");
+      if (!reserved && session.closing) throw sessionClosing();
       const streamId = randomUUID();
       const received = reserved ? (await c.query(`SELECT id,seq FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND id=(SELECT (intent->>'inputId')::uuid FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$4) AND run_id IS NULL`, [...values(scope), run.sessionId, run.id])).rows[0] : null;
       const messageId = received ? received.id : randomUUID();
@@ -607,6 +612,25 @@ export class RuntimeStore {
       FROM ${this.table("messages")} m JOIN ${this.table("runs")} r ON r.host_id=m.host_id AND r.domain_id=m.domain_id AND r.id=m.run_id
       WHERE m.host_id=$1 AND m.domain_id=$2 AND m.session_id=$3 AND m.context_seq IS NOT NULL ORDER BY m.context_seq`, [...values(scope),sessionId]);
     return rows.map(row => ({ id: row.id, runId: row.run_id, messageSeq: Number(row.context_seq), contextSeq: Number(row.context_seq), message: row.message, lane: row.lane }));
+  }
+  /**
+   * A session being deleted admits nothing: no input is queued in it and no queued run starts. Set and cleared inside
+   * the session's admission lock, which every admission reads it under.
+   */
+  async setClosing(scope: Scope, sessionId: string, closing: boolean) {
+    await this.pool.query(`UPDATE ${this.table("sessions")} SET closing=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId, closing]);
+  }
+  async closing(scope: Scope, sessionId: string): Promise<boolean> {
+    const row = (await this.pool.query(`SELECT closing FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId])).rows[0];
+    if (!row) missing();
+    return row.closing;
+  }
+  /** Refused as a deletion would be: the session has a run running or being prepared. */
+  async requireIdle(scope: Scope, sessionId: string) {
+    const row = (await this.pool.query(`SELECT active_run_id,preparing_run_id FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), sessionId])).rows[0];
+    if (!row) missing();
+    if (row.active_run_id || row.preparing_run_id)
+      throw new RuntimeError(409, "SESSION_BUSY", "Cancel the active run before deleting the session");
   }
   /**
    * Refuses, for a host closing the session on a preview's behalf, when the session holds or has queued a live run.

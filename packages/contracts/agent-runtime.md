@@ -452,12 +452,18 @@ only what runs of its identity consumed, and only live runs read stored compacti
 `GET /v1/channel/sessions/:sessionId/run-identities` returns each run's identity for hosts that read
 or close the conversation. `DELETE /v1/sessions/:sessionId` and `DELETE /v1/workspaces/:id` accept
 `{ "onlyPreviewRuns": true }` from a host deleting on a preview's behalf: inside each session's
-admission lock, and for a workspace before its first conversation is deleted, a session that holds or
-has queued a live run is refused with 422 `PREVIEW_WRITE_FORBIDDEN`.
+admission lock a session that holds or has queued a live run is refused with 422
+`PREVIEW_WRITE_FORBIDDEN`. A workspace is deleted with its conversations all or none: admission to
+every one of them is closed first (`sessions.closing`, set inside each session's admission lock; a
+closing session queues no input, 409 `SESSION_CLOSING`, starts nothing it has queued and admits no
+direct run), then each must be idle and, on a preview's behalf, hold only the preview's runs; a
+refusal opens them all again before any is deleted.
 The execution account is bound once. A top-level admission (no binding and no delegating run) sends
 `/prepare` no `executionActor` and the provider chooses; a delegated or continued run sends the
 account it is bound to (`null` for the initiator's own), and the runtime refuses to start it with 403
-`EXECUTION_ACCOUNT_CHANGED` if the provider returns any other.
+`EXECUTION_ACCOUNT_CHANGED` if the provider returns any other. Workbench's assistant and legacy
+`observe` providers both run a bound run as that account and return it; the legacy diagnosis
+evidence callback carries that account's credential.
 See `execution-context.md`.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 

@@ -9,6 +9,8 @@ import { openSkillCallback } from "../skill-callback";
 import { SessionEngines } from "../session-engines";
 import { createRuntimeHttp } from "../http";
 import { ArtifactFiles } from "../files";
+import { Workspaces } from "../workspaces";
+import type { WorkerPolicy } from "../worker";
 import { canonical, RuntimeStore, type MessageRow } from "../store";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -25,7 +27,7 @@ const notification: AgentNotification = { role: "notification", kind: "agent-ans
 afterEach(() => { vi.unstubAllGlobals(); });
 function channel() {
   let locked = false;
-  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined) },
+  const runtime = { options: { agentProviders: [{ id: "registered-custom", hostId: scope.hostId, url: "http://provider.test/channel", token: "service" }] }, store: { messages: vi.fn(async () => []), readOpenAdmission: vi.fn(async () => undefined), closing: vi.fn(async () => false) },
     importAgentFile: vi.fn(async () => "outputs/agents/delivered.dataset.json"),
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
@@ -1075,6 +1077,42 @@ it("records the authority a provider settles with the run, so stopping and queue
   const joined = await port.request(scope, sessionId, nextRunId, { ...humanChannel, authority: previewAuthority,
     root: { session: source.session, runId: nextRunId } }, userInput, "en", undefined, initiatingCredential);
   expect(joined.delivery).toMatchObject({ runId, delivery: "steer" });
+});
+
+describe("a conversation being deleted", () => {
+  it("refuses a live message that arrives after its workspace's deletion closed admission, so the deletion stays whole", async () => {
+    const { runtime, submit, receipts } = presentationAdmission();
+    const closed = new Set<string>();
+    vi.mocked(runtime.store.closing).mockImplementation(async (_scope, id) => closed.has(id));
+    const store = Object.assign(Object.create(RuntimeStore.prototype), {
+      table: (name: string) => name,
+      transaction: async (operation: (client: { query: (sql: string) => Promise<{ rows: object[] }> }) => Promise<unknown>) =>
+        operation({ query: async (sql: string) => sql.includes("FROM workspaces") ? { rows: [{ id: "w", active_run_id: null }] }
+          : sql.includes("FROM sessions") ? { rows: [{ id: sessionId }] } : { rows: [] } }),
+      requireIdle: async () => {},
+      sessionRunLanes: async () => {
+        // After the deletion has closed admission and while it judges the conversation, a person's live message comes in.
+        await expect(submit()).rejects.toMatchObject({ status: 409, code: "SESSION_CLOSING" });
+        return [{ runId, lane: "preview" as const }];
+      },
+    }) as RuntimeStore;
+    const deleted = vi.fn(async () => {});
+    const deleting = new Workspaces(store, "/nonexistent", { development: true } as WorkerPolicy).delete(scope, "owner", "w", true, {
+      setClosing: async (ids, closing) => { for (const id of ids) { if (closing) closed.add(id); else closed.delete(id); } },
+      delete: deleted,
+    });
+    await expect(deleting).rejects.toMatchObject({ code: "ENOENT" });  // the fixture workspace has no directory to remove
+    expect(deleted).toHaveBeenCalledWith(sessionId);
+    expect(receipts.size).toBe(0);
+  });
+
+  it("starts nothing it has queued when the running turn ends", async () => {
+    const { runtime, port, send, finish } = currentRun(humanChannel, "running");
+    await send(nextRunId, context, userInput);
+    vi.mocked(runtime.store.closing).mockResolvedValue(true);
+    expect(await finish()).toBeUndefined();
+    expect(port.facts.claimNext).not.toHaveBeenCalled();
+  });
 });
 
 it("keeps the original human message when the background turn is still preparing", async () => {

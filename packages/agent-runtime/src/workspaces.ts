@@ -10,6 +10,11 @@ import { WorkspaceGit } from "./workspace-git";
 export function workspaceDirectory(root: string, scope: Scope, id: string) {
   return path.join(root, "workspaces", digest([scope, id]));
 }
+/** The conversations a workspace holds, as the runtime admits and deletes them. */
+export interface WorkspaceConversations {
+  setClosing(ids: readonly string[], closing: boolean): Promise<void>;
+  delete(id: string): Promise<void>;
+}
 export class Workspaces {
   constructor(private store: RuntimeStore, private root: string, private policy: WorkerPolicy) {}
   git(scope: Scope, id: string) { return new WorkspaceGit(workspaceDirectory(this.root, scope, id)); }
@@ -67,17 +72,28 @@ export class Workspaces {
     });
   }
   /**
-   * Deletes the workspace with every conversation in it. On a preview's behalf (`onlyPreviewRuns`), every run those
-   * conversations hold or have queued must be the preview's, checked before the first is deleted, and again for each
-   * inside its own admission lock as it is deleted.
+   * Deletes the workspace with every conversation in it, all or none. Admission to every one of them is closed first,
+   * so nothing is queued or started in any while they are judged: each must be idle and, on a preview's behalf
+   * (`onlyPreviewRuns`), hold or have queued only the preview's runs. A refusal opens them all again before anything is
+   * deleted; each is then deleted, checked once more inside its own admission lock.
    */
-  async delete(scope: Scope, owner: string, id: string, onlyPreviewRuns: boolean, deleteSession: (id: string) => Promise<void>) {
+  async delete(scope: Scope, owner: string, id: string, onlyPreviewRuns: boolean, conversations: WorkspaceConversations) {
     return this.store.transaction(async c => {
       const row = await this.row(scope, owner, id, c, true);
       if (row.active_run_id) throw new RuntimeError(409, "WORKSPACE_BUSY", "Workspace has an active run");
       const sessions = (await c.query(`SELECT id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND workspace_id=$3`, [scope.hostId, scope.domainId, id])).rows;
-      if (onlyPreviewRuns) for (const session of sessions) await this.store.requireOnlyPreviewRuns(scope, session.id);
-      for (const session of sessions) await deleteSession(session.id);
+      const ids = sessions.map(session => session.id as string);
+      await conversations.setClosing(ids, true);
+      try {
+        for (const session of ids) {
+          await this.store.requireIdle(scope, session);
+          if (onlyPreviewRuns) await this.store.requireOnlyPreviewRuns(scope, session);
+        }
+      } catch (refused) {
+        await conversations.setClosing(ids, false);
+        throw refused;
+      }
+      for (const session of ids) await conversations.delete(session);
       await c.query(`DELETE FROM ${this.store.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, id]);
       await rm(this.git(scope, id).directory, { recursive: true });
       return { sessionIds: sessions.map(s => s.id as string) };
