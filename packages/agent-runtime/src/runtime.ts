@@ -13,7 +13,7 @@ import type { RuntimeBusinessCallbacks } from "@ontomato/contracts/agent-runtime
 import { SessionEngines, type SessionEngineSandboxFactory } from "./session-engines";
 import { defaultEngineId, type HarnessRegistry } from "./adapters/registry";
 import type { HarnessEvent, HarnessPlugin, HarnessSession } from "./adapters/contract";
-import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
+import { mkdir, chmod, readFile } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
@@ -722,6 +722,8 @@ export class AgentRuntime {
         onClose: mcp.close,
       });
       closeMcp = () => bound.close();
+      // The admission intent is the authority for delegation; run.channel is only the copy carried by this start request.
+      const delegated = (await this.channel.facts.findIntent(scope, run.id))?.channel.requestedBy != null;
       const engine = await this.sessionEngines.open(scope, run.sessionId, {
         plugin,
         config: () => config ? Promise.resolve(config) : this.models.resolve(scope.domainId, request.definition.modelId),
@@ -733,7 +735,7 @@ export class AgentRuntime {
         signal,
         previousContext: () => this.previousContext(scope, run.sessionId),
         prompt: () => ({
-          system: [request.definition.systemPrompt, run.channel?.requestedBy ? DELEGATED_TASK_PROMPT : "", processLanguageInstruction(run.language)].filter(Boolean).join("\n\n"),
+          system: [request.definition.systemPrompt, delegated ? DELEGATED_TASK_PROMPT : "", processLanguageInstruction(run.language)].filter(Boolean).join("\n\n"),
         }),
       });
       active.workspace = engine.sandbox.hostWorkspace;

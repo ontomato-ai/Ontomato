@@ -855,9 +855,11 @@ ${logs}`);
     const childPrepare = prepareCalls.find((call) => call.requestedBy?.runId === runId);
     expect(childPrepare?.root).toEqual({ session: sessionRef, runId });
     await settle(captured.body.taskId);
-    const childRequest = inputs.find((request) => JSON.stringify(request.messages).includes("Child question"));
-    expect(JSON.stringify(childRequest.messages[0].content)).toContain("Delegated task");
-    expect(JSON.stringify(inputs.find((request) => JSON.stringify(request.messages).includes("channel-script"))?.messages[0].content)).not.toContain("Delegated task");
+    const userText = (message: any) => typeof message.content === "string" ? message.content : message.content.map((part: any) => part.text ?? "").join("");
+    const childRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message) === "Child question"));
+    const parentRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message) === "channel-script"));
+    expect(childRequest.messages[0].content).toContain("Delegated task");
+    expect(parentRequest.messages[0].content).not.toContain("Delegated task");
     const late = await fetch(captured.url, {
       method: "POST",
       headers: {
