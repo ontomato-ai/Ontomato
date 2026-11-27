@@ -3,8 +3,9 @@ import { computed, inject, markRaw, onBeforeUnmount, provide, reactive, ref, sha
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElButton, ElSkeleton } from "element-plus";
+import { DataState } from "@ontomato/foundation-ui/data-state";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
-import { PanelHost, panelOverlayContainerKey, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { PanelHost, PlatformPageHeader, panelOverlayContainerKey, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import {
   applicationPanelAddress,
   panelAddressState,
@@ -34,6 +35,8 @@ import {
 import { usePanelConversationDisplay, type DisplayedPanel } from "../panel-conversation-display";
 import { usePanelSessionRuns } from "../panel-session-runs";
 import EntryUnit from "./EntryUnit.vue";
+import EntryResolutionFailure from "../EntryResolutionFailure.vue";
+import { usePlatformDataStateLabels } from "../data-state-labels";
 import { hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
 
@@ -87,6 +90,7 @@ const emit = defineEmits<{
 const route = useRoute();
 const router = useRouter();
 const { t, locale, fallbackLocale } = useI18n();
+const dataStateLabels = usePlatformDataStateLabels();
 const pageCounter = usePageCounter();
 /** The language a panel's own name is given in: the reader's, else the deployment's default. */
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
@@ -356,6 +360,11 @@ async function requestEntryResolution(
       emit("display-loaded", panelUnavailable(error));
     }
   }
+}
+
+function retryEntryResolution() {
+  failure.value = "";
+  void requestEntryResolution(props.applicationId, entryPath.value!, { blocking: true });
 }
 
 function refreshEntryTable() {
@@ -959,7 +968,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
 
 <template>
   <div ref="area" class="panel-application-area">
-    <p v-if="failure" class="panel-application-status platform-page-gutter" role="alert">{{ failure }}</p>
+    <EntryResolutionFailure v-if="failure" :failure="{ message: failure, retry: retryEntryResolution }" />
     <div v-else-if="homeUnavailableBanner" class="panel-application-home-recovery platform-page-gutter" role="alert" data-testid="custom-home-unavailable">
       <p class="panel-application-home-recovery-text">{{ homePanelError || t("home.customHomeUnavailable") }}</p>
       <ElButton
@@ -1000,7 +1009,15 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         @surface-ready="(ready: boolean) => reportSurfaceReady(page, ready)"
         @reopened="markReopened(page)"
         @withdrawn="withdraw(page)"
-      />
+      >
+        <template v-if="isHomeMainEntry" #personal-state-error="{ message, retry }">
+          <PlatformPageHeader :title="pageName" />
+          <section class="panel-application-status platform-page-gutter">
+            <h2>{{ t("home.personalLayoutReadFailed") }}</h2>
+            <DataState :result="{ status: 'error', message, retry }" :labels="dataStateLabels" />
+          </section>
+        </template>
+      </PanelHost>
       <div
         v-if="showContentLoading"
         class="panel-application-loading"

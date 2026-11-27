@@ -46,6 +46,7 @@ export {
   panelHostKey,
   panelFrameDocument,
   panelUnavailable,
+  PanelPersonalStateReadError,
   panelOverlayContainerKey,
   platformCurrentUserKey,
   usePanelHostPort,

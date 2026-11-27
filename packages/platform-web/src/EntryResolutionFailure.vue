@@ -1,37 +1,33 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
+import { DataState } from "@ontomato/foundation-ui/data-state";
+import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { entryResolutionFailureFor } from "./entry-resolution-failure";
+import { usePlatformDataStateLabels } from "./data-state-labels";
 
+const props = defineProps<{ failure?: { message: string; retry: () => void } }>();
 const route = useRoute();
+const router = useRouter();
 const { t } = useI18n();
-const message = computed(() => entryResolutionFailureFor(route.path));
+const labels = usePlatformDataStateLabels();
+const message = computed(() => props.failure?.message ?? entryResolutionFailureFor(route.path));
+
+function retry() {
+  if (props.failure) {
+    props.failure.retry();
+  } else {
+    void router.replace({ path: route.path, query: route.query, hash: route.hash, force: true });
+  }
+}
 </script>
 
 <template>
-  <main v-if="message" class="entry-resolution-failure" role="alert">
-    <h1>{{ t("platform.entryReadFailed") }}</h1>
-    <p>{{ message }}</p>
-  </main>
+  <section v-if="message !== null">
+    <PlatformPageHeader :title="t('platform.entryReadFailed')" />
+    <div class="platform-page-gutter">
+      <DataState :result="{ status: 'error', message, retry }" :labels="labels" />
+    </div>
+  </section>
 </template>
-
-<style scoped>
-.entry-resolution-failure {
-  box-sizing: border-box;
-  min-height: 100vh;
-  padding: 48px 24px;
-  color: var(--el-text-color-primary, #303133);
-  background: var(--el-bg-color, #fff);
-}
-.entry-resolution-failure h1 {
-  margin: 0 0 12px;
-  font-size: 20px;
-  font-weight: 600;
-}
-.entry-resolution-failure p {
-  margin: 0;
-  color: var(--el-text-color-secondary, #606266);
-  overflow-wrap: anywhere;
-}
-</style>
