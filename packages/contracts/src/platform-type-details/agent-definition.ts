@@ -13,7 +13,7 @@ export const agentDefinitionTypeDetail = {
     { name: "systemPrompt", type: "string", description: "The instructions supplied to the agent as its system prompt." },
     { name: "engine", type: "pi | codex", description: "The execution engine selected for new sessions." },
     { name: "modelSelection", type: "ModelSelection", description: "The selected model, with a null model ID using the domain default." },
-    { name: "skills", type: "RuntimeSkillSelection[]", description: "The skill references selected for the agent, including use-specific preload markers." },
+    { name: "skills", type: "RuntimeSkillSelection[]", description: "The skill references selected for the agent." },
     { name: "classNames", type: "string[]", description: "The ontology class names in the agent's configured data scope." },
     { name: "enabledMcpServiceIds", type: "UUID[]", description: "The IDs of MCP services enabled for the agent." },
     { name: "executionUserId", type: "string | null", description: "Default execution user ID for automated/unattended runs, or null. Interactive runs with a logged-in user inherit that user's permissions." },
