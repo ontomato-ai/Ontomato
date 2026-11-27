@@ -118,6 +118,16 @@ it("lets a preview claim or cancel only a confirmation a preview run asked for, 
   expect(await (await post(`${endpoint}/${previews.questionId}/claim`, {}, preview)).json()).toEqual({ ok: true, intentId: previews.intentId });
 });
 
+it("judges the local confirmation it deletes by that record's own asking run, read in the same step", async () => {
+  const live = await confirmation("live");
+  // The persisted question looked like a preview's and was already gone by the time it was cancelled; the live page's
+  // own confirmation under the same question is what remains.
+  mocks.findAgentPageQuestion.mockResolvedValue(stored("preview"));
+  mocks.cancelPendingAgentPageQuestion.mockResolvedValue(null);
+  await refused(await post(`${endpoint.replace("local-confirmations", "questions")}/${live.questionId}/cancel-if-pending`, reason, preview));
+  expect(await (await post(`${endpoint}/${live.questionId}/claim`, {})).json()).toEqual({ ok: true, intentId: live.intentId });
+});
+
 it("refuses a preview asking for confirmation of a live run's operation before the question is published", async () => {
   askingRun("live");
   await refused(await post(endpoint, { agentRun: { sessionId, runId, toolCallId: "discard" }, operationLabel: "Discard",

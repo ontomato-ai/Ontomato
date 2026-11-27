@@ -40,7 +40,7 @@ test("a preview identity is carried to the entries that run something and to no 
   );
   for (const [service, path] of running) assert.ok(carriesPreviewIdentity(service, "POST", path), `${service}${path}`);
   assert.ok(carriesPreviewIdentity("", "DELETE", "/observe/autotest/runs/r-1"));
-  for (const [service, path] of [["", "/assistant/sessions/s-1"], ["", "/observe/agent/sessions/s-1"], ["/data-query", "/ontology/ai/sessions/s-1"]] as const)
+  for (const [service, path] of [["", "/assistant/sessions/s-1"], ["", "/observe/agent/sessions/s-1"], ["/data-query", "/ontology/ai/sessions/s-1"], ["", "/workspaces/w-1"]] as const)
     assert.ok(carriesPreviewIdentity(service, "DELETE", path), `DELETE ${service}${path}`);
   const building: [string, string, string][] = [
     ["/data-query", "POST", "/writeFunctionOperation/query"],
@@ -55,6 +55,8 @@ test("a preview identity is carried to the entries that run something and to no 
     ["", "GET", "/praxis/inbox"],
     ["", "POST", "/assistant/agent-definitions"],
     ["", "PATCH", "/assistant/sessions/s-1"],
+    ["", "PUT", "/workspaces/w-1/files"],
+    ["", "POST", "/workspaces/w-1/import"],
     ["", "GET", "/assistant/sessions/s-1"],
     ["", "POST", "/observe/autotest/case-sets"],
     ["", "GET", "/observe/autotest/runs/r-1"],

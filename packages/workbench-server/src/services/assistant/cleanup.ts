@@ -35,7 +35,7 @@ export async function deleteUserAssistantSessions(userId: string) {
       const snapshot = await c.session(s.id);
       if (snapshot.latestRun?.run.status === "running")
         await c.cancel(snapshot.latestRun.run.id);
-      await c.deleteSession(s.id);
+      await c.deleteSession(s.id, false);
     } catch (e) {
       if (!(e instanceof HttpError && e.status === 404)) throw e;
     }

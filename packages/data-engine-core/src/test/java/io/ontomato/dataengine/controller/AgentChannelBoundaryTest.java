@@ -238,29 +238,18 @@ class AgentChannelBoundaryTest {
     verify(host).send(eq(SESSION),eq(RUN),eq("Count the orders"),isNull(),isNull(),any(),eq(false));
   }
 
-  @Test void aPreviewDeletesOnlyAConversationThatHoldsNoLiveRun() throws Exception {
-    var runtime=mock(AgentRuntimeClient.class);
+  @Test void aConversationIsDeletedWithTheCallersPreviewIdentityForTheHostToJudge() throws Exception {
     var access=mock(OntologyAgentAccess.class);
     var host=mock(OntologyAgentHost.class);
     var owner=new OntologyAgentStore.Owner("U","a");
     when(access.reader(any(),eq(SESSION),isNull())).thenReturn(owner);
-    String path="/v1/channel/sessions/"+SESSION+"/run-identities";
-    var identities=(java.util.function.Function<List<String>,JSONObject>)kinds->JSONObject.of("runs",kinds.stream()
-        .map(kind->JSONObject.of("runId",RUN,"executionKind",kind)).toList());
-    when(runtime.json("a",SESSION,path,"GET",null,null)).thenReturn(identities.apply(List.of("preview","live")));
-    var mvc=MockMvcBuilders.standaloneSetup(new OntologyAgentController(host,access,runtime,mock(OntologyRetrievalService.class)))
+    var mvc=MockMvcBuilders.standaloneSetup(new OntologyAgentController(host,access,mock(AgentRuntimeClient.class),mock(OntologyRetrievalService.class)))
         .setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
-    String preview="{\"kind\":\"preview\"}";
-    var refused=mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION).header(io.ontomato.dataengine.service.PreviewExecution.HEADER,preview))
-        .andExpect(status().isUnprocessableEntity()).andReturn().getResponse().getContentAsString();
-    assertTrue(refused.contains(io.ontomato.dataengine.service.PreviewExecution.WRITE_CODE), refused);
-    // Nothing is cancelled, closed or removed.
-    verify(host,never()).delete(any(),any());
-    when(runtime.json("a",SESSION,path,"GET",null,null)).thenReturn(identities.apply(List.of("preview")));
-    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION).header(io.ontomato.dataengine.service.PreviewExecution.HEADER,preview)).andExpect(status().isNoContent());
+    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION)
+        .header(io.ontomato.dataengine.service.PreviewExecution.HEADER,"{\"kind\":\"preview\"}")).andExpect(status().isNoContent());
     mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/ontology/ai/sessions/"+SESSION)).andExpect(status().isNoContent());
-    verify(host,times(2)).delete(SESSION,owner);
-    verify(runtime,times(2)).json("a",SESSION,path,"GET",null,null);
+    verify(host).delete(SESSION,owner,true);
+    verify(host).delete(SESSION,owner,false);
   }
 
   @Test void aPreviewStopsOnlyAPreviewsRun() throws Exception {

@@ -28,7 +28,7 @@ import type { AgentHostOwner, AgentHostService } from "../agent-host/types";
 import { agentAllowed, requireAgent } from "../assistant/authorization";
 import { assistantStore } from "../assistant/store";
 import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
-import { requirePreviewMayRemove, requirePreviewMayStop } from "../agent-host/run-identity";
+import { requirePreviewMayStop } from "../agent-host/run-identity";
 
 export async function requireDiagnosisAgent(owner: AgentHostOwner, credentials: AssistantCredentials) {
   const agent = await assistantStore.opsDiagnosis(owner.domainId);
@@ -167,9 +167,8 @@ export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agen
   },
   async delete(id, owner, credentials) {
     await diagnosisSession(id, owner);
-    await requirePreviewMayRemove(owner, id, credentials);
     const client = new RuntimeClient(owner.domainId);
-    try { await client.deleteSession(id); }
+    try { await client.deleteSession(id, credentials.executionKind === "preview"); }
     catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; }
     await db().query(`DELETE FROM ${table("ops_sessions")} WHERE id=$1 AND domain_id=$2 AND owner_id=$3`, [id, owner.domainId, owner.userId]);
   },

@@ -21,6 +21,7 @@ import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifact
 import type { RuntimeMessage, RuntimeRunInput } from "@ontomato/contracts/agent-runtime-messages";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError, missing } from "./errors";
+import { PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE } from "@ontomato/contracts/execution-context";
 import { answerMessageId } from "./answer";
 
 export interface Scope {
@@ -606,6 +607,14 @@ export class RuntimeStore {
       FROM ${this.table("messages")} m JOIN ${this.table("runs")} r ON r.host_id=m.host_id AND r.domain_id=m.domain_id AND r.id=m.run_id
       WHERE m.host_id=$1 AND m.domain_id=$2 AND m.session_id=$3 AND m.context_seq IS NOT NULL ORDER BY m.context_seq`, [...values(scope),sessionId]);
     return rows.map(row => ({ id: row.id, runId: row.run_id, messageSeq: Number(row.context_seq), contextSeq: Number(row.context_seq), message: row.message, lane: row.lane }));
+  }
+  /**
+   * Refuses, for a host closing the session on a preview's behalf, when the session holds or has queued a live run.
+   * Called inside the session's admission lock, so no run is admitted between the check and what the host closes.
+   */
+  async requireOnlyPreviewRuns(scope: Scope, sessionId: string) {
+    if ((await this.sessionRunLanes(scope, sessionId)).some(({ lane }) => lane !== "preview"))
+      throw new RuntimeError(422, PREVIEW_WRITE_FORBIDDEN, PREVIEW_WRITE_MESSAGE);
   }
   /** The identity of every run the session holds or has queued (a queued one's is its intent's). */
   async sessionRunLanes(scope: Scope, sessionId: string): Promise<Array<{ runId: string; lane: ExecutionLane }>> {

@@ -22,10 +22,3 @@ export async function sessionRunIdentities(owner: AgentHostOwner, sessionId: str
     .request(`/v1/channel/sessions/${sessionId}/run-identities`));
   return new Map(runs.map(({ runId, executionKind }) => [runId, executionKind]));
 }
-
-/** A preview deletes only a conversation that holds no live run: deleting it closes and removes formal runs. */
-export async function requirePreviewMayRemove(owner: AgentHostOwner, sessionId: string, credentials: AssistantCredentials) {
-  if (credentials.executionKind !== "preview") return;
-  if ([...(await sessionRunIdentities(owner, sessionId)).values()].some(kind => kind !== "preview"))
-    throw new HttpError(422, PREVIEW_WRITE_MESSAGE, PREVIEW_WRITE_FORBIDDEN);
-}

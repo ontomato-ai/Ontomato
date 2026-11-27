@@ -275,11 +275,17 @@ export class AgentChannel {
     try {
       const input = (await this.facts.pending(scope, intent.session.sessionId)).find(row => row.id === intent.inputId)!.message as AgentInput;
       const parent = intent.channel.requestedBy;
-      const inheritedExecution = intent.executionUserId!==undefined ? this.executionActor(intent) : parent ? this.executionActor(await this.facts.intent(this.scope(parent.session, scope.domainId), parent.runId)) : null;
-      const request: AgentPrepareRequest = { mode: "run", executionActor: inheritedExecution, language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, userRecipient: intent.channel.userRecipient ?? null, context: intent.context, presentationBinding };
+      // The execution account is bound once: a top-level admission (no binding, no delegating run) lets the provider
+      // choose it; a delegated or continued run carries the one it is bound to, and the provider must keep it.
+      const bound = intent.executionUserId!==undefined ? intent.executionUserId
+        : parent ? (await this.facts.intent(this.scope(parent.session, scope.domainId), parent.runId)).executionUserId ?? null : undefined;
+      const request: AgentPrepareRequest = { mode: "run",
+        ...(bound!==undefined && { executionActor: bound===null ? null : { userId: bound, domainId: scope.domainId } }), language: intent.language, agent: intent.channel.agent, sessionId: intent.session.sessionId, runId: intent.id, actor: intent.channel.actor, inputId: intent.inputId, input, authority: intent.channel.authority, requestedBy: intent.channel.requestedBy, root: intent.channel.root, userRecipient: intent.channel.userRecipient ?? null, context: intent.context, presentationBinding };
       const { presentationCallback, ...prepared } = runtimeStartRunRequestSchema.parse(
         await this.post(this.provider(intent.session.providerId), "/prepare", request, scope.domainId, this.credential(intent.channel)));
       hostPrepared = true;
+      if (bound!==undefined && (prepared.executionActor?.userId ?? null)!==bound)
+        throw new RuntimeError(403,"EXECUTION_ACCOUNT_CHANGED","A provider cannot change the execution account the run is bound to");
       const authority = prepared.authority ?? intent.channel.authority;
       const inherited = intent.channel.authority;
       if (inherited.executionKind === "preview" && authority.executionKind !== "preview") throw new RuntimeError(403,"PREVIEW_EXECUTION_FORBIDDEN","A provider cannot change preview authority to live");

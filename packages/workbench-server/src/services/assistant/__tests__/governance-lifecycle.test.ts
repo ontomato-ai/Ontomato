@@ -105,6 +105,23 @@ it.each(["interactive", "automation", "older automation"] as const)("uses the ex
   else expect(mocks.resolveExecution).toHaveBeenCalledWith({ id: agent.id, execution_user_id: defaultUser }, owner, credentials);
 });
 
+it.each([
+  { bound: "sender-account", userRecipient: false },
+  { bound: "sender-account", userRecipient: true },
+  { bound: null, userRecipient: false },
+])("keeps the execution account a delegated or continued run is bound to ($bound), not this agent's own", async ({ bound, userRecipient }) => {
+  const agent = await mocks.agent();
+  mocks.agent.mockResolvedValue({ ...agent, execution_user_id: "agent-account" });
+  mocks.resolveExecution.mockResolvedValue({ credentials: { apiKey: "bound-key" } });
+  const request = { ...preparation(), executionActor: bound === null ? null : { userId: bound, domainId: owner.domainId } };
+  if (userRecipient) request.userRecipient = { session: request.root.session, actor: request.actor };
+  const credentials = { token: "logged-in-user" };
+  const prepared = await assistantService.prepare(request, owner, credentials);
+  expect(prepared.executionActor).toEqual(bound === null ? null : { userId: bound, domainId: owner.domainId });
+  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({ executionUserId: bound }), credentials);
+  if (bound === null) expect(mocks.resolveExecution).not.toHaveBeenCalled();
+  else expect(mocks.resolveExecution).toHaveBeenCalledWith({ id: agent.id, execution_user_id: bound }, owner, credentials);
+});
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
   const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageControl:false});

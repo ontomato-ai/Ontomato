@@ -38,7 +38,7 @@ import {
   storedDataset,
 } from "@ontomato/contracts/data-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { requirePreviewMayRemove, requirePreviewMayStop } from "../agent-host/run-identity";
+import { requirePreviewMayStop } from "../agent-host/run-identity";
 import { withDomainSkills } from "../skills/operations";
 import {
   getPostgresPool,
@@ -304,9 +304,12 @@ export const assistantService = {
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
     const { sessionId, runId: id, input, authority } = body;
     const { agent: a } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
-    // When a logged-in user is present (direct chat or delegated sub-agent under a user chat),
-    // both reads and writes inherit that user's permissions. `execution_user_id` is only for unattended automation.
-    const executionUserId = isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
+    // The execution account is chosen once, when a run is admitted at the top: with a logged-in user present the run
+    // reads and writes as that user, and `execution_user_id` is only for unattended automation. A delegated or continued
+    // run keeps the account it is bound to (`executionActor`, null being the initiator's own), whatever this agent's own
+    // configuration would choose; the runtime refuses a start under any other.
+    const executionUserId = body.executionActor !== undefined ? body.executionActor?.userId ?? null
+      : isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
     const executionCredentials = await agentExecutionCredentials(a.id, executionUserId, owner, credentials);
     const appId = isAppBuilderKind(a.kind) ? requiredBuilderAppId(body.context) : undefined;
     const project = appId ? await ensureMaterializedWorkspace(owner, credentials, appId) : undefined;
@@ -486,7 +489,6 @@ export const assistantService = {
   },
   async delete(sessionId: string, owner: AssistantOwner, credentials: AssistantCredentials) {
     await assistantStore.session(sessionId, owner);
-    await requirePreviewMayRemove(owner, sessionId, credentials);
     const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     let snapshot;
     try {
@@ -496,7 +498,9 @@ export const assistantService = {
     }
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
-    if (snapshot) await c.deleteSession(sessionId);
+    // The runtime, which admits the conversation's runs, refuses a preview's deletion while it holds a live one, before
+    // any retrieval or row of it is touched.
+    if (snapshot) await c.deleteSession(sessionId, credentials.executionKind === "preview");
     const scopes = (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1 AND retrieval_scope_id IS NOT NULL`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {

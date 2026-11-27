@@ -450,7 +450,14 @@ process space (`sessions/<digest>` for live, `sessions/<digest>-preview` for pre
 reference (`sessions.engine_ref`, `sessions.preview_engine_ref`); an engine opened afresh is given
 only what runs of its identity consumed, and only live runs read stored compaction summaries.
 `GET /v1/channel/sessions/:sessionId/run-identities` returns each run's identity for hosts that read
-or close the conversation.
+or close the conversation. `DELETE /v1/sessions/:sessionId` and `DELETE /v1/workspaces/:id` accept
+`{ "onlyPreviewRuns": true }` from a host deleting on a preview's behalf: inside each session's
+admission lock, and for a workspace before its first conversation is deleted, a session that holds or
+has queued a live run is refused with 422 `PREVIEW_WRITE_FORBIDDEN`.
+The execution account is bound once. A top-level admission (no binding and no delegating run) sends
+`/prepare` no `executionActor` and the provider chooses; a delegated or continued run sends the
+account it is bound to (`null` for the initiator's own), and the runtime refuses to start it with 403
+`EXECUTION_ACCOUNT_CHANGED` if the provider returns any other.
 See `execution-context.md`.
 Node auxiliary one-shot model calls are not registered conversational agents and expose no agent tool.
 

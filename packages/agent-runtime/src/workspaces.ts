@@ -66,11 +66,17 @@ export class Workspaces {
       return { commit: await git.commit(`Restore ${commit}`) };
     });
   }
-  async delete(scope: Scope, owner: string, id: string, deleteSession: (id: string) => Promise<void>) {
+  /**
+   * Deletes the workspace with every conversation in it. On a preview's behalf (`onlyPreviewRuns`), every run those
+   * conversations hold or have queued must be the preview's, checked before the first is deleted, and again for each
+   * inside its own admission lock as it is deleted.
+   */
+  async delete(scope: Scope, owner: string, id: string, onlyPreviewRuns: boolean, deleteSession: (id: string) => Promise<void>) {
     return this.store.transaction(async c => {
       const row = await this.row(scope, owner, id, c, true);
       if (row.active_run_id) throw new RuntimeError(409, "WORKSPACE_BUSY", "Workspace has an active run");
       const sessions = (await c.query(`SELECT id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND workspace_id=$3`, [scope.hostId, scope.domainId, id])).rows;
+      if (onlyPreviewRuns) for (const session of sessions) await this.store.requireOnlyPreviewRuns(scope, session.id);
       for (const session of sessions) await deleteSession(session.id);
       await c.query(`DELETE FROM ${this.store.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, id]);
       await rm(this.git(scope, id).directory, { recursive: true });

@@ -668,14 +668,14 @@ export async function cancelHumanPanelOperation(owner: AssistantOwner, credentia
 export async function cancelPendingAgentPageQuestion(owner: AssistantOwner, credentials: AssistantCredentials, questionId: string, reason: { code: string; message: string }) {
   if (credentials.executionKind === "preview") {
     const prepared = await store.findAgentPageQuestion(owner, questionId);
-    const local = ownLocalConfirmation(owner, questionId);
     if (prepared) refusePreviewDeciding(credentials, preparedByPreview(prepared));
-    else if (local) refusePreviewDeciding(credentials, local.preview);
   }
   const cancelled = await store.cancelPendingAgentPageQuestion(owner, questionId, reason);
   if (cancelled) return { stale: true as const, intentId: cancelled.intentId };
+  // Read, judged and deleted in one synchronous step: the record removed is the one whose asking run was checked.
   const local = ownLocalConfirmation(owner, questionId);
   if (local) {
+    refusePreviewDeciding(credentials, local.preview);
     pendingLocalConfirmations.delete(questionId);
     return { stale: true as const, intentId: local.intentId };
   }

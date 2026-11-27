@@ -110,6 +110,35 @@ function presentationAdmission(activeRunId: string | null = null) {
   return { runtime, port, prepares, starts, callback, intents, receipts, submit };
 }
 
+it.each([
+  { bound: "account-E", provider: "account-E", starts: true },
+  { bound: "account-E", provider: "account-F", starts: false },
+  { bound: null, provider: "account-F", starts: false },
+  { bound: null, provider: null, starts: true },
+])("starts a continued run only as the account it is bound to (bound $bound, provider $provider)", async ({ bound, provider, starts: started }) => {
+  const { port, prepares, starts, intents, submit } = presentationAdmission();
+  let chosen: string | null = "account-F";
+  const answer = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    if (!url.endsWith("/prepare")) return Response.json({ accepted: true });
+    const prepared = await (await answer(url, init)).json();
+    return Response.json({ ...prepared, executionActor: chosen === null ? null : { userId: chosen, domainId: scope.domainId } });
+  });
+  // A person's message opens the run: nothing is bound, so the provider chooses and the run starts as its choice.
+  await submit();
+  expect(prepares[0]).not.toHaveProperty("executionActor");
+  expect(starts.mock.calls[0]?.[5]).toMatchObject({ executionActor: { userId: "account-F" } });
+  // A continued run carries the account it is bound to; the provider is told it and must keep it.
+  chosen = provider;
+  intents.set(runId, { ...intents.get(runId)!, executionUserId: bound, status: "starting", error: null });
+  const prepared = port.prepare(intents.get(runId)!);
+  if (started) await prepared;
+  else await expect(prepared).rejects.toMatchObject({ status: 403, code: "EXECUTION_ACCOUNT_CHANGED" });
+  expect(prepares.at(-1)!.executionActor).toEqual(bound === null ? null : { userId: bound, domainId: scope.domainId });
+  expect(starts).toHaveBeenCalledTimes(started ? 2 : 1);
+  if (started) expect((starts.mock.calls[1]?.[5] as RuntimeStartRunRequest).executionActor ?? null).toEqual(bound === null ? null : { userId: bound, domainId: scope.domainId });
+});
+
 it("passes the direct root binding to prepare once and keeps it out of intent context and later preparation", async () => {
   const { port, prepares, starts, callback, intents, submit } = presentationAdmission();
   await submit();
@@ -1181,7 +1210,7 @@ it("exposes GET /v1/channel/intents/:runId scoped to host and domain and release
 
     const del = await fetch(`${base}/v1/sessions/${sessionId}`, { method: "DELETE", headers });
     expect(del.status).toBe(204);
-    expect(runtime.deleteSession).toHaveBeenCalledWith(scope, sessionId);
+    expect(runtime.deleteSession).toHaveBeenCalledWith(scope, sessionId, false);
     expect(() => port.credential(intent.channel)).toThrow("initiating credential is no longer available");
   } finally {
     await new Promise<void>((done) => server.close(() => done()));

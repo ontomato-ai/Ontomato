@@ -217,8 +217,9 @@ export class RuntimeClient {
       ),
     );
   }
-  async deleteSession(id: string) {
-    await this.request(`/v1/sessions/${encodeURIComponent(id)}`, "DELETE");
+  /** `onlyPreviewRuns`: on a preview's behalf, which the runtime refuses inside the session's lock if it holds a live run. */
+  async deleteSession(id: string, onlyPreviewRuns: boolean) {
+    await this.request(`/v1/sessions/${encodeURIComponent(id)}`, "DELETE", { onlyPreviewRuns });
   }
   async channelStream(path: string, signal: AbortSignal) {
     const response = await fetch(environment.agentRuntime().url.replace(/\/$/, "") + path, { headers: this.headers(), signal });

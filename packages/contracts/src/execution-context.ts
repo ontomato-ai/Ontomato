@@ -34,8 +34,9 @@ type PlatformService = "" | "/data-query";
  *   `/ontology/ai/sessions/{id}/runs` and the agent channel's `/platform/agent-channel/commands`.
  * - Stopping an agent run (`/assistant|observe/agent/sessions/{id}/runs/{run}/cancel`,
  *   `/ontology/ai/sessions/{id}/runs/{run}/cancel`) or deleting a conversation (`DELETE /assistant/sessions/{id}`,
- *   `DELETE /observe/agent/sessions/{id}`, `DELETE /ontology/ai/sessions/{id}`) carries the identity too: a preview
- *   stops only a preview's run and deletes only a conversation that holds no live run.
+ *   `DELETE /observe/agent/sessions/{id}`, `DELETE /ontology/ai/sessions/{id}`, and a workspace with its conversations,
+ *   `DELETE /workspaces/{id}`) carries the identity too: a preview stops only a preview's run and deletes only what
+ *   holds no live run. Writing a workspace's files is building and is not marked.
  * - A pending page operation is the preview's when a preview prepared it (`/panel-operations/intents`,
  *   `/panel-operations/local-confirmations`), and dispatching, cancelling or claiming one
  *   (`/panel-operations/intents/{id}/dispatch|cancel`, `/panel-operations/questions/{id}/cancel-if-pending`,
@@ -57,6 +58,7 @@ const previewEntries: readonly (readonly [service: PlatformService, method: stri
   ["", "POST", /^\/panel-operations\/(?:intents\/[^/]+\/cancel|questions\/[^/]+\/cancel-if-pending|local-confirmations\/[^/]+\/claim)$/iu],
   ["/data-query", "DELETE", /^\/ontology\/ai\/sessions\/[^/]+$/iu],
   ["", "DELETE", /^\/(?:assistant|observe\/agent)\/sessions\/[^/]+$/iu],
+  ["", "DELETE", /^\/workspaces\/[^/]+$/iu],
   ["", "POST", /^\/assistant\/sessions$/iu],
   ["", "POST", /^\/assistant\/sessions\/[^/]+\/runs$/iu],
   ["", "POST", /^\/(?:assistant|observe\/agent)\/sessions\/[^/]+\/runs\/[^/]+\/cancel$/iu],

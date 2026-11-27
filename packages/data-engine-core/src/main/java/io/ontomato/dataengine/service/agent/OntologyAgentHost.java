@@ -43,11 +43,47 @@ public class OntologyAgentHost {
     return RETRIEVER.equals(store.session(session, owner).getString("agent_id"));
   }
 
-  public void delete(String session, Owner owner) throws Exception {
-    if (ActionCreationService.AGENT.equals(store.session(session,owner).getString("agent_id"))) {
+  /**
+   * Deletes the conversation with its runs. Closing begins before anything is judged: from then on the conversation
+   * admits no run, so on a preview's behalf every run it holds — each the runtime has admitted or queued, and each this
+   * host enumerates to close — is checked as the preview's before any is cancelled, closed or removed. A deletion that
+   * does not complete leaves the conversation admitting runs again.
+   */
+  public void delete(String session, Owner owner, boolean preview) throws Exception {
+    String agent = store.session(session, owner).getString("agent_id");
+    store.beginClosing(session, owner);
+    try {
+      if (preview) requireOnlyPreviewRuns(session, owner);
+      close(session, agent, owner);
+    } catch (Exception failed) {
+      store.endClosing(session);
+      throw failed;
+    }
+  }
+
+  private void requireOnlyPreviewRuns(String session, Owner owner) throws Exception {
+    var listed = runtime.json(owner.domainId(), session, "/v1/channel/sessions/" + session + "/run-identities", "GET", null, null)
+        .getJSONArray("runs");
+    var previews = new HashSet<String>();
+    for (int index = 0; index < listed.size(); index++) {
+      var run = listed.getJSONObject(index);
+      if (!"preview".equals(run.getString("executionKind"))) throw previewRefusal();
+      previews.add(run.getString("runId"));
+    }
+    for (var row : store.rows("SELECT id FROM ontology_agent_runs WHERE session_id=?", uuid(session)))
+      if (!previews.contains(row.getString("id"))) throw previewRefusal();
+  }
+
+  private static AgentHttpException previewRefusal() {
+    return new AgentHttpException(422, io.ontomato.dataengine.service.PreviewExecution.WRITE_CODE,
+        io.ontomato.dataengine.service.PreviewExecution.WRITE_MESSAGE);
+  }
+
+  private void close(String session, String agent, Owner owner) throws Exception {
+    if (ActionCreationService.AGENT.equals(agent)) {
       actionCreation.delete(session,owner);return;
     }
-    if (isRetrieval(session, owner)) {
+    if (RETRIEVER.equals(agent)) {
       retrieval.delete(session, owner);
       return;
     }

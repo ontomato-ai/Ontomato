@@ -127,17 +127,18 @@ it("lets a preview stop only a preview's run", async () => {
   expect(sent.some(entry => entry.path.endsWith(`/run-intents/${runId}/cancel`))).toBe(true);
 });
 
-it("lets a preview delete only a diagnosis conversation that holds no live run, before anything is removed", async () => {
-  const remove = vi.spyOn(RuntimeClient.prototype, "deleteSession").mockResolvedValue(undefined as never);
+it("has the runtime decide a preview's deletion of a diagnosis conversation, before its row is removed", async () => {
+  const remove = vi.spyOn(RuntimeClient.prototype, "deleteSession").mockRejectedValue(
+    new HttpError(422, "预览里不执行写操作，动作的对错用动作试跑验", PREVIEW_WRITE_FORBIDDEN));
   await post("/sessions", {}, { agentId: DIAGNOSIS_AGENT_ID });
   const drop = (headers: Record<string, string>) => fetch(`${base}/sessions/${sessionId}`, { method: "DELETE", headers });
   const refused = await drop(preview);
   expect(refused.status).toBe(422);
   expect(await refused.json()).toMatchObject({ error: { code: PREVIEW_WRITE_FORBIDDEN } });
-  expect(remove).not.toHaveBeenCalled();
+  expect(remove).toHaveBeenCalledWith(sessionId, true);
   expect(state.rows.has(sessionId)).toBe(true);
-  runIdentity = "preview";
-  expect((await drop(preview)).status).toBe(204);
-  expect(remove).toHaveBeenCalledOnce();
+  remove.mockResolvedValue();
+  expect((await drop({})).status).toBe(204);
+  expect(remove).toHaveBeenLastCalledWith(sessionId, false);
   expect(state.rows.has(sessionId)).toBe(false);
 });

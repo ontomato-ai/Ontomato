@@ -792,9 +792,11 @@ export class AgentRuntime {
       return ids;
     });
   }
-  async deleteSession(scope: Scope, id: string) {
+  /** `onlyPreviewRuns`: the host deletes on a preview's behalf, which deletes nothing that holds a live run. */
+  async deleteSession(scope: Scope, id: string, onlyPreviewRuns: boolean) {
     await this.files.withLock(() =>
       this.locked(scope, id, async () => {
+        if (onlyPreviewRuns) await this.store.requireOnlyPreviewRuns(scope, id);
         const hashes = (
           await this.store.pool.query(
             `SELECT DISTINCT sha256 FROM ${this.store.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,

@@ -41,7 +41,10 @@ workspaceRouter.get("/:id/sessions", wrap(async (req, res) => {
 }));
 workspaceRouter.delete("/:id", wrap(async (req, res) => {
   const c=context(req), owner = c.owner;
-  const deleted = z.object({ sessionIds: z.array(workspaceIdSchema) }).parse(await runtime(owner).request(`/v1/workspaces/${id(req, "id")}`, "DELETE"));
+  // The runtime deletes the workspace's conversations; on a preview's behalf it refuses, before the first, when any holds
+  // a live run.
+  const deleted = z.object({ sessionIds: z.array(workspaceIdSchema) }).parse(await runtime(owner).request(`/v1/workspaces/${id(req, "id")}`, "DELETE",
+    { onlyPreviewRuns: c.credentials.executionKind === "preview" }));
   for (const sessionId of deleted.sessionIds) await assistantService.delete(sessionId, owner, c.credentials);
   res.sendStatus(204);
 }));

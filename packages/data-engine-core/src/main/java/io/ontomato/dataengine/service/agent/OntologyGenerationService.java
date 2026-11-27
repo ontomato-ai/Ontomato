@@ -211,6 +211,7 @@ public class OntologyGenerationService {
       store.transaction(
           () -> {
             store.createSession(session, owner, agent, !external);
+            store.admitRun(session);
             store.update(
                 "INSERT INTO"
                     + " ontology_agent_runs(id,session_id,input_hash,request,open,deadline,external,decision_revision)"

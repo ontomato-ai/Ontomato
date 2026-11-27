@@ -497,7 +497,8 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     route(async (req, res) => {
       const ctx = scope(req);
       const sessionId = runtimeIdSchema.parse(req.params.sessionId);
-      await runtime.deleteSession(ctx.scope, sessionId);
+      const { onlyPreviewRuns = false } = z.object({ onlyPreviewRuns: z.boolean().optional() }).strict().parse(req.body ?? {});
+      await runtime.deleteSession(ctx.scope, sessionId, onlyPreviewRuns);
       runtime.channel.releaseSession(ctx.scope, sessionId);
       res.status(204).end();
     }),
