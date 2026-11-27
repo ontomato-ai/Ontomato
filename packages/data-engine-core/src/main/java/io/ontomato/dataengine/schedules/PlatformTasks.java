@@ -232,12 +232,6 @@ public class PlatformTasks {
     return definitions.canRead(subject, access(task, Verb.USE));
   }
 
-  public List<Trigger> policyTargets(String domain) {
-    var user = current();
-    if (!domain.equals(user.getDomainId())) throw missing();
-    return policyTargets(definitions.subject(user));
-  }
-
   public List<Trigger> policyTargets(SubjectContext subject) {
     return readable(subject, null, null, null).stream()
         .filter(task -> !Trigger.PENDING_REVIEW.equals(task.status())).toList();
