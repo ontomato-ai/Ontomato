@@ -118,14 +118,6 @@ public class KnowledgeGovernanceService {
     for (String key : input.keySet()) schemas.put(key,JSONSchema.of(input.getJSONObject(key)));
   }
 
-  public AgentRuntimeClient.SkillVersion publishSkill() throws Exception {
-    var files=new ArrayList<Map<String,String>>();
-    for (String path:List.of("SKILL.md","scripts/governance.mjs","references/commands.md","references/extraction.md"))
-      files.add(Map.of("path",path,"content",definitions.resource("ontology-skills/knowledge-governance/"+path)));
-    return runtime.publishSkill("governance-skill",Map.of(
-      "namespace",Map.of("kind","provider","provider","ontology"),"name","knowledge-governance"),files);
-  }
-
   private static JSONObject emptyWork() {
     return JSONObject.of("summary","","notes","","reviewedKnowledgeIds",new JSONArray(),
       "knowledgeTotal",null,"issues",new JSONArray(),"sources",new JSONArray());

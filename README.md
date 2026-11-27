@@ -171,7 +171,7 @@ agents supported by [`skills`](https://github.com/vercel-labs/skills)) and point
 the Workbench:
 
 ```bash
-npx skills add ontomato-ai/Ontomato --skill ontomato-ontomap-builder ontomato-book-ontology-builder ontomato-analyst ontomato-app-builder
+npx skills add ontomato-ai/Ontomato --skill ontomato-ontomap-builder ontomato-book-ontology-builder ontomato-analyst ontology-query data-retrieval ontomato-app-builder
 export ONTOMATO_URL=http://<host>:3000
 ```
 
@@ -182,7 +182,9 @@ export ONTOMATO_URL=http://<host>:3000
 | --- | --- |
 | `ontomato-ontomap-builder` | establish or maintain the ontology's data mappings and business knowledge, then check them with questions |
 | `ontomato-book-ontology-builder` | derive a book-specific ontology from full reading, with source evidence and analysis, then hand a deployable package to ontomap-builder |
-| `ontomato-analyst` | query and analyze business objects and relationships through the same ontology |
+| `ontomato-analyst` | delegate natural-language data questions, inspect pending work, run granted actions and use analysis agents from outside the product |
+| `ontology-query` | query structure, DSL syntax, stored values, business knowledge and published metrics |
+| `data-retrieval` | deliver a query logic package as a receipted dataset |
 | `ontomato-app-builder` | build MetricViews, Actions and application pages on the ontology, in the configured single- or two-environment setup |
 | `ontomato-adapter-builder` | implement a new data-source type in a compatible development checkout; ordinary database connection setup uses ontomap-builder |
 

@@ -5,7 +5,7 @@ description: Generate or explain ontology Actions and describe or quality-check 
 
 # Ontology generation
 
-Use the task-specific definition and its business rules. Use standard `read`, `write`, `edit` and `bash` tools for workspace files. Explore schema, relationships, distinct values and DSL with the `ontomato-analyst` skill. Java paths are never workspace paths.
+Use the task-specific definition and its business rules. Use standard `read`, `write`, `edit` and `bash` tools for workspace files. Explore schema, relationships, distinct values and DSL with the `ontology-query` skill. Java paths are never workspace paths.
 
 Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. The script uses the session credential and `ONTOMATO_GENERATION_URL` to resolve the active Java gate. Metadata queries use the separate ontology callback. Java opens and closes the gate. When the user only asks to refresh the structured explanation, run `explain`; do not edit the action.
 
@@ -13,7 +13,7 @@ Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. The script
 | --- | --- |
 | `source [startLine [endLine]]` | Read the exact Action source to explain; line numbers start at 1. Read it in one call. Do not pipe it through `sed`, `head` or `tail`: the command already returns the requested slice, and repeated paging is treated as no progress. |
 | `explain` | Re-run the structured explanation for the current conversation's newest draft from its saved code. Use only when the user asks to refresh/regenerate the right-side definition; it does not change the action code. |
-| `test-package outputs/package.json labels.json` | Test the complete read package, default parameter values and output labels. Plain DSL entries are accepted. Requires the data-retrieval skill alongside this skill. |
+| `test-package outputs/package.json labels.json` | Test the complete read package, default parameter values and output labels. Plain DSL entries are accepted. |
 | `test outputs/program.py parameters.json` | Action business test only. Read operations use test-package and cannot acquire a write sandbox. |
 | `prepare data.json` | Validate Action sandbox fixture `{objDatas,relDatas,vectorDatas}`; object groups contain className and rows, relationships contain relationName/sourceObjId/targetObjId. |
 | `reset` | Clear the Action sandbox and import the prepared fixture. Repeat before independent Action tests. |

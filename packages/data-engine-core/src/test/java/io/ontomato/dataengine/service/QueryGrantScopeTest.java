@@ -145,7 +145,7 @@ class QueryGrantScopeTest {
     doAnswer(call -> null).when(identity).requireQueryAccess("user", "domain");
 
     var override = request(token);
-    override.addHeader(PreviewExecution.HEADER, "{\"kind\":\"preview\"}");
+    override.addHeader(PreviewExecution.HEADER, "preview");
     assertAdmitted(filter, override);
   }
 

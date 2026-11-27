@@ -289,7 +289,7 @@ it("carries a preview run's identity into the business write its page operation 
      return Response.json({...task,title:"Inventory summary"});
    }
    expect(url).toMatch(/\/platform\/triggers\/[^/]+\/runs$/u);
-   expect(marked).toBe('{"kind":"preview"}');
+   expect(marked).toBe('preview');
    return Response.json({error:{code:"PREVIEW_WRITE_FORBIDDEN",message:"预览里不执行写操作，动作的对错用动作试跑验"},correlationId:"test"},{status:422});
  });
  vi.stubGlobal("fetch",owner422);
@@ -317,7 +317,7 @@ it.each([
    const marked = new Headers(init.headers).get(EXECUTION_CONTEXT_HEADER);
    if ((init.method ?? "GET") === "GET") return Response.json({...task,title:"Inventory summary"});
    expect(url).toMatch(/\/platform\/triggers\/[^/]+\/runs$/u);
-   expect(marked).toBe('{"kind":"preview"}');
+   expect(marked).toBe('preview');
    return Response.json({error:{code:"PREVIEW_WRITE_FORBIDDEN",message:"预览里不执行写操作，动作的对错用动作试跑验"},correlationId:"test"},{status:422});
  }));
  // The person on the live page confirms with their own, unmarked credentials.
@@ -338,7 +338,7 @@ it("carries a preview's identity into the business write when it confirms a live
      return Response.json({...task,title:"Inventory summary"});
    }
    expect(url).toMatch(/\/platform\/triggers\/[^/]+\/runs$/u);
-   expect(marked).toBe('{"kind":"preview"}');
+   expect(marked).toBe('preview');
    return Response.json({error:{code:"PREVIEW_WRITE_FORBIDDEN",message:"预览里不执行写操作，动作的对错用动作试跑验"},correlationId:"test"},{status:422});
  });
  vi.stubGlobal("fetch",owner422);
@@ -875,7 +875,7 @@ it("freezes a localized input schema and dispatches the batch in the same locale
   expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ locale: "fr" }), input.calls, intentId);
 });
 
-it("runs a registered read for a preview reader live and unmarked, without creating an intent", async () => {
+it("runs a registered read for a preview reader with the preview identity, without creating an intent", async () => {
   const binding = { kind: "PlatformOperation" as const, id: "metricViews.testExecute" };
   const input = { applicationId: "A", useId: "tasks", operationId: "run.testExecute", call: {
     target: { kind: "draft" as const },
@@ -904,8 +904,8 @@ it("runs a registered read for a preview reader live and unmarked, without creat
   const ownerRead = vi.fn(async (url, init) => {
     expect(url).toBe("http://owner.test/metricView/testExecute");
     expect(new Headers(init.headers).get("tk")).toBe("U-token");
-    // A read reaches its owner as the reader does: the preview identity is no part of a read.
-    expect(new Headers(init.headers).has(EXECUTION_CONTEXT_HEADER)).toBe(false);
+    // A read carries the caller's preview identity; its owner does not treat the identity as a write refusal.
+    expect(new Headers(init.headers).get(EXECUTION_CONTEXT_HEADER)).toBe('preview');
     expect(JSON.parse(init.body)).toEqual(input.call.input);
     return Response.json({});
   });

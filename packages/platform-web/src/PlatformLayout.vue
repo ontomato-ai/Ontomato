@@ -21,6 +21,7 @@ import {
   type PlatformPageActions,
   type PlatformPreferences,
   type PlatformShellLabels,
+  type PlatformShortcutReadFailure,
 } from "@ontomato/platform-shell";
 import ApplicationFrameHost, { type ApplicationFrameSpec } from "./ApplicationFrameHost.vue";
 import type { PlatformAppDeclaration } from "./apps";
@@ -54,6 +55,7 @@ const props = defineProps<{
   apps: readonly PlatformAppDeclaration[];
   dynamicAppIds?:readonly string[];
   pinnedAppIds?:readonly string[];
+  shortcutReadFailure?: PlatformShortcutReadFailure;
   loading?: boolean;
   /** Where the address belongs and what it shows; null on an address that is no page (a conversation). */
   shownPage: PlatformShownPage | null;
@@ -222,6 +224,7 @@ const headerLabels = computed(() => ({
     :loading="loading"
     :hide-rail="hideRail"
     :apps="blocked ? [] : railApps"
+    :shortcut-read-failure="blocked ? undefined : shortcutReadFailure"
     :active-app-id="activeAppId"
     :account="account"
     :preferences="preferences"

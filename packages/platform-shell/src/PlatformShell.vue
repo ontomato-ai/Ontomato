@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import type { PlatformAccount, PlatformApp, PlatformBrand, PlatformPreferences, PlatformShellLabels } from "./types";
+import type { PlatformAccount, PlatformApp, PlatformBrand, PlatformPreferences, PlatformShellLabels, PlatformShortcutReadFailure } from "./types";
 import PlatformRail from "./PlatformRail.vue";
 
 /**
@@ -14,6 +14,7 @@ import PlatformRail from "./PlatformRail.vue";
 const props = withDefaults(
   defineProps<{
     apps: readonly PlatformApp[];
+    shortcutReadFailure?: PlatformShortcutReadFailure;
     loading?: boolean;
     activeAppId: string | null;
     account: PlatformAccount | null;
@@ -76,6 +77,7 @@ const collapsed = computed({
       <PlatformRail
         :loading="loading"
         :apps="apps"
+        :shortcut-read-failure="shortcutReadFailure"
         :active-app-id="activeAppId"
         :account="account"
         :preferences="preferences"

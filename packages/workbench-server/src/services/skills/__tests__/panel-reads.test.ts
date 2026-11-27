@@ -34,7 +34,7 @@ const owner = { domainId: domain, userId: "reader" };
 const credentials = { token: "initiator-token", locale: "en" };
 const governance: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" };
 const domainSkill: RuntimeSkillRef = { namespace: { kind: "domain", domainId: domain }, name: "domain-helper" };
-const systemOnlySkillNames = ["ontomato-app-builder", "ops-diagnosis", "ontomato-analyst", "data-retrieval"];
+const systemOnlySkillNames = ["ontomato-app-builder", "ops-diagnosis", "data-retrieval"];
 const skillName = (value: unknown) => {
   const parsed = runtimeSkillRefSchema.safeParse(value);
   return parsed.success ? parsed.data.name : undefined;
@@ -192,9 +192,9 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
     "ontomato-agent-builder",
     "ontomato-page-operator",
     "ontomato-analyst-assistant",
+    "ontology-query",
     "ontomato-app-builder",
     "ops-diagnosis",
-    "ontomato-analyst",
     "data-retrieval",
     "builtin-guide",
     "alpha-helper",

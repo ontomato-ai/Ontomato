@@ -44,8 +44,9 @@ async function download() {
         <span class="panel-title" :title="title">{{ title }}</span>
       </span>
       <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title, caption: open.caption }" />
-      <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
+      <button type="button" class="panel-button panel-download-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
+        <span class="panel-download-label">{{ shell.labels.value.download }}</span>
       </button>
       <button type="button" class="panel-button" :title="shell.labels.value.close" :aria-label="shell.labels.value.close" @click="emit('close')">
         <X :size="17" />
@@ -93,6 +94,7 @@ async function download() {
   background: var(--el-color-primary-light-7);
 }
 .panel-header {
+  container: artifact-header / inline-size;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -139,6 +141,7 @@ async function download() {
   color: var(--el-text-color-secondary);
   cursor: pointer;
 }
+.panel-download-label { display: none; }
 .panel-button:hover {
   background: var(--el-fill-color);
   color: var(--el-text-color-primary);

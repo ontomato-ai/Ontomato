@@ -39,6 +39,14 @@ export default [
       "packages/workbench-server/skills/**",
       "packages/workbench-server/resources/runtime-skills/assistant-report/scripts/*.cjs",
       "packages/workbench-server/resources/runtime-skills/assistant-report/vendor/**",
+      // Generated agent skill bundles; their source is packages/agent-skill-scripts.
+      "agent-skills/ontology-query/scripts/ontomato.mjs",
+      "agent-skills/data-retrieval/scripts/dataset.mjs",
+      "agent-skills/ontology-generation/scripts/generation.mjs",
+      "agent-skills/metricview-generation/scripts/generation.mjs",
+      "agent-skills/ontomato-analyst/client.mjs",
+      "agent-skills/ontomato-app-builder/scripts/client.mjs",
+      "agent-skills/ontomato-ontomap-builder/client.mjs",
       // Java modules.
       "packages/data-engine-core/**",
     ],
@@ -79,7 +87,7 @@ export default [
   {
     // Every .mjs here runs on Node (build, packaging and development entries, their tests, and
     // the agent skill CLIs): add only the Node globals.
-    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs", "packages/workbench-server/report-skill/**/*.mjs", "packages/workbench-server/chart-skill/**/*.mjs", "packages/workbench-server/dashboard-skill/**/*.mjs", "packages/apps-sdk/*.mjs", "packages/apps-sdk/examples/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-skill-scripts/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs", "packages/workbench-server/report-skill/**/*.mjs", "packages/workbench-server/chart-skill/**/*.mjs", "packages/workbench-server/dashboard-skill/**/*.mjs", "packages/apps-sdk/*.mjs", "packages/apps-sdk/examples/**/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {

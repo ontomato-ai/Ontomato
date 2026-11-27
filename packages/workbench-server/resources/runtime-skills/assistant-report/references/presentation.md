@@ -12,6 +12,7 @@ rejects the slide list if any are missing.
 {
   "report": "outputs/reports/sales/report.md",
   "title": "Sales review",
+  "cover": {"title":"Sales review","subtitle":"November results","style":"business"},
   "slides": [
     {"layout":"text","title":"Growth is concentrated in one region","bullets":["Use the report's verified finding.","Retain its scope and limitations."]},
     {"layout":"chart","title":"Compare regional sales","takeaway":"State the report's conclusion.","chart":"outputs/sales.chart.json"},
@@ -19,6 +20,14 @@ rejects the slide list if any are missing.
   ]
 }
 ```
+
+Apply the user's custom instructions to the slide plan while retaining the report's
+facts, sources and limitations. If the user supplies cover settings, copy them
+verbatim into `cover`: use `false` to omit it, or set a `title` (up to 120 characters),
+an optional `subtitle` (up to 160 characters), and `style` (`business` or `minimal`).
+If the supplied cover includes an `image` path or an `accent` color, copy those
+values verbatim as well. The renderer places the uploaded PNG or JPEG beside the
+cover text, preserving its proportions. Omit these fields when absent.
 
 `title` and `layout` are required for each slide; `takeaway` is optional.
 Text slides have `bullets`; chart slides name one `.chart.json`; table slides name

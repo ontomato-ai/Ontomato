@@ -38,7 +38,7 @@ export function executionBusinessCallbacks(
   _owner: AssistantOwner,
   initiatorCredentials: AssistantCredentials,
   runId: string,
-  options: { scope?: "full" | "app-builder" | "authoring-only"; expiresAt?: number; pageControl?: boolean } = {},
+  options: { scope?: "full" | "app-builder" | "authoring-only"; expiresAt?: number; pageControl?: boolean; retrieval?: boolean } = {},
 ): RuntimeBusinessCallbacks {
   const scope = options.scope ?? "full";
   const expiresAt = options.expiresAt ?? Date.now() + getQueryTimeoutMs();
@@ -56,7 +56,9 @@ export function executionBusinessCallbacks(
     ontology,
     ...panelCallbacks,
     authoring,
-    retrieval: sealedCallback(`${base}/retrieval`, { purpose: "execution", capability: "retrieval" }, runId, expiresAt, initiatorCredentials),
+    ...(options.retrieval ? {
+      retrieval: sealedCallback(`${base}/retrieval`, { purpose: "execution", capability: "retrieval" }, runId, expiresAt, initiatorCredentials),
+    } : {}),
   };
 }
 

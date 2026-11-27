@@ -6,22 +6,22 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { PAGE_OPERATOR_SKILL } from "../page-operator";
+import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
+import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 
 const mocks = vi.hoisted(() => ({
   requirePanelEntry: vi.fn(),
   publishSkill: vi.fn(),
   publishSkillPackage: vi.fn(),
-  publishOntologyAssistantSkill: vi.fn(),
-  publishGovernanceSkill: vi.fn(),
+  publishOntologySkill: vi.fn(),
 }));
 
 vi.mock("../../product-panels/application-use", () => ({ requirePanelEntry: mocks.requirePanelEntry }));
-vi.mock("../governance", () => ({ publishGovernanceSkill: mocks.publishGovernanceSkill }));
 vi.mock("../../agent-runtime/skills", async original => ({
   ...await original<typeof import("../../agent-runtime/skills")>(),
   publishSkill: mocks.publishSkill,
   publishSkillPackage: mocks.publishSkillPackage,
-  publishOntologyAssistantSkill: mocks.publishOntologyAssistantSkill,
+  publishOntologySkill: mocks.publishOntologySkill,
 }));
 
 configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { ...enLocaleMeta, messages: en } } });
@@ -49,6 +49,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.publishSkill.mockImplementation(async (_root: string, skill: unknown) => ({ skill, digest: "a".repeat(64) }));
   mocks.publishSkillPackage.mockImplementation(async (pkg: { skill: unknown }) => ({ skill: pkg.skill, digest: "a".repeat(64) }));
+  mocks.publishOntologySkill.mockImplementation(async (_domain: string, name: string) => ({
+    skill: { namespace: { kind: "provider", provider: "ontology" }, name },
+    digest: "b".repeat(64),
+  }));
 });
 
 it("gives page control to a custom agent only when the operator is explicitly selected", async () => {
@@ -59,6 +63,28 @@ it("gives page control to a custom agent only when the operator is explicitly se
   const withOperator = await prepareAssistantSkills(domainId, { kind: "custom", skills: [PAGE_OPERATOR_SKILL] }, credentials);
   expect(withOperator.pageControl).toBe(true);
   expect(withOperator.skills.map(({ skill }) => skill)).toEqual([PAGE_OPERATOR_SKILL]);
+});
+
+it("keeps registered skill descriptions out of the prepared run definition", async () => {
+  mocks.publishSkill.mockResolvedValue({
+    skill: PAGE_OPERATOR_SKILL,
+    digest: "a".repeat(64),
+    description: "Registered publication metadata",
+  });
+  const prepared = await prepareAssistantSkills(domainId, { kind: "custom", skills: [PAGE_OPERATOR_SKILL] }, credentials);
+  const request = {
+    language: "en",
+    input: { role: "user", content: "Question", timestamp: 1 },
+    definition: {
+      systemPrompt: "Instructions",
+      modelId: null,
+      skills: prepared.skills,
+      sandbox: { limits: codeLimitsSchema.parse({}) },
+      externalMcp: [],
+    },
+  };
+  expect(prepared.skills[0]).not.toHaveProperty("description");
+  expect(() => runtimeStartRunRequestSchema.parse(request)).not.toThrow();
 });
 
 it("accepts the exact admitted current placement and rejects mismatches as forbidden", async () => {
@@ -87,4 +113,19 @@ it("keeps system-agent-only skills in the catalogue but rejects selecting them f
   expect(prepared.skills).toEqual([]);
   expect(prepared.pageControl).toBe(false);
   expect(mocks.publishSkill).not.toHaveBeenCalledWith(expect.anything(), opsSkill);
+});
+
+it("asks ontology to publish every selected ontology-owned catalog skill by name", async () => {
+  for (const name of ["knowledge-governance", "ontomato-analyst-assistant", "ontology-query"]) {
+    const skill = { namespace: { kind: "provider" as const, provider: "ontology" }, name };
+    const prepared = await prepareAssistantSkills(domainId, { kind: "custom", skills: [skill] }, credentials);
+    expect(prepared.skills).toEqual([{ skill, digest: "b".repeat(64) }]);
+  }
+  expect(mocks.publishOntologySkill.mock.calls).toEqual([
+    [domainId, "knowledge-governance"],
+    [domainId, "ontomato-analyst-assistant"],
+    [domainId, "ontology-query"],
+  ]);
+  expect(mocks.publishSkill).not.toHaveBeenCalled();
+  expect(mocks.publishSkillPackage).not.toHaveBeenCalled();
 });

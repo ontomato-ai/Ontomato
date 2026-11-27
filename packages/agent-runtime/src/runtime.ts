@@ -56,6 +56,7 @@ import { connectMcp } from "./tools";
 import { RuntimeMcpServices } from "./mcp";
 import { RuntimeModelSettings } from "./model-settings";
 import { modelKeySealKey } from "@ontomato/contracts/model-key-seal";
+import { stageReportCover } from "./report-cover";
 
 type Subscriber = (frame: RuntimeStreamFrame) => void;
 type SessionRunSubscriber = (frame: RuntimeSessionRunFrame) => void;
@@ -356,6 +357,13 @@ export class AgentRuntime {
         throw error;
       }
       return { run: accepted.run, replayed: false };
+    });
+  }
+  async uploadReportCover(scope: Scope, sessionId: string, image: string) {
+    return this.locked(scope, sessionId, async () => {
+      await this.store.session(scope, sessionId);
+      const workspace = path.join(sessionSandboxDirectory(this.options.root, scope, sessionId, "live"), "workspace");
+      return stageReportCover(workspace, image);
     });
   }
   /**

@@ -31,9 +31,9 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     @JSONCreator
     public ApplicationPanelUse {}
 
-    /** An untranslated entry has an empty display name in that locale. */
+    /** The entry's declared name in the reader's language, resolved like every other localized catalogue text. */
     public String displayName(Locale locale) {
-        return names.getOrDefault(locale.toLanguageTag(), "");
+        return ApplicationCatalog.localizedText(names, locale);
     }
 
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path,

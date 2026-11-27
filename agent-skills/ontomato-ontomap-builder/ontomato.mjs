@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import { analystCommand } from "./client.mjs";
+import { agentChannelCommand } from "./client.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,7 +55,7 @@ async function requestJson(cfg, method, backendPath, body, headers) {
 }
 
 async function agent(cfg, argv) {
-  return analystCommand(cfg, argv);
+  return agentChannelCommand(cfg, argv.slice(1));
 }
 
 // test-datasource and use-datasource take the same arguments and send the same body.

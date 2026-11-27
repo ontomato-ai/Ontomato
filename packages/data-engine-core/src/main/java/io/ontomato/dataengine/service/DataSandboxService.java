@@ -29,7 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-/** Owns the registered business data used by application previews and action trials. */
+/** Owns the sandboxes action trials and action generation use. */
 @Slf4j
 @Service
 @DependsOn("jdbcInitDb")
@@ -88,22 +88,17 @@ public class DataSandboxService {
   }
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public String open(String domain, String owner, String run, long expiresAt, List<String> classes) {
-    return open(domain, owner, "action-trial", run, expiresAt, classes, null, null, Map.of(), false);
-  }
-
-  private String open(String domain, String owner, String purpose, String scope, long expiresAt,
-      List<String> classes, JSONObject sample, String sampleName, Map<String, byte[]> attachments, boolean load) {
     var operation = deployment.operationLock();
     operation.lock();
     try {
       String id = UUID.randomUUID().toString();
       String shortId = SandboxTarget.randomTag(8);
-      var data = plan(id, shortId, domain, classes, sample, sampleName, attachments);
+      var data = plan(id, shortId, domain, classes, null);
       jdbc.update("""
           INSERT INTO data_sandboxes (id,short_id,domain_id,owner_id,purpose,scope_key,state,expires_at,node_id,data)
           VALUES (?,?,?,?,?,?,'PREPARING',?,?,?::jsonb)
-          """, id, shortId, domain, owner, purpose, scope, expiresAt, nodeId, data.toJSONString());
-      prepare(id, shortId, domain, data, attachments, load);
+          """, id, shortId, domain, owner, "action-trial", run, expiresAt, nodeId, data.toJSONString());
+      prepare(id, shortId, domain, data, Map.of(), false);
       return id;
     } finally {
       operation.unlock();
@@ -117,10 +112,9 @@ public class DataSandboxService {
     try {
       var record = active(id, domain);
       var before = record.getJSONObject("data");
-      var after = plan(id, record.getString("short_id"), domain, classes, sample, null, Map.of());
+      var after = plan(id, record.getString("short_id"), domain, classes, sample);
       if (before.getList("classNames", String.class).equals(classes)) {
         before.put("sample", sample);
-        before.put("sampleSha256", after.get("sampleSha256"));
         save(id, before);
         return;
       }
@@ -169,8 +163,7 @@ public class DataSandboxService {
   }
 
   @SuppressWarnings("unchecked")
-  private JSONObject plan(String id, String shortId, String domain, List<String> classes,
-      JSONObject sample, String sampleName, Map<String, byte[]> attachments) {
+  private JSONObject plan(String id, String shortId, String domain, List<String> classes, JSONObject sample) {
     var binding = bindClasses(classes, domain);
     var rule = binding.getJSONObject("rule");
     var classMap = new JSONObject();
@@ -193,8 +186,7 @@ public class DataSandboxService {
         edgeMap.put(name, physicalName(prefix, 'r', edgeMap.size() + 1));
     });
     return JSONObject.of("classMap", classMap, "edgeMap", edgeMap, "vectorMap", vectorMap,
-        "classNames", classes, "sample", sample, "sampleName", sampleName,
-        "sampleSha256", AgentJson.hash(JSONObject.of("sample", sample, "attachments", attachments)),
+        "classNames", classes, "sample", sample,
         "fingerprint", fingerprint(domain), "binding", binding, "resources", new JSONArray());
   }
 

@@ -92,9 +92,8 @@ retrieval orchestration, and the [agent runtime contract](agent-runtime.md) owns
 generic channel delegation, delivery notifications, reads and cancellation. The
 assistant retains parent associations and dataset provenance, using ontology HTTP
 for metric recall/execution, formal datasets and QC. Its dataset-source shape above
-is unchanged. The assistant mounts `ontomato-analyst-assistant`, which documents
-only the ontology metadata commands, `start-retrieval` and `run-metric`; external
-and generation execution use the complete `ontomato-analyst`, while the retriever
-mounts only `data-retrieval`.
+is unchanged. The assistant mounts `ontomato-analyst-assistant` for guidance and `ontology-query`
+for metadata, metric recall and metric execution. External delegation and action execution use
+`ontomato-analyst`; the retriever mounts `ontology-query` and `data-retrieval`.
 `assistant-retrieval` is removed. This cutover does not extend the common host
 proxy or move feedback into runtime.

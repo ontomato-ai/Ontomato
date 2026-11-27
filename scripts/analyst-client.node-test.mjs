@@ -45,6 +45,7 @@ test("the shared channel preserves references, streams snapshots and downloads o
     assert.ok(received.every(r=>r.url.startsWith("/platform/agent-channel/")));
     await assert.rejects(analystCommand(cfg,["agent","send","--session",`ontology/${sessionId}`,"--message","Question?","--needs-input"]),/default-assumption/);
     await assert.rejects(analystCommand(cfg,["ask","Sales"]),/Commands:/);
+    await assert.rejects(analystCommand(cfg,["execute-dsl","{}"]),/Commands: pending, actions, run, agent/);
   } finally {
     console.log=print;
     if(oldOutput===undefined) delete process.env.ONTOMATO_OUTPUT_DIR;else process.env.ONTOMATO_OUTPUT_DIR=oldOutput;
@@ -77,7 +78,7 @@ test("sendAgentCommand uses the session callback credential and leaves the run h
   process.env.ONTOMATO_EXECUTION_CALLBACK = "business-callback";
   try {
     const result = await sendAgentCommand({ op: "start", agent: { providerId: "ontology", agentId: "retriever" }, message: "Sales?" }, {
-      headers: { "X-Ontomato-Execution-Context": JSON.stringify({ kind: "preview" }) },
+      headers: { "X-Ontomato-Execution-Context": "preview" },
     });
     assert.deepEqual(result, { taskId: "task-1", status: "starting" });
     assert.equal(received[0].headers["x-ontomato-callback-credential"], "session-secret");
@@ -91,18 +92,6 @@ test("sendAgentCommand uses the session callback credential and leaves the run h
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
-});
-
-test("skill packages bundle the one analyst transport source", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const read = (root) =>
-    readFile(new URL(root + "client.mjs", import.meta.url), "utf8");
-  const source = await read("../agent-skills/ontomato-analyst/");
-  for (const root of [
-    "../agent-skills/ontomato-app-builder/scripts/",
-    "../agent-skills/ontomato-ontomap-builder/",
-  ])
-    assert.equal(await read(root), source);
 });
 
 test("pending selects generated revisions and never substitutes a DSL for missing or failed grants", async () => {

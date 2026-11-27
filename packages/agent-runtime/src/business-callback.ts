@@ -5,7 +5,6 @@ import { pipeline } from "node:stream/promises";
 import { AGENT_EXECUTION_HEADER, callbackResponseHeaders, runtimeBusinessCallbacksSchema, unsafeCallbackPath, type RuntimeBusinessCallback } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { runtimeIdSchema, runtimeKeySchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError } from "./errors";
-import { EXECUTION_CONTEXT_HEADER } from "@ontomato/contracts/execution-context";
 import type { Scope } from "./store";
 
 const callbackName = runtimeBusinessCallbacksSchema.keyof();
@@ -70,7 +69,6 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
       "X-Ontomato-Session-Id": sessionId,
     });
     const permitted = ["Accept", "Accept-Language", "Content-Type", "Idempotency-Key"];
-    if (declaration.owner === "workbench") permitted.push(EXECUTION_CONTEXT_HEADER);
     for (const name of permitted) {
       const value = req.header(name);
       if (value) headers.set(name, value);

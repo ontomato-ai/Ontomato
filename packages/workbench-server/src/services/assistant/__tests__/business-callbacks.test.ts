@@ -235,6 +235,17 @@ it("supports authoringOnly callback scoping narrowed strictly to authoring/", as
   expect(workbenchDenied.status).toBe(401);
 });
 
+
+it("declares the retrieval callback only when a selected skill uses it", async () => {
+  const owner = { domainId: "domain", userId: "human" };
+  const credentials = { token: "human-secret" };
+  const without = executionBusinessCallbacks(owner, credentials, runId);
+  expect(without).not.toHaveProperty("retrieval");
+  const withRetrieval = executionBusinessCallbacks(owner, credentials, runId, { retrieval: true });
+  expect(withRetrieval.retrieval?.baseUrl).toBe(`http://workbench.test/api/assistant/executions/${runId}/retrieval`);
+  await assertNarrowedCallbacks(withRetrieval);
+});
+
 it("keeps platform-mode URLs from page.mjs, dashboard-skill and app-builder inside declared prefixes", async () => {
   const prep = basePreparation(null);
   const analystRun = runtimeStartRunRequestSchema.parse(await prepareAnalystRun(prep));

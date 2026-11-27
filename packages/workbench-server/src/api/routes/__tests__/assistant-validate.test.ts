@@ -118,7 +118,7 @@ const id = "8f5df4a4-e30b-48cb-831a-33b759144f76";
 it("opens a create form in preview without validating empty values", async () => {
   mocks.options.mockResolvedValue({ canSetExecutionUser: false, users: [] });
   const request = await app();
-  const headers = { [EXECUTION_CONTEXT_HEADER]: '{"kind":"preview"}' };
+  const headers = { [EXECUTION_CONTEXT_HEADER]: 'preview' };
   const response = await request({ target, changedField: null }, "alice", "/form", headers);
   expect(response.status).toBe(200);
   const opened = await response.json();

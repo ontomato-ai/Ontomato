@@ -1,5 +1,4 @@
 import { configuredAssistantSkills } from "./skill-selection";
-import { publishGovernanceSkill } from "./governance";
 import { GOVERNANCE_SKILL } from "./governance-definition";
 import { isPageOperatorSkill, runtimeSkillKey, runtimeSkillRefFromSelection, type RuntimeSkillRef, type RuntimeSkillSelection, type RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import type { CurrentPageContext } from "@ontomato/contracts/page-context";
@@ -10,18 +9,17 @@ import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
 import { readSkillView, type SkillView } from "../skills/view";
 import { builtinSkillEntries } from "../skills/builtin-catalog";
-import { publishOntologyAssistantSkill, publishSkill, publishSkillPackage } from "../agent-runtime/skills";
+import { publishOntologySkill, publishSkill, publishSkillPackage } from "../agent-runtime/skills";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { requirePanelEntry } from "../product-panels/application-use";
 import { isApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { AssistantOwner } from "./store";
 
-const RETRIEVAL_SKILLS = new Set(["ontomato-analyst-assistant"]);
-const ANALYST_SKILL: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" };
+const RETRIEVAL_SKILLS = new Set(["ontology-query"]);
 const STARTUP_PLATFORM_SKILL_NAMES = ["ontomato-app-builder", "assistant-report", "application-design", "ontomato-agent-builder", "ontomato-page-operator"];
 
-/** The selectable ontology query skill is the only assistant skill that needs a retrieval caller. */
+/** Skills whose ontology query commands need the run-scoped retrieval caller and callback. */
 export function needsRetrievalScope(skills: readonly RuntimeSkillRef[]) {
   return skills.some(skill => skill.namespace.kind === "provider" && skill.namespace.provider === "ontology"
     && RETRIEVAL_SKILLS.has(skill.name));
@@ -121,19 +119,21 @@ export function loadedSkillVersion(ref: RuntimeSkillRef, loaded: readonly Runtim
 }
 
 async function publishSelectedSkill(domainId: string, ref: RuntimeSkillSelection, view: AssistantSkillView): Promise<RuntimeSkillVersion> {
-  const key = runtimeSkillKey(ref);
+  const entry = view.registry.getSkillByRef(ref);
+  if (!entry || entry.selectionRestricted)
+    throw new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
   let version: RuntimeSkillVersion;
-  if (key === runtimeSkillKey(GOVERNANCE_SKILL)) version = await publishGovernanceSkill(domainId);
-  else if (key === runtimeSkillKey(ANALYST_SKILL)) version = await publishOntologyAssistantSkill(domainId);
-  else {
-    const entry = view.registry.getSkillByRef(ref);
-    if (!entry || entry.selectionRestricted || entry.source.kind === "generated")
+  if (entry.source.kind === "generated") {
+    if (ref.namespace.kind !== "provider" || ref.namespace.provider !== "ontology")
       throw new HttpError(422, "A selected skill is not available", "SKILL_NOT_FOUND");
+    version = await publishOntologySkill(domainId, ref.name);
+  } else {
     version = entry.source.kind === "public"
       ? await publishSkill(entry.source.path, runtimeSkillRefFromSelection(ref))
       : await publishSkillPackage(await entry.provide(), domainId);
   }
-  return { ...version, ...(ref.preload ? { preload: true } : {}) };
+  const { description: _description, ...admitted } = version as RuntimeSkillVersion & { description?: string };
+  return { ...admitted, ...(ref.preload ? { preload: true } : {}) };
 }
 
 async function validateCurrentPage(owner: AssistantOwner, credentials: AssistantCredentials, pageSkillContext?: CurrentPageContext) {

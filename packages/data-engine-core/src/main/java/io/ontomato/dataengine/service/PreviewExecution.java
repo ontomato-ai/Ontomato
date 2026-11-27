@@ -1,11 +1,7 @@
 package io.ontomato.dataengine.service;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.function.Supplier;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Preview identity at the Java HTTP boundary. It admits or refuses a write of business object data and nothing else: it
@@ -20,35 +16,28 @@ public final class PreviewExecution {
   private PreviewExecution() {}
 
   public static boolean isPreview(HttpServletRequest request) {
-    String header = request.getHeader(HEADER);
-    if (header == null) return false;
-    try {
-      var declaration = JSON.parseObject(header);
-      return declaration != null && "preview".equals(declaration.getString("kind"));
-    } catch (RuntimeException invalid) {
-      return false;
-    }
+    return "preview".equals(request.getHeader(HEADER));
   }
 
   /**
-   * The refusal an Action execution entry gives a preview, or null for every other caller. A preview has no Action to
-   * run: whether an Action is right is answered by an action trial, and nothing is parsed, staged or executed first.
+   * Refuses an Action execution for a preview. A preview has no Action to run: whether an Action is right is answered by
+   * an action trial, and nothing is parsed, staged or executed first.
    */
-  public static JSONObject refuseActionExecution(HttpServletRequest request) {
-    return isPreview(request) ? refuse() : null;
+  public static void refuseActionExecution(HttpServletRequest request) {
+    if (isPreview(request)) throw new Refused();
   }
 
   /**
-   * The refusal a business-data write entry gives a preview whose write targets live data, or null when the write may
-   * proceed. A write bound to an action-trial or generation sandbox is that run's own verification and is admitted:
-   * writing there and reading it back is how a trial or a generation check answers its question.
+   * Refuses a preview's business-data write that targets live data. A write bound to an action-trial or generation
+   * sandbox is that run's own verification and is admitted: writing there and reading it back is how a trial or a
+   * generation check answers its question.
    */
-  public static JSONObject refuseLiveWrite(HttpServletRequest request, Supplier<ExecutionTarget> target) {
-    return isPreview(request) && target.get().mode() != ExecutionTarget.Mode.SANDBOX ? refuse() : null;
+  public static void refuseLiveWrite(HttpServletRequest request, Supplier<ExecutionTarget> target) {
+    if (isPreview(request) && target.get().mode() != ExecutionTarget.Mode.SANDBOX) throw new Refused();
   }
 
-  private static JSONObject refuse() {
-    ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getResponse().setStatus(422);
-    return JSONObject.of("success", false, "code", WRITE_CODE, "message", WRITE_MESSAGE);
+  /** A preview's write, refused; its HTTP answer is given by {@code PreviewExecutionErrors}. */
+  public static final class Refused extends RuntimeException {
+    public Refused() { super(WRITE_MESSAGE); }
   }
 }

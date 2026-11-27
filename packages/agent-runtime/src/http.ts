@@ -33,6 +33,7 @@ import { AgentRuntime } from "./runtime";
 import { RuntimeError } from "./errors";
 import { runtimeEmbeddingsRequestSchema } from "@ontomato/contracts/runtime-embeddings";
 import { litellmEntry } from "./model";
+import { reportCoverUploadSchema } from "@ontomato/contracts/report-cover";
 
 function readEventSubscription(query: Request["query"]) {
   const { afterSeq } = query;
@@ -477,6 +478,11 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     res.write('event: ready\ndata: {"type":"ready"}\n\n'); send();
     const timer = setInterval(() => res.write(": heartbeat\n\n"), 15000); timer.unref();
     res.on("close", () => { closed = true; clearInterval(timer); detach(); });
+  }));
+  app.post("/v1/sessions/:sessionId/report-covers", route(async (req, res) => {
+    const ctx = scope(req);
+    const { image } = reportCoverUploadSchema.parse(req.body);
+    res.status(201).json(await runtime.uploadReportCover(ctx.scope, runtimeIdSchema.parse(req.params.sessionId), image));
   }));
   app.get("/v1/sessions/:sessionId/history", route(async (req, res) => {
     res.json(await runtime.history(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId), sessionHistoryQuerySchema.parse(req.query)));

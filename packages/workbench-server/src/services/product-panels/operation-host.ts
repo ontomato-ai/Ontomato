@@ -1,4 +1,4 @@
-import { EXECUTION_CONTEXT_HEADER, carriesPreviewIdentity, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
+import { EXECUTION_CONTEXT_HEADER, previewExecutionContextHeader } from "@ontomato/contracts/execution-context";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
@@ -8,7 +8,8 @@ import type { PanelOperationActor, PanelOperationHost } from "./server-operation
 
 export function operationHost(initiator: PanelOperationActor, skillView?: AssistantSkillView, executor = initiator): PanelOperationHost {
   const { credentials } = executor;
-  const request = (url: string, init: NonNullable<Parameters<typeof fetch>[1]>, preview = false) => {
+  const preview = credentials.executionKind === "preview";
+  const request = (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     const headers = new Headers(buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers));
     if (init.body instanceof FormData) headers.delete("Content-Type");
     new Headers(init.headers).forEach((value,key) => headers.set(key,value));
@@ -20,10 +21,8 @@ export function operationHost(initiator: PanelOperationActor, skillView?: Assist
     initiator, executor, skillView,
     request: (path, init) => {
       const entry = path.slice(DATA_QUERY_GATEWAY.length);
-      // A preview caller's request to a business-data write entry carries the preview identity its owner refuses;
-      // every other request, a read or a definition write, reaches its owner as it would live.
-      return request(config.dataQuery.baseUrl.replace(/\/$/u,"") + entry, init,
-        credentials.executionKind === "preview" && carriesPreviewIdentity("/data-query", init.method ?? "GET", entry));
+      // Every request a preview executor sends carries its identity; each write entry refuses that identity itself.
+      return request(config.dataQuery.baseUrl.replace(/\/$/u,"") + entry, init);
     },
     requestWorkbench: (path, init) => request(environment.agentRuntime().callbackUrl.replace(/\/$/u,"") + "/api" + path, init),
   };

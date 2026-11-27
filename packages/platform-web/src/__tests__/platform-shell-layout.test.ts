@@ -1,32 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
-import { computed, defineComponent, h, ref } from "vue";
+import { computed, h, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import { createMemoryHistory, createRouter } from "vue-router";
 import en from "element-plus/es/locale/lang/en";
+import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
 import { providePlatformHost } from "@ontomato/platform-admin";
 import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
+import PlatformShellLayout from "../PlatformShellLayout.vue";
 import { HOME_PREFERENCES_CHANGED } from "../features/home/api";
-
-const mockRailVisible = ref(true);
-
-vi.mock("../PlatformLayout.vue", () => ({
-  default: defineComponent({
-    name: "PlatformLayoutDouble",
-    props: {
-      pinnedAppIds: { type: Array as () => string[], default: () => [] },
-    },
-    emits: ["railVisible"],
-    setup(props, { emit }) {
-      emit("railVisible", mockRailVisible.value);
-      return () => h("div", { class: "platform-layout-double", "data-pinned": props.pinnedAppIds.join(",") });
-    },
-  }),
-}));
-
-const PlatformShellLayout = (await import("../PlatformShellLayout.vue")).default;
 
 installAuthHost({
   getToken: () => null,
@@ -46,7 +30,52 @@ installWorkbenchI18n({
   elementLocale: () => en,
 });
 
+const catalogApps = ([
+  { id: "application-gallery", kind: "native", path: "/applications", label: "Gallery" },
+  { id: "app-a", kind: "connected", path: "/applications/app-a", label: "Sales" },
+  { id: "app-b", kind: "connected", path: "/applications/app-b", label: "Inventory" },
+] as const).map(({ id, kind, path, label }, sort): CatalogApplication => ({
+  id, kind, names: { en: label }, descriptions: {},
+  ownerService: "workbench", icon: "pages", rail: "top", category: "business", sort,
+  entry: { path, renderer: kind === "native" ? "application-gallery" : undefined },
+  scheduleAdapter: null, releaseId: null, entryPaths: [], panelUses: [],
+}));
+
+const shortcutsSection = '.rail-section[data-section="top"]';
+const retry = `${shortcutsSection} button[aria-label*="${publicEn.common.retry}"]`;
+const sales = 'button[title="Sales"]';
+
+async function mountShell() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: ["/home", "/agents/chat", "/ontology/objects", "/settings/general", "/applications"].map((path) => ({
+      path, component: { render: () => h("div", { "data-page": path }) },
+    })),
+  });
+  await router.push("/home");
+  const host = {
+    access: { ready: true, error: null, canEnter: () => true, verifyEntry: async () => "allowed", load: async () => {} },
+    navigation: computed(() => ({ groups: [], pages: [] })),
+    account: null,
+    preferences: {
+      locales: ["en"], locale: ref("en"), setLocale: () => {}, theme: ref<"light" | "dark">("light"), setTheme: () => {},
+    },
+    blocked: computed(() => null),
+  };
+  const wrapper = mount(PlatformShellLayout, {
+    attachTo: document.body,
+    props: { renderers: { "application-gallery": { sections: [] } } },
+    global: {
+      plugins: [router, createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })],
+      provide: providePlatformHost(host as never),
+    },
+  });
+  await flushPromises();
+  return { wrapper, router, shortcuts: () => wrapper.get(shortcutsSection) };
+}
+
 describe("PlatformShellLayout home shortcuts refresh", () => {
+  const failureReason = "Home preferences store is unavailable";
   let homeRequests: string[] = [];
   let favoriteIds: string[] = [];
   let homeFails = false;
@@ -59,7 +88,7 @@ describe("PlatformShellLayout home shortcuts refresh", () => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname === "/api/platform/home") {
         homeRequests.push(url.pathname + url.search);
-        if (homeFails) return Response.json({ error: { message: "home unavailable" } }, { status: 500 });
+        if (homeFails) return Response.json({ error: { message: failureReason } }, { status: 500 });
         return Response.json({
           favorites: favoriteIds.map((id) => ({ kind: "application", id })),
           dashboardIds: [],
@@ -68,7 +97,10 @@ describe("PlatformShellLayout home shortcuts refresh", () => {
         });
       }
       if (url.pathname === "/api/data-query/platform/applications") {
-        return Response.json({ success: true, data: [] });
+        return Response.json({ success: true, data: catalogApps });
+      }
+      if (url.pathname === "/api/platform/home/applications/application-gallery/open") {
+        return Response.json({ applicationId: "application-gallery", lastOpenedAt: "2026-11-27T00:00:00Z" });
       }
       return Response.json({});
     });
@@ -76,78 +108,42 @@ describe("PlatformShellLayout home shortcuts refresh", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
-
-
-  it("reports a shortcut read failure without blocking platform startup", async () => {
+  it("shows an initial read failure where shortcuts belong and retries without blocking navigation", async () => {
     homeFails = true;
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [{ path: "/home", component: { render: () => h("div", "home") } }],
-    });
-    await router.push("/home");
-    const host = {
-      access: { ready: true, error: null, canEnter: () => true, verifyEntry: async () => "allowed", load: async () => {} },
-      navigation: computed(() => ({ groups: [], pages: [] })),
-      account: null,
-      preferences: {
-        locales: ["en"], locale: ref("en"), setLocale: () => {}, theme: ref<"light" | "dark">("light"), setTheme: () => {},
-      },
-      blocked: computed(() => null),
-    };
-    const wrapper = mount(PlatformShellLayout, {
-      global: {
-        plugins: [router, createI18n({ legacy: false, locale: "en", missingWarn: false })],
-        provide: providePlatformHost(host as never),
-      },
-    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { wrapper, router, shortcuts } = await mountShell();
     try {
+      expect(wrapper.find('[data-page="/home"]').exists()).toBe(true);
+      const retryButton = wrapper.get(retry);
+      expect(retryButton.find("svg").exists()).toBe(true);
+      await retryButton.trigger("mouseenter");
+      await vi.waitFor(() => {
+        expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(failureReason);
+      });
+
+      await shortcuts().get('button[title="Gallery"]').trigger("click");
       await flushPromises();
-      expect(wrapper.get(".platform-layout-double").attributes("data-pinned")).toBe("");
-      expect(errorSpy).toHaveBeenCalled();
+      expect(router.currentRoute.value.path).toBe("/applications");
+
+      homeFails = false;
+      await wrapper.get(retry).trigger("click");
+      await flushPromises();
+      expect(homeRequests).toHaveLength(2);
+      expect(wrapper.find(retry).exists()).toBe(false);
+      expect(shortcuts().find(sales).exists()).toBe(true);
     } finally {
       wrapper.unmount();
     }
   });
 
   it("reads /api/platform/home on mount and HOME_PREFERENCES_CHANGED without re-fetching on route changes", async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: "/home", component: { render: () => h("div", "home") } },
-        { path: "/agents/chat", component: { render: () => h("div", "chat") } },
-        { path: "/ontology/objects", component: { render: () => h("div", "objects") } },
-        { path: "/settings/general", component: { render: () => h("div", "settings") } },
-      ],
-    });
-    await router.push("/home");
-
-    const host = {
-      access: { ready: true, error: null, canEnter: () => true, verifyEntry: async () => "allowed", load: async () => {} },
-      navigation: computed(() => ({ groups: [], pages: [] })),
-      account: { userName: "Ada", signOut: () => {} },
-      preferences: {
-        locales: ["en"],
-        locale: ref("en"),
-        setLocale: () => {},
-        theme: ref<"light" | "dark">("light"),
-        setTheme: () => {},
-      },
-      blocked: computed(() => null),
-    };
-
-    const wrapper = mount(PlatformShellLayout, {
-      global: {
-        plugins: [router, createI18n({ legacy: false, locale: "en", missingWarn: false })],
-        provide: providePlatformHost(host as never),
-      },
-    });
+    const { wrapper, router, shortcuts } = await mountShell();
     try {
-      await flushPromises();
       expect(homeRequests).toEqual(["/api/platform/home"]);
-      expect(wrapper.get(".platform-layout-double").attributes("data-pinned")).toBe("app-a");
+      expect(shortcuts().find(sales).exists()).toBe(true);
 
       // Routine route changes must not re-fetch /api/platform/home.
       await router.push("/agents/chat");
@@ -165,7 +161,7 @@ describe("PlatformShellLayout home shortcuts refresh", () => {
       window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
       await flushPromises();
       expect(homeRequests).toHaveLength(2);
-      expect(wrapper.get(".platform-layout-double").attributes("data-pinned")).toBe("app-a,app-b");
+      expect(shortcuts().find('button[title="Inventory"]').exists()).toBe(true);
     } finally {
       wrapper.unmount();
     }
@@ -174,5 +170,24 @@ describe("PlatformShellLayout home shortcuts refresh", () => {
     window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
     await flushPromises();
     expect(homeRequests).toHaveLength(2);
+  });
+
+  it.each([
+    { state: "pinned", favorites: ["app-a"] },
+    { state: "empty", favorites: [] },
+  ])("keeps the last successful shortcuts when a refresh fails ($state)", async ({ favorites }) => {
+    favoriteIds = favorites;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { wrapper, shortcuts } = await mountShell();
+    try {
+      homeFails = true;
+      window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
+      await flushPromises();
+      expect(homeRequests).toHaveLength(2);
+      expect(wrapper.find(retry).exists()).toBe(false);
+      expect(shortcuts().find(sales).exists()).toBe(favorites.length > 0);
+    } finally {
+      wrapper.unmount();
+    }
   });
 });

@@ -13,6 +13,7 @@ export interface ExportMarkdownPdfInput {
   timeoutMs?: number;
   renderInlineCharts?: boolean;
   locale?: string;
+  offline?: boolean;
 }
 
 function escapeHtml(value: string) {
@@ -39,14 +40,14 @@ function buildChartImageHtml(dataUrl: string, index: number) {
 }
 
 /** The ```html blocks that draw a chart, each mapped to its image; a chart that cannot be drawn stays code. */
-async function renderInlineCharts(nodes: readonly ParsedNode[], timeoutMs: number) {
+async function renderInlineCharts(nodes: readonly ParsedNode[], timeoutMs: number, offline?: boolean) {
   const charts = new Map<ParsedNode, string>();
   for (const block of nodesOfType<CodeBlockNode>(nodes, "code_block")) {
     const chartHtml = block.code.trim();
     if (block.language !== "html" || !(chartHtml.includes("<!DOCTYPE html>") || chartHtml.includes("echarts.init(")))
       continue;
     try {
-      charts.set(block, buildChartImageHtml(await renderChartHtmlToDataUrl(chartHtml, timeoutMs), charts.size));
+      charts.set(block, buildChartImageHtml(await renderChartHtmlToDataUrl(chartHtml, timeoutMs, { offline }), charts.size));
     } catch {
       continue;
     }
@@ -96,6 +97,7 @@ function buildPdfHtml(title: string, bodyHtml: string, locale?: string) {
       .pdf-page h3 { font-size: 14px; margin: 14px 0 8px; }
       .pdf-page h4 { font-size: 13px; margin: 12px 0 6px; }
       .pdf-page p { margin: 8px 0; }
+      .pdf-page img { max-width: 100%; height: auto; }
       .pdf-page ul, .pdf-page ol { margin: 8px 0 8px 20px; }
       .pdf-page li { margin: 4px 0; }
       .pdf-page li > p { margin: 0; }
@@ -196,9 +198,12 @@ export async function exportMarkdownPdf(input: ExportMarkdownPdfInput) {
   const timeoutMs = input.timeoutMs ?? 30_000;
 
   try {
+    if (input.offline) {
+      await page.route("**/*", route => route.abort());
+    }
     const nodes = parseProductMarkdown(markdown);
     const charts = input.renderInlineCharts
-      ? await renderInlineCharts(nodes, timeoutMs)
+      ? await renderInlineCharts(nodes, timeoutMs, input.offline)
       : new Map<ParsedNode, string>();
     const html = buildPdfHtml(input.title || t("report.defaultTitle"), reportHtml(nodes, charts), input.locale);
     await page.setContent(html, {

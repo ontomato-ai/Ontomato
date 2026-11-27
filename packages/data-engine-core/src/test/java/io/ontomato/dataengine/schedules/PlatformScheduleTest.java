@@ -358,7 +358,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
 
   @Test
   void previewManualRunIsRefusedBeforeAdmissionForEveryTargetWhileRegistrationIsNot() throws Exception {
-    var preview = "{\"kind\":\"preview\"}";
+    var preview = "preview";
     // Registering a trigger is building: a preview saves it as any caller does.
     var application = UUID.randomUUID();
     http.perform(post("/platform/triggers").header("Idempotency-Key", application).header(PreviewExecution.HEADER, preview)

@@ -4,7 +4,7 @@ import { renderChartHtmlToDataUrl, renderChartOptionToDataUrl } from "../analysi
 import { exportChartOption } from "../analysis-agent/delivery/chart-export";
 import { HttpError } from "../../utils/errors";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
-import { exportChartTheme } from "../chart-theme";
+import { exportAssistantReportChartTheme } from "../chart-theme";
 /** Resolve file references from the owning run before passing content to existing export renderers. */
 export async function exportMarkdown(
   sessionId: string,
@@ -14,7 +14,9 @@ export async function exportMarkdown(
   signal?: AbortSignal,
   ancestors: ReadonlySet<string> = new Set(),
   locale?: string,
+  chartTheme?: Record<string, unknown>,
 ) {
+  const theme = chartTheme ?? exportAssistantReportChartTheme();
   const references = [
     ...markdown.matchAll(/(!?)\[([^\]]*)\]\((outputs\/[^\s)]+)\)/g),
   ];
@@ -31,13 +33,13 @@ export async function exportMarkdown(
     if (a.path.endsWith(".chart.json")) {
       const file: unknown = JSON.parse(bytes.toString());
       if (file && typeof file === "object" && !Array.isArray(file) && "ontomato" in file) {
-        const built = exportChartOption(file, { theme: exportChartTheme(), height: 500, width: 1000, locale });
+        const built = exportChartOption(file, { theme, height: 500, width: 1000, locale });
         rendered = built.ok
-          ? `![${match[2]}](${await renderChartOptionToDataUrl(built.option, exportChartTheme())})`
+          ? `![${match[2]}](${await renderChartOptionToDataUrl(built.option, theme)})`
           : `> ${match[2] || "Chart"} unavailable: ${built.reason}`;
       } else {
         // A stored plain ECharts option is drawn as it was saved.
-        const option = JSON.stringify(chartBrandColors(file as Record<string, any>, exportChartTheme())).replaceAll("<", "\\u003c");
+        const option = JSON.stringify(chartBrandColors(file as Record<string, any>, theme)).replaceAll("<", "\\u003c");
         const html = `<div id="chart" style="width:1000px;height:500px"></div><script>echarts.init(document.getElementById('chart')).setOption(${option});</script>`;
         rendered = `![${match[2]}](${await renderChartHtmlToDataUrl(html, 30000, { offline: true, signal })})`;
       }
@@ -59,6 +61,7 @@ export async function exportMarkdown(
         signal,
         new Set([...ancestors, match[3]]),
         locale,
+        theme,
       );
     else rendered = `${match[2]} (${a.path})`;
     markdown = markdown.replace(match[0], rendered);

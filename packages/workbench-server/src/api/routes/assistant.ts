@@ -1,6 +1,6 @@
 import { panelFormRequestSchema } from "@ontomato/contracts/panel-projection";
 import { validateBody } from "../middleware/validate";
-import { asyncHandler } from "../utils/http";
+import { asyncHandler, buildAttachmentContentDisposition } from "../utils/http";
 import { describeAgentDefinitionForm } from "../../services/assistant/definition-form";
 import { AgentDefinitionFieldError } from "../../services/assistant/definition-form-schema";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-context";
@@ -29,6 +29,8 @@ import {
   assistantFeedbackWriteSchema,
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
+import { createDashboardFromReport, downloadAssistantReport } from "../../services/assistant/report-actions";
+import { reportCoverPathSchema, reportCoverUploadSchema } from "@ontomato/contracts/report-cover";
 import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
 import { authoringKindSchema, authoringTestRecordSchema } from "@ontomato/contracts/authoring";
 import { executeAuthoring } from "../../services/assistant/authoring";
@@ -76,6 +78,31 @@ router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId"
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
+}));
+router.get("/sessions/:sessionId/artifacts/:artifactId/report/pdf", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const { bytes, fileName } = await downloadAssistantReport(id(req, "sessionId"), id(req, "artifactId"), owner, credentials.locale);
+  res.set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": buildAttachmentContentDisposition(fileName),
+    "Cache-Control": "private, no-store",
+  }).send(bytes);
+}));
+const reportDashboardInput = z.object({ name: z.string().trim().min(1).max(50) }).strict();
+router.post("/sessions/:sessionId/artifacts/:artifactId/report/cover", wrap(async (req, res) => {
+  const { owner } = context(req), sessionId = id(req, "sessionId");
+  const artifact = await assistantService.artifact(sessionId, id(req, "artifactId"), owner);
+  if (!artifact.path.startsWith("outputs/") || !/\.md$/i.test(artifact.path))
+    return void res.sendStatus(404);
+  const input = reportCoverUploadSchema.parse(req.body);
+  const result = await new RuntimeClient(owner.domainId, undefined, owner.userId)
+    .request(`/v1/sessions/${sessionId}/report-covers`, "POST", input);
+  res.status(201).json(z.object({ path: reportCoverPathSchema }).parse(result));
+}));
+router.post("/sessions/:sessionId/artifacts/:artifactId/report/dashboard", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const { name } = reportDashboardInput.parse(req.body);
+  res.json(await createDashboardFromReport(id(req, "sessionId"), id(req, "artifactId"), name, owner, credentials));
 }));
 const agentSkillsQuery = z.object({ agentTarget: agentSkillTargetSchema }).strict();
 router.get("/agent-skills", wrap(async (req, res) => {

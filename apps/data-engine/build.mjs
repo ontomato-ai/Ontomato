@@ -52,7 +52,7 @@ export const app = {
         "mvnw.cmd",
         ".mvn",
         "packages/data-engine-core/pom.xml",
-        "agent-skills/ontomato-analyst",
+        "agent-skills/ontology-query",
         "agent-skills/ontomato-analyst-assistant",
         "agent-skills/data-retrieval",
         "agent-skills/ontology-generation",

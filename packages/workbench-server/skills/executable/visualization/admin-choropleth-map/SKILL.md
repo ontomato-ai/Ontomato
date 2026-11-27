@@ -57,7 +57,7 @@ Reading a `dataset` file records that file as the chart's source automatically. 
 
 `"source": { "metric": { "metricId": "...", "parameters": { ... } } }`
 
-Copy the id and parameters from the accepted dataset's metric recipe or from `ontomato-analyst` `metrics` / `execute-metric`; never invent them. The MetricView reference wins over the recorded file. Without either a MetricView or a recorded dataset file (for example with inline `data`), the chart can be viewed in this conversation but cannot be added to a dashboard or imported elsewhere. `source` may name only `metric` or `dataset`; other keys are rejected.
+Copy the id and parameters from the accepted dataset's metric recipe or from `ontology-query` `metrics` / `execute-metric`; never invent them. The MetricView reference wins over the recorded file. Without either a MetricView or a recorded dataset file (for example with inline `data`), the chart can be viewed in this conversation but cannot be added to a dashboard or imported elsewhere. `source` may name only `metric` or `dataset`; other keys are rejected.
 
 ## Revising
 

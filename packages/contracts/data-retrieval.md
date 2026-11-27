@@ -98,10 +98,10 @@ receipts stay readable. Cancellation closes pending outputs before stopping work
 
 ## Metric delivery
 
-The assistant calls `start-retrieval` once with the complete question to
-concurrently start the retriever through the active run's agent channel (using the
-bundled `retriever-ref.json`) and recall published metric definitions from ontology
-before potentially executing a formal metric. In its own retrieval run:
+The assistant starts the retriever once through the native agent channel, naming the
+stable ontology retriever id, and calls `ontology-query`'s `recall-metrics` with the
+complete question before potentially executing a formal metric. `ontology-query`'s
+`run-metric` uses its own retrieval run:
 `POST /ontology/retrievals/skill-runs` with the question,
 `POST .../runs/:runId/submit-metric` with `{id,revision,bindingId?,parameters?}`
 and a UUID Idempotency-Key, the same status/content reads, then `close`. The

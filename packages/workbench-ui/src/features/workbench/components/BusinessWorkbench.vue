@@ -25,11 +25,12 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import { useDashboardStore } from "../../dashboard";
 import { formatRelativeTime } from "../../../utils/relative-time";
-import { Calendar, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, Presentation, X } from "lucide-vue-next";
+import { Calendar, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, X } from "lucide-vue-next";
 import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
 import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
+import ReportActions from "./ReportActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
   PANEL_APPLICATION_PAGE_ID,
@@ -332,24 +333,15 @@ const labels = computed(() => {
   if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", conversationTab: "會話", reportTab: "報告", fileTab: "檔案預覽" };
   return { ...base, conversationTab: "Conversation", reportTab: "Report", fileTab: "File preview" };
 });
-const pptLabel = computed(() => locale.value === "zh-CN" ? "生成 PPT" : locale.value === "zh-TW" ? "產生 PPT" : "Generate PPT");
-const requestingPpt = ref(false);
 function isReport(artifact: RuntimeArtifact) {
   return artifact.path.startsWith("outputs/") && /\.md$/i.test(artifact.path);
 }
-async function generatePpt(artifact: RuntimeArtifact) {
-  if (!shell.value || requestingPpt.value) return;
-  requestingPpt.value = true;
-  try {
-    const path = JSON.stringify(artifact.path);
-    await shell.value.requestArtifactAction(locale.value.startsWith("zh")
-      ? `请使用报告技能，把当前会话中的报告 ${path}（来源运行 ${artifact.runId}）生成 PPT，并在回复里提供 .pptx 文件链接。`
-      : `Use the report skill to generate a PPT from the report ${path} (source run ${artifact.runId}) in this conversation, and link the .pptx file in your reply.`);
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : labels.value.loadFailed);
-  } finally {
-    requestingPpt.value = false;
+
+async function requestReportPpt(sessionId: string, message: string) {
+  if (sessionId !== conversationId.value || !shell.value?.canRequestArtifactAction) {
+    throw new Error(labels.value.working);
   }
+  await shell.value.requestArtifactAction(message);
 }
 
 const dashboards = props.internalPages ? useDashboardStore() : null;
@@ -942,11 +934,15 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #artifact-actions="{ artifact, title, caption }">
-      <button v-if="splitNavigation && isReport(artifact)" type="button" class="report-ppt-action"
-        :disabled="requestingPpt || !shell?.canRequestArtifactAction" :title="pptLabel" @click="generatePpt(artifact)">
-        <Presentation :size="15" aria-hidden="true" />
-        {{ pptLabel }}
-      </button>
+      <ReportActions
+        v-if="splitNavigation && isReport(artifact)"
+        :key="artifact.id"
+        :artifact="artifact"
+        :title="title"
+        :can-generate-ppt="Boolean(shell?.canRequestArtifactAction)"
+        :request-ppt="requestReportPpt"
+        @open-dashboard="openDashboardApplication"
+      />
       <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
            into cards there, a chart file is put on the board as it is. -->
       <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardPage" />
@@ -973,20 +969,4 @@ function appearanceSaved(value: WorkbenchAppearance) {
   min-width: 0;
   border-radius: var(--radius-sm);
 }
-.report-ppt-action {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 8px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  color: var(--el-color-primary);
-  font: inherit;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.report-ppt-action:hover { background: var(--el-color-primary-light-9); }
-.report-ppt-action:disabled { opacity: .6; cursor: wait; }
 </style>

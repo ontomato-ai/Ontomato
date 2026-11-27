@@ -18,11 +18,6 @@ public class KnowledgeGovernanceController {
   public KnowledgeGovernanceController(KnowledgeGovernanceService governance,OntologyAgentAccess access) {
     this.governance=governance;this.access=access;
   }
-  @PostMapping("/skill-package")
-  public AgentRuntimeClient.SkillVersion publishSkill(HttpServletRequest request) throws Exception {
-    access.service(request);
-    return governance.publishSkill();
-  }
   @PostMapping("/platform-windows")
   public Object register(@RequestBody java.util.Map<String,Object> input,HttpServletRequest request) {
     access.service(request);

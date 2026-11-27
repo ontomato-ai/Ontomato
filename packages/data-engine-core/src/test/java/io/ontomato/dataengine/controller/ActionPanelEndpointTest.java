@@ -162,10 +162,12 @@ class ActionPanelEndpointTest {
 
   @Test
   void executeRefusesPreviewRequestsBeforeTheActionStarts() throws Exception {
+    // The platform's catch-all advice is registered first: the preview refusal's own answer still wins.
     var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setControllerAdvice(new io.ontomato.dataengine.config.BaseControllerAdvice(), new PreviewExecutionErrors())
         .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     var response = mvc.perform(post("/action/execute")
-            .header("X-Ontomato-Execution-Context", "{\"kind\":\"preview\"}")
+            .header("X-Ontomato-Execution-Context", "preview")
             .header(ControllerConst.LANG_HEADER_KEY, "en")
             .param("id", "a1").param("param", "{}"))
         .andExpect(status().isUnprocessableEntity()).andReturn().getResponse();

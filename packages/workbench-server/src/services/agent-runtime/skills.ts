@@ -4,13 +4,13 @@ import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { readSkillPackage } from "../../core/skills/package";
 import type { SkillPackage } from "../../core/skills/providers";
 import fs from "node:fs";
-import { exportChartTheme } from "../chart-theme";
+import { exportAssistantReportChartTheme } from "../chart-theme";
 import path from "node:path";
 import { publicSkillTranslationsRoot } from "../../content/layout";
+import { translatedSkillRelativePath, workbenchBuiltinSkillRoot } from "../skills/builtin-paths";
 import { environment } from "../../config/environment";
 import { getApiConfig } from "../../config/data-query-api";
 import { backendPost } from "../../utils/backend-client";
-import { translatedSkillRelativePath, workbenchBuiltinSkillRoot } from "../skills/builtin-paths";
 
 export { workbenchBuiltinSkillRoot };
 
@@ -27,7 +27,7 @@ export async function publishSkillPackage(pkg: SkillPackage, domainId?: string) 
 export async function publishSkill(root: string, skill: RuntimeSkillRef, domainId?: string) {
   const pkg = await readSkillPackage(root, skill);
   if (skill.namespace.kind === "provider" && skill.namespace.provider === "workbench" && skill.name === "assistant-report")
-    pkg.files.push({ path: "resources/chart-theme.json", content: JSON.stringify(exportChartTheme()) });
+    pkg.files.push({ path: "resources/chart-theme.json", content: JSON.stringify(exportAssistantReportChartTheme()) });
   const translations = publicSkillTranslationsRoot();
   const relative = translatedSkillRelativePath(root);
   if (skill.namespace.kind === "provider" && translations && relative) {
@@ -41,10 +41,10 @@ export async function publishSkill(root: string, skill: RuntimeSkillRef, domainI
   return publishSkillPackage(pkg, domainId);
 }
 
-/** The ontology host assembles and publishes its public assistant skill. */
-export async function publishOntologyAssistantSkill(domainId: string): Promise<RuntimeSkillVersion> {
-  const url = getApiConfig().baseUrl!.replace(/\/$/, "") + "/platform/agent-channel/assistant-skill";
-  const response = await backendPost("ontology-assistant-skill", url, {}, {
+/** Ontology publishes every skill in its provider namespace; the workbench only asks for a version by skill name. */
+export async function publishOntologySkill(domainId: string, name: string): Promise<RuntimeSkillVersion> {
+  const url = getApiConfig().baseUrl!.replace(/\/$/, "") + "/platform/ontology-skills/package";
+  const response = await backendPost("ontology-skill-package", url, { name }, {
     headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken, "X-Domain-Id": domainId },
     retries: 1,
   });

@@ -17,19 +17,6 @@ node <this-skill>/scripts/dataset.mjs deliver @work/q.json --meta @work/delivery
 `--active` delivers into the retrieval the platform started for you; leave it out only outside the
 product (see the end of this file).
 
-## Query commands
-
-Inspect structure and data with `node <this-skill>/scripts/ontomato.mjs <command>`, from the workspace root;
-`@file` arguments are relative to it. Each runs under the user's permissions.
-
-| Command | Result |
-| --- | --- |
-| `schema <class>...` | Enabled fields with their types, and the declared relationships, of the named classes |
-| `dsl-reference <class>...` | The DSL rules for those classes and an example query object |
-| `distinct-values <class> <attribute> [--like text] [--limit n]` | Stored values of a text field, with a completeness marker |
-| `execute-dsl @work/q.json` | Runs one DSL object and returns its rows |
-| `knowledge <question> [--limit n]` | Business knowledge entries for a term, rule or calculation |
-
 ## The query logic package
 
 What you deliver is a query logic package. It has one of two shapes, delivered the same way:
@@ -49,7 +36,7 @@ What you deliver is a query logic package. It has one of two shapes, delivered t
   own `--out`; do not merge unrelated results with Python.
 - Write the query straight into the file you will deliver. Deliver when the logic is ready; the
   delivery itself runs the query and reports any error. To see a result first, run that same file
-  with `execute-dsl`, and when it answers the question deliver it unchanged rather than writing it
+  with ontology-query's `execute-dsl`, and when it answers the question deliver it unchanged rather than writing it
   again. `preview` takes the same arguments as `deliver` and is only for a real doubt about the result.
 - A small table's rows come back in the command's response; open the file only when you need more.
 - Reference the returned file; never edit its rows or receipt.
