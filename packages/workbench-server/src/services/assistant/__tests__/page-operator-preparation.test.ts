@@ -6,6 +6,8 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { PAGE_OPERATOR_SKILL } from "../page-operator";
+import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
+import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 
 const mocks = vi.hoisted(() => ({
   requirePanelEntry: vi.fn(),
@@ -61,6 +63,28 @@ it("gives page control to a custom agent only when the operator is explicitly se
   const withOperator = await prepareAssistantSkills(domainId, { kind: "custom", skills: [PAGE_OPERATOR_SKILL] }, credentials);
   expect(withOperator.pageControl).toBe(true);
   expect(withOperator.skills.map(({ skill }) => skill)).toEqual([PAGE_OPERATOR_SKILL]);
+});
+
+it("keeps registered skill descriptions out of the prepared run definition", async () => {
+  mocks.publishSkill.mockResolvedValue({
+    skill: PAGE_OPERATOR_SKILL,
+    digest: "a".repeat(64),
+    description: "Registered publication metadata",
+  });
+  const prepared = await prepareAssistantSkills(domainId, { kind: "custom", skills: [PAGE_OPERATOR_SKILL] }, credentials);
+  const request = {
+    language: "en",
+    input: { role: "user", content: "Question", timestamp: 1 },
+    definition: {
+      systemPrompt: "Instructions",
+      modelId: null,
+      skills: prepared.skills,
+      sandbox: { limits: codeLimitsSchema.parse({}) },
+      externalMcp: [],
+    },
+  };
+  expect(prepared.skills[0]).not.toHaveProperty("description");
+  expect(() => runtimeStartRunRequestSchema.parse(request)).not.toThrow();
 });
 
 it("accepts the exact admitted current placement and rejects mismatches as forbidden", async () => {
