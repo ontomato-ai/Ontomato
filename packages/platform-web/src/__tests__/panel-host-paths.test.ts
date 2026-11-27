@@ -1563,6 +1563,57 @@ describe("dynamic and nested member projection access verification", () => {
     }
   });
 
+  it("reports a native frame's local panel-data refusal instead of swallowing it", async () => {
+    const framePanelId = "panel-native-frame";
+    const projection = makeProjection("proj-native-count", "No rows");
+    const panel = makeCodedPanel(framePanelId, definePanel({
+      state: {},
+      members: { count: { target: { projectionId: projection.id } } },
+    }), "count");
+    panel.content.html = '<div id="app"></div>';
+    const panelDataRequests: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === panelHostPaths.panel(framePanelId)) {
+        return Response.json({
+          panel,
+          projections: { [projection.id]: { status: "ready", projection } },
+        });
+      }
+      if (url.pathname === panelHostPaths.read || url.pathname === panelHostPaths.readBatch) {
+        panelDataRequests.push(url.pathname);
+      }
+      return Response.json({});
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const scope = effectScope();
+    try {
+      const port = builtinFramePanelHost("settings", framePanelId);
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Settings",
+        address: () => "/settings",
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+      const instance = (view.direct.value!.mount as DirectPanelMount).instance;
+      const context = await instance.memberContext("count");
+      const datum = scope.run(() => context.data.use("rows"))!;
+
+      await vi.waitFor(() => expect(datum.value.status).toBe("forbidden"));
+      expect(panelDataRequests).toEqual([]);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      const reported = consoleError.mock.calls[0]![0];
+      expect(reported).toBeInstanceOf(Error);
+      expect((reported as Error).message).toBe("Native frame does not read panel data");
+      expect(view.error.value).toBe("Native frame does not read panel data");
+      expect(view.displayLoad.value.status).toBe("error");
+    } finally {
+      scope.stop();
+    }
+  });
+
   it.each([403, 404])("keeps the HTTP %s on a refused panel read and a refused opening", async status => {
     vi.stubGlobal("fetch", async () => Response.json({ error: { message: "Refused" } }, { status }));
     await expect(readPanelData({

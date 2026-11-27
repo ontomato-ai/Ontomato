@@ -239,6 +239,20 @@ const anchorUse = computed<EntryUse | null>(() => {
     ?? openedUse;
 });
 
+/**
+ * Whether the application is known to have registered panel entries or known to be native-only. Until one of those
+ * answers arrives, the frame has no safe port to choose: a native port guessed early would keep the same cache key after
+ * the registered entry appears.
+ */
+const frameEntryDecisionResolved = computed(() => {
+  if (anchorUse.value) return true;
+  const panel = matchingPanelEntry.value;
+  if (panel && !panel.resolved) return false;
+  if (catalogApp.value?.panelUses !== undefined) return true;
+  if (panel?.resolved) return true;
+  return matchingOpenedEntry.value !== null;
+});
+
 function refreshFrame(change: PanelObjectChange) {
   frameHost.value?.refresh(change.target, change.affected, change.operation);
 }
@@ -319,6 +333,7 @@ const port = computed<PanelHostPort | null>(() => {
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
+  if (!frameEntryDecisionResolved.value) return null;
   if (frame.hostGroups?.length || isBuiltinProductId(frame.framePanelId)) {
     const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, router, chat, initialFrame);
     cachedPort = { key, port: markRaw(created) };
