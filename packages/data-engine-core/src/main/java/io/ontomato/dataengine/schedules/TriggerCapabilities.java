@@ -15,6 +15,7 @@ import io.ontomato.dataengine.service.PythonProgramProtocol;
 import io.ontomato.dataengine.service.WorkflowService;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
 import java.net.URI;
@@ -99,9 +100,8 @@ class TriggerCapabilities {
     }
   }
 
-  JsonNode targets(User user) {
-    var subject = definitions.subject(user);
-    String domain = user.getDomainId();
+  JsonNode targets(SubjectContext subject) {
+    String domain = subject.identity().domainId();
     return object("actions", actions.queryList(Action.STATUS_PUBLISHED, null, null, domain).stream()
         .filter(action -> actionAccess.standalone(subject, action, ExecutionTarget.LIVE).admitted())
         .map(action -> object("id", action.getId(), "name", action.getName(), "description", action.getDescription())).toList(),

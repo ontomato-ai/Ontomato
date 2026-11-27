@@ -178,6 +178,35 @@ async function attributeForAvailability(host: PanelOperationHost, className: str
   return attributeListSchema.parse(await response.json()).find(view => view.name === name);
 }
 
+export function attributeOperationRefusal(
+  operation: typeof DELETE_ATTRIBUTE | typeof SET_PRIMARY_KEY, view: AttributeView | undefined, locale?: string,
+) {
+  const reason = (key: string) => ({ reason: tForLocale(locale, `panels.ontologyModel.unavailable.${key}`) });
+  if (!view) return reason("attributeUnavailable");
+  if (view.primaryKey) return reason(operation === DELETE_ATTRIBUTE ? "cannotDeletePrimaryKey" : "alreadyPrimaryKey");
+  if (operation === SET_PRIMARY_KEY && (view.type !== "varchar" || !view.enable)) return reason("primaryKeyInvalid");
+}
+
+export function attributeRelationshipUses(relationships: readonly RelationshipView[]) {
+  const uses = new Map<string, Set<string>>();
+  for (const rel of relationships) {
+    for (const [className, field] of [[rel.fromclass, rel.fromField], [rel.toclass, rel.toField]]) {
+      if (!className || !field) continue;
+      const key = attributeIdentity({ className, name: field }).primaryKey;
+      const names = uses.get(key) ?? new Set<string>();
+      names.add(rel.relationship);
+      uses.set(key, names);
+    }
+  }
+  return uses;
+}
+
+export function attributeReferenceRefusal(relationships: ReadonlySet<string> | undefined, locale?: string) {
+  if (relationships?.size) return { reason: tForLocale(locale, "panels.ontologyModel.unavailable.attributeInUse", {
+    relationships: [...relationships].join(", "),
+  }) };
+}
+
 const deleteObjectTypeImpact: PanelImpactInspector = {
   handlerRef: `${DELETE_OBJECT_TYPE}.inspect-impact`,
   async inspect(host, calls) {
@@ -598,17 +627,11 @@ export const ontologyModelServerOperations = [
     async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
       const { className, name } = parseAttributePrimaryKey(target.primaryKey);
       const view = await attributeForAvailability(host, className, name);
-      if (!view) return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeUnavailable") };
-      if (view.primaryKey) return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.cannotDeletePrimaryKey") };
-      const relationships = (await readModelView(host,
-        `/relationships?className=${encodeURIComponent(className)}`, relationshipListSchema))
-        .filter(rel => (rel.fromclass === className && rel.fromField === name) ||
-          (rel.toclass === className && rel.toField === name));
-      if (relationships.length) {
-        return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeInUse", {
-          relationships: relationships.map(rel => rel.relationship).join(", "),
-        }) };
-      }
+      const refusal = attributeOperationRefusal(DELETE_ATTRIBUTE, view, host.locale);
+      if (refusal) return refusal;
+      const relationships = await readModelView(host,
+        `/relationships?className=${encodeURIComponent(className)}`, relationshipListSchema);
+      return attributeReferenceRefusal(attributeRelationshipUses(relationships).get(attributeIdentity({ className, name }).primaryKey), host.locale);
     },
     async unavailableBatch(
       host: PanelOperationHost,
@@ -637,39 +660,13 @@ export const ontologyModelServerOperations = [
       }
       const attributes = attrResp.ok ? attributeListSchema.parse(await attrResp.json()) : [];
       const relationships = relResp.ok ? relationshipListSchema.parse(await relResp.json()) : [];
-      const attrByKey = new Map(attributes.map(view => [`${view.className}\u0000${view.name}`, view]));
-      const usedBy = new Map<string, string[]>();
-      for (const rel of relationships) {
-        if (rel.fromclass && rel.fromField) {
-          const fromKey = `${rel.fromclass}\u0000${rel.fromField}`;
-          const list = usedBy.get(fromKey) ?? [];
-          if (!list.includes(rel.relationship)) list.push(rel.relationship);
-          usedBy.set(fromKey, list);
-        }
-        if (rel.toclass && rel.toField) {
-          const toKey = `${rel.toclass}\u0000${rel.toField}`;
-          const list = usedBy.get(toKey) ?? [];
-          if (!list.includes(rel.relationship)) list.push(rel.relationship);
-          usedBy.set(toKey, list);
-        }
-      }
+      const attrByKey = new Map(attributes.map(view => [attributeIdentity(view).primaryKey, view]));
+      const usedBy = attributeRelationshipUses(relationships);
       for (const { rowKey, className, name } of parsed) {
-        const key = `${className}\u0000${name}`;
-        const view = attrByKey.get(key);
-        if (!view) {
-          reasons.set(rowKey, { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeUnavailable") });
-        } else if (view.primaryKey) {
-          reasons.set(rowKey, { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.cannotDeletePrimaryKey") });
-        } else {
-          const rels = usedBy.get(key);
-          if (rels?.length) {
-            reasons.set(rowKey, {
-              reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeInUse", {
-                relationships: rels.join(", "),
-              }),
-            });
-          }
-        }
+        const key = attributeIdentity({ className, name }).primaryKey;
+        const refusal = attributeOperationRefusal(DELETE_ATTRIBUTE, attrByKey.get(key), host.locale)
+          ?? attributeReferenceRefusal(usedBy.get(key), host.locale);
+        if (refusal) reasons.set(rowKey, refusal);
       }
       return reasons;
     },
@@ -745,11 +742,7 @@ export const ontologyModelServerOperations = [
     async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
       const { className, name } = parseAttributePrimaryKey(target.primaryKey);
       const view = await attributeForAvailability(host, className, name);
-      if (!view) return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeUnavailable") };
-      if (view.primaryKey) return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.alreadyPrimaryKey") };
-      if (view.type !== "varchar" || !view.enable) {
-        return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.primaryKeyInvalid") };
-      }
+      return attributeOperationRefusal(SET_PRIMARY_KEY, view, host.locale);
     },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const key = parseAttributePrimaryKey(target.primaryKey);

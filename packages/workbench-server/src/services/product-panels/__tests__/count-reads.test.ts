@@ -8,7 +8,7 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
-import { readProductPanelData } from "../data-reads";
+import { readScopedPanelData } from "../data-reads";
 
 const mocks = vi.hoisted(() => ({
   resolveMember: vi.fn(),
@@ -69,8 +69,8 @@ function readCount(typeId: string, read = "count") {
     componentId: "@ontomato/sdk:ObjectCount", inputs: {}, outputs: {}, config: {},
     data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read, params: {} } },
   });
-  mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection });
-  return readProductPanelData(owner, viewer, {
+  mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection, trail: [] });
+  return readScopedPanelData(owner, viewer, {
     source: { kind: "frame", applicationId: "ontology", useId: "objects" },
     memberPath: [{ member: "count" }], dataName: "rows", inputs: {},
   });
@@ -85,8 +85,8 @@ function readQuery(typeId: string, params: Record<string, unknown>) {
     componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
     data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read: "query", params } },
   });
-  mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection });
-  return readProductPanelData(owner, viewer, {
+  mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection, trail: [] });
+  return readScopedPanelData(owner, viewer, {
     source: { kind: "frame", applicationId: "ontology", useId: "objects" },
     memberPath: [{ member: "rows" }], dataName: "rows", inputs: {},
   });
@@ -224,7 +224,7 @@ describe("platform count reads", () => {
       }
     });
 
-    await expect(readProductPanelData(owner, viewer, {
+    await expect(readScopedPanelData(owner, viewer, {
       source: { kind: "registered", applicationId: "ontology", useId: "attributes" },
       memberPath: [{ member: "attributes" }], dataName: "rows", inputs: { className: "Site" },
     })).resolves.toMatchObject({ status: "ready" });

@@ -302,7 +302,19 @@ it("sends an enable change through platform preparation and confirmation with ro
   const [first, second] = view.querySelectorAll<HTMLInputElement>('[role="switch"]');
   expect(first!.disabled).toBe(false);
   expect(second!.disabled).toBe(true);
-  expect(view.textContent).toContain("Owner denied edits to this task");
+  expect(view.querySelector(".sdk-sts-card-operation-note")).toBeNull();
+  expect(view.textContent).not.toContain("Owner denied edits to this task");
+  const disabledSwitchTrigger = second!.closest<HTMLElement>(".sdk-unavailable-trigger");
+  expect(disabledSwitchTrigger?.getAttribute("tabindex")).toBe("0");
+  expect(disabledSwitchTrigger?.getAttribute("aria-label")).toContain("Owner denied edits to this task");
+  disabledSwitchTrigger!.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+  await vi.waitFor(() => {
+    const popper = [...document.body.querySelectorAll<HTMLElement>(".el-popper")].find(
+      (node) => node.textContent?.includes("Owner denied edits to this task") && node.style.display !== "none",
+    );
+    expect(popper).toBeDefined();
+  });
+  disabledSwitchTrigger!.dispatchEvent(new FocusEvent("blur", { bubbles: false }));
   await click(second!.closest<HTMLElement>(".el-switch")!);
   expect(prepare).not.toHaveBeenCalled();
   await click(first!.closest<HTMLElement>(".el-switch")!);

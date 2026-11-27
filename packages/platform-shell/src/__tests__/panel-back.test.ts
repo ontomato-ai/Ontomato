@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick } from "vue";
 import { ElMessageBox } from "element-plus";
 import { confirmDanger } from "../confirm-danger";
-import { createPanelBackController, hasOpenOverlay, installPanelBackPopStateListener } from "../panel-back";
+import {
+  createPanelBackController,
+  hasOpenOverlay,
+  hasPlatformPreviousPage,
+  installPanelBackPopStateListener,
+} from "../panel-back";
 import { provideUnsavedChanges, useLeaveConfirmation, useUnsavedChanges } from "../unsaved-changes";
 
 afterEach(() => {
@@ -271,6 +276,133 @@ describe("confirmDanger and unified unsaved-changes confirmation", () => {
       expect(ask).toHaveBeenCalledTimes(2);
     } finally {
       app.unmount();
+    }
+  });
+});
+
+describe("hasPlatformPreviousPage", () => {
+  it("recognizes only site-relative Vue Router history.state.back entries at full page", () => {
+    expect(hasPlatformPreviousPage({ historyState: null })).toBe(false);
+    expect(hasPlatformPreviousPage({ historyState: {} })).toBe(false);
+    expect(hasPlatformPreviousPage({ historyState: { back: null, current: "/ontology/panels/detail?selected=p1" } })).toBe(false);
+    expect(hasPlatformPreviousPage({ historyState: { back: "", current: "/ontology/panels/detail" } })).toBe(false);
+    expect(hasPlatformPreviousPage({ historyState: { back: "https://external.example/page", current: "/ontology/panels/detail" } })).toBe(false);
+    expect(hasPlatformPreviousPage({ historyState: { back: "//external.example/page", current: "/ontology/panels/detail" } })).toBe(false);
+    expect(hasPlatformPreviousPage({ historyState: { back: "/ontology/panels?search=order", current: "/ontology/panels/detail?selected=p1" } })).toBe(true);
+  });
+
+  it("requires a previous page parameter on the same host route when beside a conversation", () => {
+    const current = "/agents/chat?sessionId=s1&page=%2Fontology%2Fpanels%2Fdetail%3Fselected%3Dp1";
+    expect(hasPlatformPreviousPage({ beside: true, historyState: { back: null, current } })).toBe(false);
+    expect(hasPlatformPreviousPage({ beside: true, historyState: { back: "/agents/chat?sessionId=s1", current } })).toBe(false);
+    expect(hasPlatformPreviousPage({ beside: true, historyState: { back: "/agents/chat?sessionId=s1&page=", current } })).toBe(false);
+    expect(hasPlatformPreviousPage({ beside: true, historyState: { back: "/ontology/panels", current } })).toBe(false);
+    expect(hasPlatformPreviousPage({
+      beside: true,
+      historyState: { back: "/agents/chat?sessionId=s1&page=%2Fontology%2Fpanels%3Fsearch%3Dorder", current },
+    })).toBe(true);
+  });
+});
+
+describe("createPanelBackController.navigateBack", () => {
+  it("steps back in browser history when an in-platform previous page exists, and falls back otherwise", async () => {
+    const goHistoryBack = vi.fn();
+    const navigate = vi.fn(async () => {});
+    const controller = createPanelBackController({
+      active: () => true,
+      allowHistory: () => true,
+      isDirty: () => false,
+      confirmLeaveUnsaved: async () => true,
+      goHistoryBack,
+    });
+    try {
+      window.history.replaceState({ back: "/ontology/panels?search=foo", current: "/ontology/panels/detail?selected=p1" }, "", "/#/ontology/panels/detail?selected=p1");
+      await controller.navigateBack("/ontology/panels", navigate);
+      expect(goHistoryBack).toHaveBeenCalledTimes(1);
+      expect(navigate).not.toHaveBeenCalled();
+
+      window.history.replaceState({ back: null, current: "/ontology/panels/detail?selected=p1" }, "", "/#/ontology/panels/detail?selected=p1");
+      await controller.navigateBack("/ontology/panels", navigate);
+      expect(goHistoryBack).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith("/ontology/panels");
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it("handles beside-conversation history and falls back when no prior side page exists", async () => {
+    const goHistoryBack = vi.fn();
+    const navigate = vi.fn(async () => {});
+    const controller = createPanelBackController({
+      active: () => true,
+      allowHistory: () => false,
+      beside: () => true,
+      isDirty: () => false,
+      confirmLeaveUnsaved: async () => true,
+      goHistoryBack,
+    });
+    try {
+      const current = "/agents/chat?sessionId=s1&page=%2Fontology%2Fpanels%2Fdetail%3Fselected%3Dp1";
+      window.history.replaceState({ back: "/agents/chat?sessionId=s1&page=%2Fontology%2Fpanels", current }, "", `/#${current}`);
+      await controller.navigateBack("/ontology/panels", navigate);
+      expect(goHistoryBack).toHaveBeenCalledTimes(1);
+      expect(navigate).not.toHaveBeenCalled();
+
+      window.history.replaceState({ back: "/agents/chat?sessionId=s1", current }, "", `/#${current}`);
+      await controller.navigateBack("/ontology/panels", navigate);
+      expect(goHistoryBack).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith("/ontology/panels");
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it("always falls back in preview/custom-frame hosts where neither full-page history nor beside mode owns history", async () => {
+    const goHistoryBack = vi.fn();
+    const navigate = vi.fn(async () => {});
+    const controller = createPanelBackController({
+      active: () => true,
+      allowHistory: () => false,
+      beside: () => false,
+      isDirty: () => false,
+      confirmLeaveUnsaved: async () => true,
+      goHistoryBack,
+    });
+    try {
+      window.history.replaceState({ back: "/ontology/panels", current: "/ontology/panels/detail" }, "", "/#/ontology/panels/detail");
+      await controller.navigateBack("/ontology/panels", navigate);
+      expect(goHistoryBack).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith("/ontology/panels");
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it("guards dirty navigateBack with confirmLeaveUnsaved when guardNavigationBack is enabled", async () => {
+    let allow = false;
+    const confirmLeaveUnsaved = vi.fn(async () => allow);
+    const goHistoryBack = vi.fn();
+    const navigate = vi.fn(async () => {});
+    const controller = createPanelBackController({
+      active: () => true,
+      allowHistory: () => true,
+      isDirty: () => true,
+      confirmLeaveUnsaved,
+      guardNavigationBack: () => true,
+      goHistoryBack,
+    });
+    try {
+      window.history.replaceState({ back: "/ontology/panels", current: "/ontology/panels/detail" }, "", "/#/ontology/panels/detail");
+      await controller.navigateBack("/ontology/panels", navigate);
+      expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+      expect(goHistoryBack).not.toHaveBeenCalled();
+
+      allow = true;
+      await controller.navigateBack("/ontology/panels", navigate);
+      expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(2);
+      expect(goHistoryBack).toHaveBeenCalledTimes(1);
+    } finally {
+      controller.dispose();
     }
   });
 });

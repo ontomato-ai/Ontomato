@@ -240,13 +240,37 @@ it("runs one batch over the checked objects, reports each, and keeps checked the
   expect(buttonOf(0).textContent).not.toContain("batch-fixture-key");
 });
 
-it("shows an operation its owner would refuse now as off, with the owner's reason beside it, and prepares nothing", async () => {
+it("shows an operation its owner would refuse now as off, surfaces the owner's reason in a hover/focus tooltip, and prepares nothing", async () => {
   unavailable = { reason: "A function an action uses cannot be deleted" };
   try {
     const { sent } = await open({ selectedKnowledge: { className: BUSINESS_KNOWLEDGE, primaryKey: "a" } }, "remove");
-    await vi.waitFor(() => expect(buttonOf(0).textContent).toContain("A function an action uses cannot be deleted"));
+    await vi.waitFor(() => expect(buttonOf(0).querySelector<HTMLElement>(".sdk-unavailable-trigger")).not.toBeNull());
+    // Reason is no longer rendered as a second line under the button.
+    expect(buttonOf(0).querySelector(".sdk-operation-unavailable")).toBeNull();
+    expect(buttonOf(0).textContent?.trim()).toBe("Delete");
+
+    const trigger = buttonOf(0).querySelector<HTMLElement>(".sdk-unavailable-trigger")!;
+    expect(trigger.getAttribute("tabindex")).toBe("0");
+    expect(trigger.getAttribute("aria-label")).toBe("Delete: A function an action uses cannot be deleted");
+
     const button = buttonOf(0).querySelector<HTMLButtonElement>("button")!;
     expect(button.disabled).toBe(true);
+
+    // Hovering the focusable trigger reveals the tooltip with the owner's reason.
+    trigger.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+    const visiblePopper = () =>
+      [...document.body.querySelectorAll<HTMLElement>(".el-popper")].find(
+        (node) => node.textContent?.includes("A function an action uses cannot be deleted") && node.style.display !== "none",
+      );
+    await vi.waitFor(() => expect(visiblePopper()).toBeDefined());
+    trigger.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false }));
+    await vi.waitFor(() => expect(visiblePopper()).toBeUndefined());
+
+    // Keyboard focus also reveals the tooltip without ever executing the operation.
+    trigger.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+    await vi.waitFor(() => expect(visiblePopper()).toBeDefined());
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+    trigger.click();
     button.click();
     expect(writes(sent)).toEqual([]);
   } finally {

@@ -1,5 +1,5 @@
 import { themeOverrideProblems } from "@ontomato/design-tokens/theme-overrides";
-import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
+import { PAGE_OPERATOR_SKILL, runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import {
   AGENT_CHAT_COMPONENT, METRIC_CHART_COMPONENT, builtinProductPanelInputSchema, chartProjectionSchema, productPanelInputSchema, productPanelSchema, productProjectionSchema,
   type ApplicationPanelReferencesRequest, type ProductPanel, type ProductProjection,
@@ -15,15 +15,14 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { ObjectPublicationAccess } from "@ontomato/contracts/object-publication";
 import { requireAllowed, requireObject, writeFirstPublication } from "../product-governance/authorization";
-import { currentDefinition, currentDefinitionAccess, definitionKinds, requireCurrentDefinitionUse, requireCurrentUseAllowed } from "./access";
+import { currentDefinition, currentDefinitionAccess, definitionKinds, definitionVisibleInRange, requireCurrentDefinitionUse, requireCurrentUseAllowed, type ProductUseRanges } from "./access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
 import { resolveDefaultAgent } from "../assistant/default-agents";
-import { panelSkillRef } from "./skill-identity";
 import { collectReferences, findPanelUsers, validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
 import { panelDefinition, projectionDefinition } from "./render-definitions";
@@ -66,6 +65,21 @@ async function readCurrentRecord(
   const canEdit = editable.has(id);
   if (!management || !canEdit) requireCurrentUseAllowed(kind, decisions[0], credentials.locale);
   return { row, editable: canEdit };
+}
+
+export async function readCurrentContentInRange(
+  domainId: string, kind: CurrentProductKind, id: string, { USE, EDIT }: ProductUseRanges, locale?: string,
+) {
+  const row = await loadCurrentProduct(domainId, kind, id);
+  if (!definitionVisibleInRange(row, USE, domainId)) {
+    requireCurrentUseAllowed(kind, {
+      allowed: false,
+      code: "OBJECT_FORBIDDEN",
+      reason: row.domainId === null ? "This platform definition cannot be used." : "You do not have the required permission for this object.",
+    }, locale);
+  }
+  const editable = EDIT !== undefined && row.domainId !== null && definitionVisibleInRange(row, EDIT, domainId);
+  return { row, editable };
 }
 
 export async function readPanelManagementAccess(owner: ProductOwner, credentials: AssistantCredentials, row: CurrentProductRow) {
@@ -116,13 +130,18 @@ export async function readCurrentPanel(owner: ProductOwner, credentials: Assista
   return panelDefinition(row, editable);
 }
 
+export async function readCurrentDefinitionRows(domainId: string, kind: CurrentProductKind) {
+  const { rows } = await getPostgresPool().query<CurrentProductRow>(
+    `SELECT ${currentProductColumns} FROM ${currentProductRows(kind)} AS definitions
+     WHERE domain_id IS NULL OR domain_id=$1 ORDER BY id`, [domainId],
+  );
+  return rows;
+}
+
 export async function readAccessibleCurrentDefinitions(
   owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind,
 ) {
-  const { rows } = await getPostgresPool().query<CurrentProductRow>(
-    `SELECT ${currentProductColumns} FROM ${currentProductRows(kind)} AS definitions
-     WHERE domain_id IS NULL OR domain_id=$1 ORDER BY id`, [owner.domainId],
-  );
+  const rows = await readCurrentDefinitionRows(owner.domainId, kind);
   const { decisions } = await currentDefinitionAccess(kind, rows, owner.domainId, credentials, false);
   return rows.filter((_, index) => decisions[index].allowed);
 }
@@ -357,9 +376,8 @@ async function validateApplicationReferences(client: PoolClient,
     const choice = resolveDefaultAgent(definitions, defaultAgent);
     if ("reason" in choice) throw unavailable(choice.reason);
 
-    const ref = panelSkillRef(domainId, use.panelId);
-    const key = runtimeSkillKey(ref);
-    if (!configuredAssistantSkills(choice.agent, [{ defaultAgent, skills: [ref] }]).some(skill => runtimeSkillKey(skill) === key))
+    const key = runtimeSkillKey(PAGE_OPERATOR_SKILL);
+    if (!configuredAssistantSkills(choice.agent).some(skill => runtimeSkillKey(skill) === key))
       throw unavailable("missingSkill");
   }
   for (const id of delivery.panels)

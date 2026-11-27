@@ -209,7 +209,8 @@ it("rereads affected member operations on refresh(affected) to update unavailabl
   await vi.waitFor(() => {
     const approveBtn = element.querySelector<HTMLButtonElement>('[data-member="approve"] button')!;
     expect(approveBtn.disabled).toBe(true);
-    expect(element.querySelector('[data-member="approve"]')?.textContent).toContain("Already approved");
+    const trigger = element.querySelector<HTMLElement>('[data-member="approve"] .sdk-unavailable-trigger');
+    expect(trigger?.getAttribute("aria-label")).toBe("Approve: Already approved");
   });
   expect(countOpsReads("approve")).toBe(approveBefore + 1);
   expect(countOpsReads("targetless")).toBe(targetlessBefore + 1);
@@ -226,7 +227,7 @@ it("rereads affected member operations on refresh(affected) to update unavailabl
   await vi.waitFor(() => {
     const approveBtn = element.querySelector<HTMLButtonElement>('[data-member="approve"] button')!;
     expect(approveBtn.disabled).toBe(false);
-    expect(element.querySelector('[data-member="approve"]')?.textContent).not.toContain("Already approved");
+    expect(element.querySelector('[data-member="approve"] .sdk-unavailable-trigger')).toBeNull();
   });
   expect(countOpsReads("exportSkill")).toBe(exportBefore);
   expect(countOpsReads("literalFn")).toBe(literalFnBefore);
@@ -313,7 +314,10 @@ it("rereads operations on a projection whose data source matches the affected ty
   // Matching data source type triggers reread and reflects new unavailable state.
   unavailable = { reason: "Locked by policy" };
   instance.refresh({ objects: [], objectTypes: [BUSINESS_KNOWLEDGE] });
-  await vi.waitFor(() => expect(element.textContent).toContain("Locked by policy"));
+  await vi.waitFor(() => {
+    const trigger = element.querySelector<HTMLElement>(".sdk-unavailable-trigger");
+    expect(trigger?.getAttribute("aria-label")).toBe("Approve: Locked by policy");
+  });
   expect(reads.filter((read) => read.operations)).toHaveLength(before + 1);
 
   unmount();

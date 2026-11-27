@@ -4,7 +4,7 @@ import { currentProductRecord, findCurrentProduct } from "../../infrastructure/p
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { requireCurrentDefinitionUse } from "./access";
 
 type ObjectDetailResolution = { kind: "configured"; panelId: string } | { kind: "unconfigured" };

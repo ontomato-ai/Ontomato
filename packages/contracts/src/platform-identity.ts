@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { pageSkillSchema } from "./page-skills";
 import { applicationMetadataSchema } from "./application-metadata";
 import { applicationMenuEntrySchema, panelApplicationEntryUseSchema } from "./product-panels";
 
@@ -8,12 +7,10 @@ const sequence = z.string().regex(/^[0-9]+$/).refine((value) => BigInt(value) <=
 const categories = z.enum(["business", "build", "admin"]);
 
 export const applicationDeclarationSchema = applicationMetadataSchema.extend({
-  pageSkills: z.array(pageSkillSchema).optional(),
   panelUses: z.array(panelApplicationEntryUseSchema).optional(),
 }).strict();
 export type ApplicationDeclaration = z.infer<typeof applicationDeclarationSchema>;
 export const builtinApplicationDeclarationSchema = applicationMetadataSchema.extend({
-  pageSkills: z.array(pageSkillSchema).optional(),
   panelUses: z.array(applicationMenuEntrySchema).optional(),
 }).strict();
 export const builtinApplicationSchema = z.object({

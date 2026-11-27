@@ -3,10 +3,13 @@ package io.ontomato.dataengine.applications;
 import io.ontomato.dataengine.controller.BuildTestAccess;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.core.bean.R;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import io.ontomato.dataengine.panelreads.OntologyNeighborScope;
 import io.ontomato.dataengine.service.IdentityService;
-import io.ontomato.dataengine.service.ProductGrantService.OwnerFacts;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;
@@ -18,6 +21,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.i18n.LocaleContextHolder;
 
 @RestController
 @Owned
@@ -34,7 +39,6 @@ public class ApplicationController {
 
     public static final String DECLARATIONS = "/platform/applications/self/declarations";
     public static final String PANEL_USES_BY_PANEL = "/platform/applications/panel-uses/by-panel";
-    public static final String PANEL_SKILL_SOURCES = "/platform/applications/panel-skill-sources";
     private final ApplicationCatalog catalog;
     private final IdentityService identity;
     private final WorkbenchServiceAuthentication authentication;
@@ -85,6 +89,147 @@ public class ApplicationController {
         User user = current();
         return R.of(countOnly ? catalog.catalogueCount(user)
                 : catalog.catalogue(user, search, scope, cursor, page, size, sort, locale));
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelCount() {
+        return new WorkbenchPanelRead("platform:Application", "count", (subject, parameters) ->
+            catalog.catalogueCount(subject).fluentPut("rows", List.of()));
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelNavigation() {
+        return new WorkbenchPanelRead("platform:Application", "navigation", (subject, parameters) ->
+            catalog.visible(subject));
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationScheduleTargets() {
+        return new WorkbenchPanelRead("platform:Application", "scheduleTargets", (subject, parameters) ->
+            catalog.scheduleTargets(subject));
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationBuilderProjects() {
+        return new WorkbenchPanelRead("platform:Application", "builderProjects", (subject, parameters) -> {
+            if (!(parameters.getOrDefault("search", "") instanceof String search))
+                throw ApplicationCatalog.bad("Application search must be text");
+            return catalog.builderProjects(subject, search);
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationBuilderProjectMetadata() {
+        return new WorkbenchPanelRead("platform:Application", "builderProjectMetadata", (subject, parameters) -> {
+            if (!(parameters.get("primaryKey") instanceof String id) || id.isBlank())
+                throw ApplicationCatalog.bad("An application ID is required");
+            return catalog.builderProjectMetadata(id, subject, LocaleContextHolder.getLocale());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelNavigationCount() {
+        return new WorkbenchPanelRead("platform:Application", "navigationCount", (subject, parameters) ->
+            catalog.navigationCount(subject));
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelNeighbors() {
+        return new WorkbenchPanelRead("platform:OntologyType", "application.uses-panel", (subject, parameters) ->
+            catalog.panelNeighborFacts(subject, OntologyNeighborScope.parse(parameters, "platform:Application", "platform:ProductPanel"),
+                !Boolean.FALSE.equals(parameters.get("includeLinks"))));
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelQuery() {
+        return new WorkbenchPanelRead("platform:Application", "query", (subject, parameters) ->
+            catalog.catalogue(subject, (String) parameters.getOrDefault("search", ""), (String) parameters.getOrDefault("scope", "visible"),
+                (String) parameters.get("cursor"), (Integer) parameters.get("page"), (Integer) parameters.getOrDefault("size", 30),
+                (String) parameters.getOrDefault("sort", "id"), LocaleContextHolder.getLocale()));
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelRecord() {
+        return applicationDetailRead("record", catalog::cataloguePanelRecord);
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationDeleteAvailability() {
+        return applicationDetailRead("deleteAvailability", catalog::catalogueDeleteAvailability);
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelUsedPanels() {
+        return applicationDetailRead("usedPanels", catalog::catalogueUsedPanels);
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelReferenceGraph() {
+        return applicationDetailRead("referenceGraph", catalog::catalogueReferenceGraph);
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelEntries() {
+        return applicationEntriesRead("entries");
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelEntryRows() {
+        return applicationEntriesRead("entryRows");
+    }
+
+    private WorkbenchPanelRead applicationEntriesRead(String name) {
+        return applicationDetailRead(name, (id, subject, locale) -> catalog.cataloguePanelEntries(id, subject, locale, "entryRows".equals(name)));
+    }
+
+    @FunctionalInterface
+    private interface ApplicationDetailReader {
+        JSONObject read(String id, SubjectContext subject, Locale locale);
+    }
+
+    private WorkbenchPanelRead applicationDetailRead(String name, ApplicationDetailReader reader) {
+        return new WorkbenchPanelRead("platform:Application", name, (subject, parameters) -> {
+            if (!(parameters.get("primaryKey") instanceof String id) || id.isBlank())
+                throw ApplicationCatalog.bad("An application ID is required");
+            return reader.read(id, subject, LocaleContextHolder.getLocale());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelForm(ObjectMapper json) {
+        return applicationPanelFormRead(false, json);
+    }
+
+    @Bean
+    WorkbenchPanelRead applicationPanelCreateForm(ObjectMapper json) {
+        return applicationPanelFormRead(true, json);
+    }
+
+    private WorkbenchPanelRead applicationPanelFormRead(boolean draft, ObjectMapper json) {
+        return new WorkbenchPanelRead("platform:Application", draft ? "createForm" : "form", (subject, parameters) -> {
+            var input = new JSONObject(parameters);
+            var targetKind = draft ? "draft" : "object";
+            if (!(input.get("target") instanceof Map<?, ?> target) || !targetKind.equals(target.get("kind"))
+                    || input.containsKey("values") && !(input.get("values") instanceof Map<?, ?>))
+                throw ApplicationCatalog.bad("An application " + targetKind + " form target and optional values object are required");
+
+            var locale = LocaleContextHolder.getLocale();
+            var formTarget = input.getJSONObject("target").toJavaObject(CatalogueFormTarget.class);
+            var section = draft ? "create" : (String) input.get("section");
+            var entryId = (String) input.get("entryId");
+            var values = input.getJSONObject("values");
+            if (Boolean.TRUE.equals(input.get("mergeCurrentValues"))) {
+                if (values == null || "create".equals(section))
+                    throw ApplicationCatalog.bad("Only an edit form with values can merge current values");
+                var current = catalog.catalogueForm(new CatalogueFormRequest(section, formTarget, null, null, entryId), subject, locale);
+                // Use the same JSON shape as the HTTP form, including nested entry records.
+                var merged = json.convertValue(current.get("values"), JSONObject.class);
+                merged.putAll(values);
+                values = merged;
+            }
+            return catalog.catalogueForm(new CatalogueFormRequest(
+                section, formTarget, values, (String) input.get("changedField"), entryId), subject, locale);
+        });
     }
 
     @GetMapping("/platform/applications/catalogue/{id}")
@@ -154,6 +299,24 @@ public class ApplicationController {
         catalog.deleteDomainApplication(id, current());
     }
 
+    @Bean
+    WorkbenchPanelRead productPanelUsedByRows() {
+        return productPanelUsers("usedByRows");
+    }
+
+    @Bean
+    WorkbenchPanelRead productPanelReferenceGraph() {
+        return productPanelUsers("referenceGraph");
+    }
+
+    private WorkbenchPanelRead productPanelUsers(String name) {
+        return new WorkbenchPanelRead("platform:ProductPanel", name, (subject, parameters) -> {
+            if (!(parameters.get("primaryKey") instanceof String id) || id.isBlank())
+                throw ApplicationCatalog.bad("A panel ID is required");
+            return catalog.panelUsesByPanel(subject.identity().domainId(), id);
+        });
+    }
+
     @GetMapping(PANEL_USES_BY_PANEL)
     public R<List<ApplicationCatalog.PanelUseLocation>> panelUsesByPanel(HttpServletRequest request,
             @RequestParam String domainId, @RequestParam String panelId) {
@@ -162,20 +325,6 @@ public class ApplicationController {
         return R.of(catalog.panelUsesByPanel(domainId, panelId));
     }
 
-    @GetMapping("/platform/page-skills")
-    @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
-    public R<PageSkills.Projection> pageSkills(@RequestParam(required = false) String applicationId,
-            @RequestParam(required = false) String entryKey, @RequestParam(required = false) String pageKey,
-            @RequestParam(required = false) String panelId, @RequestParam Map<String, String> parameters) {
-        if (parameters.containsKey("permissionCode") || parameters.containsKey("access"))
-            throw ApplicationCatalog.bad("Use applicationId, entryKey and pageKey for page skill lookup");
-        if (applicationId == null && entryKey == null && pageKey == null && panelId == null)
-            return R.of(catalog.pageSkills(current()));
-        if (applicationId == null || applicationId.isBlank() || !ApplicationCatalog.validEntryKey(entryKey)
-                || pageKey == null || pageKey.isBlank() || panelId != null && panelId.isBlank())
-            throw ApplicationCatalog.bad("A page skill lookup requires applicationId, entryKey and pageKey");
-        return R.of(catalog.pageSkills(current(), new PageSkills.Entrance(applicationId, entryKey, pageKey), panelId));
-    }
     @PostMapping("/platform/applications/connected")
     @Owned
     public R<JSONObject> connected(@RequestBody Connected body) {
@@ -186,15 +335,6 @@ public class ApplicationController {
         String service = authentication.authenticate(request);
         catalog.reconcileBuiltins(service, batch.applications());
         return R.of(Map.of("serviceId", service, "applicationIds", batch.applications().stream().map(ApplicationCatalog.Builtin::id).toList()));
-    }
-    @GetMapping(PANEL_SKILL_SOURCES)
-    public R<List<PanelSkills.Use>> panelSkillSources(HttpServletRequest request, @RequestParam String domainId,
-        @RequestParam(required = false) String applicationId, @RequestParam(required = false) String useId) {
-        authentication.authenticate(request);
-        if (domainId.isBlank()) throw ApplicationCatalog.bad("A domain is required");
-        if ((applicationId == null) != (useId == null) || applicationId != null && (applicationId.isBlank() || useId.isBlank()))
-            throw ApplicationCatalog.bad("Both application and use are required");
-        return R.of(catalog.panelSkillSources(domainId, applicationId, useId));
     }
     @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping(value = "/platform/applications", params = "purpose=navigation")

@@ -18,6 +18,7 @@ const saveTarget = z.discriminatedUnion("kind", [objectTarget, panelFormTargetSc
 const saveInput = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const empty = z.object({}).strict();
 const activationSchema = savedIdSchema.extend({ activationNotes: z.array(z.string()).nullish() });
+export const workflowLifecycleStateSchema = workflowSchema.pick({ id: true, status: true, hasDraft: true }).required();
 
 async function readTarget(host: PanelOperationHost, target: PanelRecordTarget) {
   const data = await ownerRecord(host, target, "/workflow/query", "WORKFLOW_READ_FAILED");
@@ -35,7 +36,7 @@ const actions = [
     handlerRef: ACTIVATE_WORKFLOW,
     verb: "activate",
     impactKey: "panels.confirmation.activateWorkflowImpact",
-    unavailable: (row: z.infer<typeof workflowSchema>) => !canActivateWorkflow(row),
+    unavailable: (row: Pick<z.infer<typeof workflowSchema>, "status" | "hasDraft">) => !canActivateWorkflow(row),
     reason: "alreadyActive",
     done: "activated",
   },
@@ -43,7 +44,7 @@ const actions = [
     handlerRef: DEACTIVATE_WORKFLOW,
     verb: "deactivate",
     impactKey: "panels.confirmation.deactivateWorkflowImpact",
-    unavailable: (row: z.infer<typeof workflowSchema>) => !canDeactivateWorkflow(row),
+    unavailable: (row: Pick<z.infer<typeof workflowSchema>, "status">) => !canDeactivateWorkflow(row),
     reason: "notActive",
     done: "deactivated",
   },
@@ -56,6 +57,16 @@ const actions = [
     done: "deleted",
   },
 ] as const;
+
+export function workflowLifecycleAction(handlerRef: string) {
+  return actions.find(action => action.handlerRef === handlerRef);
+}
+
+export function workflowLifecycleUnavailable(
+  action: (typeof actions)[number], row: Pick<z.infer<typeof workflowSchema>, "status" | "hasDraft">, locale?: string,
+) {
+  return action.unavailable(row) ? { reason: workflowText(locale)(`unavailable.${action.reason}`) } : undefined;
+}
 
 const workflowActions = actions.map((action): PanelWriteServerOperation => ({
   handlerRef: action.handlerRef,
@@ -71,18 +82,15 @@ const workflowActions = actions.map((action): PanelWriteServerOperation => ({
   targetInput: "workflow",
   targetLabel: async (host, target) => (await readTarget(host, target)).name,
   async unavailable(host, target: PanelRecordTarget) {
-    if (action.unavailable(await readTarget(host, target))) {
-      return { reason: workflowText(host.locale)(`unavailable.${action.reason}`) };
-    }
+    return workflowLifecycleUnavailable(action, await readTarget(host, target), host.locale);
   },
   async unavailableBatch(host, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
     const rows = new Map((await readWorkflowRows(host)).map(row => [row.id, row]));
     const reasons = new Map<string, { reason: string } | undefined>();
     for (const { target, rowKey } of targets) {
       const row = requireWorkflow(rows.get(target.primaryKey), host.locale);
-      if (action.unavailable(row)) {
-        reasons.set(rowKey, { reason: workflowText(host.locale)(`unavailable.${action.reason}`) });
-      }
+      const unavailable = workflowLifecycleUnavailable(action, row, host.locale);
+      if (unavailable) reasons.set(rowKey, unavailable);
     }
     return reasons;
   },

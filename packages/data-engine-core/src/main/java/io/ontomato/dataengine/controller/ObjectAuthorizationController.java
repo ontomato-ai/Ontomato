@@ -3,7 +3,11 @@ package io.ontomato.dataengine.controller;
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.authorization.AuthorizationPolicies;
@@ -12,9 +16,12 @@ import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owne
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -32,6 +39,7 @@ public final class ObjectAuthorizationController {
     private static final Set<Kind> CATALOGUE_KINDS = Set.of(Kind.PANEL, Kind.PROJECTION, Kind.AGENT);
     public static final String FIRST_PUBLICATION = "/authorization/objects/first-publication";
     public static final String AGENT_ACCESS = "/authorization/objects/agent-access";
+    public static final String SKILL_EDITOR_ACCESS = "/authorization/objects/skill-editor-access";
     public static final String AGENT_LEVEL = "/authorization/objects/agent-level";
     public static final String DOMAIN_USE = "/authorization/objects/domain-use";
     public static final String RETIRE = "/authorization/objects/retire";
@@ -47,6 +55,8 @@ public final class ObjectAuthorizationController {
     public record PublicationInput(ObjectTarget target, OwnerFacts ownerFacts, Selection access) {}
     public record PublicationResult(AuthorizationPolicies.PublicationStatus status) {}
     public record AgentInput(ObjectTarget target, OwnerFacts ownerFacts) {}
+    private record ProductRecordInput(ObjectTarget target, OwnerFacts ownerFacts, boolean details) {}
+    public record SkillEditorAccessInput(String agentTarget, ObjectTarget target, OwnerFacts ownerFacts) {}
     public record AgentLevelInput(ObjectTarget target, OwnerFacts ownerFacts, String policyId,
                                   @JsonProperty(value = "level", required = true) Verb level) {}
     public record DomainUseInput(ObjectTarget target, OwnerFacts ownerFacts, Boolean shared) {}
@@ -100,6 +110,39 @@ public final class ObjectAuthorizationController {
         return policies.agentAccess(authorization.resolveSubject(actor), input.target(), input.ownerFacts());
     }
 
+    /**
+     * Fact behind platform:Skill/editorAccess: a draft requires AGENT CREATE, while an existing agent target requires
+     * EDIT on that agent. The caller supplies the agent object's current owner facts because assistant agent rows are
+     * owned by the workbench store, not by this service.
+     */
+    @PostMapping(SKILL_EDITOR_ACCESS)
+    public Decision skillEditorAccess(HttpServletRequest request, @RequestBody SkillEditorAccessInput input) {
+        var actor = actor(request);
+        return skillEditorAccess(input, actor, () -> authorization.resolveSubject(actor));
+    }
+
+    @Bean
+    WorkbenchPanelRead skillEditorAccessRead(ObjectMapper json) {
+        return new WorkbenchPanelRead("platform:Skill", "editorAccess", (subject, parameters) ->
+            skillEditorAccess(json.convertValue(parameters, SkillEditorAccessInput.class), subject.identity(), () -> subject));
+    }
+
+    private Decision skillEditorAccess(SkillEditorAccessInput input, VerifiedIdentity actor, Supplier<SubjectContext> subject) {
+        if (input == null || blank(input.agentTarget())) throw badRequest("An agentTarget is required.");
+        Request operation;
+        if ("draft".equals(input.agentTarget())) {
+            if (input.target() != null || input.ownerFacts() != null)
+                throw badRequest("A draft skill editor access check cannot include an object target or owner facts.");
+            operation = new Create(Kind.AGENT);
+        } else {
+            if (input.target() == null || input.target().kind() != Kind.AGENT || !input.agentTarget().equals(input.target().id()))
+                throw badRequest("An existing agentTarget must identify the same AGENT object target.");
+            requireFacts(actor, input.target(), input.ownerFacts());
+            operation = new ObjectAccess(input.target(), Verb.EDIT, input.ownerFacts());
+        }
+        return authorization.decide(subject.get(), operation);
+    }
+
     @PostMapping(AGENT_LEVEL)
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void agentLevel(HttpServletRequest request, @RequestBody AgentLevelInput input) {
@@ -136,6 +179,73 @@ public final class ObjectAuthorizationController {
         var actor = actor(request);
         requireFacts(actor, input.target(), input.ownerFacts());
         return policies.productAccess(authorization.resolveSubject(actor), input.target(), input.ownerFacts());
+    }
+
+    @Bean
+    WorkbenchPanelRead productPanelCreateForm() {
+        return productCreateForm("platform:ProductPanel", Kind.PANEL);
+    }
+
+    @Bean
+    WorkbenchPanelRead productProjectionCreateForm() {
+        return productCreateForm("platform:ProductProjection", Kind.PROJECTION);
+    }
+
+    private WorkbenchPanelRead productCreateForm(String type, Kind kind) {
+        return new WorkbenchPanelRead(type, "createForm", (subject, parameters) -> {
+            var decision = authorization.decide(subject, new Create(kind));
+            if (!decision.allowed()) throw new AgentHttpException(403, decision.code(), decision.reason());
+            return true;
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead productPanelGrantRows(ObjectMapper json) {
+        return productGrantRows("platform:ProductPanel", Kind.PANEL, json);
+    }
+
+    @Bean
+    WorkbenchPanelRead productProjectionGrantRows(ObjectMapper json) {
+        return productGrantRows("platform:ProductProjection", Kind.PROJECTION, json);
+    }
+
+    private WorkbenchPanelRead productGrantRows(String type, Kind kind, ObjectMapper json) {
+        return new WorkbenchPanelRead(type, "grantRows", (subject, parameters) -> {
+            var input = json.convertValue(parameters, AgentInput.class);
+            requireFacts(subject.identity(), input.target(), input.ownerFacts());
+            if (input.target().kind() != kind) throw badRequest("Mismatched product kind.");
+            return policies.productAccess(subject, input.target(), input.ownerFacts());
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead productPanelRecord(ObjectMapper json, IdentityPrincipalDirectory principals) {
+        return productRecord("platform:ProductPanel", Kind.PANEL, json, principals);
+    }
+
+    @Bean
+    WorkbenchPanelRead productProjectionRecord(ObjectMapper json, IdentityPrincipalDirectory principals) {
+        return productRecord("platform:ProductProjection", Kind.PROJECTION, json, principals);
+    }
+
+    private WorkbenchPanelRead productRecord(String type, Kind kind, ObjectMapper json,
+            IdentityPrincipalDirectory principals) {
+        return new WorkbenchPanelRead(type, "record", (subject, parameters) -> {
+            var input = json.convertValue(parameters, ProductRecordInput.class);
+            var target = input.target();
+            var facts = input.ownerFacts();
+            requireFacts(subject.identity(), target, facts);
+            if (target.kind() != kind) throw badRequest("Mismatched product kind.");
+            var access = policies.productRecordAccess(subject, target, facts, input.details());
+            var result = new LinkedHashMap<String, Object>();
+            result.put("editable", access.editable());
+            if (access.shared() != null) result.put("shared", access.shared());
+            if (input.details() && facts.ownerId() != null) {
+                var label = principals.principalNames(target.domainId(), List.of(facts.ownerId())).get(facts.ownerId());
+                if (label != null) result.put("ownerLabel", label);
+            }
+            return result;
+        });
     }
 
     @PostMapping(PRODUCT_GRANT)

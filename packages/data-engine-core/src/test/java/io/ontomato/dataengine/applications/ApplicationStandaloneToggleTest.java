@@ -8,7 +8,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import io.ontomato.dataengine.core.bean.User;
-import io.ontomato.dataengine.service.ProductPrincipalLookup;
+import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -106,7 +106,7 @@ class ApplicationStandaloneToggleTest {
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.allowEntries();
         var panels = mock(PanelResources.class);
-        var grants = mock(ProductPrincipalLookup.class);
+        var grants = mock(IdentityPrincipalDirectory.class);
         var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", panels, grants, authorization));
 
         var user = mock(User.class);
@@ -155,7 +155,7 @@ class ApplicationStandaloneToggleTest {
         }).when(transactions).executeWithoutResult(any());
         var access = mock(ApplicationAccess.class);
         var authorization = EntryAuthorizationFixture.allowEntries();
-        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", mock(PanelResources.class), mock(ProductPrincipalLookup.class), authorization));
+        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", mock(PanelResources.class), mock(IdentityPrincipalDirectory.class), authorization));
 
         var existingSettings = JSONObject.of(
             "id", "settings",
@@ -163,7 +163,6 @@ class ApplicationStandaloneToggleTest {
             "kind", "native",
             "entry", JSONObject.of("path", "/settings", "renderer", "settings"),
             "entryAccess", List.of("system-config"),
-            "pageSkills", List.of(),
             "panelUses", List.of(),
             "groups", List.of(),
             "panelSettings", new JSONObject(),
@@ -177,7 +176,7 @@ class ApplicationStandaloneToggleTest {
             argThat((String sql) -> sql.contains("ON CONFLICT(id) DO UPDATE SET") && sql.contains("allow_standalone=excluded.allow_standalone")),
             eq("settings"), isNull(), eq("data-engine"), isNull(), eq("native"),
             any(), any(), eq("settings"), eq("bottom"), eq("admin"), eq(20),
-            any(), isNull(), isNull(), any(), eq("/settings"), any(), any(), any(), eq(false));
+            any(), isNull(), isNull(), any(), eq("/settings"), any(), any(), eq(false));
     }
 
     @Test

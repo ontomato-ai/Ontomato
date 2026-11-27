@@ -4,7 +4,7 @@ import { PANEL_FRAME_QUERY_PREFIX } from "@ontomato/contracts/panel-host";
 import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type {
   ApplicationEntryMenu,
-  ApplicationEntryResolution,
+  ApplicationOpenResponse,
   CurrentApplicationEntry,
 } from "@ontomato/contracts/product-panels";
 import type { DisplayedPanel } from "./panel-conversation-display";
@@ -20,7 +20,8 @@ export interface PanelFrameRegistration {
   resolved: boolean;
   /** True when the opened path is denied or missing in this application. */
   missing: boolean;
-  use: ApplicationEntryResolution["use"] | null;
+  use: ApplicationOpenResponse["use"] | null;
+  openedEntry?: ApplicationOpenResponse | null;
   panel: DisplayedPanel | null;
   currentEntry: CurrentApplicationEntry | null;
   menu: ApplicationEntryMenu | null;
@@ -41,6 +42,10 @@ export interface ApplicationFrameHostBridge {
   refreshFrame(change: PanelObjectChange): void;
   /** Registers the mounted full-page panel route with the outer frame host; returns an unregister callback. */
   registerPanelEntry(registration: ComputedRef<PanelFrameRegistration | null>): () => void;
+  /** Shares an in-flight application opening request with the outer frame host so both consume one response. */
+  beginOpen(applicationId: string, promise: Promise<ApplicationOpenResponse | null>): () => void;
+  /** Publishes the settled opening response for the current path so the layout applies standalone/frame state immediately. */
+  reportOpenedEntry(path: string, entry: ApplicationOpenResponse): void;
 }
 
 export const applicationFrameHostKey: InjectionKey<ApplicationFrameHostBridge> =

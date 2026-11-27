@@ -2,7 +2,7 @@
 import { computed, inject, onBeforeUnmount, provide, ref, useSlots, watch } from "vue";
 import { Columns2, Maximize, Menu, X } from "lucide-vue-next";
 import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
-import { pageDockSpaceKey, shellContextKey, useDisplayPlacement } from "../context";
+import { pageDockSpaceKey, pagePaneElementKey, shellContextKey, useDisplayPlacement } from "../context";
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
 import ShellComposer from "./ShellComposer.vue";
@@ -46,6 +46,7 @@ const { width, resizing, beyond, startResize } = usePanelWidth((edge) => {
 const paired = computed(() => props.feature?.withConversation === true);
 const root = ref<HTMLElement | null>(null);
 useDisplayPlacement(root);
+provide(pagePaneElementKey, root);
 
 const dock = ref<HTMLElement | null>(null);
 const dockSpace = ref(0);
@@ -115,6 +116,9 @@ const paneStyle = computed(() => ({
   contain: layout;
   container-type: inline-size;
   container-name: page;
+}
+.page-pane > :deep(.el-message) {
+  max-width: calc(100% - 32px);
 }
 .page-pane.full {
   flex: 1;
@@ -231,10 +235,16 @@ const paneStyle = computed(() => ({
 .pane-dock > * {
   pointer-events: auto;
 }
-.pane-dock > :deep(.composer),
+.pane-dock > :deep(.composer-placement) {
+  pointer-events: none;
+}
 .pane-dock > .shell-questions {
   width: min(760px, 100%);
   margin-inline: auto;
+}
+/* Dragged away from the bottom, the composer's placement is zero high and the dock no longer leaves even its bottom room. */
+.pane-dock:has(> .composer-placement.off-bottom) {
+  padding-bottom: 0;
 }
 /* Folded with no pending questions, the dock leaves the page its whole height and pins the button to the corner. */
 .pane-dock:has(> .composer-unfold:only-child) {

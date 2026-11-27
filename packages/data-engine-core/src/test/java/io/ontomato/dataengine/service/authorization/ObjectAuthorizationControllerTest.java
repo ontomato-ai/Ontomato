@@ -2,11 +2,14 @@ package io.ontomato.dataengine.service.authorization;
 
 import static io.ontomato.dataengine.controller.ObjectAuthorizationController.*;
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.config.BaseControllerAdvice;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.controller.ObjectAuthorizationController;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
@@ -20,6 +23,8 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -188,6 +193,95 @@ class ObjectAuthorizationControllerTest {
                 {"target":%s,"ownerFacts":%s,"shared":false}
                 """.formatted(TARGET, AUTHOR))).andExpect(status().isNoContent());
         verify(store).revokeObject(domainGrant);
+    }
+
+    @Test
+    void catalogueRecordsOmitSharingWithoutEditAndRetainThePanelManagementException() {
+        var operations = new ManagementOperations(List.of(new AuthorizationPolicies.Operations()));
+        var authorization = new AuthorizationService(subjects, store, operations,
+                mock(CapabilityGrantLookup.class), mock(DataPermissionLookup.class));
+        var policies = new AuthorizationPolicies(store, operations, authorization, null, null);
+        var subject = authorization.resolveSubject(new AuthorizationService.VerifiedIdentity(
+                "domain", "user", AuthorizationService.CredentialLimit.UNRESTRICTED));
+        var panel = new ObjectTarget("domain", Kind.PANEL, "panel");
+        var projection = new ObjectTarget("domain", Kind.PROJECTION, "projection");
+        var otherAuthor = new OwnerFacts("other", DefinitionState.PUBLISHED);
+        when(subjects.objectEntitlement("user", panel, Verb.USE)).thenReturn(true);
+        assertEquals(new AuthorizationPolicies.ProductRecordAccess(false, null),
+                policies.productRecordAccess(subject, panel, otherAuthor, true));
+        assertThrows(ResponseStatusException.class, () -> policies.productAccess(subject, panel, otherAuthor));
+        verify(store, never()).domainPolicy(anyString());
+
+        when(subjects.objectEntitlement("user", panel, Verb.USE)).thenReturn(false);
+        when(subjects.objectEntitlement("user", panel, Verb.EDIT)).thenReturn(true);
+        when(store.domainPolicy("domain")).thenReturn(new PolicyRef("member", "default", PolicyKind.OBJECT));
+        when(store.objectGrants(panel, Verb.USE, Set.of("default")))
+                .thenReturn(List.of(new ObjectGrant("default", panel, Verb.USE, null)));
+        assertEquals(new AuthorizationPolicies.ProductRecordAccess(true, true),
+                policies.productRecordAccess(subject, panel, otherAuthor, true));
+        verify(store, never()).objectGrantViews(any());
+
+        when(subjects.objectEntitlement("user", projection, Verb.EDIT)).thenReturn(true);
+        assertThrows(ResponseStatusException.class, () -> policies.productRecordAccess(subject, projection, otherAuthor, true));
+    }
+
+    @Test
+    void skillEditorAccessUsesAgentCreateForDraftAndEditForAnExistingTarget() throws Exception {
+        when(subjects.objectEntitlement("user", new ObjectTarget("domain", Kind.AGENT, ""), Verb.CREATE)).thenReturn(true);
+        http.perform(rpc(SKILL_EDITOR_ACCESS, "{\"agentTarget\":\"draft\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(true));
+
+        http.perform(rpc(SKILL_EDITOR_ACCESS, """
+                {"agentTarget":"agent","target":%s,"ownerFacts":%s}
+                """.formatted(TARGET, AUTHOR)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(true));
+        http.perform(rpc(SKILL_EDITOR_ACCESS, """
+                {"agentTarget":"agent","target":%s,"ownerFacts":%s}
+                """.formatted(TARGET, OTHER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(false))
+                .andExpect(jsonPath("$.code").value("OBJECT_FORBIDDEN"));
+    }
+
+    @Test
+    void registeredSkillEditorAccessReusesTheAdmittedSubjectAndChecksTheRealAgent() {
+        var authorization = mock(AuthorizationService.class);
+        var verified = new AuthorizationService.VerifiedIdentity("domain", "user", AuthorizationService.CredentialLimit.UNRESTRICTED);
+        var subject = new AuthorizationService.SubjectContext(verified, null, Map.of(), Set.of(), Set.of());
+        var controller = new ObjectAuthorizationController(null, identity, authorization, null);
+        WorkbenchPanelRead read = ReflectionTestUtils.invokeMethod(controller, "skillEditorAccessRead", new ObjectMapper());
+        var create = new AuthorizationService.Create(Kind.AGENT);
+        var edit = new AuthorizationService.ObjectAccess(AGENT, Verb.EDIT, new OwnerFacts("owner", DefinitionState.PUBLISHED));
+        var allowed = new AuthorizationService.Decision(true, null, null);
+        var denied = new AuthorizationService.Decision(false, "OBJECT_FORBIDDEN", "Agent edit denied");
+        when(authorization.decide(subject, create)).thenReturn(allowed);
+        when(authorization.decide(subject, edit)).thenReturn(denied);
+
+        assertSame(allowed, read.handler().read(subject, Map.of("agentTarget", "draft")));
+        assertSame(denied, read.handler().read(subject, Map.of("agentTarget", "agent",
+            "target", Map.of("domainId", "domain", "kind", "AGENT", "id", "agent"),
+            "ownerFacts", Map.of("ownerId", "owner", "state", "PUBLISHED"))));
+        verify(authorization).decide(subject, create);
+        verify(authorization).decide(subject, edit);
+        verifyNoMoreInteractions(authorization);
+        verifyNoInteractions(identity);
+    }
+
+    @Test
+    void skillEditorAccessRejectsMismatchedOrMalformedTargetsBeforePermissionResolution() throws Exception {
+        http.perform(rpc(SKILL_EDITOR_ACCESS, "{\"agentTarget\":\"draft\",\"target\":%s}".formatted(TARGET)))
+                .andExpect(status().isBadRequest());
+        http.perform(rpc(SKILL_EDITOR_ACCESS, """
+                {"agentTarget":"other","target":%s,"ownerFacts":%s}
+                """.formatted(TARGET, AUTHOR)))
+                .andExpect(status().isBadRequest());
+        http.perform(rpc(SKILL_EDITOR_ACCESS, """
+                {"agentTarget":"agent","target":%s,"ownerFacts":%s}
+                """.formatted(TARGET.replace(":\"domain\"", ":\"foreign\""), AUTHOR)))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(subjects, store);
     }
 
     private void roles(boolean manager) {

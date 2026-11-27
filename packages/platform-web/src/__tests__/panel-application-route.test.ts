@@ -1,9 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { defineComponent, h, ref } from "vue";
+import { defineComponent, h, inject, nextTick, ref, type Ref } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { pagePaneElementKey } from "@ontomato/agent-shell-ui";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import elementEn from "element-plus/es/locale/lang/en";
@@ -24,47 +25,60 @@ const uses: ApplicationPanelUse[] = [
 ];
 
 /** Every panel instance the route mounted, and the address each last reported. */
-const mountedInstances: { useId: string; address: ReturnType<typeof ref<string>>; initial: Record<string, unknown> }[] = [];
+const mountedInstances: {
+  useId: string;
+  address: ReturnType<typeof ref<string>>;
+  initial: Record<string, unknown>;
+  overlayContainer: Readonly<Ref<HTMLElement | null>> | null;
+}[] = [];
 let framePanelId: string | undefined;
-const readFrameManifest = vi.fn();
+let frameResponses: Array<{ panel: { id: string; manifest: { state: Record<string, unknown>; members: Record<string, unknown> } } } | null> = [];
 
 import { useApplicationCatalog } from "../catalog";
 
 vi.mock("../panel-host", () => ({
-  // Java's resolve-entry, answered from the test's use relations: the one at the asked address, with the menu.
+  // Single opening response, answered from the test's use relations with bundled frame/content fields.
   resolveApplicationEntry: async ({ path }: { path: string }) => {
     const use = uses.find((candidate) => candidate.path.replace(/^#/, "") === path || candidate.path === path);
     if (!use) throw new Error(`No entry at ${path}`);
-    return { applicationId: path.split("/")[2], use, framePanelId, menu: { singleEntry: uses.length <= 1, groups: [], panelUses: uses } };
+    const frame = frameResponses.length ? frameResponses.shift()! : null;
+    return {
+      applicationId: path.split("/")[2], use, framePanelId,
+      allowStandalone: true, frame, content: null,
+      menu: { singleEntry: uses.length <= 1, groups: [], panelUses: uses },
+    };
   },
-  readApplicationFrameManifest: readFrameManifest,
   // The host the route builds is the one for the use relation its address names.
   platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
   onPanelReadDenied: () => () => {},
 }));
 
-vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@ontomato/platform-shell")>()),
-  // Stands in for the frame: it reports an address the way a panel's own state report does.
-  PanelHost: defineComponent({
-    props: { port: { type: Object, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" }, labels: Object, frameState: Object },
-    emits: ["display-address", "display-loaded", "display-dirty"],
-    setup(props, { emit }) {
-      const address = ref(props.address);
-      const useId = (props.port as { use: ApplicationPanelUse }).use.id;
-      mountedInstances.push({ useId, address, initial: props.initial });
-      return () =>
-        h("div", { "data-use": useId, "data-term": props.frameState?.term }, [
-          h("button", { "data-select": "task-2", onClick: () => {
-            const address = `${props.address}?selectedTask=task-2`;
-            emit("display-address", { kind: "state", address });
-            emit("display-loaded", { status: "ready" });
-            emit("display-dirty", true);
-          } }),
-        ]);
-    },
-  }),
-}));
+vi.mock("@ontomato/platform-shell", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@ontomato/platform-shell")>();
+  return {
+    ...actual,
+    // Stands in for the frame: it reports an address the way a panel's own state report does.
+    PanelHost: defineComponent({
+      props: { port: { type: Object, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" }, labels: Object, frameState: Object },
+      emits: ["display-address", "display-loaded", "display-dirty"],
+      setup(props, { emit }) {
+        const address = ref(props.address);
+        const useId = (props.port as { use: ApplicationPanelUse }).use.id;
+        const overlayContainer = inject(actual.panelOverlayContainerKey, null);
+        mountedInstances.push({ useId, address, initial: props.initial, overlayContainer });
+        return () =>
+          h("div", { "data-use": useId, "data-term": props.frameState?.term }, [
+            h("button", { "data-select": "task-2", onClick: () => {
+              const address = `${props.address}?selectedTask=task-2`;
+              emit("display-address", { kind: "state", address });
+              emit("display-loaded", { status: "ready" });
+              emit("display-dirty", true);
+            } }),
+          ]);
+      },
+    }),
+  };
+});
 
 const PanelApplicationRoute = (await import("../pages/PanelApplicationRoute.vue")).default;
 
@@ -78,7 +92,7 @@ beforeAll(() => {
 beforeEach(() => {
   mountedInstances.length = 0;
   framePanelId = undefined;
-  readFrameManifest.mockReset();
+  frameResponses = [];
 });
 
 async function mountAt(path: string, props: Record<string, unknown> = {}) {
@@ -183,11 +197,12 @@ describe("a panel application's page", () => {
     wrapper.unmount();
   });
 
-  it("clears the previous frame default if the next entry cannot read the frame beside a conversation", async () => {
+  it("clears the previous frame default if the next entry has no bundled frame beside a conversation", async () => {
     framePanelId = "term-frame";
-    readFrameManifest
-      .mockResolvedValueOnce({ state: { term: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "fall" } } })
-      .mockRejectedValueOnce(new Error("Frame snapshot unavailable"));
+    frameResponses = [
+      { panel: { id: "term-frame", manifest: { state: { term: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "fall" } }, members: {} } } },
+      null,
+    ];
 
     const { router, wrapper } = await mountAt("/applications/app-a/tasks", { navigate: vi.fn() });
     expect(wrapper.get('[data-use="use-tasks"]').attributes("data-term")).toBe("fall");
@@ -196,5 +211,63 @@ describe("a panel application's page", () => {
     await flushPromises();
     expect(wrapper.get('[data-use="use-summary"]').attributes("data-term")).toBeUndefined();
     wrapper.unmount();
+  });
+
+  it("anchors side-pane overlays to the persistent page pane across keyed route remounts, falling back to area without one", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/agents/chat", component: { template: "<div />" } }],
+    });
+    await router.push("/agents/chat");
+    await router.isReady();
+
+    const paneEl = document.createElement("section");
+    document.body.append(paneEl);
+    const paneRef = ref<HTMLElement | null>(paneEl);
+    const currentPath = ref("/applications/app-a/tasks");
+
+    const wrapper = mount(defineComponent({
+      setup() {
+        return () => h(PanelApplicationRoute, {
+          key: currentPath.value,
+          applicationId: "app-a",
+          address: currentPath.value,
+          navigate: vi.fn(),
+        });
+      },
+    }), {
+      global: {
+        plugins: [router, workbenchI18n()],
+        provide: { [pagePaneElementKey as symbol]: paneRef },
+      },
+    });
+    await flushPromises();
+    expect(mountedInstances[0]!.overlayContainer?.value).toBe(paneEl);
+
+    // A toast appended to the overlay container survives when cross-panel navigation remounts PanelApplicationRoute.
+    const toast = document.createElement("div");
+    toast.className = "el-message";
+    toast.textContent = "Deleted";
+    mountedInstances[0]!.overlayContainer!.value!.append(toast);
+
+    currentPath.value = "/applications/app-a/summary";
+    await nextTick();
+    await flushPromises();
+    expect(mountedInstances).toHaveLength(2);
+    expect(mountedInstances[1]!.overlayContainer?.value).toBe(paneEl);
+    expect(toast.isConnected).toBe(true);
+    expect(toast.parentElement).toBe(paneEl);
+    wrapper.unmount();
+    paneEl.remove();
+
+    // Without a surrounding ShellPagePane (e.g. an editor drawer), overlays fall back to the route's own area element.
+    mountedInstances.length = 0;
+    const standaloneSide = mount(PanelApplicationRoute, {
+      props: { applicationId: "app-a", address: "/applications/app-a/tasks", navigate: vi.fn() },
+      global: { plugins: [router, workbenchI18n()] },
+    });
+    await flushPromises();
+    expect(mountedInstances[0]!.overlayContainer?.value).toBe(standaloneSide.element);
+    standaloneSide.unmount();
   });
 });

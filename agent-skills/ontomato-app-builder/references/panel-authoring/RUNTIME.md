@@ -54,6 +54,12 @@ interface PanelContext {
    */
   navigate(address: string): Promise<void>;
   /**
+   * Leaves the current detail panel by stepping back one entry in browser history when an in-platform previous page
+   * exists, otherwise navigating to `fallback` (typically the owning catalog path). Unsaved edits pass through the
+   * platform's unified leave guard automatically.
+   */
+  navigateBack(fallback: string): Promise<void>;
+  /**
    * Tells the reader briefly how something the page did went — "Exported", "Deleted", why a call failed — in the
    * platform's own message at the top of the window, as its pages do. It fades by itself and is available in panels
    * that run directly on the platform.
@@ -468,7 +474,7 @@ as `operation` to `page_action`. In Vue, the same binding is `usePanelOperation(
 which registers a mounted page action entry automatically. Pass `{ entry: false }` for a background flow or
 to subscribe ahead of time to an operation behind a dialog. For example,
 `usePanelOperation("submit", "apply", { entry: false })` exposes the operation read through `state`. Once
-`state.value.status === "ready"`, use `state.value.value.apply?.unavailable?.reason` in the outer toolbar.
+`state.value.status === "ready"`, pass `state.value.value.apply?.unavailable?.reason` to `<sdk-tooltip>` on the outer disabled toolbar button.
 Only the dialog's `OperationButton` registers a `page_action`.
 
 In Vue, call the hook’s `run(input)`. The SDK obtains the target from the binding and the host
@@ -492,14 +498,17 @@ secret. Assistant observation hides the plaintext, and the assistant leaves secr
 
 Place the official presentational `<page-header>` component at the top of a panel's content when the page needs a
 header, and omit it for headerless pages. Pass `title` (or a `#title` slot with a projection-bound component such as
-`<projection>` / `ObjectSummary`), optional `description`, optional `back-label` + `@back` wired to `usePanelBack`
-or `navigate`, right-side controls in `#actions` (such as ordinary `<sdk-button>`, `<OperationButton>`, inline counts,
+`<projection>` / `ObjectSummary`), optional `description`, optional `back-label` + `@back` wired to
+`usePanelContext().navigateBack(CATALOG_PATH)` on detail entries or `usePanelBack` for panel-local views, right-side controls in `#actions` (such as ordinary `<sdk-button>`, `<OperationButton>`, inline counts,
 or search inputs), and optional `:draft` from `usePanelFormDraft` for Save/Discard/unsaved feedback. Buttons in
 `<page-header>` change declared panel state or call declared owner operations, so skills continue to produce valid
 deep-link addresses and `page_action` calls.
 
-For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
-from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
+For forward navigation from a button or component output, call `usePanelContext().navigate` with the registered path
+from `panel uses <application-id>` and, when needed, the destination's deep-linkable state. To leave a detail entry,
+call `usePanelContext().navigateBack(fallback)` with the owning catalog path: the host steps back one entry in
+browser history when an in-platform previous page exists and falls back to `fallback` when opened directly, applying
+the unified unsaved-changes guard automatically.
 
 On `ObjectForm`, set `config.actions` to `"footer"` (default, non-overlapping document-flow bar), `"create-only"`
 (Cancel/Create bar only in create mode when edit Save/Discard lives in `<page-header>` via `usePanelFormDraft`), or
@@ -611,7 +620,7 @@ Each `deepLink: true` field has its own flat query parameter. Single-type `objec
 `primaryKey` (`?selected=my-app`), `object-union` fields use `className~primaryKey`, and list fields repeat
 the parameter (`?tag=a&tag=b`). An empty list uses `?tag=`. Frame fields use the `frame.` prefix
 (`?frame.term=2026-fall`). Build in-app links with `panelAddress(path, state)` from `@ontomato/sdk/panel`.
-The shell owns `standalone`, `from`, `navigationContext`.
+The shell owns `standalone`, `from`.
 A type graph's view uses `{"mode":"type","selectedType":"platform:SDKComponent"}` as state; the address contract encodes it as `?mode=type&selectedType=platform:SDKComponent`.
 
 ### Graph selection

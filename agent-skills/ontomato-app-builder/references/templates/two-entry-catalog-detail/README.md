@@ -12,8 +12,8 @@ Minimal starter pattern for multi-column catalog + detail management application
   `panelAddress(DETAIL_PATH, { selected: primaryKey })` (`?selected=<primaryKey>`) or a direct deep link.
   Renders a single-row `<page-header>` with Back, title, Discard and Save wired to
   `usePanelFormDraft("form")`, plus equal-height cards in a two-column `@container` grid that collapses to one column
-  below `850px`. The ordinary back action calls `navigate(CATALOG_PATH)`. The host guards unsaved edits,
-  keeps the catalog state and refreshes its list on return.
+  below `850px`. The ordinary back action calls `navigateBack(CATALOG_PATH)`. The host guards unsaved edits,
+  steps back to the in-platform previous page (falling back to `CATALOG_PATH` on direct open), and refreshes its list on return.
 
 The detail entry opens directly at narrow widths and shows a missing or forbidden record in place.
 The form mounts only when the selected record is ready.

@@ -134,6 +134,33 @@ class AuthorizationPoliciesTest {
     }
 
     @Test
+    void revokesEntriesAndOnlyTheAcceptedObjects() {
+        var entry = new ObjectTarget(DOMAIN, Kind.ENTRY, "app-a/approval");
+        var panelGrant = new ObjectGrant(POLICY, new ObjectTarget(DOMAIN, Kind.PANEL, "panel-1"), Verb.USE, null);
+
+        policies.revokeEntries(adminCtx, POLICY, List.of(entry), List.of(panelGrant));
+
+        verify(store).revokeObject(new ObjectGrant(POLICY, entry, Verb.ENTER, null));
+        verify(store).revokeObject(panelGrant);
+    }
+
+    @Test
+    void rejectsEntryRemovalThroughTheObjectListAndCrossDomainRemoval() {
+        var entryAsObject = new ObjectGrant(POLICY, new ObjectTarget(DOMAIN, Kind.ENTRY, "app-a/approval"), Verb.ENTER, null);
+        assertThrows(ResponseStatusException.class,
+                () -> policies.revokeEntries(adminCtx, POLICY, List.of(), List.of(entryAsObject)));
+
+        var crossDomain = new ObjectGrant(POLICY, new ObjectTarget("other", Kind.PANEL, "panel-1"), Verb.USE, null);
+        var forbidden = assertThrows(ResponseStatusException.class,
+                () -> policies.revokeEntries(adminCtx, POLICY, List.of(), List.of(crossDomain)));
+        assertEquals(HttpStatus.FORBIDDEN, forbidden.getStatusCode());
+
+        var readOnly = assertThrows(ResponseStatusException.class,
+                () -> policies.revokeEntries(readOnlyCtx, POLICY, List.of(), List.of()));
+        assertEquals(HttpStatus.FORBIDDEN, readOnly.getStatusCode());
+    }
+
+    @Test
     void grantsEntriesAndAcceptedObjectsAtomically() {
         var entry = new ObjectTarget(DOMAIN, Kind.ENTRY, "app-a/approval");
         var panelGrant = new ObjectGrant(POLICY, new ObjectTarget(DOMAIN, Kind.PANEL, "panel-1"), Verb.USE, null);

@@ -13,16 +13,17 @@ import {
 } from "@ontomato/contracts/panel-host";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { applicationFrameContextOf, isApplicationPanelUse, isFrameConversationEntry, isNativeApplicationEntry, type ApplicationEntryResolution, type ApplicationPanelUse, type BundledPanelProjection, type ProductPanel } from "@ontomato/contracts/product-panels";
+import { applicationFrameContextOf, isApplicationPanelUse, isFrameConversationEntry, isNativeApplicationEntry, type ApplicationOpenResponse, type ApplicationPanelUse, type BundledPanelProjection, type ProductPanel } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import { PageComposer, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
+import { PageComposer, pagePaneElementKey, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import { APPLICATION, FAVORITE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { HOME_PREFERENCES_CHANGED, readHomePanel, saveHomePanel } from "../features/home/api";
-import { panelHasInlineConversationEntry, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import { panelHasInlineConversationEntry, platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import { routeOpenedEntry } from "../panel-entries";
 import {
   applicationFrameHostKey,
   deepLinkDefaultsOf,
@@ -67,7 +68,7 @@ const props = defineProps<{
    */
   address?: string;
   legacyDashboardLayout?: boolean;
-  takeOpenedEntry?: () => ApplicationEntryResolution | undefined;
+  takeOpenedEntry?: () => ApplicationOpenResponse | undefined;
   objectRefresh?: DisplayObjectRefresh | null;
   liveState?: DisplayStateUpdate | null;
   registerPageController?: (controller: DisplayPageController) => () => void;
@@ -79,7 +80,7 @@ const emit = defineEmits<{
   "objects-changed": [change: PanelObjectChange];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
-  /** Which page skill a message written beside the shown page reaches, as Node answered it with the page's panel. */
+  /** Current placement a message written beside the shown page carries, as resolved with the page's entry. */
   "display-skill": [context: PageSkillContext | null];
 }>();
 
@@ -216,7 +217,7 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
-  /** The latest page skill answer. Undefined means the first read is pending. */
+  /** The latest current-page placement. Undefined means the first read is pending. */
   pageSkill: PageSkillContext | null | undefined;
   /** Shown again and not yet through its checks: what it reaches is passed on only once they have confirmed it. */
   rechecking: boolean;
@@ -235,14 +236,13 @@ const kept = ref([]) as Ref<KeptPage[]>;
 const embeddedChatCounts = reactive<Record<string, number>>({});
 let showings = 0;
 const failure = ref("");
-const besideFrameManifest = shallowRef<{ framePanelId: string; manifest: Pick<PanelManifest, "state"> } | null>(null);
 const catalog = useApplicationCatalog();
 /**
- * Java's answer for this application's entry (`resolve-entry`): the admitted use relation, frame panel, theme, and
- * visible entry menu. Same-application switches hitting the known entry table mount immediately without re-asking.
+ * Single opening answer for this application's entry: the admitted use relation, frame panel, theme, visible entry
+ * menu, standalone policy, and bundled frame/content definitions.
  */
-type EntryUse = Exclude<ApplicationEntryResolution["use"], { kind: "native" }>;
-type PanelEntryResolution = ApplicationEntryResolution & { use: EntryUse };
+type EntryUse = Exclude<ApplicationOpenResponse["use"], { kind: "native" }>;
+type PanelEntryResolution = ApplicationOpenResponse & { use: EntryUse };
 const resolution = shallowRef<PanelEntryResolution | null>(null);
 /** True while waiting for server admission on a direct link not present in the current application's entry table. */
 const verifying = ref(false);
@@ -253,6 +253,7 @@ const transitionTimedOut = ref(false);
 let transitionTimer: ReturnType<typeof setTimeout> | null = null;
 let resolveEpoch = 0;
 let refreshInFlight: Promise<void> | null = null;
+let consumedInitial: ApplicationOpenResponse | null = null;
 let unmounted = false;
 
 function clearTransitionTimer() {
@@ -304,7 +305,7 @@ function revokeEntry(path: string) {
 async function requestEntryResolution(
   applicationId: string,
   path: string,
-  options: { blocking: boolean; epoch?: number },
+  options: { blocking: boolean; epoch?: number; useInitial?: boolean },
 ) {
   const epoch = options.epoch ?? ++resolveEpoch;
   if (options.blocking) {
@@ -316,17 +317,34 @@ async function requestEntryResolution(
     verifying.value = true;
   }
   try {
-    const initial = props.takeOpenedEntry?.() ?? route.meta.openedPanelEntry ?? route.redirectedFrom?.meta.openedPanelEntry;
-    delete route.meta.openedPanelEntry;
-    if (route.redirectedFrom) delete route.redirectedFrom.meta.openedPanelEntry;
-    const answer = initial?.applicationId === applicationId && panelUsePath(initial.use.path) === path
-      ? initial : await resolveApplicationEntry({ path });
+    const initial = options.useInitial
+      ? (props.takeOpenedEntry?.() ?? routeOpenedEntry(route, path))
+      : null;
+    const freshInitial = initial && initial !== consumedInitial
+      && initial.applicationId === applicationId && panelUsePath(initial.use.path) === path
+      ? initial
+      : null;
+    if (freshInitial) consumedInitial = freshInitial;
+
+    let answer: ApplicationOpenResponse;
+    if (freshInitial) {
+      answer = freshInitial;
+    } else {
+      const request = resolveApplicationEntry({ path });
+      const releasePending = outerFrame?.beginOpen(applicationId, request);
+      try {
+        answer = await request;
+      } finally {
+        releasePending?.();
+      }
+    }
     if (unmounted || epoch !== resolveEpoch || props.applicationId !== applicationId || entryPath.value !== path) return;
     if (answer.applicationId !== applicationId || isNativeApplicationEntry(answer.use)) {
       revokeEntry(path);
       return;
     }
     resolution.value = { ...answer, use: answer.use };
+    outerFrame?.reportOpenedEntry(path, answer);
     deniedPath.value = null;
     verifying.value = false;
   } catch {
@@ -362,7 +380,6 @@ watch(() => props.applicationId, (_next, previous) => {
   clearTransition();
   if (previous !== undefined) {
     pendingControllerState = null;
-    besideFrameManifest.value = null;
   }
   emit("display-loaded", { status: "loading" });
 }, { immediate: true, flush: "sync" });
@@ -375,7 +392,7 @@ watch([() => props.applicationId, entryPath], ([applicationId, path]) => {
     resolution.value = null;
     return;
   }
-  void requestEntryResolution(applicationId, path, { blocking: true, epoch });
+  void requestEntryResolution(applicationId, path, { blocking: true, epoch, useInitial: true });
 }, { immediate: true });
 
 const stopVisibility = onDocumentVisibility((visible) => {
@@ -503,8 +520,11 @@ const homeUnavailableBanner = computed(() => isHomeMainEntry.value && homePanelS
  */
 const area = ref<HTMLElement | null>(null);
 if (props.navigate) {
+  const pagePane = inject(pagePaneElementKey, null);
   useAppTheme(area, () => currentResolution.value?.theme, hostThemeMode);
-  provide(panelOverlayContainerKey, area);
+  // Anchor overlays and toasts to the persistent side pane when present so cross-panel navigation (which remounts this
+  // route on path change) keeps emitted toasts visible inside the pane.
+  provide(panelOverlayContainerKey, pagePane ?? area);
 } else useApplicationTheme(() => currentResolution.value?.theme);
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
 const missing = computed(() =>
@@ -522,35 +542,15 @@ watch(missing, (message) => {
 /*
  * Outer frame integration: at full page, the enclosing `ApplicationFrameHost` owns the single persistent frame panel,
  * its shared `frame.*` URL state, and `<current-entry>` placement. This route only registers its current entry/menu
- * and reads `outerFrame.frameState`. Beside a conversation (`props.navigate`), no frame is mounted, so this route
- * reads the frame panel manifest alone to populate declared deep-link defaults and decode URL `frame.*` overrides.
+ * and reads `outerFrame.frameState`. Beside a conversation (`props.navigate`), no frame is mounted, so declared
+ * `deepLink: true` defaults on the frame come synchronously from the bundled `frame` definition in `currentResolution`.
  */
-watch(
-  [() => props.applicationId, () => props.navigate, () => currentResolution.value?.framePanelId, () => use.value?.id],
-  ([applicationId, navigate, framePanelId], _, onCleanup) => {
-    if (outerFrame) return;
-    let current = true;
-    onCleanup(() => { current = false; });
-    if (!framePanelId) {
-      besideFrameManifest.value = null;
-      return;
-    }
-    const activeUse = use.value;
-    if (!navigate || !activeUse) return;
-    void readApplicationFrameManifest(applicationId, activeUse, framePanelId).then((manifest) => {
-      if (!current) return;
-      besideFrameManifest.value = { framePanelId, manifest };
-    }, () => {
-      if (current) besideFrameManifest.value = null;
-    });
-  },
-  { immediate: true },
-);
-const activeBesideFrameManifest = computed(() =>
-  currentResolution.value?.framePanelId && besideFrameManifest.value?.framePanelId === currentResolution.value.framePanelId
-    ? besideFrameManifest.value.manifest
-    : undefined,
-);
+const activeBesideFrameManifest = computed(() => {
+  if (outerFrame) return undefined;
+  const answer = currentResolution.value;
+  if (!answer?.framePanelId || !answer.frame || answer.frame.panel.id !== answer.framePanelId) return undefined;
+  return answer.frame.panel.manifest;
+});
 const frameState = computed((): FrameState => {
   if (props.applicationId === "dashboards" && props.legacyDashboardLayout) return { legacyDashboardLayout: true };
   if (outerFrame) return outerFrame.frameState.value;
@@ -622,9 +622,9 @@ const labels = computed<PanelHostLabels>(() => ({
  * conversation's own composer serves instead. Its configuration error is shown where it would be.
  */
 const composerProblem = ref<string | null>(null);
-/** The page skill a message written on the shown page reaches, once its read or its checks have said which. */
+/** The current placement a message written on the shown page carries, once its read or checks have confirmed it. */
 const shownSkill = shallowRef<PageSkillContext | null>(null);
-/** The shown page's skill is known: a message beside it, and the page's own composer, reach it. */
+/** The shown page's placement is known: a message beside it, and the page's own composer, carry it. */
 function passSkill(context: PageSkillContext | null) {
   shownSkill.value = context;
   emit("display-skill", context);
@@ -725,6 +725,7 @@ if (outerFrame) {
       resolved,
       missing: Boolean(missing.value),
       use: activeUse ?? baseUse.value,
+      openedEntry: answer,
       panel: displayedPanel(),
       currentEntry: context?.currentEntry ?? (activeUse ? {
         applicationId: props.applicationId,
@@ -813,7 +814,7 @@ watch(use, (next, previous) => {
     if (!page.surfaceReady) ensureTransitionTimer();
   }
 
-  // A kept page shown again is checked again, and its page skill with it; a new page tells it once its panel is read.
+  // A kept page shown again is checked again, and its current placement with it; a new page tells it once its panel is read.
   if (found) found.rechecking = true;
   page.pageSkill = currentResolution.value?.pageSkillContext ?? null;
   // Its bare address opens a kept page as it was left: the address takes the state the page is at.
@@ -844,7 +845,7 @@ if (!props.navigate)
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
-  // Its checks are through: the page skill they confirmed is the one a message beside it reaches now.
+  // Its checks are through: the placement they confirmed is what a message beside it carries now.
   page.rechecking = false;
   if (page.pageSkill !== undefined) passSkill(page.pageSkill);
   if (page === shownPage.value) reportLoad(page, page.load);
@@ -872,6 +873,9 @@ function openPage(use: ApplicationPanelUse): KeptPage {
         }
       }
     : undefined;
+  const initialContent = currentResolution.value?.content?.panel.id === use.panelId
+    ? currentResolution.value.content
+    : null;
   page.port = markRaw(platformPanelHost(
     props.applicationId, use, changed, undefined,
     // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
@@ -891,6 +895,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     onPanelLoaded,
     () => shownPage.value?.use.id === use.id ? embeddedDisplay : null,
     feed,
+    initialContent,
   ));
   return page;
 }
@@ -987,6 +992,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         :live-state="page === shownPage ? (liveStatePatch ?? frameLiveStatePatch) : null"
         :frame-state="frameState"
         :history-back="!props.navigate"
+        :beside="Boolean(props.navigate)"
         @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
         @display-loaded="(load: DisplayLoad) => reportLoad(page, load)"
         @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"

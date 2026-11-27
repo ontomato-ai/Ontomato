@@ -3,6 +3,7 @@ package io.ontomato.dataengine.service.impl;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.ActionPath;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.WorkflowStep;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.OntologyQueryService;
@@ -467,11 +468,12 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
   }
 
   @Override
-  public String systemDeletionRefusal(String id, String domainId, String lang) {
+  public String deleteRefusal(String id, String lang, SubjectContext subject) {
     Object[] row = actionDao.queryById(id);
     Action action = row == null ? null : (Action) row[0];
-    if (action == null || !domainId.equals(action.getDomainId()))
+    if (action == null || !subject.identity().domainId().equals(action.getDomainId()))
       throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
+    authorization.requireEdit(subject, action);
     OwnerRefusal refusal = systemDeletionRefusal(action, lang);
     return refusal == null ? null : refusal.getMessage();
   }
@@ -498,15 +500,23 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
 
   @Override
 	public List<Action> queryList(String status, String functionId, String className, String domainId) {
-		List<Object[]> oList = actionDao.queryList(status, functionId, className, domainId);
+		return hydrateActions(actionDao.queryList(status, functionId, className, domainId));
+	}
+
+  @Override
+	public List<Action> queryPublishedByIds(String domainId, List<String> ids) {
+		return hydrateActions(actionDao.queryPublishedByIds(domainId, ids));
+	}
+
+	private List<Action> hydrateActions(List<Object[]> rows) {
 		Set<String> functionIds = new HashSet<>();
-		for (Object[] row : oList) {
+		for (Object[] row : rows) {
 			String id = (String) row[1];
 			if (id != null) functionIds.add(id);
 		}
 		Map<String, Function> functionMap = functionDao.queryByIds(functionIds);
 		List<Action> actions = new ArrayList<Action>();
-		for (Object[] o : oList) {
+		for (Object[] o : rows) {
 			Action action = (Action)o[0];
 			String fId = (String)o[1];
 			action.setFunction(functionMap.get(fId));
@@ -751,6 +761,7 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
     requireActiveWorkflowStep(action, path, target);
     var admission = authorization.requireExecution(authorization.subject(user), action, path, target);
     Function function = MetricViewBindings.executionWriteFunction(action.getFunction(), param);
+    preconditions.requireCallerClasses(action, user.getDomainId(), target);
     checkExecutionTarget(action, param, lang, user, permission, target, admission, path);
     var grant = ActionRuntimeGrant.capture(action, user, param, path);
     List<String> affectedTypes = ActionDefinitionProjector.project(action).getList("affects", String.class);
@@ -791,14 +802,14 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
 
   private void checkExecutionTarget(Action action, JSONObject params, String lang, User user,
       UserDataPermission permission, ExecutionTarget target, CapabilityGrantLookup.Admission admission,
-      ActionPath path) throws Exception {
+      ActionPath path) {
     checkTargetScope(action, params, lang, user, permission, target, admission, path);
     checkPreconditions(action, params, lang, user, permission, target);
   }
 
   private void checkTargetScope(Action action, JSONObject params, String lang, User user,
       UserDataPermission permission, ExecutionTarget target, CapabilityGrantLookup.Admission admission,
-      ActionPath path) throws Exception {
+      ActionPath path) {
     if (action.getTarget() != null) {
       String key = action.getTarget().key(params);
       if (path instanceof WorkflowStep step
@@ -813,6 +824,10 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
   private void checkPreconditions(Action action, JSONObject params, String lang, User user,
       UserDataPermission permission, ExecutionTarget target) {
     var verdict = preconditions.evaluate(action, params, user, permission, target);
+    requirePreconditions(verdict, lang);
+  }
+
+  private void requirePreconditions(ActionPreconditionService.Verdict verdict, String lang) {
     if (!verdict.satisfied())
       throw new OwnerRefusal("ACTION_PRECONDITION_FAILED", langService.get(lang, "Action.preconditionFailed")
           + ": " + String.join("; ", verdict.violations()));
@@ -831,6 +846,25 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
     requireExecutable(action, lang, user, target);
     var path = new Standalone();
     var admission = authorization.requireExecution(authorization.subject(user), action, path, target);
+    preconditions.requireCallerClasses(action, user.getDomainId(), target);
+    return describeExecutionForm(action, bound, submitted, readOnly, lang, user, permission, target, admission, path);
+  }
+
+  @Override
+  public void requireExecutionForm(Action action, JSONObject bound, List<String> readOnly, String lang,
+      SubjectContext subject, CapabilityGrantLookup.Admission admission, ExecutionTarget target) {
+    var identity = subject.identity();
+    String userId = target == ExecutionTarget.LIVE ? identity.userId() : subject.javaUserId();
+    var user = new SimpleUser(userId, null, null, true, identity.domainId());
+    requireExecutable(action, lang, user, target);
+    preconditions.requireCallerClasses(action, identity.domainId(), target);
+    var permission = dataPermissions.getDataPermission(userId, identity.domainId());
+    describeExecutionForm(action, bound, null, readOnly, lang, user, permission, target, admission, new Standalone());
+  }
+
+  private JSONObject describeExecutionForm(Action action, JSONObject bound, JSONObject submitted, List<String> readOnly,
+      String lang, User user, UserDataPermission permission, ExecutionTarget target,
+      CapabilityGrantLookup.Admission admission, Standalone path) {
     List<Parameter> parameters = action.getFunction().getParameters();
     var names = new HashSet<String>();
     for (Parameter parameter : parameters) {
@@ -863,8 +897,9 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
       var criteria = action.getSubmissionCriteria();
       if (criteria != null && criteria.getJSONArray("conditions") != null
           && criteria.getJSONArray("conditions").toJavaList(JSONObject.class).stream()
-              .allMatch(condition -> bound.get(condition.getString("objectParameter")) != null))
+              .allMatch(condition -> bound.get(condition.getString("objectParameter")) != null)) {
         checkPreconditions(action, bound, lang, user, permission, target);
+      }
       form.put("errors", ScheduleJson.array());
       form.put("parameters", null);
       return form;
@@ -878,9 +913,14 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
   }
 
   @Override
-  public JSONObject definitionForm(JSONObject request, String lang, User user) {
-    String domainId = user.getDomainId();
-    var subject = authorization.subject(user);
+  public List<Action> listVisibleDefinitions(SubjectContext subject, String status, String className) {
+    return queryList(status, null, className, subject.identity().domainId()).stream()
+        .filter(action -> authorization.allowsDefinition(subject, action)).toList();
+  }
+
+  @Override
+  public JSONObject definitionForm(JSONObject request, String lang, SubjectContext subject) {
+    String domainId = subject.identity().domainId();
     JSONObject target = request.getJSONObject("target");
     if (target == null) throw new IllegalArgumentException("target is required");
     String kind = target.getString("kind");

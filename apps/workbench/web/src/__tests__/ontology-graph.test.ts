@@ -21,6 +21,7 @@ import { useTemplateCompiler } from "../../../../../packages/platform-web/src/pa
 import { baseComponents } from "../../../../../packages/apps-sdk/src/base-components";
 import AppMenu from "../../../../../packages/apps-sdk/src/base/AppMenu.vue";
 import {
+  APPLICATION_ENTRY_PATH,
   installPlatform,
   leaveFrame,
   mountPlatformPage,
@@ -230,8 +231,16 @@ function mountOntologyGraph(options: {
     ],
   });
 
+  const panelProjections = Object.fromEntries([...projections].map(([id, projection]) => [id, { status: "ready", projection }]));
   const sent = installPlatform((request: Sent) => {
     const { path } = request;
+    if (path === APPLICATION_ENTRY_PATH) {
+      return Response.json({
+        applicationId: appId, use, allowStandalone: true, frame: null,
+        content: { panel: ontologyGraphPanel, projections: panelProjections },
+        menu: { singleEntry: true, groups: [], panelUses: [use] },
+      });
+    }
     if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {
       return Response.json({
         data: { applicationId: appId, entry: { path: "/ontology", renderer: "panels" }, panelUses: [use] },
@@ -241,8 +250,7 @@ function mountOntologyGraph(options: {
       const bundle = new URLSearchParams(request.search).has("includeProjections");
       return Response.json({
         panel: ontologyGraphPanel,
-        ...(bundle && { projections: Object.fromEntries([...projections].map(([id, projection]) =>
-          [id, { status: "ready", projection }])) }),
+        ...(bundle && { projections: panelProjections }),
       });
     }
     if (path === `/api/product-panels/${ontologyGraphPanel.id}/snapshot`) {
@@ -455,8 +463,9 @@ describe("ontology-graph builtin panel (OG-08 / OG-10 / OG-11)", () => {
       await waitFor(() => {
         expect(graphCanvasState.nodes).toHaveLength(2);
       });
-      expect(harness.sent.some(({ method, path }) => method === "GET" && path.startsWith("/api/product-projections/")))
-        .toBe(false);
+      expect(harness.sent.filter(({ method, path }) => method === "GET" && (
+        path === `/api/product-panels/${ontologyGraphPanel.id}` || path.startsWith("/api/product-projections/")
+      ))).toEqual([]);
 
       const reads = harness.sent.flatMap(({ path, body }) => {
         if (path === "/api/product-panels/read") return [(body as DataReadRequest).memberPath[0]?.member];

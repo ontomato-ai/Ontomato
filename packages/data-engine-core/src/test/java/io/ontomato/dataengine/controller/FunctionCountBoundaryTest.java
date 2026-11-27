@@ -1,6 +1,8 @@
 package io.ontomato.dataengine.controller;
 
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -12,6 +14,9 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.CredentialLimit;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
@@ -33,6 +38,9 @@ class FunctionCountBoundaryTest {
     private final FunctionDao dao = mock(FunctionDao.class);
     private final AuthorizationStore policies = mock(AuthorizationStore.class);
     private MockMvc mvc;
+    private FunctionController controller;
+    private FunctionServiceImpl service;
+    private SubjectContext subject;
 
     @BeforeEach
     void wire() {
@@ -51,12 +59,15 @@ class FunctionCountBoundaryTest {
         when(subjects.resolveRoles("domain-a", "reader"))
                 .thenReturn(new RoleResolution(roles, roles, List.of(), Set.of(), Map.of(), false));
         when(policies.policies("domain-a", roles)).thenReturn(List.of(new PolicyRef("member", "p1", PolicyKind.OBJECT)));
-        var definitions = new CapabilityDefinitions(new AuthorizationService(subjects, policies, null, null, null), identity);
-        var service = new FunctionServiceImpl();
+        var authorization = new AuthorizationService(subjects, policies, null, null, null);
+        subject = authorization.resolveSubject(new VerifiedIdentity("domain-a", "reader", CredentialLimit.UNRESTRICTED));
+        var definitions = new CapabilityDefinitions(authorization, identity);
+        service = new FunctionServiceImpl();
         ReflectionTestUtils.setField(service, "definitions", definitions);
         ReflectionTestUtils.setField(service, "functionDao", dao);
-        var controller = new FunctionController();
+        controller = new FunctionController();
         ReflectionTestUtils.setField(controller, "functionService", service);
+        ReflectionTestUtils.setField(controller, "definitions", definitions);
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
     }
@@ -81,6 +92,8 @@ class FunctionCountBoundaryTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.total").value(4));
+        assertEquals(Map.of("rows", List.of(), "total", 4L),
+                controller.functionPanelCount().handler().read(subject, Map.of("domainId", "other-domain")));
         verify(dao, never()).queryList(any(), any(), any());
     }
 
@@ -92,6 +105,23 @@ class FunctionCountBoundaryTest {
                     .andExpect(status().isBadRequest());
         }
         verifyNoInteractions(dao);
+    }
+
+    @Test
+    void scopedDefinitionUsesTheSameProductAndFunctionVisibility() {
+        when(dao.queryReadCandidates("domain-a", "product"))
+            .thenReturn(List.of(candidate("product", Function.OPERATION_PRODUCT, "other", false)));
+        when(dao.queryReadCandidates("domain-a", "editable"))
+            .thenReturn(List.of(candidate("editable", Function.OPERATION_WRITE, "other", true)));
+        when(dao.queryReadCandidates("domain-a", "private-draft"))
+            .thenReturn(List.of(candidate("private-draft", Function.OPERATION_WRITE, "other", false)));
+        grant("editable", Kind.WRITE_FUNCTION, Verb.EDIT);
+        grant("private-draft", Kind.WRITE_FUNCTION, Verb.USE);
+
+        assertEquals("product", service.visibleDefinition("product", subject).orElseThrow().getId());
+        assertEquals("editable", service.visibleDefinition("editable", subject).orElseThrow().getId());
+        assertTrue(service.visibleDefinition("private-draft", subject).isEmpty());
+        verify(dao, never()).queryList(any(), any(), any());
     }
 
     private void grant(String id, Kind kind, Verb verb) {

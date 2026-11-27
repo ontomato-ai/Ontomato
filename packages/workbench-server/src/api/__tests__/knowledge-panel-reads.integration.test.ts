@@ -1,3 +1,5 @@
+import { mountWorkbenchPanelReadsOwner, type PanelFixtureRead } from "../../__tests__/fixtures/workbench-panel-reads-owner";
+import { HttpError } from "../../utils/errors";
 import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
@@ -71,6 +73,27 @@ const ownerEntries = {
     knowledgeTags: ["Tech"],
     status: 1,
   },
+};
+
+const knowledgeOwnerRead: PanelFixtureRead = ({ type, name, parameters }, owner) => {
+  if (type !== BUSINESS_KNOWLEDGE) return;
+  if (owner.credential !== "knowledge-reader") throw new HttpError(403, "Knowledge read denied");
+  const form = ownerFormDescription({ kind: "draft" });
+  const labels = { pendingName: "Pending review", approvedName: "Approved" };
+  const text = { ...labels, fieldLabels: Object.fromEntries(form.fields.map(field => [field.path.slice(1), field.label])) };
+  const entries = ownerEntries as Record<string, (typeof ownerEntries)["k-1"]>;
+  if (name === "query") return { entries, text };
+  if (name === "counts") return { entries: Object.values(entries), labels };
+  if (name === "record") {
+    const entry = entries[String(parameters.primaryKey)];
+    if (!entry) throw new HttpError(422, `Business knowledge ${parameters.primaryKey} is not in this domain`, "KNOWLEDGE_UNAVAILABLE");
+    return { entry, text };
+  }
+  if (name === "approvalStatuses") return (parameters.ids as string[]).map(id => entries[id]?.status ?? null);
+  if (name === "form" || name === "createForm") return ownerFormDescription(
+    name === "form" ? { kind: "object", primaryKey: String(parameters.primaryKey) } : { kind: "draft" },
+    parameters.values as Record<string, unknown> | undefined,
+  );
 };
 
 const ownerFormDescription = (target: { kind: string; primaryKey?: string }, values?: Record<string, unknown>) => ({
@@ -363,11 +386,15 @@ beforeAll(async () => {
     ownerWrites.push({ path: "/admin/delBussinessKnowledge", body: req.body });
     res.json({ success: true });
   });
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     const token = req.header("tk") ?? "knowledge-reader";
     Object.assign(req, { domainId: "knowledge-domain", userId: token, token, locale: req.header("Accept-Language") });
     next();
-  });
+  };
+  mountWorkbenchPanelReadsOwner(app, { token: "fixture-service", viewer: userId => ({ domainId: "knowledge-domain", userId }), read: knowledgeOwnerRead });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
@@ -392,7 +419,7 @@ afterAll(async () => {
 function request(method: string, resource: string, body?: object, locale = "en", headers?: Record<string, string>) {
   return fetch(`${state.base}/api/${resource}`, {
     method,
-    headers: { "Content-Type": "application/json", "Accept-Language": locale, ...headers },
+    headers: { tk: "knowledge-reader", "Content-Type": "application/json", "Accept-Language": locale, ...headers },
     body: JSON.stringify(body),
   });
 }

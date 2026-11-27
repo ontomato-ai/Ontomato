@@ -4,10 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -18,6 +24,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -25,12 +32,21 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.VectorRebuildState;
+import io.ontomato.dataengine.dao.ActionDao;
+import io.ontomato.dataengine.dao.KnowledgeDao;
+import io.ontomato.dataengine.dao.MetricViewDao;
+import io.ontomato.dataengine.dao.VectorRebuildStateDao;
+import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
+import io.ontomato.dataengine.service.ai.EmbeddingSelection;
+import io.ontomato.dataengine.service.vector.VectorNotReadyException;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
+import io.ontomato.dataengine.service.vector.VectorRebuildSources;
+import io.ontomato.dataengine.service.vector.VectorRebuildTracker;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.vector.VectorRebuildStatus;
@@ -47,6 +63,9 @@ class BusinessConfigControllerVectorRebuildTest {
     private final LangService langService = mock(LangService.class);
     private final VectorRebuildService vectorRebuildService = mock(VectorRebuildService.class);
     private final BusinessConfigController controller = new BusinessConfigController();
+    private final VectorRebuildStateDao states = mock(VectorRebuildStateDao.class);
+    private final KnowledgeDao knowledge = mock(KnowledgeDao.class);
+    private final VectorRebuildTracker tracker = spy(new VectorRebuildTracker());
     private BusinessConfig stored;
 
     @BeforeEach
@@ -128,12 +147,8 @@ class BusinessConfigControllerVectorRebuildTest {
 
     @Test
     void unconfiguredEmbeddingReturnsASuccessfulEmptyRebuildStatus() {
-        var gate = mock(VectorRetrievalGate.class);
-        when(gate.stateOf("d1", stored)).thenThrow(new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No embedding model is configured"));
-        var service = new VectorRebuildService();
-        ReflectionTestUtils.setField(service, "businessConfigService", businessConfigService);
-        ReflectionTestUtils.setField(service, "retrievalGate", gate);
-        ReflectionTestUtils.setField(controller, "vectorRebuildService", service);
+        when(embeddingService.selection("d1")).thenThrow(new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No embedding model is configured"));
+        installVectorService();
         JSONObject response = controller.vectorRebuildStatus();
         assertTrue(response.getBooleanValue("success"));
         JSONObject data = response.getJSONObject("data");
@@ -143,13 +158,81 @@ class BusinessConfigControllerVectorRebuildTest {
 
     @Test
     void unavailableRuntimeStillReturnsAFailedStatusRequest() {
-        var gate = mock(VectorRetrievalGate.class);
-        when(gate.stateOf("d1", stored)).thenThrow(new AgentHttpException(503, "DEPENDENCY_UNAVAILABLE", "offline"));
+        when(embeddingService.selection("d1")).thenThrow(new AgentHttpException(503, "DEPENDENCY_UNAVAILABLE", "offline"));
+        installVectorService();
+        assertFalse(controller.vectorRebuildStatus().getBooleanValue("success"));
+    }
+
+    @Test
+    void missingAndCurrentReadyStatesKeepTheGateFastAndReadsDoNotSeedStorage() {
+        var generation = new EmbeddingSelection("current", 2);
+        when(embeddingService.selection("d1")).thenReturn(generation);
+        var gate = installVectorService();
+        gate.requireRetrievable("d1");
+        verifyNoInteractions(knowledge, tracker);
+        assertEquals("READY", controller.vectorRebuildStatus().getJSONObject("data").getString("state"));
+        clearInvocations(knowledge, tracker);
+        when(states.find("d1")).thenReturn(VectorRebuildState.of(generation, VectorRebuildState.Status.READY, true));
+        gate.requireRetrievable("d1");
+        verifyNoInteractions(knowledge, tracker);
+        verify(states, never()).save(anyString(), any());
+    }
+
+    @Test
+    void emptyStaleStateAllowsRetrievalBeforeTheStatusPageButRowsAndWorkKeepItClosed() {
+        when(embeddingService.selection("d1")).thenReturn(new EmbeddingSelection("current", 2));
+        when(states.find("d1")).thenReturn(VectorRebuildState.of(
+                new EmbeddingSelection("previous", 2), VectorRebuildState.Status.FAILED, true));
+        var gate = installVectorService();
+        gate.requireRetrievable("d1");
+        assertEquals("READY", controller.vectorRebuildStatus().getJSONObject("data").getString("state"));
+        when(knowledge.countDomainRows("d1")).thenReturn(1);
+        assertThrows(VectorNotReadyException.class, () -> gate.requireRetrievable("d1"));
+        assertEquals("PENDING", controller.vectorRebuildStatus().getJSONObject("data").getString("state"));
+        when(knowledge.countDomainRows("d1")).thenReturn(0);
+        tracker.tryStart("d1");
+        assertThrows(VectorNotReadyException.class, () -> gate.requireRetrievable("d1"));
+        assertEquals("RUNNING", controller.vectorRebuildStatus().getJSONObject("data").getString("state"));
+        verify(states, never()).save(anyString(), any());
+    }
+
+    @Test
+    void settingsChangeWithoutAHistoryRowSavesPendingForExistingOldGenerationRows() throws Exception {
+        var previous = new EmbeddingSelection("previous", 2);
+        var current = new EmbeddingSelection("current", 2);
+        when(embeddingService.selection("d1")).thenReturn(previous, current);
+        when(knowledge.countDomainRows("d1")).thenReturn(1);
+        installVectorService();
+        var service = spy((VectorRebuildService) ReflectionTestUtils.getField(controller, "vectorRebuildService"));
+        doNothing().when(service).start(eq("d1"), any());
+        var settings = JSONObject.of("embeddingModel", "current");
+        assertEquals(settings, service.saveModelSettings("d1", () -> settings));
+        verify(states).save("d1", VectorRebuildState.of(current, VectorRebuildState.Status.PENDING, false));
+        verify(service).start(eq("d1"), any());
+    }
+
+    private VectorRetrievalGate installVectorService() {
+        var resources = mock(VectorResourceDao.class);
+        when(resources.listDomainTables("d1")).thenReturn(List.of());
+        var sources = new VectorRebuildSources(knowledge, mock(ActionDao.class), mock(MetricViewDao.class), resources);
+        var beans = new StaticListableBeanFactory();
+        beans.addBean("vectorRebuildSources", sources);
+        var gate = new VectorRetrievalGate();
+        ReflectionTestUtils.setField(gate, "stateDao", states);
+        ReflectionTestUtils.setField(gate, "businessConfigService", businessConfigService);
+        ReflectionTestUtils.setField(gate, "langService", langService);
+        ReflectionTestUtils.setField(gate, "embeddingService", embeddingService);
+        ReflectionTestUtils.setField(gate, "rebuildTracker", tracker);
+        ReflectionTestUtils.setField(gate, "vectorSources", beans.getBeanProvider(VectorRebuildSources.class));
         var service = new VectorRebuildService();
         ReflectionTestUtils.setField(service, "businessConfigService", businessConfigService);
+        ReflectionTestUtils.setField(service, "embeddingService", embeddingService);
+        ReflectionTestUtils.setField(service, "stateDao", states);
+        ReflectionTestUtils.setField(service, "rebuildTracker", tracker);
+        ReflectionTestUtils.setField(service, "vectorSources", sources);
         ReflectionTestUtils.setField(service, "retrievalGate", gate);
         ReflectionTestUtils.setField(controller, "vectorRebuildService", service);
-        assertFalse(controller.vectorRebuildStatus().getBooleanValue("success"));
+        return gate;
     }
 
 }

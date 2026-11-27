@@ -5,7 +5,7 @@ import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import type { PanelFieldTone, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
 import { appIcon, hasAppIcon } from "@ontomato/platform-shell";
 import { panelContextKey } from "../panel/context";
-import { panelMemberKey } from "../panel/member";
+import { panelMemberKey, useMemberHostHidden } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import {
   asTone,
@@ -291,6 +291,8 @@ const isHidden = computed(() => {
   }
   return !resolvedTitle.value && !bodyText.value;
 });
+
+useMemberHostHidden(isHidden);
 
 const ariaRole = computed(() => (effectiveTone.value === "warning" || effectiveTone.value === "danger" ? "alert" : "status"));
 </script>

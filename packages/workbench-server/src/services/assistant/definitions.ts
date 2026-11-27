@@ -40,7 +40,8 @@ import {isAppBuilderKind} from '../app-builder/definition';
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 import {transaction} from '../../infrastructure/postgres-transaction';
 import { validateExecutionSetting, prepareExecutionSetting } from "./execution-setting";
-const view = (a: AgentRow, locale?: string) =>
+import { type DefinitionVisibilityRange } from "../product-panels/access";
+export const agentDefinitionFromRow = (a: AgentRow, locale?: string) =>
   assistantAgentDefinitionSchema.parse({
     id: a.id,
     executionUserId: a.execution_user_id,
@@ -83,7 +84,7 @@ export async function requireAgentSkillSelection(
 }
 
 export async function readStoredAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
-  return view(await readAgentDefinitionRow(id, owner), locale);
+  return agentDefinitionFromRow(await readAgentDefinitionRow(id, owner), locale);
 }
 
 export function projectAgentDefinitionSkills(
@@ -127,7 +128,17 @@ export async function checkedDefinition(
     if (!(error instanceof HttpError) || error.status !== 400 || error.code !== "INVALID_REQUEST") throw error;
     throw AgentDefinitionFieldError.fromOption(error, "/modelSelection/modelId", "target_unavailable");
   }
-  if (input.skills === undefined) return { executionUserId };
+  return { executionUserId, ...await checkedAgentDefinitionSkills(input.skills, owner, credentials, oldSkills, selection) };
+}
+
+export async function checkedAgentDefinitionSkills(
+  submittedSkills: AssistantAgentUpdateInput["skills"],
+  owner: AssistantOwner,
+  credentials: AssistantCredentials,
+  oldSkills: readonly RuntimeSkillRef[],
+  selection?: AgentDefinitionSkillSelection,
+) {
+  if (submittedSkills === undefined) return {};
   const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
   if (hasHiddenAssistantSkillRefs(oldSkills, access.view)) {
     const message = tForLocale(access.credentials.locale, "panels.agentForm.hiddenSkillSelection");
@@ -135,11 +146,10 @@ export async function checkedDefinition(
       { field: "/skills", code: "target_unavailable", message },
     ]);
   }
-  oldSkills.forEach(ref => access.view.requireCertainStoredSkill(ref));
   try {
-    const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
+    const skills = resolveAssistantSkillReferences(submittedSkills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills, access.credentials, access.view);
-    return { skills, executionUserId };
+    return { skills };
   } catch (error) {
     if (!(error instanceof HttpError) || error.status !== 400 || !["SKILL_NOT_FOUND", "INVALID_REQUEST"].includes(error.code ?? "")) throw error;
     throw AgentDefinitionFieldError.fromOption(error, "/skills", "invalid_option");
@@ -177,7 +187,7 @@ export async function saveAgentDefinitionSnapshot(
     const definition = await transaction(async client => {
       const agent = await readAgentDefinitionRow(id, owner, client);
       await requireAgent(agent, "EDIT", credentials);
-      const current = view(agent, locale);
+      const current = agentDefinitionFromRow(agent, locale);
       const partial = "submittedFields" in update ? update : undefined;
       if (partial?.submittedFields.length === 0) return current;
       const changed = (field: keyof AssistantAgentUpdateInput) =>
@@ -224,7 +234,7 @@ export async function saveAgentDefinitionSnapshot(
         parameters,
       );
       if (!saved) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
-      return view(saved, locale);
+      return agentDefinitionFromRow(saved, locale);
     });
     return { definition, skillView: access.view };
   });
@@ -254,7 +264,7 @@ export async function createAgentDefinitionSnapshot(
       if (existing) {
         if (existing.domain_id !== owner.domainId || existing.owner_id !== owner.userId || !isReadableDefinition(existing.kind))
           throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
-        const actual = view(existing);
+        const actual = agentDefinitionFromRow(existing);
         const { publicationAccess: _publicationAccess, ...definitionInput } = input;
         const expected = assistantAgentDefinitionSchema
           .omit({ id: true })
@@ -289,7 +299,7 @@ export async function createAgentDefinitionSnapshot(
           ownerFacts: { ...object.ownerFacts, state: "DRAFT" },
         }, input.publicationAccess, credentials);
       }
-      return view(inserted);
+      return agentDefinitionFromRow(inserted);
     });
     return { definition, skillView: access.view };
   });
@@ -327,9 +337,11 @@ export async function listAgentDefinitions(
   };
 }
 
-export async function countVisibleAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
-  const { VIEW } = await readObjectRanges("AGENT", ["VIEW"], credentials);
-  return assistantStore.countVisibleAgentDefinitions(owner.domainId, VIEW, { includeSystem: false });
+export async function countVisibleAgentDefinitions(
+  owner: AssistantOwner, credentials: AssistantCredentials, range?: DefinitionVisibilityRange,
+) {
+  const view = range ?? (await readObjectRanges("AGENT", ["VIEW"], credentials)).VIEW;
+  return assistantStore.countVisibleAgentDefinitions(owner.domainId, view, { includeSystem: false });
 }
 
 function presetDeletionRestriction(kind: string, locale?: string) {

@@ -12,7 +12,7 @@ const OBJECT_TYPE = "platform:ObjectType";
 
 await mountPanel({
   setup() {
-    const { instance, t, navigate, notify } = usePanelContext();
+    const { instance, t, navigate, navigateBack, notify } = usePanelContext();
     const rootRef = ref(null);
     const narrow = usePanelNarrow(rootRef);
     const dialogWidth = computed(() => (narrow.value ? "94%" : "560px"));
@@ -142,7 +142,7 @@ await mountPanel({
         : selectedClassKey.value
           ? `/browser/data/${encodeURIComponent(selectedClassKey.value)}`
           : "/browser/data";
-      void navigate(target).catch(() => undefined);
+      void navigateBack(target);
     }
 
     return {

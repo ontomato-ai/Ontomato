@@ -8,6 +8,7 @@ import {
   LIST_PENDING_POLICY_GRANTS,
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
+  PREVIEW_POLICY_ENTRY_REVOKE,
   READ_MEMBER_ACCESS_CONTEXT,
   RESOLVE_PENDING_POLICY_GRANT,
   USER,
@@ -17,7 +18,8 @@ import { backendPost } from "../../../utils/backend-client";
 import { registeredPanelOperation, type PanelOperationHost } from "../../product-panels/server-operations";
 import { assistantStore, type AgentRow } from "../../assistant/store";
 import {
-  grantPolicyEntries, inspectPolicyAccess, listPendingPolicyGrants, previewEntryGrant, resolvePendingPolicyGrants,
+  grantPolicyEntries, inspectPolicyAccess, listPendingPolicyGrants, policyEntryRevokePreviewPayload, policyObjectEntryUsagePayload,
+  previewEntryGrant, resolvePendingPolicyGrants,
 } from "../policy-access";
 
 vi.mock("../../../utils/backend-client", async original => ({
@@ -47,6 +49,7 @@ const entries = [
 const rootFacts = {
   policyId, entries, targetPolicyRoleIds: ["role-1", "role-2"],
   existingGrants: [
+    { policyId, kind: "ENTRY", id: entryId, verb: "ENTER", scope: null },
     { policyId, kind: "PANEL", id: "orders-panel", verb: "USE", scope: null },
     { policyId, kind: "ACTION", id: "standalone", verb: "EXECUTE", scope },
     { policyId, kind: "ACTION", id: "step-only", verb: "EXECUTE", scope },
@@ -113,7 +116,7 @@ beforeEach(() => {
   post.mockReset().mockImplementation(async (_name, url, body) => {
     if (url.endsWith("/entry-roots")) {
       const { entryIds } = body as { entryIds: string[] };
-      return json({ ...rootFacts, entries: rootFacts.entries.filter(entry => entryIds.includes(entry.entryId)) });
+      return json({ ...rootFacts, entries: rootFacts.entries.filter(entry => entryIds.length === 0 || entryIds.includes(entry.entryId)) });
     }
     throw new Error("Unexpected policy request: " + url);
   });
@@ -146,11 +149,12 @@ describe("policy access", () => {
         workflowSteps: [expect.objectContaining({ workflowId: "approval", version: 2, stepNo: 1 })],
       }),
     ]));
-    for (const fixed of ["builtin-product-orders", "@ontomato/sdk:ObjectList", "preset-agent", "preset:regular"]) {
+    for (const fixed of ["builtin-product-orders", "preset-agent", "preset:regular"]) {
       expect(candidates).toContainEqual(expect.objectContaining({
         id: fixed, fixedByDistribution: true, distributionRule: "builtin_asset", grantable: false, defaultSelected: false,
       }));
     }
+    expect(candidates.some(candidate => candidate.id === "@ontomato/sdk:ObjectList")).toBe(false);
     expect(candidates.some(candidate => candidate.id === "unrelated")).toBe(false);
     expect(structuredField(record, "targetPolicyRoleIds")).toEqual(["role-1", "role-2"]);
     expect(query).toHaveBeenCalledWith(expect.stringContaining("product_object_details"), [domainId]);
@@ -162,6 +166,22 @@ describe("policy access", () => {
       },
       retries: 1,
     });
+  });
+
+  it("derives object entry usage and exact revocation candidates from the same dependency context", async () => {
+    const usage = await policyObjectEntryUsagePayload(viewer, domainId, policyId);
+    expect(usage.items).toEqual(expect.arrayContaining([
+      { kind: "PANEL", id: "orders-panel", entries: [{ id: entryId, label: "Orders" }] },
+      { kind: "ACTION", id: "standalone", entries: [{ id: entryId, label: "Orders" }] },
+      { kind: "ACTION", id: "step-only", entries: [] },
+    ]));
+
+    const preview = await policyEntryRevokePreviewPayload(viewer, domainId, policyId, entryId);
+    expect(preview.objects).toEqual(expect.arrayContaining([
+      { kind: "PANEL", id: "orders-panel", verb: "USE", scope: null, label: "orders-panel" },
+      { kind: "ACTION", id: "standalone", verb: "EXECUTE", scope, label: "standalone" },
+    ]));
+    expect((preview.objects as Array<{ id: string }>).some(item => item.id === "step-only")).toBe(false);
   });
 
   it("writes only explicit grants and rejects malformed choices before contacting Java", async () => {
@@ -224,6 +244,8 @@ describe("policy access", () => {
         { kind: "ACTION", id: "step-only", verb: "EXECUTE" },
       ]),
     }, expect.anything());
+    const inspectBody = post.mock.calls.find(([, url]) => url.endsWith("/access:inspect"))?.[2] as { items: Array<{ kind: string; id: string }> };
+    expect(inspectBody.items.some(item => item.kind === "COMPONENT" && item.id === "@ontomato/sdk:ObjectList")).toBe(false);
     expect(structuredField(record, "entry")).toMatchObject({ id: entryId, label: "Orders", allowed: false });
     expect(structuredField(record, "items")).toEqual(expect.arrayContaining([{ ...standalone, label: "Submit order" }]));
     expect(structuredField(record, "missingGrantableItems")).toEqual([{ kind: "PROJECTION", id: "order-list", verb: "USE", label: "Order list" }]);
@@ -232,20 +254,66 @@ describe("policy access", () => {
   it("dispatches all registered read and write operations for the selected policy", async () => {
     const target = { kind: "object", objectType: PERMISSION_POLICY, primaryKey: policyId } as const;
     const actor = { credentials: viewer, owner: { domainId, userId: "viewer" } };
-    const host: PanelOperationHost = { initiator: actor, executor: actor, request: vi.fn(), requestWorkbench: vi.fn() };
+    const usage = {
+      roleCount: 2,
+      userCount: 5,
+      roles: [{ id: "role-1", name: "Sales" }],
+      kindLabels: { PANEL: "Panel", COMPONENT: "Component", ACTION: "Action", AGENT: "Agent" },
+      verbLabels: { USE: "Use", VIEW: "View", EDIT: "Edit", EXECUTE: "Execute", ENTER: "Enter", CREATE: "Create" },
+    };
+    const host: PanelOperationHost = {
+      initiator: actor,
+      executor: actor,
+      request: vi.fn().mockImplementation(async () => new Response(JSON.stringify({ success: true, data: usage }), { status: 200 })),
+      requestWorkbench: vi.fn(),
+    };
     const previewHandler = registeredPanelOperation(PREVIEW_POLICY_ENTRY_GRANT)?.handler;
     if (!previewHandler || previewHandler.effect !== "read") throw new Error("Missing previewEntryGrant read op");
     expect(await previewHandler.execute(host, { target, input: { entryIds: [entryId] } })).toMatchObject({
       kind: "json",
-      value: { policyId },
+      value: {
+        policyId,
+        targetPolicyRoles: usage.roles,
+        candidates: expect.arrayContaining([
+          expect.objectContaining({ kind: "PANEL", kindLabel: "Panel", verb: "USE", verbLabel: "Use" }),
+          expect.objectContaining({ kind: "ACTION", kindLabel: "Action", verb: "EXECUTE", verbLabel: "Execute" }),
+        ]),
+      },
     });
+
+    const revokePreviewHandler = registeredPanelOperation(PREVIEW_POLICY_ENTRY_REVOKE)?.handler;
+    if (!revokePreviewHandler || revokePreviewHandler.effect !== "read") throw new Error("Missing previewEntryRevoke read op");
+    expect(await revokePreviewHandler.execute(host, { target, input: { entryId } })).toMatchObject({
+      kind: "json",
+      value: {
+        policyId,
+        entryId,
+        objects: expect.arrayContaining([
+          { kind: "PANEL", id: "orders-panel", verb: "USE", scope: null, label: "orders-panel" },
+          { kind: "ACTION", id: "standalone", verb: "EXECUTE", scope, label: "standalone" },
+        ]),
+        impact: { roleCount: usage.roleCount, userCount: usage.userCount, roles: usage.roles },
+      },
+    });
+    expect(host.request).toHaveBeenCalledWith(
+      "/api/data-query/panel/governance/policies/usage",
+      expect.objectContaining({ body: JSON.stringify({ id: policyId }) }),
+    );
 
     const pendingHandler = registeredPanelOperation(LIST_PENDING_POLICY_GRANTS)?.handler;
     if (!pendingHandler || pendingHandler.effect !== "read") throw new Error("Missing listPending read op");
-    post.mockResolvedValueOnce(json({ policyId, canManage: true, targetPolicyRoleIds: [], items: [] }));
+    post.mockResolvedValueOnce(json({
+      policyId, canManage: true, targetPolicyRoleIds: ["role-1"],
+      items: [{ id: 1, source: "entry", changeKey: "k", actorId: "u1", entryId, kind: "PANEL", targetId: "orders-panel", verb: "USE", scope: null }],
+    }));
     expect(await pendingHandler.execute(host, { target, input: {} })).toMatchObject({
       kind: "json",
-      value: { policyId, canManage: true, items: [] },
+      value: {
+        policyId,
+        canManage: true,
+        targetPolicyRoles: usage.roles,
+        items: [expect.objectContaining({ kind: "PANEL", kindLabel: "Panel", verb: "USE", verbLabel: "Use" })],
+      },
     });
 
     const inspectHandler = registeredPanelOperation(INSPECT_POLICY_ACCESS)?.handler;
@@ -323,7 +391,15 @@ describe("member access inspection", () => {
           { roleId: "role-1", roleCode: "Sales rep", apiPermissions: [], managementRole: false },
           { roleId: "role-2", roleCode: "Sales lead", apiPermissions: [], managementRole: false },
           { roleId: "role-3", roleCode: "Finance", apiPermissions: [], managementRole: false },
+          { roleId: "role-domain-member", roleCode: "domain_member", apiPermissions: [], managementRole: false },
         ]);
+      }
+      if (url.endsWith("/panel/governance/roles/options")) {
+        return json({ success: true, data: { options: [
+          { primaryKey: "role-1", value: "role-1", label: "Sales rep" },
+          { primaryKey: "role-2", value: "role-2", label: "Sales lead" },
+          { primaryKey: "role-3", value: "role-3", label: "Finance" },
+        ] } });
       }
       if (url.endsWith("/pending:list")) {
         expect(body).toEqual({ policyId: ownPolicyId });
@@ -354,6 +430,17 @@ describe("member access inspection", () => {
     }]);
     expect(value.canManage).toBe(true);
     expect(value.preselectedPolicyId).toBe(ownPolicyId);
+    // The check reports its sources by id, so the answer carries the names the page shows above it.
+    // The reserved role keeps out of the role directory; the platform-access code is its only name.
+    expect(value.roleLabels).toEqual({
+      "role-1": "Sales rep", "role-2": "Sales lead", "role-3": "Finance", "role-domain-member": "domain_member",
+    });
+    expect(value.policyLabels).toEqual({
+      [ownPolicyId]: "Sales data",
+      [apiPolicyId]: "Sales console",
+      [foreignPolicyId]: "Finance data",
+      [businessDataPolicyId]: "Sales rows",
+    });
   });
 
   it("keeps a policy the member does not carry out of the candidates and out of the preselection", async () => {

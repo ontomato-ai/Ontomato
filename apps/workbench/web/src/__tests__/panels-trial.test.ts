@@ -199,6 +199,7 @@ describe("a panel's module", () => {
       expandPageComposer: async () => {},
       // A member's operations are read through the platform; its data, here, through this release's modules.
       navigate: async () => { throw new Error("This test opens no address"); },
+      navigateBack: async () => { throw new Error("This test opens no address"); },
       notify: () => { throw new Error("This test tells the reader nothing"); },
       currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       readPanelData: async (request) => {

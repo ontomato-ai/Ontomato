@@ -1,10 +1,12 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.panelreads.OntologyNeighborScope;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 
 import static io.ontomato.dataengine.service.authorization.AuthorizationService.*;
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -26,6 +28,7 @@ import io.ontomato.dataengine.dao.WorkflowDao;
 import io.ontomato.dataengine.schedules.TaskStore;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import io.ontomato.dataengine.core.bean.R;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
@@ -42,12 +45,15 @@ import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,6 +78,7 @@ public class AuthorizationPolicyGovernanceController {
     public record ExistingGrant(String policyId, Kind kind, String id, Verb verb, GrantScope scope) {}
     public record GrantEntriesRequest(String policyId, List<String> entryIds, List<GrantItem> acceptedObjects) {}
     public record GrantEntriesResult(String policyId, int grantedEntryCount, int grantedObjectCount) {}
+    public record RevokeEntriesResult(String policyId, int revokedEntryCount, int revokedObjectCount) {}
     public record PolicyRequest(String policyId) {}
     public record PendingItem(long id, String source, String changeKey, String actorId, String entryId,
                               Kind kind, String targetId, Verb verb, GrantScope scope) {}
@@ -84,6 +91,10 @@ public class AuthorizationPolicyGovernanceController {
     public record GraphFacts(List<PolicyRef> rolePolicies, String domainPolicyId,
                              List<ApplicationCatalog.VisibleEntry> entries,
                              List<PolicyGrantFact> policyGrants) {}
+    public record ProductGraphGrant(String policyId, Kind targetKind, String targetKey, Verb verb) {}
+    public record ProductGraphAuthorization(List<PolicyRef> rolePolicies,
+                                            List<ApplicationCatalog.VisibleEntry> entries,
+                                            List<ProductGraphGrant> policyGrants) {}
 
     private final WorkbenchServiceAuthentication workbench;
     private final IdentityService identity;
@@ -154,6 +165,28 @@ public class AuthorizationPolicyGovernanceController {
         }).distinct().toList();
         policies.grantEntries(ctx, policyId, entries, grants);
         return new GrantEntriesResult(policyId, entries.size(), grants.size());
+    }
+
+    @Transactional
+    @PostMapping("/entries:revoke")
+    public RevokeEntriesResult revokeEntries(HttpServletRequest request, @RequestBody GrantEntriesRequest input) {
+        var ctx = authorization.resolveSubject(actor(request));
+        var policyId = requirePolicyId(input.policyId());
+        if (input.entryIds() == null || input.acceptedObjects() == null)
+            throw badRequest("Entry IDs and removed objects are required.");
+
+        var domainId = ctx.identity().domainId();
+        var entries = input.entryIds().stream().map(id -> {
+            if (blank(id)) throw badRequest("Each entry requires an ID.");
+            return new ObjectTarget(domainId, Kind.ENTRY, id);
+        }).distinct().toList();
+        var grants = input.acceptedObjects().stream().map(item -> {
+            if (item == null || item.kind() == null || item.kind() == Kind.ENTRY || item.verb() == null || item.id() == null)
+                throw badRequest("Each removed object requires a kind, ID and verb.");
+            return new ObjectGrant(policyId, new ObjectTarget(domainId, item.kind(), item.id()), item.verb(), item.scope());
+        }).distinct().toList();
+        policies.revokeEntries(ctx, policyId, entries, grants);
+        return new RevokeEntriesResult(policyId, entries.size(), grants.size());
     }
 
     @PostMapping("/pending:list")
@@ -337,11 +370,149 @@ public class AuthorizationPolicyGovernanceController {
     @PostMapping("/graph-facts")
     public GraphFacts graphFacts(HttpServletRequest request) {
         var domainId = actor(request).domainId();
-        var policyGrants = store.domainObjectGrants(domainId).stream().map(grant ->
-                new PolicyGrantFact(grant.policyId(), grant.target().kind(), grant.target().id(),
-                        grant.verb(), grant.scope())).toList();
+        var policyGrants = store.domainObjectGrants(domainId).stream()
+                .map(AuthorizationPolicyGovernanceController::policyGrantFact).toList();
         return new GraphFacts(store.domainRolePolicies(domainId), store.domainPolicy(domainId).policyId(),
                 catalog.visibleEntries(identity.getCurrentUser()), policyGrants);
+    }
+
+    static PolicyGrantFact policyGrantFact(ObjectGrant grant) {
+        return new PolicyGrantFact(grant.policyId(), grant.target().kind(), grant.target().id(), grant.verb(), grant.scope());
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyPolicyEntryGrants() {
+        // The batch verifies the service and ordinary domain member, as graphFacts does.
+        return new WorkbenchPanelRead("platform:OntologyType", "permission-policy.can-enter-application", (subject, parameters) -> {
+            var scope = OntologyNeighborScope.parse(parameters, "platform:PermissionPolicy", "platform:Application");
+            var domain = subject.identity().domainId();
+            var grants = scope.outgoing() ? store.policyEntryGrants(domain, scope.centerId())
+                    : store.applicationEntryGrants(domain, scope.centerId());
+            return grants.stream().map(AuthorizationPolicyGovernanceController::policyGrantFact).toList();
+        });
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyPolicyActionGrants() {
+        // The batch verifies the service and ordinary domain member, as graphFacts does.
+        return new WorkbenchPanelRead("platform:OntologyType", "permission-policy.can-execute-action", (subject, parameters) -> {
+            var scope = OntologyNeighborScope.parse(parameters, "platform:PermissionPolicy", "platform:Action");
+            var domain = subject.identity().domainId();
+            var grants = scope.outgoing() ? store.policyActionGrants(domain, scope.centerId())
+                    : store.actionPolicyGrants(domain, scope.centerId());
+            return grants.stream().map(AuthorizationPolicyGovernanceController::policyGrantFact).toList();
+        });
+    }
+
+    record EntryGrantApplicationNames(List<JSONObject> applications, Set<String> shared) {}
+
+    @Bean
+    WorkbenchPanelRead ontologyEntryGrantApplicationNames() {
+        return new WorkbenchPanelRead("platform:OntologyType", "entryGrantApplicationNames", (subject, parameters) -> {
+            var scope = OntologyNeighborScope.parse(parameters, "platform:PermissionPolicy", "platform:Application");
+            if (!scope.outgoing()) throw badRequest("Expected a permission policy center");
+            var ids = store.policyEntryGrants(subject.identity().domainId(), scope.centerId()).stream()
+                .map(grant -> grant.target().id().split("/", 2)[0]).filter(id -> !id.isEmpty()).collect(Collectors.toSet());
+            var applications = catalog.ontologyApplicationNames(subject, ids);
+            var visibleIds = applications.stream().map(app -> app.getString("id")).collect(Collectors.toSet());
+            var shared = visibleIds.isEmpty() ? Set.<String>of()
+                    : domainSharedApplications(subject.identity().domainId(), catalog.visibleEntries(subject, visibleIds));
+            return new EntryGrantApplicationNames(applications, shared);
+        });
+    }
+
+    public record PolicyCreateKind(String policyId, Kind targetKind) {}
+
+    @Bean
+    WorkbenchPanelRead policyInstanceCreateKinds() {
+        // The batch verifies the service and ordinary domain member, as the graph endpoint does.
+        return new WorkbenchPanelRead("platform:PermissionPolicy", "instanceCreateKinds", (subject, parameters) -> {
+            if (!(parameters.get("targetKinds") instanceof List<?> requested) || requested.isEmpty())
+                throw badRequest("Expected CREATE target kinds");
+            var kinds = Arrays.stream(Kind.values()).filter(kind -> requested.contains(kind.name())).collect(Collectors.toSet());
+            if (kinds.size() != requested.size()) throw badRequest("Invalid CREATE target kinds");
+            kinds.forEach(AuthorizationPolicies::requireCreateDecision);
+            return store.domainObjectGrants(subject.identity().domainId()).stream()
+                .filter(grant -> grant.verb() == Verb.CREATE && kinds.contains(grant.target().kind()))
+                .map(grant -> new PolicyCreateKind(grant.policyId(), grant.target().kind())).distinct().toList();
+        });
+    }
+
+    public ProductGraphAuthorization productGraphAuthorization(SubjectContext subject,
+            List<ApplicationCatalog.ProductGraphCandidate> directoryCandidates) {
+        // The registered read boundary verifies the service, ordinary viewer and placement.
+        var domain = subject.identity().domainId();
+        var candidates = directoryCandidates.stream().filter(ApplicationCatalog.ProductGraphCandidate::canMaintain).toList();
+        if (candidates.isEmpty()) return new ProductGraphAuthorization(List.of(), List.of(), List.of());
+        var appIds = candidates.stream().map(ApplicationCatalog.ProductGraphCandidate::id).collect(Collectors.toSet());
+        var entries = candidates.stream().flatMap(candidate -> candidate.maintainableEntries().stream()).toList();
+        var entryIds = entries.stream().map(ApplicationCatalog.VisibleEntry::id).collect(Collectors.toSet());
+        var entryVerbs = Set.of(Verb.ENTER, Verb.USE, Verb.VIEW, Verb.EDIT);
+        var grants = store.domainObjectGrants(domain).stream().filter(grant -> {
+            var target = grant.target();
+            return (target.kind() == Kind.APPLICATION && grant.verb() == Verb.EDIT && appIds.contains(target.id()))
+                || (target.kind() == Kind.ENTRY && entryVerbs.contains(grant.verb())
+                    && entryIds.contains(target.id()));
+        }).map(grant -> new ProductGraphGrant(grant.policyId(), grant.target().kind(), grant.target().id(), grant.verb())).toList();
+        var policyIds = grants.stream().map(ProductGraphGrant::policyId).collect(Collectors.toSet());
+        var roles = store.domainRolePolicies(domain).stream()
+            .filter(role -> role.kind() == PolicyKind.OBJECT && policyIds.contains(role.policyId())).toList();
+        var grantedEntries = grants.stream().filter(grant -> grant.targetKind() == Kind.ENTRY)
+            .map(ProductGraphGrant::targetKey).collect(Collectors.toSet());
+        return new ProductGraphAuthorization(roles, entries.stream().filter(entry -> grantedEntries.contains(entry.id())).toList(), grants);
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyDomainSharedApplications() {
+        return new WorkbenchPanelRead("platform:Application", "ontologyDomainShared", (subject, parameters) -> {
+            var domain = subject.identity().domainId();
+            var entries = parameters.containsKey("ids")
+                    ? catalog.visibleEntries(subject, ontologyEndpointIds(parameters.get("ids")))
+                    : catalog.visibleEntries(subject);
+            return domainSharedApplications(domain, entries);
+        });
+    }
+
+    private Set<String> domainSharedApplications(String domain, List<ApplicationCatalog.VisibleEntry> entries) {
+        var domainPolicy = Set.of(store.domainPolicy(domain).policyId());
+        var shared = new LinkedHashSet<String>();
+        for (var entry : entries) {
+            if (!shared.contains(entry.applicationId()) && !store.objectGrants(
+                new ObjectTarget(domain, Kind.ENTRY, entry.id()), Verb.ENTER, domainPolicy).isEmpty()) {
+                shared.add(entry.applicationId());
+            }
+        }
+        return shared;
+    }
+
+    @Bean
+    WorkbenchPanelRead ontologyDomainSharedProducts() {
+        return new WorkbenchPanelRead("platform:OntologyType", "domainSharedUse", (subject, parameters) -> {
+            var kind = switch (parameters.get("kind")) {
+                case String value when value.equals("PANEL") -> Kind.PANEL;
+                case String value when value.equals("AGENT") -> Kind.AGENT;
+                case null, default -> throw badRequest("Expected PANEL or AGENT");
+            };
+            var domain = subject.identity().domainId();
+            var policy = store.domainPolicy(domain).policyId();
+            if (kind == Kind.PANEL && parameters.containsKey("ids")) {
+                return ontologyEndpointIds(parameters.get("ids")).stream()
+                        .filter(id -> !store.objectGrants(new ObjectTarget(domain, kind, id), Verb.USE, Set.of(policy)).isEmpty())
+                        .collect(Collectors.toSet());
+            }
+            if (kind == Kind.AGENT && parameters.containsKey("ids")) {
+                return store.policyUseKeys(domain, policy, kind, ontologyEndpointIds(parameters.get("ids")));
+            }
+            return store.objectKeysByVerb(domain, kind, Set.of(Verb.USE), Set.of(policy))
+                .getOrDefault(Verb.USE, Set.of());
+        });
+    }
+
+    private static Set<String> ontologyEndpointIds(Object raw) {
+        if (!(raw instanceof List<?> ids) || ids.isEmpty()
+                || ids.stream().anyMatch(id -> !(id instanceof String key) || key.isBlank()))
+            throw badRequest("Expected nonempty ontology endpoint IDs");
+        return ids.stream().map(String.class::cast).collect(Collectors.toSet());
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

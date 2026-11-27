@@ -228,6 +228,15 @@ function deleteProductImpact(kind: "panel" | "projection", collection: string): 
   };
 }
 
+export function panelDeleteRefusal(
+  result: Awaited<ReturnType<typeof readCataloguePanel>> | undefined, locale?: string,
+) {
+  if (!result) return { reason: tForLocale(locale, "panels.productCatalog.application.availabilityUnavailable") };
+  const { panel, unavailable } = result;
+  if (unavailable ? unavailable.revision !== undefined : panel.editable) return;
+  return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
+}
+
 function productOperations(kind: "panel" | "projection", type: string, collection: string): PanelWriteServerOperation[] {
   const objectTarget = panelObjectIdentitySchema.extend({ kind: z.literal("object"), objectType: z.literal(type) });
   const { revision: updateRevision } = deleteProductCurrentQuerySchema.shape;
@@ -344,12 +353,10 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     ? async (host, { primaryKey }: PanelRecordTarget) => {
         const locale = host.locale ?? host.initiator.credentials.locale;
         try {
-          const { panel, unavailable } = await readCataloguePanel(host.initiator.owner, host.initiator.credentials, primaryKey);
-          if (unavailable ? unavailable.revision !== undefined : panel.editable) return undefined;
-          return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
+          return panelDeleteRefusal(await readCataloguePanel(host.initiator.owner, host.initiator.credentials, primaryKey), locale);
         } catch (error) {
           if (!(error instanceof HttpError && (error.status === 403 || error.status === 404))) throw error;
-          return { reason: tForLocale(locale, "panels.productCatalog.application.availabilityUnavailable") };
+          return panelDeleteRefusal(undefined, locale);
         }
       }
     : undefined;
@@ -609,6 +616,13 @@ const panelHomeOperations: readonly PanelWriteServerOperation[] = [
   },
 ];
 
+export function applicationDeleteRefusal(canMaintain: boolean | undefined, locale?: string) {
+  if (canMaintain === undefined)
+    return { reason: tForLocale(locale, "panels.productCatalog.application.availabilityUnavailable") };
+  if (!canMaintain)
+    return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
+}
+
 const applicationOperations: readonly PanelWriteServerOperation[] = [
   applicationSave,
   applicationAction(
@@ -642,14 +656,11 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
         const locale = host.locale ?? host.initiator.credentials.locale;
         try {
           const detail = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
-          if (!detail.canMaintain) {
-            return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
-          }
-          return undefined;
+          return applicationDeleteRefusal(detail.canMaintain, locale);
         } catch {
           // Fail closed: an unreadable record must never report delete as available,
           // while isolating sibling operations on the same projection from this failure.
-          return { reason: tForLocale(locale, "panels.productCatalog.application.availabilityUnavailable") };
+          return applicationDeleteRefusal(undefined, locale);
         }
       },
       async unavailableBatch(host, targets) {

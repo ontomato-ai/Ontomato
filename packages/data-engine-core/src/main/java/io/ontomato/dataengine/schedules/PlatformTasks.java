@@ -7,8 +7,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.bean.trigger.Trigger;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.OntologyNeighborFacts.Name;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
@@ -90,11 +93,20 @@ public class PlatformTasks {
     return new ScheduleException(404, "TASK_NOT_FOUND", "Trigger or run not found");
   }
 
+  static SubjectContext panelSubject(SubjectContext subject) {
+    var actor = new VerifiedIdentity(subject.identity().domainId(), subject.javaUserId(), subject.identity().limit());
+    return new SubjectContext(actor, subject.roles(), subject.policyRefsByRole(), subject.objectPolicyIds(),
+        subject.managementPolicyIds(), subject.liveDataPermission(), subject.javaUserId());
+  }
+
   private Trigger accessible(String id, User user, Verb verb, boolean lock) {
+    return accessible(id, definitions.subject(user), verb, lock);
+  }
+
+  private Trigger accessible(String id, SubjectContext subject, Verb verb, boolean lock) {
     var task = store.get(id, lock);
-    if (task == null || !task.domain().equals(user.getDomainId())) throw missing();
-    var subject = definitions.subject(user);
-    if (!definitions.canRead(subject, access(task, Verb.USE))) throw missing();
+    if (task == null || !task.domain().equals(subject.identity().domainId())) throw missing();
+    if (!canRead(subject, task)) throw missing();
     if (verb != Verb.VIEW) definitions.require(subject, access(task, verb));
     return task;
   }
@@ -124,24 +136,35 @@ public class PlatformTasks {
       throw new ScheduleException(409, "TASK_LIMIT_REACHED", "Application trigger limit reached");
   }
 
-  private static boolean priority(Trigger task, TaskStore.RunViews runs) {
-    return task.pause() != null || runs.lastRun() != null && "failed".equals(runs.lastRun().status());
+  private static boolean priority(Trigger task, Function<String, String> lastRunStatus) {
+    return task.pause() != null || "failed".equals(lastRunStatus.apply(task.id()));
   }
 
-  private List<JsonNode> views(List<Trigger> tasks, User user) {
-    var names = capabilities.names(user.getDomainId(), tasks);
-    var runs = store.runViews(tasks.stream().map(Trigger::id).toList(), user.getId()).stream()
+  private static Comparator<Trigger> listOrder(Function<String, String> lastRunStatus) {
+    return Comparator.<Trigger, Boolean>comparing(task -> priority(task, lastRunStatus)).reversed()
+        .thenComparing(task -> priority(task, lastRunStatus) ? Instant.MAX : task.nextRunAt(),
+            Comparator.nullsLast(Comparator.naturalOrder()))
+        .thenComparing(Trigger::updatedAt, Comparator.reverseOrder()).thenComparing(Trigger::id);
+  }
+
+  private List<JsonNode> views(List<Trigger> tasks, String domainId, String member) {
+    var names = capabilities.names(domainId, tasks);
+    var runs = store.runViews(tasks.stream().map(Trigger::id).toList(), member).stream()
         .collect(Collectors.toMap(TaskStore.RunViews::id, Function.identity()));
     return tasks.stream().filter(task -> runs.containsKey(task.id()))
-        .sorted(Comparator.<Trigger, Boolean>comparing(task -> priority(task, runs.get(task.id()))).reversed()
-            .thenComparing(task -> priority(task, runs.get(task.id())) ? Instant.MAX : task.nextRunAt(),
-                Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(Trigger::updatedAt, Comparator.reverseOrder()).thenComparing(Trigger::id))
-        .map(task -> view(task, runs.get(task.id()), names, user.getId())).toList();
+        .sorted(listOrder(id -> {
+          var lastRun = runs.get(id).lastRun();
+          return lastRun == null ? null : lastRun.status();
+        }))
+        .map(task -> view(task, runs.get(task.id()), names, member)).toList();
   }
 
   private JsonNode view(Trigger task, User user) {
-    return views(List.of(task), user).stream().findFirst().orElseThrow(PlatformTasks::missing);
+    return view(task, user.getId());
+  }
+
+  private JsonNode view(Trigger task, String member) {
+    return views(List.of(task), task.domain(), member).stream().findFirst().orElseThrow(PlatformTasks::missing);
   }
 
   private static JsonNode view(Trigger task, TaskStore.RunViews runs, TriggerCapabilities.Names names, String member) {
@@ -164,30 +187,67 @@ public class PlatformTasks {
   }
 
   public JsonNode list(String app, String kind, String status, boolean includeCredentialStatus, boolean countOnly) {
-    var user = current();
+    return list(definitions.subject(current()), app, kind, status, includeCredentialStatus, countOnly);
+  }
+
+  JsonNode list(SubjectContext subject, String app, String kind, String status, boolean includeCredentialStatus, boolean countOnly) {
     if (app != null && !app.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
     if (kind != null && !Set.of("action", "workflow", "application").contains(kind)) throw bad("Invalid target kind");
     if (status != null && !Trigger.STATUSES.contains(status)) throw bad("Invalid status");
-    var tasks = readable(user, app, kind, status);
+    var tasks = readable(subject, app, kind, status);
     if (countOnly) return object("total", tasks.size());
-    var result = object("tasks", views(tasks, user), "timeZone", zone());
-    if (includeCredentialStatus) result.put("credentialStatus", credentialStatus(user));
+    var domain = subject.identity().domainId();
+    var member = subject.identity().userId();
+    var result = object("tasks", views(tasks, domain, member), "timeZone", zone());
+    if (includeCredentialStatus) result.put("credentialStatus", credentialStatus(domain, member));
     return result;
   }
 
-  private List<Trigger> readable(User user, String app, String kind, String status) {
-    var subject = definitions.subject(user);
-    return store.candidates(user.getDomainId(), app, kind, status).stream()
-        .filter(task -> definitions.canRead(subject, access(task, Verb.USE))).toList();
+  private List<Trigger> readable(SubjectContext subject, String app, String kind, String status) {
+    return store.candidates(subject.identity().domainId(), app, kind, status).stream()
+        .filter(task -> canRead(subject, task)).toList();
   }
 
-  public List<Trigger> policyTargets(String domain) {
-    var user = current();
-    if (!domain.equals(user.getDomainId())) throw missing();
-    return readable(user, null, null, null).stream().filter(task -> !Trigger.PENDING_REVIEW.equals(task.status())).toList();
+  List<Trigger> ontologyCenter(SubjectContext subject, String id) {
+    return store.ontologyCenter(subject.identity().domainId(), id).stream()
+        .filter(task -> canRead(subject, task)).toList();
   }
 
-  public JsonNode targets() { return capabilities.targets(current()); }
+  public List<Name> ontologyNames(SubjectContext subject, Set<String> ids) {
+    var domain = subject.identity().domainId();
+    return store.ontologyDirectory(domain, ids).stream()
+        .filter(row -> definitions.canRead(subject, CapabilityDefinitions.triggerAccess(domain, row.id(),
+            row.creator(), row.status(), row.coauthors(), Verb.USE)))
+        .map(row -> new Name(row.id(), row.title(), null, row.targetKind())).toList();
+  }
+
+  List<Trigger> ontologyIncoming(SubjectContext subject, String kind, String targetId) {
+    var readable = store.ontologyIncoming(subject.identity().domainId(), kind, targetId).stream()
+        .filter(task -> canRead(subject, task)).toList();
+    var statuses = store.lastRunStatuses(readable.stream().map(Trigger::id).toList());
+    return readable.stream().sorted(listOrder(statuses::get)).toList();
+  }
+
+  private boolean canRead(SubjectContext subject, Trigger task) {
+    return definitions.canRead(subject, access(task, Verb.USE));
+  }
+
+  public List<Trigger> policyTargets(SubjectContext subject) {
+    return readable(subject, null, null, null).stream()
+        .filter(task -> !Trigger.PENDING_REVIEW.equals(task.status())).toList();
+  }
+
+  public JsonNode targets() { return targets(definitions.subject(current())); }
+
+  JsonNode targets(SubjectContext subject) { return capabilities.targets(subject); }
+
+  JsonNode panelForm(SubjectContext subject, String id) {
+    var task = accessible(id, subject, Verb.VIEW, false);
+    return object("task", view(task, subject.identity().userId()),
+        "edit", definitions.decide(subject, access(task, Verb.EDIT)));
+  }
+
+  JsonNode panelCreateForm() { return object("timeZone", zone()); }
 
   public JsonNode form(String appId, JsonNode input, String locale) {
     keys(input, "values", "changedField", "taskId", "timeZone");
@@ -412,13 +472,15 @@ public class PlatformTasks {
   }
 
   public JsonNode detail(String id) {
-    var user = current();
-    return view(accessible(id, user, Verb.VIEW, false), user);
+    return detail(definitions.subject(current()), id);
   }
 
-  private TaskStore.Run run(Trigger task, UUID runId, User user) {
+  JsonNode detail(SubjectContext subject, String id) {
+    return view(accessible(id, subject, Verb.VIEW, false), subject.identity().userId());
+  }
+
+  private TaskStore.Run run(Trigger task, UUID runId, String member) {
     var run = store.run(runId);
-    String member = user.getId();
     if (run == null || !task.id().equals(run.taskId()) || !task.domain().equals(run.snapshot().domainId())
         || !(member.equals(run.snapshot().executorId()) || run.snapshot().executorId() == null && member.equals(task.creator())))
       throw missing();
@@ -426,29 +488,46 @@ public class PlatformTasks {
   }
 
   public JsonNode detail(String id, UUID runId) {
-    var user = current();
-    return run(accessible(id, user, Verb.VIEW, false), runId, user).wire(user.getId());
+    return detail(definitions.subject(current()), id, runId);
+  }
+
+  JsonNode detail(SubjectContext subject, String id, UUID runId) {
+    var member = subject.identity().userId();
+    return run(accessible(id, subject, Verb.VIEW, false), runId, member).wire(member);
   }
 
   public JsonNode history(String id, String cursor, int limit) {
-    var user = current();
-    var task = accessible(id, user, Verb.VIEW, false);
+    return history(definitions.subject(current()), id, cursor, limit);
+  }
+
+  JsonNode history(SubjectContext subject, String id, String cursor, int limit) {
+    return history(accessible(id, subject, Verb.VIEW, false), subject.identity().userId(), cursor, limit);
+  }
+
+  private JsonNode history(Trigger task, String member, String cursor, int limit) {
     if (limit < 1 || limit > 100) throw bad("Invalid limit");
-    var after = cursor == null ? null : run(task, UUID.fromString(cursor), user);
-    var rows = store.history(task, user.getId(), after == null ? null : after.startedAt(), after == null ? null : after.id(), limit + 1);
+    var after = cursor == null ? null : run(task, UUID.fromString(cursor), member);
+    var rows = store.history(task, member, after == null ? null : after.startedAt(), after == null ? null : after.id(), limit + 1);
     var selected = rows.subList(0, Math.min(limit, rows.size()));
-    return object("runs", selected.stream().map(run -> run.wire(user.getId())).toList(),
+    return object("runs", selected.stream().map(run -> run.wire(member)).toList(),
         "nextCursor", rows.size() > limit ? selected.getLast().id().toString() : null);
+  }
+
+  JsonNode panelRunRecord(SubjectContext subject, String id, UUID runId) {
+    var task = accessible(id, subject, Verb.VIEW, false);
+    var member = subject.identity().userId();
+    if (runId != null) return object("run", run(task, runId, member).wire(member));
+    return object("task", view(task, member), "history", history(task, member, null, 1));
   }
 
   private static boolean pausedForCredential(Trigger task) {
     return task.enabled() && task.pause() != null && "credential_invalid".equals(task.pause().code());
   }
 
-  private String credentialStatus(User user) {
-    var tasks = store.executedBy(user.getDomainId(), user.getId());
+  private String credentialStatus(String domain, String member) {
+    var tasks = store.executedBy(domain, member);
     if (tasks.isEmpty()) return "no-remote-tasks";
-    return tasks.stream().anyMatch(PlatformTasks::pausedForCredential) || !credentials.hasValidKey(user.getDomainId(), user.getId())
+    return tasks.stream().anyMatch(PlatformTasks::pausedForCredential) || !credentials.hasValidKey(domain, member)
         ? "renewal-required" : "valid";
   }
 

@@ -3,7 +3,7 @@ import { validateBody } from "../middleware/validate";
 import { asyncHandler } from "../utils/http";
 import { describeAgentDefinitionForm } from "../../services/assistant/definition-form";
 import { AgentDefinitionFieldError } from "../../services/assistant/definition-form-schema";
-import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
+import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-context";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
 import { readAnalysisScope } from "../../services/assistant/analysis-scope";
 import {

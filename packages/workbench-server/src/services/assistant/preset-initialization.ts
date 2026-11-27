@@ -6,7 +6,7 @@ import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/p
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { backendGet, backendPost } from "../../utils/backend-client";
 import { OPS_DIAGNOSIS_KIND } from "../ops-diagnosis/definition";
-import { productGovernanceServiceHeaders } from "../product-governance/grants";
+import { productGovernanceServiceHeaders } from "../product-governance/service-authentication";
 import { presetAgents } from "./preset-definitions";
 
 /** Every preset takes its place in agent lists from this list, so a domain initialized earlier is brought back in line. */

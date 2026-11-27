@@ -19,6 +19,9 @@ public interface KnowledgeService {
 
     public Map<String,KnowledgeEntity> getBussinessKnowledge(String domainId);
 
+    /** Status in selection order; null denotes an entry absent from the domain. */
+    List<Integer> approvalStatuses(String domainId, List<String> ids);
+
     int countBusinessKnowledge(String domainId);
 
     public String getBussinessKnowledgeMarkdown(String domainId);

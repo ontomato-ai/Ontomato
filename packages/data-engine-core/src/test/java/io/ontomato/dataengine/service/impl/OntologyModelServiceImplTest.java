@@ -120,7 +120,7 @@ class OntologyModelServiceImplTest {
 
 	@Test
 	void objectTypesReportCountsStoredDescriptionsPrimaryKeyStatusAndSearchableAttributes() {
-		var objectTypes = service.objectTypes(user, "en");
+		var objectTypes = service.objectTypes(user.getDomainId(), "en");
 
 		assertEquals(List.of("Device", "Site"), objectTypes.stream().map(view -> view.className()).toList());
 		var device = objectTypes.get(0);
@@ -141,12 +141,12 @@ class OntologyModelServiceImplTest {
 		((JSONObject) rule.getJSONArray("classDef").get(0)).put("showName", "Smart Device");
 		((JSONObject) rule.getJSONArray("classDef").get(1)).put("showName", "");
 
-		var list = service.relationships(null, user, "en");
+		var list = service.relationships(null, user.getDomainId(), "en");
 		assertEquals(1, list.size());
 		assertEquals("Smart Device", list.get(0).fromShowName());
 		assertEquals("Site", list.get(0).toShowName());
 
-		var single = service.relationship("owns", user, "en");
+		var single = service.relationship("owns", user.getDomainId(), "en");
 		assertEquals("Smart Device", single.fromShowName());
 		assertEquals("Site", single.toShowName());
 	}
@@ -156,16 +156,16 @@ class OntologyModelServiceImplTest {
 		var device = (JSONObject) rule.getJSONArray("classDef").get(0);
 		var attrs = device.getJSONArray("attrs");
 		attrs.getJSONObject(0).put("primaryKey", false);
-		assertEquals(Map.of("status", "missing", "count", 0), service.objectType("Device", user, "en").primaryKey());
+		assertEquals(Map.of("status", "missing", "count", 0), service.objectType("Device", user.getDomainId(), "en").primaryKey());
 
 		attrs.getJSONObject(1).put("primaryKey", true);
 		attrs.getJSONObject(2).put("primaryKey", true);
-		assertEquals(Map.of("status", "multiple", "count", 2), service.objectType("Device", user, "en").primaryKey());
+		assertEquals(Map.of("status", "multiple", "count", 2), service.objectType("Device", user.getDomainId(), "en").primaryKey());
 
 		attrs.getJSONObject(2).put("primaryKey", false);
 		attrs.getJSONObject(1).put("enable", false);
 		assertEquals(Map.of("status", "disabled", "name", "site_id", "count", 1, "showName", "Site"),
-				service.objectType("Device", user, "en").primaryKey());
+				service.objectType("Device", user.getDomainId(), "en").primaryKey());
 	}
 
 	@Test
@@ -176,7 +176,7 @@ class OntologyModelServiceImplTest {
 		attrs.getJSONObject(1).put("primary_key", "true");
 		attrs.getJSONObject(1).put("enable", "false");
 
-		var attributes = service.attributes("Device", user, "en");
+		var attributes = service.attributes("Device", user.getDomainId(), "en");
 
 		assertEquals(List.of("id", "site_id", "size"), attributes.stream().map(attr -> attr.name()).toList());
 		assertTrue(attributes.get(0).primaryKey());
@@ -189,22 +189,23 @@ class OntologyModelServiceImplTest {
 
 	@Test
 	void attributeAndRelationshipListsFilterByClassAndEmptyJoinFieldsReadAsEmptyStrings() {
-		assertEquals(List.of("id"), service.attributes("Site", user, "en").stream().map(attr -> attr.name()).toList());
+		assertEquals(List.of("id"), service.attributes("Site", user.getDomainId(), "en").stream().map(attr -> attr.name()).toList());
 		assertEquals(List.of("owns"),
-				service.relationships("Site", user, "en").stream().map(rel -> rel.relationship()).toList());
+				service.relationships("Site", user.getDomainId(), "en").stream().map(rel -> rel.relationship()).toList());
 
 		rule.getJSONObject("relationship_rule").getJSONObject("owns").remove("fromField");
 		rule.getJSONObject("relationship_rule").getJSONObject("owns").remove("toField");
-		var relation = service.relationship("owns", user, "en");
+		var relation = service.relationship("owns", user.getDomainId(), "en");
 		assertEquals("", relation.fromField());
 		assertEquals("", relation.toField());
 	}
 
 	@Test
 	void missingObjectsAreNotFoundWithTheirOwnCodes() {
-		assertCode(404, "OBJECT_TYPE_NOT_FOUND", () -> service.objectType("Missing", user, "en"));
-		assertCode(404, "OBJECT_TYPE_NOT_FOUND", () -> service.attributes("Missing", user, "en"));
-		assertCode(404, "RELATIONSHIP_NOT_FOUND", () -> service.relationship("missing", user, "en"));
+		String domainId = user.getDomainId();
+		assertCode(404, "OBJECT_TYPE_NOT_FOUND", () -> service.objectType("Missing", domainId, "en"));
+		assertCode(404, "OBJECT_TYPE_NOT_FOUND", () -> service.attributes("Missing", domainId, "en"));
+		assertCode(404, "RELATIONSHIP_NOT_FOUND", () -> service.relationship("missing", domainId, "en"));
 		assertCode(404, "OBJECT_TYPE_NOT_FOUND", () -> service.deletionImpact("Missing", user, "en"));
 		assertCode(404, "ATTRIBUTE_NOT_FOUND",
 				() -> service.updateAttribute("Device", "missing", new AttributeUpdate("x", "", true, false), user, "en"));
@@ -303,7 +304,7 @@ class OntologyModelServiceImplTest {
 
 	@Test
 	void legacyOntomapsAndViewsOmitOptions() {
-		var view = service.attributes("Device", user, "en").stream()
+		var view = service.attributes("Device", user.getDomainId(), "en").stream()
 				.filter(attr -> attr.name().equals("size")).findFirst().orElseThrow();
 		assertFalse(ScheduleJson.JSON.valueToTree(view).has("options"));
 
@@ -332,7 +333,7 @@ class OntologyModelServiceImplTest {
 		var savedUpdate = new JSONObject(savedRule(2));
 		when(jsonRuleDao.query("d1")).thenReturn(savedUpdate);
 
-		var form = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"priority\"]"), user, "en");
+		var form = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"priority\"]"), user.getDomainId(), "en");
 		assertEquals(List.of(Map.of("value", "2", "label", "High", "tone", "danger")), form.values().get("options"));
 
 		var exported = adminService.getPrettyJSONRule("d1");
@@ -412,7 +413,7 @@ class OntologyModelServiceImplTest {
 	@Test
 	void attributeOptionFormUsesThreeColumnsAndRefreshesWhenNewTypeChanges() {
 		var target = open("object", "platform:Attribute", "[\"Device\",\"size\"]");
-		var edit = service.attributeForm(target, user, "en");
+		var edit = service.attributeForm(target, user.getDomainId(), "en");
 		var control = fieldOf(edit, "/options").path("control");
 		assertEquals("object-array", control.path("kind").asText());
 		assertEquals("table", control.path("presentation").asText());
@@ -426,16 +427,16 @@ class OntologyModelServiceImplTest {
 				properties(tone.path("options"), "value"));
 		assertEquals(List.of("value", "label"),
 				texts(edit.save().bodySchema().at("/properties/options/items/required")));
-		assertFalse(paths(service.attributeInlineForm(target, user, "en")).contains("/options"));
+		assertFalse(paths(service.attributeInlineForm(target, user.getDomainId(), "en")).contains("/options"));
 		findAttr(findClass(rule, "Device"), "size").put("type", "boolean");
-		assertFalse(paths(service.attributeForm(target, user, "en")).contains("/options"));
+		assertFalse(paths(service.attributeForm(target, user.getDomainId(), "en")).contains("/options"));
 
 		var draft = new FormTarget("draft", "platform:Attribute", null);
-		var initial = service.attributeForm(new FormRequest(draft, null, null), user, "en");
+		var initial = service.attributeForm(new FormRequest(draft, null, null), user.getDomainId(), "en");
 		assertEquals(List.of(), initial.values().get("options"));
 		assertTrue(fieldOf(initial, "/type").path("refreshOnChange").asBoolean());
 		for (String type : List.of("boolean", "date", "vector", "text", "double")) {
-			var refreshed = service.attributeForm(new FormRequest(draft, Map.of("type", type), "/type"), user, "en");
+			var refreshed = service.attributeForm(new FormRequest(draft, Map.of("type", type), "/type"), user.getDomainId(), "en");
 			assertEquals(List.of("text", "double").contains(type), paths(refreshed).contains("/options"), type);
 		}
 	}
@@ -707,10 +708,11 @@ class OntologyModelServiceImplTest {
 		assertEquals(Map.of("relationship", "Admin.form.relationship", "fromclass", "Admin.form.fromclass",
 				"fromField", "Admin.form.fromField", "toclass", "Admin.form.toclass", "toField", "Admin.form.toField",
 				"desc", "Admin.form.relationDesc"), labels.relationship());
-		assertLabelledBy(labels.objectType(), service.objectTypeForm(open("draft", "platform:ObjectType", null), user, "en"));
-		assertLabelledBy(labels.attribute(), service.attributeForm(open("draft", "platform:Attribute", null), user, "en"));
+		String domainId = user.getDomainId();
+		assertLabelledBy(labels.objectType(), service.objectTypeForm(open("draft", "platform:ObjectType", null), domainId, "en"));
+		assertLabelledBy(labels.attribute(), service.attributeForm(open("draft", "platform:Attribute", null), domainId, "en"));
 		assertLabelledBy(labels.relationship(),
-				service.relationshipForm(open("draft", "platform:Relationship", null), user, "en"));
+				service.relationshipForm(open("draft", "platform:Relationship", null), domainId, "en"));
 	}
 
 	private static void assertLabelledBy(Map<String, String> labels, FormDescription form) {
@@ -721,7 +723,7 @@ class OntologyModelServiceImplTest {
 
 	@Test
 	void theObjectTypeFormOpensAnEditWithItsNameReadOnlyAndTheStoredValues() {
-		var form = service.objectTypeForm(open("object", "platform:ObjectType", "Device"), user, "en");
+		var form = service.objectTypeForm(open("object", "platform:ObjectType", "Device"), user.getDomainId(), "en");
 
 		assertEquals(List.of("/showName", "/className", "/classDesc"), paths(form));
 		assertTrue(fieldOf(form, "/className").get("readOnly").asBoolean());
@@ -737,7 +739,7 @@ class OntologyModelServiceImplTest {
 
 	@Test
 	void theObjectTypeFormOpensTheCreateTargetWithDefaultsAndThePrimaryKeyName() {
-		var form = service.objectTypeForm(open("draft", "platform:ObjectType", null), user, "en");
+		var form = service.objectTypeForm(open("draft", "platform:ObjectType", null), user.getDomainId(), "en");
 
 		assertEquals(List.of("/className", "/primaryKeyName", "/showName", "/classDesc"), paths(form));
 		assertTrue(form.fields().stream().noneMatch(field -> field.get("readOnly").asBoolean()));
@@ -756,7 +758,7 @@ class OntologyModelServiceImplTest {
 
 	@Test
 	void theAttributeFormLocksTheNameTypeAndThePrimaryKeyAttributeOnEdit() {
-		var form = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"id\"]"), user, "en");
+		var form = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"id\"]"), user.getDomainId(), "en");
 
 		assertEquals(List.of("/className", "/name", "/type", "/showName", "/attrDesc", "/enable", "/businessKey",
 				"/primaryKey"), paths(form));
@@ -778,20 +780,20 @@ class OntologyModelServiceImplTest {
 				"enable", true, "businessKey", false, "primaryKey", true), form.values());
 
 		var nonPrimaryVarchar = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"site_id\"]"),
-				user, "en");
+				user.getDomainId(), "en");
 		assertFalse(fieldOf(nonPrimaryVarchar, "/primaryKey").get("readOnly").asBoolean());
 		assertFalse(fieldOf(nonPrimaryVarchar, "/primaryKey").has("readOnlyReason"));
 		assertTrue(nonPrimaryVarchar.save().bodySchema().get("properties").has("primaryKey"));
 
 		var nonVarchar = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"size\"]"),
-				user, "en");
+				user.getDomainId(), "en");
 		assertTrue(fieldOf(nonVarchar, "/primaryKey").get("readOnly").asBoolean());
 		assertEquals("Admin.attr.primaryKeyInvalid", fieldOf(nonVarchar, "/primaryKey").get("readOnlyReason").asText());
 	}
 
 	@Test
 	void theAttributeFormOffersEveryTypeAndOwnerAndOpensCreateEnabled() {
-		var form = service.attributeForm(open("draft", "platform:Attribute", null), user, "en");
+		var form = service.attributeForm(open("draft", "platform:Attribute", null), user.getDomainId(), "en");
 
 		assertEquals(List.of("Device", "Site"), optionValues(fieldOf(form, "/className")));
 		assertEquals(ATTRIBUTE_TYPES, optionValues(fieldOf(form, "/type")));
@@ -806,7 +808,7 @@ class OntologyModelServiceImplTest {
 
 	@Test
 	void theRelationshipFormReasksTheJoinFieldOptionsWhenAnEndClassChanges() {
-		var form = service.relationshipForm(open("draft", "platform:Relationship", null), user, "en");
+		var form = service.relationshipForm(open("draft", "platform:Relationship", null), user.getDomainId(), "en");
 
 		assertEquals(List.of("/relationship", "/fromclass", "/fromField", "/toclass", "/toField", "/desc"), paths(form));
 		assertEquals(List.of(), optionValues(fieldOf(form, "/fromField")));
@@ -827,7 +829,7 @@ class OntologyModelServiceImplTest {
 		var changed = service.relationshipForm(new FormRequest(new FormTarget("draft", "platform:Relationship", null),
 				Map.of("relationship", "", "fromclass", "Site", "fromField", "site_id", "toclass", "Device",
 						"toField", "id", "desc", ""),
-				"/fromclass"), user, "en");
+				"/fromclass"), user.getDomainId(), "en");
 		assertEquals(List.of("id"), optionValues(fieldOf(changed, "/fromField")));
 		assertFalse(fieldOf(changed, "/fromField").get("readOnly").asBoolean());
 		assertFalse(fieldOf(changed, "/toField").get("readOnly").asBoolean());
@@ -839,7 +841,7 @@ class OntologyModelServiceImplTest {
 	void theRelationshipFormDropsItsJoinFieldRulesWhenTheAdapterDoesNotJoinOnThem() {
 		when(provider.requiresJoinFields()).thenReturn(false);
 
-		var form = service.relationshipForm(open("draft", "platform:Relationship", null), user, "en");
+		var form = service.relationshipForm(open("draft", "platform:Relationship", null), user.getDomainId(), "en");
 
 		assertFalse(fieldOf(form, "/fromField").get("required").asBoolean());
 		assertFalse(fieldOf(form, "/toField").get("required").asBoolean());
@@ -849,7 +851,7 @@ class OntologyModelServiceImplTest {
 
 	@Test
 	void theRelationshipFormOpensAnEditWithItsNameAndEndsReadOnly() {
-		var form = service.relationshipForm(open("object", "platform:Relationship", "owns"), user, "en");
+		var form = service.relationshipForm(open("object", "platform:Relationship", "owns"), user.getDomainId(), "en");
 
 		assertEquals(List.of("/relationship", "/desc", "/fromField", "/toField"), paths(form));
 		assertEquals(List.of(true, false, false, false),
@@ -869,18 +871,34 @@ class OntologyModelServiceImplTest {
 	}
 
 	@Test
+	void panelFormReturnsValidationErrorsWithTheEditBufferAndDependentFields() {
+		var target = new FormTarget("draft", "platform:Relationship", null);
+		var values = Map.<String, Object>of("relationship", "child", "fromclass", "Device", "toclass", "Site",
+				"fromField", "stale_field", "toField", "id", "desc", "");
+		var request = new FormRequest(target, values, null);
+		var httpError = assertThrows(OntologyModelException.class, () -> service.relationshipForm(request, "d1", "en"));
+		assertEquals(422, httpError.status());
+
+		var form = service.relationshipForm(request, "d1", "en", true);
+		assertTrue(form.errors().stream().anyMatch(error -> "/fromField".equals(error.get("field").asText())));
+		assertTrue(form.errors().stream().anyMatch(error -> "/desc".equals(error.get("field").asText())));
+		assertEquals(values, form.values());
+		assertEquals(List.of("id", "site_id", "size"), optionValues(fieldOf(form, "/fromField")));
+	}
+
+	@Test
 	void aCompleteObjectTypeDraftIsCheckedAsItsSaveWouldCheckItAndNothingIsWritten() {
 		var refused = assertThrows(OntologyModelException.class,
 				() -> service.objectTypeForm(new FormRequest(new FormTarget("draft", "platform:ObjectType", null),
 						Map.of("className", "", "primaryKeyName", "1bad", "showName", " ", "classDesc", ""), null),
-						user, "en"));
+						user.getDomainId(), "en"));
 		assertValidation(refused, List.of("/values/className", "/values/showName", "/values/primaryKeyName"),
 				List.of("required", "required", "invalid_format"));
 		verify(jsonRuleDao, never()).save(any(), any());
 
 		var checked = service.objectTypeForm(new FormRequest(new FormTarget("draft", "platform:ObjectType", null),
 				Map.of("className", " Pump ", "primaryKeyName", "pump_no", "showName", "Pump", "classDesc", " A pump "),
-				null), user, "en");
+				null), user.getDomainId(), "en");
 		assertEquals(Map.of("className", "Pump", "primaryKeyName", "pump_no", "showName", "Pump", "classDesc",
 				"A pump"), checked.values());
 		verify(jsonRuleDao, never()).save(any(), any());
@@ -889,13 +907,13 @@ class OntologyModelServiceImplTest {
 	@Test
 	void anObjectTypeEditDraftChecksTheUpdateAndNormalizesTheTargetIdentity() {
 		var checked = service.objectTypeForm(new FormRequest(new FormTarget("object", "platform:ObjectType", "Device"),
-				Map.of("className", "Whatever", "showName", " Devices ", "classDesc", "A device"), null), user, "en");
+				Map.of("className", "Whatever", "showName", " Devices ", "classDesc", "A device"), null), user.getDomainId(), "en");
 		assertEquals(Map.of("className", "Device", "showName", "Devices", "classDesc", "A device"),
 				checked.values());
 
 		var refused = assertThrows(OntologyModelException.class,
 				() -> service.objectTypeForm(new FormRequest(new FormTarget("object", "platform:ObjectType", "Device"),
-						Map.of("showName", " ", "classDesc", ""), null), user, "en"));
+						Map.of("showName", " ", "classDesc", ""), null), user.getDomainId(), "en"));
 		assertValidation(refused, List.of("/values/showName"), List.of("required"));
 		verify(jsonRuleDao, never()).save(any(), any());
 	}
@@ -906,7 +924,7 @@ class OntologyModelServiceImplTest {
 				() -> service.attributeForm(new FormRequest(new FormTarget("draft", "platform:Attribute", null),
 						Map.of("className", "Device", "name", "id", "showName", " ", "type", "bucket", "attrDesc", "",
 								"enable", true, "businessKey", false, "primaryKey", false),
-						null), user, "en"));
+						null), user.getDomainId(), "en"));
 		assertValidation(refused, List.of("/values/showName", "/values/name", "/values/type"),
 				List.of("required", "already_exists", "invalid_option"));
 		verify(jsonRuleDao, never()).save(any(), any());
@@ -915,7 +933,7 @@ class OntologyModelServiceImplTest {
 				"[\"Device\",\"site_id\"]"),
 				Map.of("className", "Whatever", "name", "Whatever", "showName", " Site link ", "attrDesc", "d",
 						"enable", false, "businessKey", true, "primaryKey", false),
-				null), user, "en");
+				null), user.getDomainId(), "en");
 		assertEquals("Device", checked.values().get("className"));
 		assertEquals("site_id", checked.values().get("name"));
 		assertEquals("varchar", checked.values().get("type"));
@@ -926,7 +944,7 @@ class OntologyModelServiceImplTest {
 				"[\"Device\",\"site_id\"]"),
 				Map.of("showName", "Site link", "attrDesc", "d", "enable", true, "businessKey", true,
 						"primaryKey", true),
-				null), user, "en");
+				null), user.getDomainId(), "en");
 		assertEquals(true, promotedDraft.values().get("primaryKey"));
 
 		var disabledPromotion = assertThrows(OntologyModelException.class,
@@ -934,7 +952,7 @@ class OntologyModelServiceImplTest {
 						"[\"Device\",\"site_id\"]"),
 						Map.of("showName", "Site link", "attrDesc", "d", "enable", false, "businessKey", true,
 								"primaryKey", true),
-						null), user, "en"));
+						null), user.getDomainId(), "en"));
 		assertValidation(disabledPromotion, List.of("/values/enable"), List.of("invalid_option"));
 		verify(jsonRuleDao, never()).save(any(), any());
 	}
@@ -961,8 +979,8 @@ class OntologyModelServiceImplTest {
 		var refused = assertThrows(OntologyModelException.class,
 				() -> service.attributeForm(new FormRequest(new FormTarget("object", "platform:Attribute",
 						"[\"Device\",\"id\"]"),
-						Map.of("showName", "ID", "attrDesc", "", "enable", false, "businessKey", false), null), user,
-						"en"));
+						Map.of("showName", "ID", "attrDesc", "", "enable", false, "businessKey", false), null),
+						user.getDomainId(), "en"));
 		assertCode(409, "PRIMARY_KEY_LOCKED", () -> {
 			throw refused;
 		});
@@ -974,7 +992,7 @@ class OntologyModelServiceImplTest {
 		var refused = assertThrows(OntologyModelException.class,
 				() -> service.relationshipForm(new FormRequest(new FormTarget("draft", "platform:Relationship", null),
 						Map.of("relationship", "contains", "fromclass", "Device", "toclass", "Site", "desc", "",
-								"fromField", "nope", "toField", ""), null), user, "en"));
+								"fromField", "nope", "toField", ""), null), user.getDomainId(), "en"));
 		assertValidation(refused, List.of("/values/desc", "/values/toField", "/values/fromField"),
 				List.of("required", "required", "invalid_option"));
 		verify(jsonRuleDao, never()).save(any(), any());
@@ -982,7 +1000,7 @@ class OntologyModelServiceImplTest {
 		var checked = service.relationshipForm(new FormRequest(new FormTarget("object", "platform:Relationship", "owns"),
 				Map.of("relationship", "Whatever", "fromclass", "Whatever", "toclass", "Whatever",
 						"desc", " held by ", "fromField", "id", "toField", "id"),
-				null), user, "en");
+				null), user.getDomainId(), "en");
 		assertEquals(Map.of("relationship", "owns", "fromclass", "Device", "fromField", "id", "toclass", "Site",
 				"toField", "id", "desc", "held by"), checked.values());
 		verify(jsonRuleDao, never()).save(any(), any());
@@ -992,34 +1010,34 @@ class OntologyModelServiceImplTest {
 	void aDraftWithAValueOfTheWrongTypeOrATargetWithoutOneIsRefusedAsAnInvalidRequest() {
 		assertCode(400, "INVALID_REQUEST", () -> service.objectTypeForm(new FormRequest(
 				new FormTarget("draft", "platform:ObjectType", null),
-				Map.of("className", 5, "primaryKeyName", "", "showName", "", "classDesc", ""), null), user, "en"));
+				Map.of("className", 5, "primaryKeyName", "", "showName", "", "classDesc", ""), null), user.getDomainId(), "en"));
 		assertCode(400, "INVALID_REQUEST", () -> service.attributeForm(new FormRequest(
-				new FormTarget("object", "platform:Attribute", "[\"Device\"]"), Map.of(), null), user, "en"));
+				new FormTarget("object", "platform:Attribute", "[\"Device\"]"), Map.of(), null), user.getDomainId(), "en"));
 		assertCode(400, "INVALID_REQUEST", () -> service.relationshipForm(new FormRequest(
-				new FormTarget("clone", "platform:Relationship", null), null, null), user, "en"));
+				new FormTarget("clone", "platform:Relationship", null), null, null), user.getDomainId(), "en"));
 		verify(jsonRuleDao, never()).save(any(), any());
 	}
 
 	@Test
 	void inlineFormsDeclareSubmitOnForVisualModelingWhileKeepingStandardFormsExplicit() {
-		var standardObject = service.objectTypeForm(open("object", "platform:ObjectType", "Device"), user, "en");
+		var standardObject = service.objectTypeForm(open("object", "platform:ObjectType", "Device"), user.getDomainId(), "en");
 		assertFalse(fieldOf(standardObject, "/showName").has("submitOn"));
 		assertFalse(fieldOf(standardObject, "/classDesc").has("submitOn"));
 		assertEquals("text", fieldOf(standardObject, "/className").get("control").get("kind").asText());
 
-		var inlineObject = service.objectTypeInlineForm(open("object", "platform:ObjectType", "Device"), user, "en");
+		var inlineObject = service.objectTypeInlineForm(open("object", "platform:ObjectType", "Device"), user.getDomainId(), "en");
 		assertEquals("blur", fieldOf(inlineObject, "/showName").get("submitOn").asText());
 		assertEquals("blur", fieldOf(inlineObject, "/classDesc").get("submitOn").asText());
 		assertEquals("hidden", fieldOf(inlineObject, "/className").get("control").get("kind").asText());
 
 		var standardAttr = service.attributeForm(
-				open("object", "platform:Attribute", "[\"Device\",\"site_id\"]"), user, "en");
+				open("object", "platform:Attribute", "[\"Device\",\"site_id\"]"), user.getDomainId(), "en");
 		assertFalse(fieldOf(standardAttr, "/showName").has("submitOn"));
 		assertFalse(fieldOf(standardAttr, "/enable").has("submitOn"));
 		assertEquals("hidden", fieldOf(standardAttr, "/type").get("control").get("kind").asText());
 
 		var inlineAttr = service.attributeInlineForm(
-				open("object", "platform:Attribute", "[\"Device\",\"site_id\"]"), user, "en");
+				open("object", "platform:Attribute", "[\"Device\",\"site_id\"]"), user.getDomainId(), "en");
 		assertEquals("text", fieldOf(inlineAttr, "/type").get("control").get("kind").asText());
 		assertTrue(fieldOf(inlineAttr, "/type").get("readOnly").asBoolean());
 		assertEquals("blur", fieldOf(inlineAttr, "/showName").get("submitOn").asText());
@@ -1031,7 +1049,7 @@ class OntologyModelServiceImplTest {
 
 		// Primary-key attribute locks enable and primaryKey in inline mode just like standard mode.
 		var lockedInlineAttr = service.attributeInlineForm(
-				open("object", "platform:Attribute", "[\"Device\",\"id\"]"), user, "en");
+				open("object", "platform:Attribute", "[\"Device\",\"id\"]"), user.getDomainId(), "en");
 		assertTrue(fieldOf(lockedInlineAttr, "/enable").get("readOnly").asBoolean());
 		assertTrue(fieldOf(lockedInlineAttr, "/primaryKey").get("readOnly").asBoolean());
 	}

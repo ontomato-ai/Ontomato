@@ -1,10 +1,14 @@
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
 import type { DomainComponentRuntime } from "@ontomato/contracts/domain-components";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
-import { countVisibleDomainComponents, domainComponentForProjection, domainComponentRecord, listVisibleDomainComponents } from "../domain-components/store";
+import type { CurrentProductRow } from "../../infrastructure/product-current";
+import {
+  countDomainComponentsInRange, countVisibleDomainComponents, domainComponentForProjection, domainComponentRecord,
+  listDomainComponentsInRange, listVisibleDomainComponents,
+} from "../domain-components/store";
 import {
   APPS_SDK_COMPONENT_GROUPS,
   appsSdkComponentCatalogSchema,
@@ -22,12 +26,13 @@ import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
 import { listComponentPackages, readComponentPackage } from "../component-packages/store";
 import { requireAllowed } from "../product-governance/authorization";
-import { currentDefinitionAccess, requireCurrentDefinitionUse } from "./access";
+import { currentDefinitionAccess, definitionVisibleInRange, requireCurrentDefinitionUse, type DefinitionVisibilityRange } from "./access";
 
 export type ComponentScope = {
   domainId: string | null;
   credentials: AssistantCredentials;
   client?: Pick<PoolClient, "query">;
+  componentUsable?: (row: CurrentProductRow) => boolean | undefined;
 };
 
 type AuthorComponentDeclaration = ComponentDeclaration & Partial<Pick<AppsSdkComponentCatalogEntry, "module" | "exportName" | "group" | "panelUsable">>;
@@ -93,10 +98,17 @@ async function readReleasedAuthorComponents() {
   return definitions;
 }
 
-export async function readAuthorComponentCatalogue(owner: ProductOwner, viewer: AssistantCredentials) {
-  const [definitions, registered] = await Promise.all([
-    readReleasedAuthorComponents(), listVisibleDomainComponents(owner.domainId, viewer, false),
-  ]);
+export function readAuthorComponentCatalogue(owner: ProductOwner, viewer: AssistantCredentials, range?: DefinitionVisibilityRange) {
+  return range ? readAuthorComponentCatalogueInRange(owner.domainId, range)
+    : collectAuthorComponents(listVisibleDomainComponents(owner.domainId, viewer, false));
+}
+
+export function readAuthorComponentCatalogueInRange(domainId: string, range: DefinitionVisibilityRange) {
+  return collectAuthorComponents(listDomainComponentsInRange(domainId, range));
+}
+
+async function collectAuthorComponents(domainComponents: ReturnType<typeof listDomainComponentsInRange>) {
+  const [definitions, registered] = await Promise.all([readReleasedAuthorComponents(), domainComponents]);
   for (const { declaration, name } of registered) definitions.set(declaration.componentId, { declaration, label: name });
   return definitions;
 }
@@ -105,9 +117,14 @@ async function requireSdkComponentEntry(
   owner: ProductOwner,
   componentId: string,
   viewer: AssistantCredentials,
+  range?: DefinitionVisibilityRange,
 ): Promise<AuthorComponentEntry> {
   if (isDomainComponentId(componentId)) {
-    const row = await requireScopedDomainComponent(componentId, { domainId: owner.domainId, credentials: viewer });
+    const row = await requireScopedDomainComponent(componentId, {
+      domainId: owner.domainId,
+      credentials: viewer,
+      ...(range && { componentUsable: (row: CurrentProductRow) => definitionVisibleInRange(row, range, owner.domainId) }),
+    });
     if (row) {
       const { declaration, name } = domainComponentRecord(row, false);
       return { declaration, label: name };
@@ -181,13 +198,21 @@ export async function countSdkComponents(owner: ProductOwner, viewer: AssistantC
   return { rows: [], total: released.size + domainCount };
 }
 
+export async function countSdkComponentsInRange(domainId: string, range: DefinitionVisibilityRange) {
+  const [released, domainCount] = await Promise.all([
+    readReleasedAuthorComponents(), countDomainComponentsInRange(domainId, range),
+  ]);
+  return { rows: [], total: released.size + domainCount };
+}
+
 export async function listSdkComponents(
   owner: ProductOwner,
   viewer: AssistantCredentials,
   search?: string,
+  range?: DefinitionVisibilityRange,
 ): Promise<PanelRecord[]> {
   const { locale } = viewer;
-  const components = await readAuthorComponentCatalogue(owner, viewer);
+  const components = await readAuthorComponentCatalogue(owner, viewer, range);
   const term = search?.trim().toLowerCase();
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const fieldLabels = {
@@ -248,17 +273,18 @@ export async function listSdkComponents(
   return matched.map(({ record }) => record);
 }
 
-export async function readSdkComponent(owner: ProductOwner, componentId: string, viewer: AssistantCredentials) {
-  return (await requireSdkComponentEntry(owner, componentId, viewer)).declaration;
+export async function readSdkComponent(owner: ProductOwner, componentId: string, viewer: AssistantCredentials, range?: DefinitionVisibilityRange) {
+  return (await requireSdkComponentEntry(owner, componentId, viewer, range)).declaration;
 }
 
 export async function readSdkComponentRecord(
   owner: ProductOwner,
   componentId: string,
   viewer: AssistantCredentials,
+  range?: DefinitionVisibilityRange,
 ): Promise<PanelRecord> {
   const { locale } = viewer;
-  const entry = await requireSdkComponentEntry(owner, componentId, viewer);
+  const entry = await requireSdkComponentEntry(owner, componentId, viewer, range);
   const { declaration } = entry;
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const packageLabel = entry.packageName ?? word("domain");
@@ -307,9 +333,10 @@ export async function readSdkComponentDataRows(
   owner: ProductOwner,
   componentId: string,
   viewer: AssistantCredentials,
+  range?: DefinitionVisibilityRange,
 ): Promise<PanelRecord[]> {
   const { locale } = viewer;
-  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer);
+  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer, range);
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const fieldLabels = {
     results: word("results"),
@@ -337,9 +364,10 @@ export async function readSdkComponentConfigRows(
   owner: ProductOwner,
   componentId: string,
   viewer: AssistantCredentials,
+  range?: DefinitionVisibilityRange,
 ): Promise<PanelRecord[]> {
   const { locale } = viewer;
-  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer);
+  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer, range);
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const fieldLabels = {
     type: word("type"),
@@ -367,9 +395,10 @@ export async function readSdkComponentInputRows(
   owner: ProductOwner,
   componentId: string,
   viewer: AssistantCredentials,
+  range?: DefinitionVisibilityRange,
 ): Promise<PanelRecord[]> {
   const { locale } = viewer;
-  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer);
+  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer, range);
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const fieldLabels = {
     kind: word("kind"),
@@ -405,9 +434,10 @@ export async function readSdkComponentOutputRows(
   owner: ProductOwner,
   componentId: string,
   viewer: AssistantCredentials,
+  range?: DefinitionVisibilityRange,
 ): Promise<PanelRecord[]> {
   const { locale } = viewer;
-  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer);
+  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer, range);
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const fieldLabels = {
     kind: word("kind"),
@@ -454,9 +484,10 @@ export async function readSdkComponentOperationRows(
   owner: ProductOwner,
   componentId: string,
   viewer: AssistantCredentials,
+  range?: DefinitionVisibilityRange,
 ): Promise<PanelRecord[]> {
   const { locale } = viewer;
-  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer);
+  const { declaration } = await requireSdkComponentEntry(owner, componentId, viewer, range);
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const fieldLabels = {
     signature: word("signature"),
@@ -497,13 +528,19 @@ async function readPackagedProjectionComponent(componentId: string) {
 async function requireScopedDomainComponent(componentId: string, scope?: ComponentScope) {
   if (!scope || scope.domainId === null) return undefined;
   const row = await domainComponentForProjection(scope.domainId, componentId, scope.client);
-  if (row) await requireCurrentDefinitionUse("component", row, scope.domainId, scope.credentials);
+  if (!row) return;
+  const usable = scope.componentUsable?.(row);
+  if (usable === undefined) {
+    await requireCurrentDefinitionUse("component", row, scope.domainId, scope.credentials);
+  } else if (!usable) {
+    throw new HttpError(403, "The component cannot be used", "OBJECT_FORBIDDEN");
+  }
   return row;
 }
 
 /** Resolve declared domain components; strict authoring also requires every declaration to resolve. */
 export async function readPanelDomainComponents(
-  { domainId, credentials, client }: ComponentScope,
+  { domainId, credentials, client, componentUsable }: ComponentScope,
   components: Readonly<Record<string, string>> | undefined,
   options?: { strict?: boolean },
 ): Promise<Record<string, DomainComponentRuntime> | undefined> {
@@ -519,7 +556,10 @@ export async function readPanelDomainComponents(
       throw new HttpError(400, `Panel component '${missing}' is unavailable in this domain`, "PANEL_COMPONENT_UNAVAILABLE");
   }
   if (!rows.length || domainId === null) return undefined;
-  const { decisions } = await currentDefinitionAccess("component", rows, domainId, credentials, false);
+  const decisions = componentUsable ? rows.map(row => componentUsable(row)
+    ? { allowed: true as const }
+    : { allowed: false as const, reason: "The component cannot be used", code: "OBJECT_FORBIDDEN" })
+    : (await currentDefinitionAccess("component", rows, domainId, credentials, false)).decisions;
   const entries = rows.flatMap((row, index) => {
     const decision = decisions[index];
     if (options?.strict) requireAllowed(decision);

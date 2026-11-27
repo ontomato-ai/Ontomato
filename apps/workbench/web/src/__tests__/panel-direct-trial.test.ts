@@ -7,7 +7,7 @@ import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subsc
 import { productPanelSchema, productProjectionResponseSchema } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import recorded from "./fixtures/direct-panel-host-http.json";
-import { sentPanelReadItems, panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
+import { sentPanelReadItems, panelAnswer, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
 
 /*
  * The scheduled tasks trial as it is registered (design 8, first gate): P is a Vue component and its declaration, and its
@@ -58,7 +58,7 @@ function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
     return Response.json({ data: { applicationId: application, entry: { path: "/", renderer: "panels" }, panelUses: [use] } });
   if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
-  if (request.path === `/api/product-panels/${panel.id}/snapshot`) return Response.json({ ...snapshot, pageSkillContext: pageSkillContextFor(panel, request) });
+  if (request.path === `/api/product-panels/${panel.id}/snapshot`) return Response.json(snapshot);
   const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projection) return Response.json(projections[decodeURIComponent(projection[1]!)]);
   if (request.path === "/api/product-panels/read") {

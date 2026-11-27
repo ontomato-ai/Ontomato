@@ -4,7 +4,7 @@ import { qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { requireCurrentDefinitionUse } from "./access";
 import { findObjectDetailPanelId, requireDetailPanel } from "./object-detail";
 import { validateObjectDetailPanelMapping } from "./references";

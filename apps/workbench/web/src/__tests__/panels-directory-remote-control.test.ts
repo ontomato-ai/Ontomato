@@ -1351,13 +1351,13 @@ describe("panels two-entry architecture (catalog + detail)", () => {
       openProjBtn!.click();
       await waitFor(() => navigated.includes("/ontology/projections/detail?selected=proj-1"), "navigated to projection detail");
 
-      // Usage tab: hidden users banner, reference graph & page skills section rendered; row action opens entry path.
+      // Usage tab: hidden users banner, reference graph & page operation section rendered; row action opens entry path.
       await display.present(presentFrame({ tab: "usage" }, display.page.value!.address));
       await waitFor(() => {
         const text = mounted.element.querySelector('[data-tab="usage"]')?.textContent ?? "";
         return (
           text.includes("2 more users you may not read")
-          && text.includes("Page skills")
+          && text.includes("Page operation")
           && text.includes("Demo App")
           && Boolean(mounted.element.querySelector('[data-tab="usage"] .sdk-product-asset-graph'))
         );

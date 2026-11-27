@@ -1,7 +1,7 @@
 import type { Component } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunStatus } from "@ontomato/contracts/agent-runtime-values";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 
 export type ArtifactPresentation = "inline" | "panel";
 

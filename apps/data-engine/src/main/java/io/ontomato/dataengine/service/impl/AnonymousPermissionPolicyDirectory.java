@@ -2,12 +2,18 @@ package io.ontomato.dataengine.service.impl;
 
 import io.ontomato.dataengine.service.PermissionPolicyDirectory;
 import java.util.List;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
 public class AnonymousPermissionPolicyDirectory implements PermissionPolicyDirectory {
     @Override
     public List<Policy> listPolicies(String domainId) {
+        return List.of();
+    }
+
+    @Override
+    public List<PolicyName> policyNamesInDomain(String domainId, Set<String> policyIds) {
         return List.of();
     }
 
@@ -23,6 +29,11 @@ public class AnonymousPermissionPolicyDirectory implements PermissionPolicyDirec
 
     @Override
     public List<PolicyDataPermission> listPolicyDataPermissions(String domainId) {
+        return List.of();
+    }
+
+    @Override
+    public List<PolicyDataNeighbor> policyDataNeighbors(String domainId, String centerId, boolean outgoing) {
         return List.of();
     }
 }

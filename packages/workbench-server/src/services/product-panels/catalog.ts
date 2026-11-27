@@ -6,10 +6,10 @@ import { METRIC_VIEW } from "@ontomato/contracts/platform-object-types";
 import {
   PRODUCT_IN_USE, platformLayerOfObjectType, platformOperationsOwnedByType, productCurrentIdParamsSchema,
   productPanelSchema, productPanelInputSchema, productProjectionInputSchema, projectionBoundObjectTypes,
-  type ProductCatalogQuery, type ProductPanelUsedBy, type ProductProjectionUsedBy, type ProductVisibility,
+  type ProductCatalogQuery, type ProductPanel, type ProductPanelUsedBy, type ProductProjectionUsedBy, type ProductVisibility,
 } from "@ontomato/contracts/product-panels";
 import {
-  currentProductColumns, currentProductRecord, currentProductTables, findCurrentProduct,
+  currentProductColumns, currentProductRecord, currentProductRows, currentProductTables, findCurrentProduct, findCurrentProducts,
   type CurrentProductKind, type CurrentProductRow,
 } from "../../infrastructure/product-current";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
@@ -17,12 +17,12 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { ChangeProductObjectGrant } from "@ontomato/contracts/object-policy-access";
 import {
-  changeProductObjectAccess, readProductObjectAccess, retireObject, setProductDomainUse,
+  changeProductObjectAccess, objectVisibilitySql, readProductObjectAccess, retireObject, setProductDomainUse,
 } from "../product-governance/authorization";
-import { currentDefinition, currentDefinitionAccess, readCurrentProductVisibility } from "./access";
+import { currentDefinition, currentDefinitionAccess, currentProductVisibility, definitionVisibleInRange, readCurrentProductVisibility, type DefinitionVisibilityRange, type ProductUseRanges } from "./access";
 import { insertCurrentProduct, loadCurrentProduct, readPanelManagementAccess, requireCurrentProduct, requireOrdinaryProjection } from "./current";
 import { panelDefinitionProblem } from "./definition-diagnostics";
 import { closeDeletedDefinitionStreams, notifyProductDefinitionChanged } from "./definition-stream";
@@ -64,7 +64,7 @@ interface SummaryRow {
   createdAt: Date;
 }
 
-function cataloguePanel(row: CurrentProductRow, editable: boolean) {
+export function cataloguePanel(row: CurrentProductRow, editable: boolean) {
   const result = productPanelSchema.safeParse(currentProductRecord(row, editable));
   if (result.success) return { panel: result.data };
   return {
@@ -88,8 +88,35 @@ export async function readCataloguePanel(owner: ProductOwner, credentials: Assis
   return cataloguePanel(row, editable);
 }
 
+type PanelManagementRanges = { USE: DefinitionVisibilityRange; EDIT: DefinitionVisibilityRange };
+
+function panelManagementInRanges(row: CurrentProductRow, domainId: string, { USE, EDIT }: PanelManagementRanges) {
+  return {
+    editable: row.domainId !== null && definitionVisibleInRange(row, EDIT, domainId),
+    usable: definitionVisibleInRange(row, USE, domainId),
+  };
+}
+
+export async function requireCataloguePanelInRanges(domainId: string, id: string, ranges: PanelManagementRanges) {
+  const row = await loadCurrentProduct(domainId, "panel", id);
+  const { editable, usable } = panelManagementInRanges(row, domainId, ranges);
+  if (!editable && !usable) throw new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN");
+  return cataloguePanel(row, editable);
+}
+
+export async function readCataloguePanelInRanges(domainId: string, id: string, ranges: PanelManagementRanges) {
+  const row = await findCurrentProduct(domainId, "panel", id);
+  if (!row) return;
+  const { editable, usable } = panelManagementInRanges(row, domainId, ranges);
+  if (!editable && !usable) return;
+  return cataloguePanel(row, editable);
+}
+
 export async function listUnavailablePanels(owner: ProductOwner, credentials: AssistantCredentials) {
-  const { source, values, editPredicate } = await readCurrentProductVisibility("panel", owner.domainId, credentials, true);
+  return readUnavailablePanels(await readCurrentProductVisibility("panel", owner.domainId, credentials, true));
+}
+
+export async function readUnavailablePanels({ source, values, editPredicate }: Awaited<ReturnType<typeof readCurrentProductVisibility>>) {
   const { rows } = await getPostgresPool().query<CurrentProductRow & { editable: boolean }>(
     `SELECT ${currentProductColumns},${editPredicate(values)} AS editable FROM ${source} AS p ORDER BY id`,
     values,
@@ -115,7 +142,10 @@ function inputPortMatchesObjectTypeSql(inputExpr: string, typeParam: string, lay
 }
 
 export async function listProjectionFilterFacets(owner: ProductOwner, credentials: AssistantCredentials) {
-  const { source, values } = await readCurrentProductVisibility("projection", owner.domainId, credentials, false);
+  return readProjectionFilterFacets(await readCurrentProductVisibility("projection", owner.domainId, credentials, false));
+}
+
+export async function readProjectionFilterFacets({ source, values }: Awaited<ReturnType<typeof readCurrentProductVisibility>>) {
   const { rows } = await getPostgresPool().query<{ componentId: string | null; definition: CurrentProductRow["definition"] }>(
     `SELECT definition->>'componentId' AS "componentId", definition FROM ${source} AS p`,
     values,
@@ -151,34 +181,138 @@ export async function listCurrentProductNames(
   return new Map([...records].map(([id, item]) => [id, item.name || id]));
 }
 
-export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
-  kind: CurrentProductKind, input: ProductPanelCatalogQuery & Pick<ProductProjectionCatalogQuery, "componentId" | "objectType">, picker?: { offset: number }) {
+/** Read the referenced catalogue panels and retain USE separately from label visibility. */
+export async function readScopedPanels(
+  domainId: string, ids: readonly string[], ranges: PanelManagementRanges,
+) {
+  const panels = new Map<string, { panel: ProductPanel; usable: boolean }>();
+  if (!ids.length) return panels;
+  const rows = await findCurrentProducts(domainId, "panel", ids);
+  for (const row of rows.values()) {
+    const { editable, usable } = panelManagementInRanges(row, domainId, ranges);
+    if (!editable && !usable) continue;
+    const { panel } = cataloguePanel(row, editable);
+    if (panel) panels.set(row.id, { panel, usable });
+  }
+  return panels;
+}
+
+/** Resolve labels for referenced panels with the management catalogue's USE-or-EDIT visibility. */
+export async function readScopedPanelNames(
+  domainId: string, ids: readonly string[], ranges: Parameters<typeof readScopedPanels>[2],
+): Promise<Map<string, string>> {
+  const panels = await readScopedPanels(domainId, ids, ranges);
+  return new Map([...panels].map(([id, { panel }]) => [id, panel.name || id]));
+}
+
+/** Use the projection catalogue's USE scope and label columns for the requested references. */
+export async function readScopedProjectionNames(
+  domainId: string, ids: readonly string[], range: DefinitionVisibilityRange,
+): Promise<Map<string, string>> {
+  const summaries = await readScopedProjectionSummaries(domainId, ids, range);
+  return new Map([...summaries].map(([id, { name }]) => [id, name]));
+}
+
+export async function readScopedProjectionSummaries(
+  domainId: string, ids: readonly string[], range: DefinitionVisibilityRange,
+): Promise<Map<string, { name: string; description: string | null; componentId: string | null }>> {
+  if (!ids.length) return new Map();
+  const values: unknown[] = [domainId, ids];
+  const use = objectVisibilitySql(range, { id: "p.id", ownerId: "p.owner_id" }, values);
+  const source = currentProductRows("projection", { domainWhere: `p.domain_id=$1 AND (${use})`, includeBuiltins: range.fixed });
+  const { rows } = await getPostgresPool().query<{ id: string; name: string | null; description: string | null; componentId: string | null }>(
+    `SELECT p.id, definition->>'name' AS name, definition->>'description' AS description,
+      definition->>'componentId' AS "componentId" FROM ${source} AS p
+      WHERE p.id = ANY($2::text[]) AND (definition->>'name' IS NOT NULL OR definition->>'description' IS NOT NULL)`, values,
+  );
+  return new Map(rows.map(({ id, name, description, componentId }) => [id, { name: name || id, description, componentId }]));
+}
+
+type CatalogueInput = ProductPanelCatalogQuery & Pick<ProductProjectionCatalogQuery, "componentId" | "objectType">;
+type AuthorSearch = readonly string[] | "pending";
+
+function catalogueFilters(kind: CurrentProductKind, ownerId: string, input: CatalogueInput, values: unknown[], matchingAuthors?: AuthorSearch) {
+  const [scope, user] = [input.scope, ownerId].map(value => `$${values.push(value)}`);
+  const search = matchingAuthors === "pending" ? undefined : `$${values.push(input.q)}`;
+  const template = `$${values.push(kind === "panel" ? input.template ?? null : null)}`;
+  const projectionFilter = kind === "projection" ? projectionFilterSql(input, values) : "";
+  const authors = matchingAuthors !== undefined && matchingAuthors !== "pending"
+    ? ` OR p.owner_id = ANY($${values.push(matchingAuthors)}::text[])` : "";
+  const textMatch = search === undefined ? "" : `AND (strpos(lower(definition->>'name'),lower(${search}))>0 OR strpos(lower(definition->>'description'),lower(${search}))>0${authors})`;
+  return `WHERE (${template}::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb(${template}::boolean))
+       AND (${scope}='all' OR COALESCE(owner_id=${user},false)=(${scope}='mine'))
+       ${textMatch}
+       ${projectionFilter}`;
+}
+
+function catalogueOrder(sort: ProductCatalogQuery["sort"]) {
+  const updated = sort === "updated";
+  const order = updated ? "updated_at" : "lower(definition->>'name')";
+  return {
+    orderBy: updated ? `${order} DESC,p.id DESC` : `${order} ASC NULLS LAST,p.id ASC`,
+    // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
+    cursorKey: updated ? "to_jsonb(updated_at)#>>'{}'" : order,
+    after(cursor: ReturnType<typeof readCursor>, values: unknown[]) {
+      const [key, id] = [cursor?.key ?? null, cursor?.id ?? null].map(value => `$${values.push(value)}`);
+      // A missing stored name sorts after every named row, with ID breaking ties within the null group.
+      const compare = updated
+        ? `(${order},p.id) < (${key}::timestamptz,${id}::text)`
+        : `(${order} IS NULL,COALESCE(${order},''),p.id) > (${key}::text IS NULL,COALESCE(${key}::text,''),${id}::text)`;
+      return `AND (${id}::text IS NULL OR ${compare})`;
+    },
+  };
+}
+
+export async function catalogueAuthorCandidates(owner: ProductOwner, kind: CurrentProductKind, input: CatalogueInput, includeAuthorSearch: boolean) {
   const cursor = readCursor(input);
+  const values: unknown[] = [owner.domainId];
+  const source = currentProductRows(kind, { domainWhere: "p.domain_id=$1", includeBuiltins: false });
+  // A text miss can still match a visible author. Keep that arm open until the identity owner answers.
+  const filter = catalogueFilters(kind, owner.userId, input, values, includeAuthorSearch ? "pending" : undefined);
+  const after = catalogueOrder(input.sort).after(cursor, values);
+  const { rows } = await getPostgresPool().query<{ ownerId: string }>(
+    `SELECT DISTINCT p.owner_id AS "ownerId" FROM ${source} AS p
+       ${filter} ${after} AND p.owner_id IS NOT NULL AND p.owner_id<>''`, values,
+  );
+  return rows.map(row => row.ownerId);
+}
+
+export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
+  kind: CurrentProductKind, input: CatalogueInput, picker?: { offset: number }) {
+  const cursor = readCursor(input);
+  const visibility = await readCurrentProductVisibility(kind, owner.domainId, credentials, !picker);
+  return cataloguePage(owner, kind, input, visibility, cursor, undefined, picker);
+}
+
+export function listCurrentProductsInRanges(
+  owner: ProductOwner, kind: CurrentProductKind, input: CatalogueInput, ranges: ProductUseRanges, matchingAuthors?: readonly string[],
+) {
+  const visibility = currentProductVisibility(kind, owner.domainId, ranges.USE, ranges.EDIT);
+  return cataloguePage(owner, kind, input, visibility, readCursor(input), matchingAuthors);
+}
+
+export function listPanelPickerInRange(
+  owner: ProductOwner, input: ProductPanelCatalogQuery, picker: { offset: number }, use: DefinitionVisibilityRange,
+) {
+  const visibility = currentProductVisibility("panel", owner.domainId, use);
+  return cataloguePage(owner, "panel", input, visibility, readCursor(input), undefined, picker);
+}
+
+async function cataloguePage(
+  owner: ProductOwner, kind: CurrentProductKind, input: CatalogueInput,
+  { source, values: filterValues, editPredicate }: ReturnType<typeof currentProductVisibility>, cursor: ReturnType<typeof readCursor>,
+  matchingAuthors?: readonly string[], picker?: { offset: number },
+) {
   const panelCatalog = kind === "panel";
   const projectionCatalog = kind === "projection";
-  const { source, values: filterValues, editPredicate } = await readCurrentProductVisibility(kind, owner.domainId, credentials, !picker);
-  const updated = input.sort === "updated";
-  const order = updated ? "updated_at" : "lower(definition->>'name')";
-  const orderBy = updated ? `${order} DESC,p.id DESC` : `${order} ASC NULLS LAST,p.id ASC`;
-  // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
-  const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
+  const { orderBy, cursorKey, after } = catalogueOrder(input.sort);
   const kindColumn = projectionCatalog ? `,definition->>'componentId' AS "componentId",definition`
     : `,definition,definition->'template' AS template,domain_id AS "domainId",created_at AS "createdAt"`;
-  const [scope, userId, search, template] = [input.scope, owner.userId, input.q, panelCatalog ? input.template ?? null : null]
-    .map(value => `$${filterValues.push(value)}`);
-  const projectionFilter = projectionCatalog ? projectionFilterSql(input, filterValues) : "";
-  const whereFilter = `WHERE (${template}::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb(${template}::boolean))
-       AND (${scope}='all' OR COALESCE(owner_id=${userId},false)=(${scope}='mine'))
-       AND (strpos(lower(definition->>'name'),lower(${search}))>0 OR strpos(lower(definition->>'description'),lower(${search}))>0)
-       ${projectionFilter}`;
+  const whereFilter = catalogueFilters(kind, owner.userId, input, filterValues, matchingAuthors);
   const pageValues = [...filterValues];
   const editable = editPredicate(pageValues);
-  const [key, id, limit, offset] = [cursor?.key ?? null, cursor?.id ?? null, input.limit + 1, picker?.offset ?? 0]
-    .map(value => `$${pageValues.push(value)}`);
-  // A missing stored name sorts after every named row, with ID breaking ties within the null group.
-  const afterCursor = updated
-    ? `(${order},p.id) < (${key}::timestamptz,${id}::text)`
-    : `(${order} IS NULL,COALESCE(${order},''),p.id) > (${key}::text IS NULL,COALESCE(${key}::text,''),${id}::text)`;
+  const afterCursor = after(cursor, pageValues);
+  const [limit, offset] = [input.limit + 1, picker?.offset ?? 0].map(value => `$${pageValues.push(value)}`);
   const pool = getPostgresPool();
   const [{ rows }, { rows: [count] }] = await Promise.all([
     pool.query<SummaryRow>(
@@ -187,7 +321,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
          ${editable} AS editable${kindColumn}
        FROM ${source} AS p
        ${whereFilter}
-         AND (${id}::text IS NULL OR ${afterCursor})
+       ${afterCursor}
        ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
       pageValues,
     ),
@@ -269,12 +403,14 @@ function projectionFilterSql(input: Pick<ProductProjectionCatalogQuery, "compone
        )`;
 }
 
+export async function currentProjectionUsedBy(owner: ProductOwner, credentials: AssistantCredentials, id: string): Promise<ProductProjectionUsedBy> {
+  await requireCurrentProduct(owner, credentials, "projection", id, "use");
+  return panelsUsingProjection(owner.domainId, id, credentials);
+}
+
 export async function currentProductUsedBy(owner: ProductOwner, credentials: AssistantCredentials,
   kind: CurrentProductKind, id: string): Promise<ProductPanelUsedBy | ProductProjectionUsedBy> {
-  if (kind === "projection") {
-    await requireCurrentProduct(owner, credentials, kind, id, "use");
-    return panelsUsingProjection(owner.domainId, id, credentials);
-  }
+  if (kind === "projection") return currentProjectionUsedBy(owner, credentials, id);
   await loadCataloguePanel(owner, credentials, id);
   return panelUsers(owner.domainId, id, credentials, undefined, id);
 }
@@ -368,7 +504,7 @@ export async function copyCurrentProduct(owner: ProductOwner, credentials: Assis
   return currentProductRecord(row, true);
 }
 
-async function catalogueObject(owner: ProductOwner, kind: CurrentProductKind, id: string) {
+export async function catalogueObject(owner: ProductOwner, kind: CurrentProductKind, id: string) {
   const row = await loadCurrentProduct(owner.domainId, kind, id);
   if (row.domainId === null) throw new HttpError(403, "Platform definitions are read-only", "OBJECT_FORBIDDEN");
   return currentDefinition(kind, row, owner.domainId);

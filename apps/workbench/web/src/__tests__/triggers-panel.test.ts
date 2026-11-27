@@ -17,6 +17,7 @@ import {
   platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
+import { platformTaskStatusSchema } from "@ontomato/contracts/platform-schedules";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
@@ -449,6 +450,57 @@ describe("ontology triggers entry (shared builtin-product-scheduled-tasks panel)
         },
       },
     })));
+  });
+
+  it("loads all triggers by default and restores them when the status filter is cleared", async () => {
+    const rows = [
+      triggerRow("tr-1", "Approval dispatch", {
+        targetKind: "workflow", targetName: "Approval workflow", status: "PUBLISHED",
+        enabled: true, version: 1, revision: 2, executorId: "alice",
+      }),
+      triggerRow("tr-2", "Pending nightly action", {
+        targetKind: "action", targetName: "Sync ledger", status: "PENDING_REVIEW",
+        enabled: false, version: 1, revision: 2, executorId: "carol",
+      }),
+    ];
+    const route = mountTriggersRoute({
+      onRead(body) {
+        if (body.memberPath[0]?.member !== "tasks") return Response.json({ status: "empty" });
+        const status = platformTaskStatusSchema.optional().parse(body.inputs.status ?? undefined);
+        const value = status === undefined ? rows : rows.filter((row) => row.fields.status === status);
+        return Response.json({ status: "ready", value });
+      },
+    });
+
+    const host = await route.open();
+    const waitForCards = (count: number) => vi.waitFor(() => {
+      expect(host.querySelectorAll(".sdk-sts-card")).toHaveLength(count);
+    });
+    async function selectStatus(label: string) {
+      host.querySelector<HTMLElement>(".schedules-status-filter .el-select__wrapper")!.click();
+      const option = await vi.waitFor(() => {
+        const item = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+          .find((item) => item.textContent?.trim() === label);
+        expect(item).toBeDefined();
+        return item!;
+      });
+      option.click();
+    }
+
+    await waitForCards(2);
+    await selectStatus("Published");
+    await waitForCards(1);
+    expect(host.querySelector(".sdk-sts-card")?.textContent).toContain("Approval dispatch");
+    await selectStatus("All statuses");
+    await waitForCards(2);
+    await selectStatus("Unused");
+    const clear = await vi.waitFor(() => {
+      const button = host.querySelector<HTMLButtonElement>(".schedules-empty-actions-bar button");
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    clear.click();
+    await waitForCards(2);
   });
 
   it("opens create and edit dialogs without polluting the URL and mounts member reference pickers", async () => {

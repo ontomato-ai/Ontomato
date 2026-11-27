@@ -27,6 +27,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { builtinApplicationForPath, panelEntryApplication, resetApplicationCatalog, useApplicationCatalog } from "./catalog";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import { resolveApplicationEntry } from "./panel-host";
+import { serveOpenedEntry } from "./panel-entries";
 import { appAt } from "./apps";
 import { pilotPageResolver as resolvePilotPages } from "./pilot-pages";
 import { providePlatformPageCounter } from "./page-counter";
@@ -292,7 +293,10 @@ provide(pageAdmissionKey, async (address: string) => {
   }
   try {
     const resolved = await resolveApplicationEntry({ path: authorizedPath(path) });
-    if (!panelEntryApplication(path)) await catalog.ensureApplication(resolved.applicationId);
+    serveOpenedEntry(router, resolved);
+    if (!path.startsWith("/applications/") && !panelEntryApplication(path) && !builtinApplicationForPath(path)) {
+      await catalog.ensureApplication(resolved.applicationId);
+    }
     return { ok: true, openedEntry: resolved };
   } catch (error) {
     if (error instanceof ApiRequestError && error.status === 403) {

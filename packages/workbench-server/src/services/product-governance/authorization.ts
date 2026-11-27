@@ -5,7 +5,7 @@ import { config } from "../../config/application";
 import { isQueryRuntimeGrant, type AssistantCredentials } from "../../utils/assistant-credentials";
 import { backendPost } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import { productDefinitionOwnerHeaders } from "./grants";
+import { productDefinitionOwnerHeaders } from "./service-authentication";
 
 export type ObjectKind = "AGENT" | "PANEL" | "PROJECTION" | "COMPONENT" | "METRIC" | "READ_FUNCTION" | "WRITE_FUNCTION" | "TRIGGER" | "SKILL";
 export type ObjectVerb = "USE" | "VIEW" | "EDIT";
@@ -16,7 +16,7 @@ export interface ObjectDefinition {
 export type ObjectDecisionRequest = (ObjectDefinition & { verb: ObjectVerb }) | { create: ObjectKind };
 
 type CatalogueObjectKind = Extract<ObjectKind, "PANEL" | "PROJECTION" | "AGENT">;
-const objectVisibilityRangeSchema = z.object({
+export const objectVisibilityRangeSchema = z.object({
   fixed: z.boolean(),
   authorId: z.string().nullable(),
   objectIds: z.array(z.string()),
@@ -24,11 +24,11 @@ const objectVisibilityRangeSchema = z.object({
 });
 export type ObjectVisibilityRange = z.infer<typeof objectVisibilityRangeSchema>;
 
-const decisionSchema = z.discriminatedUnion("allowed", [
+export const objectDecisionSchema = z.discriminatedUnion("allowed", [
   z.object({ allowed: z.literal(true) }),
   z.object({ allowed: z.literal(false), code: z.string(), reason: z.string() }),
 ]);
-export type Decision = z.infer<typeof decisionSchema>;
+export type Decision = z.infer<typeof objectDecisionSchema>;
 
 function requireOrdinaryObjectCredential(credentials: AssistantCredentials) {
   if (isQueryRuntimeGrant(credentials.token || credentials.headers?.tk))
@@ -48,7 +48,7 @@ export async function decideObjects(requests: readonly ObjectDecisionRequest[], 
   const decisions: Decision[] = [];
   for (let offset = 0; offset < requests.length; offset += 200) {
     const batch = requests.slice(offset, offset + 200);
-    const result = z.object({ decisions: z.array(decisionSchema).length(batch.length) })
+    const result = z.object({ decisions: z.array(objectDecisionSchema).length(batch.length) })
       .parse(await post("decide-batch", { requests: batch }, credentials));
     decisions.push(...result.decisions);
   }

@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
 import type {
   PlatformOntologyCountsResponse,
   PlatformOntologyEdge,
@@ -23,21 +25,45 @@ import {
   type PlatformRelationKindDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
-import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
+import { platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { tForLocale } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { AuthorizationGraphFacts } from "../governance/policy-access";
-import type { ProductOwner } from "../product-governance/grants";
-import { panelSkillRef } from "../product-panels/skill-identity";
+import type { ProductOwner } from "../product-governance/service-authentication";
+import type { JavaPanelReadResult } from "../product-panels/java-panel-reads";
+import type { DefinitionVisibilityRange } from "../product-panels/access";
 import { triggerClient } from "../scheduling/trigger-client";
 import {
+  actionDirectorySchema,
+  functionDirectorySchema,
+  knowledgeDirectorySchema,
+  memberIdentityDirectorySchema,
+  metricViewDirectorySchema,
+  orgGrantInstanceDirectorySchema,
+  orgPositionInstanceDirectorySchema,
+  orgUnitInstanceDirectorySchema,
+  workflowDirectorySchema,
+  ontologyApplicationName,
+  parseOntologyMeta,
+  permissionPolicyDirectorySchema,
   PlatformOntologyOwnerReaders,
+  readOntologyOwnerFact,
+  readOntologyVisibilityFact,
+  type OntologyReadFact,
+  type OntologyCount,
   type OwnerReadResult,
+  type RawOntologyMeta,
+  type RawDefinition,
+  type RawGrant,
   type RawGrantScope,
+  type RawWorkflow,
+  type RawMemberIdentity,
+  type RawOrganizationSnapshot,
   type RawProductPanel,
   type RawProductProjection,
+  type RawSdkComponent,
 } from "./owners";
 import {
   ACTION,
@@ -89,7 +115,7 @@ interface RawEdgeCandidate {
   authorization?: PlatformOntologyEdgeAuthorization;
 }
 
-interface RelationEvalResult {
+export interface RelationEvalResult {
   status: PlatformOntologyStatus;
   reason?: string;
   edges: RawEdgeCandidate[];
@@ -103,7 +129,7 @@ function attributeKey(className: string, attrName: string): string {
   return JSON.stringify([className, attrName]);
 }
 
-function parseAttributeKey(primaryKey: string): [string, string] | null {
+export function parseAttributeKey(primaryKey: string): [string, string] | null {
   try {
     const parsed = JSON.parse(primaryKey);
     if (Array.isArray(parsed) && parsed.length === 2 && typeof parsed[0] === "string" && typeof parsed[1] === "string") {
@@ -308,6 +334,52 @@ function extractPanelContainedIds(
   return { projectionIds, panelIds };
 }
 
+type PanelContainmentKind = "panel.contains-projection" | "panel.contains-panel";
+
+export function isPanelContainmentKind(kind: string): kind is PanelContainmentKind {
+  return kind === "panel.contains-projection" || kind === "panel.contains-panel";
+}
+
+export async function evaluatePanelContainment(
+  kind: PanelContainmentKind, node: PlatformOntologyNodeRef, direction: PlatformOntologyNeighborsRequest["direction"],
+  sources: {
+    panels(): Promise<OwnerReadResult<RawProductPanel[]>>;
+    targets(ids: readonly string[]): Promise<OwnerReadResult<ReadonlySet<string>>>;
+    objectDetailPanelMappings(): Promise<OwnerReadResult<ReadonlyMap<string, string>>>;
+  },
+): Promise<RelationEvalResult> {
+  const panels = await sources.panels();
+  if (!panels.ok) return { status: panels.status, reason: panels.reason, edges: [] };
+  const nestedPanel = kind === "panel.contains-panel";
+  const targetClass = nestedPanel ? PRODUCT_PANEL : PRODUCT_PROJECTION;
+  let mappings: ReadonlyMap<string, string> | undefined;
+  if (nestedPanel && panels.data.some(panelUsesObjectDetailRule)) {
+    const result = await sources.objectDetailPanelMappings();
+    if (!result.ok) return { status: result.status, reason: result.reason, edges: [] };
+    mappings = result.data;
+  }
+  const edges: RawEdgeCandidate[] = [];
+  for (const panel of panels.data) {
+    const outgoing = node.className === PRODUCT_PANEL && panel.id === node.primaryKey;
+    if (!outgoing && direction === "outgoing") continue;
+    const { panelIds, projectionIds } = extractPanelContainedIds(panel, mappings);
+    for (const id of nestedPanel ? panelIds : projectionIds) {
+      if (nestedPanel && id === panel.id) continue;
+      const incoming = node.className === targetClass && id === node.primaryKey;
+      if (!(outgoing && direction !== "incoming") && !(incoming && direction !== "outgoing")) continue;
+      edges.push({
+        from: { className: PRODUCT_PANEL, primaryKey: panel.id },
+        to: { className: targetClass, primaryKey: id },
+        fromLabel: panel.name,
+      });
+    }
+  }
+  if (edges.length === 0) return { status: "ok", edges };
+  const targets = await sources.targets([...new Set(edges.map(edge => edge.to.primaryKey))]);
+  if (!targets.ok) return { status: targets.status, reason: targets.reason, edges: [] };
+  return { status: "ok", edges: edges.filter(edge => targets.data.has(edge.to.primaryKey)) };
+}
+
 async function readDomainSharedProductIds(
   readers: PlatformOntologyOwnerReaders,
   kind: "AGENT" | "PANEL" | "APPLICATION",
@@ -325,7 +397,7 @@ async function readDomainSharedProductIds(
     .map(grant => grant.targetKey));
 }
 
-function withDomainSharedDetail(
+export function withDomainSharedDetail(
   baseDetail: string | undefined,
   shared: boolean,
   locale: string | undefined,
@@ -361,52 +433,64 @@ function scopeAuthorization(locale: string | undefined, scope: RawGrantScope | n
   };
 }
 
-/**
- * Reads the object grants a policy stores and returns them as edges from that policy.
- *
- * Entry grants read as `permission-policy.can-enter-application` with the entry on the edge, action
- * grants as `permission-policy.can-execute-action` with their scope, and every other granted object
- * as `permission-policy.can-use-object` with the verb on the edge. A `CREATE` grant carries an empty
- * target id because it allows creating that class rather than naming one record: it never becomes an
- * edge and is reported on the policy node instead.
- */
+type GraphPolicyGrant = AuthorizationGraphFacts["policyGrants"][number];
+
+function policyGrantAuthorization(grant: GraphPolicyGrant, locale: string | undefined): PlatformOntologyEdgeAuthorization {
+  return { verb: grant.verb, verbLabel: verbLabel(locale, grant.verb), ...scopeAuthorization(locale, grant.scope) };
+}
+
+export function evaluatePolicyEntryGrants(
+  center: PlatformOntologyNodeRef, facts: OwnerReadResult<GraphPolicyGrant[]>, locale?: string,
+): RelationEvalResult {
+  if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
+  const edges: RawEdgeCandidate[] = [];
+  for (const grant of facts.data) {
+    if (grant.targetKind !== "ENTRY") continue;
+    const [appId, useId] = grant.targetKey.split("/");
+    if (!appId) continue;
+    if (!(center.className === PERMISSION_POLICY && center.primaryKey === grant.policyId) &&
+        !(center.className === APPLICATION && center.primaryKey === appId)) continue;
+    edges.push({
+      from: { className: PERMISSION_POLICY, primaryKey: grant.policyId },
+      to: { className: APPLICATION, primaryKey: appId },
+      authorization: {
+        ...policyGrantAuthorization(grant, locale),
+        ...(useId && { entry: grant.targetKey, entryLabel: useId }),
+      },
+    });
+  }
+  return { status: "ok", edges };
+}
+
+export function evaluatePolicyActionGrants(
+  center: PlatformOntologyNodeRef, facts: OwnerReadResult<GraphPolicyGrant[]>, locale?: string,
+): RelationEvalResult {
+  if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
+  return { status: "ok", edges: policyGrantEdges({ policyGrants: facts.data }, center, locale).action };
+}
+
+export function evaluatePolicyObjectGrants(
+  center: PlatformOntologyNodeRef, facts: OwnerReadResult<GraphPolicyGrant[]>, locale?: string,
+): RelationEvalResult {
+  if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
+  return { status: "ok", edges: policyGrantEdges({ policyGrants: facts.data }, center, locale).object };
+}
+
+/** A CREATE grant has no target record and is reported on the policy node instead. */
 function policyGrantEdges(
-  facts: AuthorizationGraphFacts,
+  facts: Pick<AuthorizationGraphFacts, "policyGrants">,
   center: PlatformOntologyNodeRef,
   locale: string | undefined,
-): Record<"application" | "action" | "object", RawEdgeCandidate[]> {
-  const result: Record<"application" | "action" | "object", RawEdgeCandidate[]> = {
-    application: [], action: [], object: [],
+): Record<"action" | "object", RawEdgeCandidate[]> {
+  const result: Record<"action" | "object", RawEdgeCandidate[]> = {
+    action: [], object: [],
   };
   const from = (policyId: string): PlatformOntologyNodeRef => ({ className: PERMISSION_POLICY, primaryKey: policyId });
   const touches = (ref: PlatformOntologyNodeRef): boolean =>
     ref.className === center.className && ref.primaryKey === center.primaryKey;
   for (const grant of facts.policyGrants) {
-    if (!grant.targetKey) continue;
-    const authorization: PlatformOntologyEdgeAuthorization = {
-      verb: grant.verb,
-      verbLabel: verbLabel(locale, grant.verb),
-      ...scopeAuthorization(locale, grant.scope),
-    };
-    if (grant.targetKind === "ENTRY") {
-      const [appId, useId] = grant.targetKey.split("/");
-      if (!appId) continue;
-      const policy = from(grant.policyId);
-      const target = { className: APPLICATION, primaryKey: appId };
-      if (!touches(policy) && !touches(target)) continue;
-      result.application.push({
-        from: policy,
-        to: target,
-        ...(useId ? {
-          authorization: {
-            ...authorization,
-            entry: grant.targetKey,
-            entryLabel: useId,
-          },
-        } : { authorization }),
-      });
-      continue;
-    }
+    if (!grant.targetKey || grant.targetKind === "ENTRY") continue;
+    const authorization = policyGrantAuthorization(grant, locale);
     if (grant.targetKind === "ACTION") {
       const policy = from(grant.policyId);
       const target = { className: ACTION, primaryKey: grant.targetKey };
@@ -424,19 +508,30 @@ function policyGrantEdges(
   return result;
 }
 
+export const policyCreateKindsSchema = z.array(z.object({ policyId: z.string().min(1), targetKind: z.string().min(1) }));
+
 /**
  * The class names one policy may create records of. The grant carries no target id because it allows
  * creating that class, so it is reported on the policy node rather than drawn as an edge.
  */
-function policyCreatableTypes(facts: AuthorizationGraphFacts, policyId: string, locale: string | undefined): string[] {
+function policyCreatableTypes(
+  grants: z.infer<typeof policyCreateKindsSchema>, policyId: string, locale: string | undefined,
+): string[] {
   const types = new Set<string>();
-  for (const grant of facts.policyGrants) {
-    if (grant.policyId !== policyId || grant.verb !== "CREATE") continue;
+  for (const grant of grants) {
+    if (grant.policyId !== policyId) continue;
     const className = POLICY_OBJECT_KINDS[grant.targetKind];
     if (!className) continue;
     types.add(tForLocale(locale, platformObjectTypes[className]!.labelKey!));
   }
   return [...types];
+}
+
+export function policyCreationDetail(
+  grants: z.infer<typeof policyCreateKindsSchema>, policyId: string, locale: string | undefined,
+): string | undefined {
+  const creatable = policyCreatableTypes(grants, policyId, locale);
+  if (creatable.length) return `${tForLocale(locale, "panels.platformOntology.policyCreates")}: ${creatable.join("、")}`;
 }
 
 type InstanceMetadata = Partial<Record<"description" | "status" | "version" | "enabled", string | number | boolean>>;
@@ -445,8 +540,14 @@ type SearchableOntologyObjectItem = PlatformOntologyObjectItem & {
   readonly metadata?: InstanceMetadata;
 };
 
-type OwnerObjectsResult = OwnerReadResult<SearchableOntologyObjectItem[]>
+export type OwnerObjectsResult = OwnerReadResult<SearchableOntologyObjectItem[]>
   | { ok: false; status: "unavailable"; reason: string };
+
+export function sdkComponentObjects(res: OwnerReadResult<RawSdkComponent[]>): OwnerObjectsResult {
+  return res.ok ? { ok: true, data: res.data.map(component => ({
+    node: { className: SDK_COMPONENT, primaryKey: component.id }, label: component.componentId, detail: component.module,
+  })) } : res;
+}
 
 const ownerReadErrors = {
   refused: [403, "FORBIDDEN"],
@@ -460,12 +561,41 @@ export function platformOntologyOwnerReadError(status: Exclude<PlatformOntologyS
 }
 
 /** How many names the user node's provenance summary keeps before it stops listing and shows the rest as `+N`. */
-const PROVENANCE_NAME_LIMIT = 3;
+export const PROVENANCE_NAME_LIMIT = 3;
 
-function nameSummary(names: readonly string[]): string {
-  const head = names.slice(0, PROVENANCE_NAME_LIMIT).join("、");
-  return names.length > PROVENANCE_NAME_LIMIT ? `${head} +${names.length - PROVENANCE_NAME_LIMIT}` : head;
+interface ProvenanceNames {
+  names: readonly string[];
+  total: number;
 }
+
+function nameSummary({ names, total }: ProvenanceNames): string {
+  const head = names.slice(0, PROVENANCE_NAME_LIMIT).join("、");
+  return total > PROVENANCE_NAME_LIMIT ? `${head} +${total - PROVENANCE_NAME_LIMIT}` : head;
+}
+
+export function summarizeUserProvenance(created: ProvenanceNames, reviewed: ProvenanceNames, locale?: string): string[] {
+  return [
+    ...(created.total > 0 ? [`${tForLocale(locale, "panels.platformOntology.userCreated")}: ${nameSummary(created)}`] : []),
+    ...(reviewed.total > 0 ? [`${tForLocale(locale, "panels.platformOntology.userPublished")}: ${nameSummary(reviewed)}`] : []),
+  ];
+}
+
+export function userOntologyObject(member: RawMemberIdentity, provenance: readonly string[]): SearchableOntologyObjectItem {
+  const detail = [member.loginCode, ...provenance].filter(Boolean).join(" · ");
+  return {
+    node: { className: USER, primaryKey: member.id },
+    label: member.displayName || member.loginCode || member.id,
+    ...(detail && { detail }),
+  };
+}
+
+const workflowProvenanceSchema = z.array(z.object({
+  name: z.string().trim(),
+  createdBy: z.string().trim().nullish(),
+  reviewedBy: z.string().trim().nullish(),
+}));
+
+type UserProvenance = z.infer<typeof workflowProvenanceSchema>[number];
 
 /**
  * The actions, workflows and metric views a user created or reviewed, summarised onto the user node.
@@ -473,23 +603,13 @@ function nameSummary(names: readonly string[]): string {
  * Being the creator or the reviewer of a definition is provenance rather than authority, so it is not
  * drawn as an edge; the names stay readable on the user node instead.
  */
-async function readUserProvenance(
-  readers: PlatformOntologyOwnerReaders,
-  locale: string | undefined,
+async function collectUserProvenance(
+  readers: PlatformOntologyOwnerReaders, members: readonly RawMemberIdentity[], rows: readonly UserProvenance[],
 ): Promise<ReadonlyMap<string, string[]>> {
-  const [actionsRes, workflowsRes, metricsRes] = await Promise.all([
-    readers.actions(),
-    readers.workflows(),
-    readers.metricViews(),
-  ]);
-  const rows = [
-    ...(actionsRes.ok ? actionsRes.data : []),
-    ...(workflowsRes.ok ? workflowsRes.data : []),
-    ...(metricsRes.ok ? metricsRes.data : []),
-  ];
+  const locale = readers.credentials.locale;
   const rawIds = new Set(rows.flatMap((row) => [row.createdBy, row.reviewedBy]).filter((id): id is string => Boolean(id)));
   const userIds = new Map<string, string>();
-  for (const rawId of rawIds) userIds.set(rawId, await readers.normalizeSubjectId(rawId));
+  for (const rawId of rawIds) userIds.set(rawId, await readers.normalizeSubjectId(rawId, members));
   const created = new Map<string, string[]>();
   const reviewed = new Map<string, string[]>();
   const add = (bucket: Map<string, string[]>, rawId: string | null | undefined, name: string) => {
@@ -507,345 +627,405 @@ async function readUserProvenance(
   for (const userId of new Set([...created.keys(), ...reviewed.keys()])) {
     const createdNames = created.get(userId) ?? [];
     const reviewedNames = reviewed.get(userId) ?? [];
-    summaries.set(userId, [
-      ...(createdNames.length > 0
-        ? [`${tForLocale(locale, "panels.platformOntology.userCreated")}: ${nameSummary(createdNames)}`] : []),
-      ...(reviewedNames.length > 0
-        ? [`${tForLocale(locale, "panels.platformOntology.userPublished")}: ${nameSummary(reviewedNames)}`] : []),
-    ]);
+    summaries.set(userId, summarizeUserProvenance(
+      { names: createdNames, total: createdNames.length },
+      { names: reviewedNames, total: reviewedNames.length }, locale,
+    ));
   }
   return summaries;
 }
 
-/** Lists objects of a declared type for the object picker and label lookup. */
-async function readObjectsOfType(
-  readers: PlatformOntologyOwnerReaders,
-  typeId: string,
-  includeDomainShared = true,
-): Promise<OwnerObjectsResult> {
-  const locale = readers.credentials.locale;
+interface InstanceDirectoryPlan {
+  facts: readonly OntologyReadFact[];
+  read(facts?: readonly JavaPanelReadResult[]): Promise<OwnerObjectsResult>;
+}
 
-  switch (typeId) {
-    case OBJECT_TYPE: {
-      const res = await readers.ontologyMeta();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.classes.map((cls) => ({
-          node: { className: OBJECT_TYPE, primaryKey: cls.className },
-          label: cls.showName || cls.classDesc || cls.className,
-          detail: cls.className,
-          ...(cls.classDesc ? { searchText: cls.classDesc, metadata: { description: cls.classDesc } } : {}),
-        })),
-      };
-    }
-    case ATTRIBUTE: {
-      const res = await readers.ontologyMeta();
-      if (!res.ok) return res;
-      const items: PlatformOntologyObjectItem[] = [];
-      for (const cls of res.data.classes) {
-        for (const attr of cls.attrs) {
-          items.push({
-            node: { className: ATTRIBUTE, primaryKey: attributeKey(cls.className, attr.name) },
-            label: attr.showName || attr.name,
-            detail: cls.className,
-          });
+function planJavaInstanceDirectory<T>(
+  type: string, name: string, schema: z.ZodType<T[], z.ZodTypeDef, unknown>,
+  readLegacy: () => Promise<OwnerReadResult<T[]>>,
+  present: (row: T) => SearchableOntologyObjectItem,
+): InstanceDirectoryPlan {
+  return {
+    facts: [{ call: { type, name, parameters: {} } }],
+    async read(results) {
+      const rows = results ? readOntologyOwnerFact(results[0], schema, name) : await readLegacy();
+      return rows.ok ? { ok: true, data: rows.data.map(present) } : rows;
+    },
+  };
+}
+
+export function workflowOntologyObject(wf: RawWorkflow): SearchableOntologyObjectItem {
+  return {
+    node: { className: WORKFLOW, primaryKey: wf.id },
+    label: wf.name,
+    detail: wf.version !== undefined ? `v${wf.version}` : wf.status,
+    metadata: {
+      ...(wf.status !== undefined && { status: wf.status }),
+      ...(wf.version !== undefined && { version: wf.version }),
+    },
+  };
+}
+
+export function organizationGrantObject(grant: z.output<typeof orgGrantInstanceDirectorySchema>[number], locale?: string) {
+  return {
+    node: { className: ORG_GRANT, primaryKey: grant.id },
+    label: `${tForLocale(locale, `platformOntology.orgGrantScope.${grant.grantType}`)} · ${grant.sourceName ?? grant.sourceId}`,
+  };
+}
+
+async function readOrganizationInstanceRows<T>(
+  readers: PlatformOntologyOwnerReaders, select: (snapshot: RawOrganizationSnapshot) => T[],
+): Promise<OwnerReadResult<T[]>> {
+  const rows = await readers.organizationSnapshot();
+  return rows.ok ? { ok: true, data: select(rows.data) } : rows;
+}
+
+function planVisibleInstanceDirectory<T extends { id: string }>(
+  readers: PlatformOntologyOwnerReaders, kind: "PANEL" | "PROJECTION" | "AGENT", verb: "USE" | "VIEW",
+  includeDomainShared: boolean, readRows: (range?: DefinitionVisibilityRange) => Promise<OwnerReadResult<T[]>>,
+  present: (row: T, shared: boolean) => SearchableOntologyObjectItem,
+): InstanceDirectoryPlan {
+  const markShared = includeDomainShared && kind !== "PROJECTION";
+  const facts: OntologyReadFact[] = [{ visibleKinds: [{ kind, verbs: [verb] }] }];
+  if (markShared)
+    facts.push({ call: { type: ONTOLOGY_TYPE, name: "domainSharedUse", parameters: { kind } } });
+  return {
+    facts,
+    async read(results) {
+      const scope = results && readOntologyVisibilityFact(results[0], kind, verb);
+      if (scope && !scope.ok) return scope;
+      const rows = await readRows(scope?.data);
+      if (!rows.ok) return rows;
+      let shared: ReadonlySet<string> = new Set();
+      if (markShared && rows.data.length > 0) {
+        if (results) {
+          const marks = readOntologyOwnerFact(results[1], z.array(z.string().min(1)), "domainSharedUse");
+          if (!marks.ok) return marks;
+          shared = new Set(marks.data);
+        } else {
+          shared = await readDomainSharedProductIds(readers, kind);
         }
       }
-      return { ok: true, data: items };
-    }
-    case RELATIONSHIP: {
-      const res = await readers.ontologyMeta();
-      if (!res.ok) return res;
+      return { ok: true, data: rows.data.map(row => present(row, shared.has(row.id))) };
+    },
+  };
+}
+
+export type ModelInstanceType = typeof OBJECT_TYPE | typeof ATTRIBUTE | typeof RELATIONSHIP;
+
+export function isModelInstanceType(type: string): type is ModelInstanceType {
+  return type === OBJECT_TYPE || type === ATTRIBUTE || type === RELATIONSHIP;
+}
+
+export function modelInstanceObjects(type: ModelInstanceType, metadata: RawOntologyMeta): SearchableOntologyObjectItem[] {
+  switch (type) {
+    case OBJECT_TYPE:
+      return metadata.classes.map(cls => ({
+        node: { className: OBJECT_TYPE, primaryKey: cls.className },
+        label: cls.showName || cls.classDesc || cls.className,
+        detail: cls.className,
+        ...(cls.classDesc ? { searchText: cls.classDesc, metadata: { description: cls.classDesc } } : {}),
+      }));
+    case ATTRIBUTE:
+      return metadata.classes.flatMap(cls => cls.attrs.map(attr => ({
+        node: { className: ATTRIBUTE, primaryKey: attributeKey(cls.className, attr.name) },
+        label: attr.showName || attr.name,
+        detail: cls.className,
+      })));
+    case RELATIONSHIP:
+      return metadata.relationships.map(rel => ({
+        node: { className: RELATIONSHIP, primaryKey: rel.relationship },
+        label: rel.showName || rel.desc || rel.relationship,
+        detail: rel.fromclass && rel.toclass ? rel.fromclass + " → " + rel.toclass : undefined,
+        ...(rel.desc ? { searchText: rel.desc, metadata: { description: rel.desc } } : {}),
+      }));
+  }
+}
+
+function planModelInstanceDirectory(
+  readers: PlatformOntologyOwnerReaders, type: ModelInstanceType,
+): InstanceDirectoryPlan {
+  const name = "modelInstanceDirectory";
+  const schema: z.ZodType<Record<string, unknown>> = type === RELATIONSHIP
+    ? z.object({ relationDef: z.union([z.array(z.unknown()), z.record(z.unknown())]) })
+    : z.object({ classDef: z.array(z.unknown()) });
+  return {
+    facts: [{ call: { type: ONTOLOGY_TYPE, name, parameters: { type } } }],
+    async read(results) {
+      let metadata: RawOntologyMeta;
+      if (results) {
+        const raw = readOntologyOwnerFact(results[0], schema, name);
+        if (!raw.ok) return raw;
+        metadata = parseOntologyMeta(raw.data);
+      } else {
+        const data = await readers.ontologyMeta();
+        if (!data.ok) return data;
+        metadata = data.data;
+      }
+      return { ok: true, data: modelInstanceObjects(type, metadata) };
+    },
+  };
+}
+
+export function ontologyAgentDefinitionObject(
+  agent: { id: string; name: string; enabled: boolean }, shared: boolean, locale: string | undefined,
+): SearchableOntologyObjectItem {
+  return {
+    node: { className: AGENT_DEFINITION, primaryKey: agent.id },
+    label: agent.name,
+    metadata: { enabled: agent.enabled },
+    detail: withDomainSharedDetail(agent.enabled ? "enabled" : "disabled", shared, locale),
+  };
+}
+
+/** Select the owner's directory facts and map them in the same type definition. */
+export function planPlatformOntologyInstanceDirectory(
+  readers: PlatformOntologyOwnerReaders, type: string, includeDomainShared: boolean,
+): InstanceDirectoryPlan | undefined {
+  const locale = readers.credentials.locale;
+  switch (type) {
+    case OBJECT_TYPE:
+    case ATTRIBUTE:
+    case RELATIONSHIP:
+      return planModelInstanceDirectory(readers, type);
+    case APPLICATION: {
+      const navigation = { type: APPLICATION, name: "navigation", parameters: {} } as const;
+      const sharedEntries = { type: APPLICATION, name: "ontologyDomainShared", parameters: {} } as const;
       return {
-        ok: true,
-        data: res.data.relationships.map((rel) => ({
-          node: { className: RELATIONSHIP, primaryKey: rel.relationship },
-          label: rel.showName || rel.desc || rel.relationship,
-          detail: rel.fromclass && rel.toclass ? `${rel.fromclass} → ${rel.toclass}` : undefined,
-          ...(rel.desc ? { searchText: rel.desc, metadata: { description: rel.desc } } : {}),
-        })),
-      };
-    }
-    case METRIC_VIEW: {
-      const res = await readers.metricViews();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((m) => ({
-          node: { className: METRIC_VIEW, primaryKey: m.id },
-          label: m.name,
-          detail: m.status,
-          ...(m.status !== undefined && { metadata: { status: m.status } }),
-        })),
-      };
-    }
-    case FUNCTION: {
-      const res = await readers.functions();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((fn) => ({
-          node: { className: FUNCTION, primaryKey: fn.id },
-          label: fn.name,
-          detail: fn.operation,
-        })),
-      };
-    }
-    case ACTION: {
-      const res = await readers.actions();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((action) => ({
-          node: { className: ACTION, primaryKey: action.id },
-          label: action.name,
-          detail: action.status,
-          ...(action.status !== undefined && { metadata: { status: action.status } }),
-        })),
-      };
-    }
-    case WORKFLOW: {
-      const res = await readers.workflows();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((wf) => ({
-          node: { className: WORKFLOW, primaryKey: wf.id },
-          label: wf.name,
-          detail: wf.version !== undefined ? `v${wf.version}` : wf.status,
-          metadata: {
-            ...(wf.status !== undefined && { status: wf.status }),
-            ...(wf.version !== undefined && { version: wf.version }),
-          },
-        })),
-      };
-    }
-    case TRIGGER: {
-      const res = await readers.triggers();
-      return res.ok ? { ok: true, data: res.data.map(triggerObject) } : res;
-    }
-    case SKILL: {
-      const res = await readers.skills();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((skill) => ({
-          node: { className: SKILL, primaryKey: skill.primaryKey },
-          label: skill.title,
-          ...(skill.description ? { searchText: skill.description, metadata: { description: skill.description } } : {}),
-        })),
-      };
-    }
-    case BUSINESS_KNOWLEDGE: {
-      const res = await readers.knowledge();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((k) => ({
-          node: { className: BUSINESS_KNOWLEDGE, primaryKey: k.id },
-          label: k.title,
-          ...(k.status !== undefined && { metadata: { status: k.status } }),
-        })),
-      };
-    }
-    case DEFINITION: {
-      const res = await readers.definitions();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((def) => ({
-          node: { className: DEFINITION, primaryKey: def.id },
-          label: def.name,
-          detail: def.objectType,
-        })),
-      };
-    }
-    case USER: {
-      const res = await readers.subjects();
-      if (!res.ok) return res;
-      const provenance = await readUserProvenance(readers, locale);
-      return {
-        ok: true,
-        data: res.data.map((subj) => {
-          const parts = [subj.loginCode, ...provenance.get(subj.id) ?? []].filter((part): part is string => Boolean(part));
+        facts: includeDomainShared ? [{ call: navigation }, { call: sharedEntries }] : [{ call: navigation }],
+        async read(facts) {
+          const navigationFact = facts && readOntologyOwnerFact(facts[0], applicationCatalogSchema, navigation.name);
+          const directory = navigationFact
+            ? navigationFact.ok
+              ? { ok: true as const, data: navigationFact.data.map(app => ontologyApplicationName(app, locale)) }
+              : navigationFact
+            : await readers.applications();
+          if (!directory.ok) return directory;
+          let shared: ReadonlySet<string> = new Set();
+          if (includeDomainShared && directory.data.length > 0) {
+            if (facts) {
+              const marks = readOntologyOwnerFact(facts[1], z.array(z.string().min(1)), sharedEntries.name);
+              if (!marks.ok) return marks;
+              shared = new Set(marks.data);
+            } else {
+              shared = await readDomainSharedProductIds(readers, "APPLICATION");
+            }
+          }
           return {
-            node: { className: USER, primaryKey: subj.id },
-            label: subj.displayName || subj.loginCode || subj.id,
-            ...(parts.length > 0 && { detail: parts.join(" · ") }),
+            ok: true,
+            data: directory.data.map(app => ({
+              node: { className: APPLICATION, primaryKey: app.id },
+              label: app.name,
+              detail: withDomainSharedDetail(app.kind, shared.has(app.id), locale),
+            })),
           };
-        }),
+        },
       };
     }
-    case ROLE: {
-      const res = await readers.roles();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.roles.map((role) => ({
-          node: { className: ROLE, primaryKey: role.id },
-          label: role.code ?? role.id,
-        })),
-      };
-    }
-    case ORG_UNIT: {
-      const res = await readers.organizationSnapshot();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.units.map((unit) => ({
-          node: { className: ORG_UNIT, primaryKey: unit.id },
-          label: unit.name,
-          ...(unit.code ? { detail: unit.code } : {}),
-        })),
-      };
-    }
-    case ORG_POSITION: {
-      const res = await readers.organizationSnapshot();
-      if (!res.ok) return res;
-      const orgNameById = new Map(res.data.units.map((unit) => [unit.id, unit.name]));
-      return {
-        ok: true,
-        data: res.data.positions.map((position) => {
-          const detail = orgNameById.get(position.orgId);
-          return {
-            node: { className: ORG_POSITION, primaryKey: position.id },
-            label: position.name,
-            ...(detail ? { detail } : {}),
-          };
-        }),
-      };
-    }
-    case PERMISSION_POLICY: {
-      const res = await readers.permissionPolicies();
-      if (!res.ok) return res;
-      const facts = await readers.authorizationGraphFacts();
-      return {
-        ok: true,
-        data: res.data.map((policy) => {
-          const creatable = facts.ok ? policyCreatableTypes(facts.data, policy.id, locale) : [];
-          return {
-            node: { className: PERMISSION_POLICY, primaryKey: policy.id },
-            label: policy.name,
-            ...(creatable.length > 0 && {
-              detail: `${tForLocale(locale, "panels.platformOntology.policyCreates")}: ${creatable.join("、")}`,
-            }),
-          };
-        }),
-      };
-    }
-    case ORG_GRANT: {
-      const res = await readers.organizationSnapshot();
-      if (!res.ok) return res;
-      const unitNameById = new Map(res.data.units.map((unit) => [unit.id, unit.name]));
-      const positionNameById = new Map(res.data.positions.map((position) => [position.id, position.name]));
-      return {
-        ok: true,
-        data: res.data.grants.map((grant) => {
-          const scopeLabel = tForLocale(readers.credentials.locale, `platformOntology.orgGrantScope.${grant.grantType}`);
-          const targetName =
-            grant.grantType === "position"
-              ? positionNameById.get(grant.sourceId)
-              : unitNameById.get(grant.sourceId);
-          return {
-            node: { className: ORG_GRANT, primaryKey: grant.id },
-            label: `${scopeLabel} · ${targetName ?? grant.sourceId}`,
-          };
-        }),
-      };
-    }
-    case AGENT_DEFINITION: {
-      const res = await readers.agentDefinitions();
-      if (!res.ok) return res;
-      const sharedIds = includeDomainShared && res.data.length > 0
-        ? await readDomainSharedProductIds(readers, "AGENT")
-        : new Set<string>();
-      return {
-        ok: true,
-        data: res.data.map((agent) => ({
-          node: { className: AGENT_DEFINITION, primaryKey: agent.id },
-          label: agent.name,
-          metadata: { enabled: agent.enabled },
-          detail: withDomainSharedDetail(
-            agent.enabled ? "enabled" : "disabled",
-            sharedIds.has(agent.id),
-            readers.credentials.locale,
-          ),
-        })),
-      };
-    }
-    case SDK_COMPONENT: {
-      const res = await readers.sdkComponents();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((component) => ({
-          node: { className: SDK_COMPONENT, primaryKey: component.id },
-          label: component.componentId,
-          detail: component.module,
-        })),
-      };
-    }
-    case PRODUCT_PROJECTION: {
-      const res = await readers.productProjections();
-      if (!res.ok) return res;
-      return {
-        ok: true,
-        data: res.data.map((projection) => ({
+    case AGENT_DEFINITION:
+      return planVisibleInstanceDirectory(readers, "AGENT", "VIEW", includeDomainShared,
+        range => readers.agentDefinitions(range),
+        (agent, shared) => ontologyAgentDefinitionObject(agent, shared, locale));
+    case PRODUCT_PROJECTION:
+      return planVisibleInstanceDirectory(readers, "PROJECTION", "USE", false,
+        range => readers.productProjections(range),
+        projection => ({
           node: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
           label: projection.name,
           detail: projection.componentId,
           ...(projection.description ? {
             searchText: projection.description, metadata: { description: projection.description },
           } : {}),
-        })),
-      };
-    }
-    case PRODUCT_PANEL: {
-      const res = await readers.productPanels();
-      if (!res.ok) return res;
-      const sharedIds = includeDomainShared && res.data.length > 0
-        ? await readDomainSharedProductIds(readers, "PANEL")
-        : new Set<string>();
-      return {
-        ok: true,
-        data: res.data.map((panel) => {
-          const detail = withDomainSharedDetail(
-            panel.description || undefined,
-            sharedIds.has(panel.id),
-            readers.credentials.locale,
-          );
+        }));
+    case PRODUCT_PANEL:
+      return planVisibleInstanceDirectory(readers, "PANEL", "USE", includeDomainShared,
+        range => readers.productPanels(range && { range }),
+        (panel, shared) => {
+          const detail = withDomainSharedDetail(panel.description || undefined, shared, locale);
           return {
             node: { className: PRODUCT_PANEL, primaryKey: panel.id },
             label: panel.name,
             ...(detail ? { detail } : {}),
             ...(panel.description && { metadata: { description: panel.description } }),
           };
-        }),
-      };
-    }
-    case APPLICATION: {
-      const res = await readers.applications();
-      if (!res.ok) return res;
-      const sharedIds = includeDomainShared && res.data.length > 0
-        ? await readDomainSharedProductIds(readers, "APPLICATION")
-        : new Set<string>();
+        });
+    case METRIC_VIEW:
+      return planJavaInstanceDirectory(type, "list", metricViewDirectorySchema,
+        () => readers.metricViews(), (m) => ({
+          node: { className: METRIC_VIEW, primaryKey: m.id },
+          label: m.name,
+          detail: m.status,
+          ...(m.status !== undefined && { metadata: { status: m.status } }),
+        }));
+    case FUNCTION:
+      return planJavaInstanceDirectory(type, "list", functionDirectorySchema,
+        () => readers.functions(), (fn) => ({
+          node: { className: FUNCTION, primaryKey: fn.id },
+          label: fn.name,
+          detail: fn.operation,
+        }));
+    case ACTION:
+      return planJavaInstanceDirectory(type, "list", actionDirectorySchema,
+        () => readers.actions(), (action) => ({
+          node: { className: ACTION, primaryKey: action.id },
+          label: action.name,
+          detail: action.status,
+          ...(action.status !== undefined && { metadata: { status: action.status } }),
+        }));
+    case WORKFLOW:
+      return planJavaInstanceDirectory(type, "instanceDirectory", workflowDirectorySchema,
+        () => readers.workflows(), workflowOntologyObject);
+    case TRIGGER:
+      return planJavaInstanceDirectory(type, "list", platformTaskListSchema.transform(({ tasks }) => tasks),
+        () => readers.triggers(), triggerObject);
+    case BUSINESS_KNOWLEDGE:
+      return planJavaInstanceDirectory(type, "query", knowledgeDirectorySchema,
+        () => readers.knowledge(), (k) => ({
+          node: { className: BUSINESS_KNOWLEDGE, primaryKey: k.id },
+          label: k.title,
+          ...(k.status !== undefined && { metadata: { status: k.status } }),
+        }));
+    case ROLE: {
+      const directory = readers.planRoleDirectory();
       return {
-        ok: true,
-        data: res.data.map((app) => ({
-          node: { className: APPLICATION, primaryKey: app.id },
-          label: app.name,
-          detail: withDomainSharedDetail(
-            app.kind,
-            sharedIds.has(app.id),
-            readers.credentials.locale,
-          ),
-        })),
+        facts: directory.facts,
+        async read(results) {
+          const res = await directory.read(results);
+          if (!res.ok) return res;
+          return {
+            ok: true,
+            data: res.data.roles.map((role) => ({
+              node: { className: ROLE, primaryKey: role.id },
+              label: role.code ?? role.id,
+            })),
+          };
+        },
       };
     }
-    default:
-      return { ok: false, status: "unavailable", reason: `No owner adapter registered for ${typeId}` };
+    case PERMISSION_POLICY: {
+      const directory = { type, name: "instanceDirectory", parameters: {} };
+      const createKinds = { type, name: "instanceCreateKinds", parameters: { targetKinds: Object.keys(POLICY_OBJECT_KINDS) } };
+      return {
+        facts: [{ call: directory }, { call: createKinds }],
+        async read(results) {
+          const policies = results
+            ? readOntologyOwnerFact(results[0], permissionPolicyDirectorySchema, directory.name)
+            : await readers.permissionPolicies();
+          if (!policies.ok) return policies;
+          const grants = results
+            ? readOntologyOwnerFact(results[1], policyCreateKindsSchema, createKinds.name)
+            : await readers.policyCreateKinds();
+          return {
+            ok: true,
+            data: policies.data.map((policy) => {
+              const detail = grants.ok ? policyCreationDetail(grants.data, policy.id, locale) : undefined;
+              return {
+                node: { className: PERMISSION_POLICY, primaryKey: policy.id },
+                label: policy.name,
+                ...(detail && { detail }),
+              };
+            }),
+          };
+        },
+      };
+    }
+    case ORG_UNIT:
+      return planJavaInstanceDirectory(type, "instanceDirectory", orgUnitInstanceDirectorySchema,
+        () => readOrganizationInstanceRows(readers, ({ units }) => units), unit => ({
+          node: { className: ORG_UNIT, primaryKey: unit.id },
+          label: unit.name,
+          ...(unit.code ? { detail: unit.code } : {}),
+        }));
+    case ORG_POSITION:
+      return planJavaInstanceDirectory(type, "instanceDirectory", orgPositionInstanceDirectorySchema,
+        () => readOrganizationInstanceRows(readers, ({ units, positions }) => {
+          const names = new Map(units.map(unit => [unit.id, unit.name]));
+          return positions.map(({ id, name, orgId }) => ({ id, name, orgName: names.get(orgId) }));
+        }), position => ({
+          node: { className: ORG_POSITION, primaryKey: position.id },
+          label: position.name,
+          ...(position.orgName ? { detail: position.orgName } : {}),
+        }));
+    case ORG_GRANT:
+      return planJavaInstanceDirectory(type, "instanceDirectory", orgGrantInstanceDirectorySchema,
+        () => readOrganizationInstanceRows(readers, ({ units, positions, grants }) => {
+          const unitNames = new Map(units.map(unit => [unit.id, unit.name]));
+          const positionNames = new Map(positions.map(position => [position.id, position.name]));
+          return grants.map(({ id, grantType, sourceId }) => ({
+            id, grantType, sourceId, sourceName: (grantType === "position" ? positionNames : unitNames).get(sourceId),
+          }));
+        }), grant => organizationGrantObject(grant, locale));
+    case USER: {
+      const directory = { type, name: "instanceDirectory", parameters: {} };
+      const actions = { type: ACTION, name: "list", parameters: {} };
+      const workflows = { type: WORKFLOW, name: "instanceProvenance", parameters: {} };
+      const metrics = { type: METRIC_VIEW, name: "list", parameters: {} };
+      return {
+        facts: [{ call: directory }, { call: actions }, { call: workflows }, { call: metrics }],
+        async read(results) {
+          const members = results
+            ? readOntologyOwnerFact(results[0], memberIdentityDirectorySchema, directory.name)
+            : await readers.subjects();
+          if (!members.ok) return members;
+          const sources: readonly OwnerReadResult<UserProvenance[]>[] = results
+            ? [
+              readOntologyOwnerFact(results[1], actionDirectorySchema, actions.name),
+              readOntologyOwnerFact(results[2], workflowProvenanceSchema, workflows.name),
+              readOntologyOwnerFact(results[3], metricViewDirectorySchema, metrics.name),
+            ]
+            : await Promise.all([readers.actions(), readers.workflows(), readers.metricViews()]);
+          const provenance = await collectUserProvenance(readers, members.data,
+            sources.flatMap(source => source.ok ? source.data : []));
+          return {
+            ok: true,
+            data: members.data.map(member => userOntologyObject(member, provenance.get(member.id) ?? [])),
+          };
+        },
+      };
+    }
+    case DEFINITION: return {
+      facts: [],
+      read: async () => ontologyDefinitionObjects(await readers.definitions()),
+    };
+    case SDK_COMPONENT: return {
+      facts: [],
+      async read() { return sdkComponentObjects(await readers.sdkComponents()); },
+    };
   }
+}
+
+export function planPlatformOntologyBrowserDirectory(
+  readers: PlatformOntologyOwnerReaders, type: string, includeDomainShared = true,
+): InstanceDirectoryPlan {
+  if (type === SKILL) {
+    const directory = readers.planSkillDirectory();
+    return {
+      facts: directory.facts,
+      async read(results) {
+        const res = await directory.read(results);
+        if (!res.ok) return res;
+        return {
+          ok: true,
+          data: res.data.map(skill => ({
+            node: { className: SKILL, primaryKey: skill.primaryKey },
+            label: skill.title,
+            ...(skill.description ? { searchText: skill.description, metadata: { description: skill.description } } : {}),
+          })),
+        };
+      },
+    };
+  }
+  return planPlatformOntologyInstanceDirectory(readers, type, includeDomainShared) ?? {
+    facts: [],
+    read: async () => ({ ok: false, status: "unavailable", reason: `No owner adapter registered for ${type}` }),
+  };
+}
+
+/** Lists objects of a declared type for the object picker and label lookup. */
+function readObjectsOfType(
+  readers: PlatformOntologyOwnerReaders, type: string, includeDomainShared = true,
+): Promise<OwnerObjectsResult> {
+  return planPlatformOntologyBrowserDirectory(readers, type, includeDomainShared).read();
 }
 
 export async function readPlatformOntologySchema(): Promise<PlatformOntologySchemaResponse> {
@@ -863,21 +1043,28 @@ export async function readPlatformOntologyCounts(
 ): Promise<PlatformOntologyCountsResponse> {
   const started = performance.now();
   const readers = new PlatformOntologyOwnerReaders(owner, credentials);
+  const response = await presentPlatformOntologyCounts(types, type => readers.count(type));
 
+  logger.info("platform ontology counts read", {
+    durationMs: Math.round(performance.now() - started),
+    ownerCalls: readers.ownerCallCount,
+  });
+
+  return response;
+}
+
+export async function presentPlatformOntologyCounts(
+  types: readonly PlatformOntologyType[], readCount: (type: string) => Promise<OntologyCount>,
+): Promise<PlatformOntologyCountsResponse> {
   const counts = await Promise.all(
     types.map(async (spec): Promise<PlatformOntologyTypeCount> => {
-      const res = await readers.count(spec.id);
+      const res = await readCount(spec.id);
       if (res.ok) {
         return { type: spec.id, layer: spec.layer, status: "ok", count: res.data };
       }
       return { type: spec.id, layer: spec.layer, status: res.status, reason: res.reason };
     }),
   );
-
-  logger.info("platform ontology counts read", {
-    durationMs: Math.round(performance.now() - started),
-    ownerCalls: readers.ownerCallCount,
-  });
 
   return { counts };
 }
@@ -889,22 +1076,16 @@ export async function readPlatformOntologyStart(
 ): Promise<PlatformOntologyNode> {
   const readers = new PlatformOntologyOwnerReaders(owner, credentials);
   const subjectsRes = await readers.subjects();
-  if (subjectsRes.ok) {
-    const matched = subjectsRes.data.find((subj) => subj.id === owner.userId);
-    if (matched) {
-      return {
-        className: USER,
-        primaryKey: matched.id,
-        label: matched.displayName || matched.loginCode || matched.id,
-        layer: "governance",
-      };
-    }
-  }
+  const matched = subjectsRes.ok ? subjectsRes.data.find((subj) => subj.id === owner.userId) : undefined;
+  return platformOntologyStartNode(owner.userId, callerUserName, matched && (matched.displayName || matched.loginCode));
+}
+
+export function platformOntologyStartNode(userId: string, viewerName?: string | null, memberName?: string): PlatformOntologyNode {
   // OSS uses hostOwner (`system`), and enterprise callers without subject directory access still keep their real user ID.
   return {
     className: USER,
-    primaryKey: owner.userId,
-    label: callerUserName?.trim() || owner.userId,
+    primaryKey: userId,
+    label: memberName?.trim() || viewerName?.trim() || userId,
     layer: "governance",
   };
 }
@@ -931,12 +1112,28 @@ export async function readPlatformOntologyInstancePage(
   credentials: AssistantCredentials,
   input: PlatformOntologyObjectsRequest,
 ): Promise<PlatformOntologyInstancePage> {
+  const readers = new PlatformOntologyOwnerReaders(owner, credentials);
+  return searchPlatformOntologyInstancePage(input, credentials.locale, (type, includeDomainShared) =>
+    readObjectsOfType(readers, type, includeDomainShared));
+}
+
+export function platformOntologyInstanceDirectories(input: PlatformOntologyObjectsRequest) {
+  const all = input.type === ALL_PLATFORM_ONTOLOGY_TYPES || input.type === "*";
+  const types = all ? input.keyword?.trim() ? PLATFORM_ONTOLOGY_TYPES : [] : [requireTypeSpec(input.type)];
+  return { all, types };
+}
+
+export async function searchPlatformOntologyInstancePage(
+  input: PlatformOntologyObjectsRequest, locale: string | undefined,
+  readDirectory: (type: string, includeDomainShared: boolean) => Promise<OwnerObjectsResult>,
+): Promise<PlatformOntologyInstancePage> {
   const page = Math.max(1, input.page ?? 1);
   const pageSize = Math.min(200, Math.max(1, input.pageSize ?? 50));
   const keyword = input.keyword?.trim().toLowerCase() ?? "";
 
-  if (input.type === ALL_PLATFORM_ONTOLOGY_TYPES || input.type === "*") {
-    if (!keyword) {
+  const { all, types } = platformOntologyInstanceDirectories(input);
+  if (all) {
+    if (!types.length) {
       return {
         type: input.type,
         layer: "capability",
@@ -948,11 +1145,10 @@ export async function readPlatformOntologyInstancePage(
       };
     }
 
-    const readers = new PlatformOntologyOwnerReaders(owner, credentials);
     const results = await Promise.all(
-      PLATFORM_ONTOLOGY_TYPES.map(async (spec) => ({
+      types.map(async (spec) => ({
         spec,
-        res: await readObjectsOfType(readers, spec.id, false),
+        res: await readDirectory(spec.id, false),
       })),
     );
 
@@ -966,7 +1162,7 @@ export async function readPlatformOntologyInstancePage(
         continue;
       }
       okCount++;
-      const typeLabel = tForLocale(credentials.locale, spec.labelKey);
+      const typeLabel = tForLocale(locale, spec.labelKey);
       const typeLabelLower = typeLabel.toLowerCase();
       for (const item of res.data) {
         const labelLower = item.label.toLowerCase();
@@ -1026,9 +1222,8 @@ export async function readPlatformOntologyInstancePage(
     };
   }
 
-  const spec = requireTypeSpec(input.type);
-  const readers = new PlatformOntologyOwnerReaders(owner, credentials);
-  const res = await readObjectsOfType(readers, spec.id);
+  const [spec] = types;
+  const res = await readDirectory(spec.id, true);
 
   if (!res.ok) {
     return {
@@ -1067,7 +1262,7 @@ export async function readPlatformOntologyInstancePage(
   };
 }
 
-function triggerObject(tr: PlatformTask): SearchableOntologyObjectItem {
+export function triggerObject(tr: PlatformTask): SearchableOntologyObjectItem {
   return {
     node: { className: TRIGGER, primaryKey: tr.id },
     label: tr.title,
@@ -1081,31 +1276,140 @@ export async function readPlatformOntologyInstance(
   credentials: AssistantCredentials,
   node: PlatformOntologyNodeRef,
 ): Promise<SearchableOntologyObjectItem> {
-  const spec = PLATFORM_ONTOLOGY_TYPE_MAP.get(node.className);
-  if (!spec) throw new HttpError(404, `Unknown platform ontology type: ${node.className}`, "OBJECT_NOT_FOUND");
   if (node.className === TRIGGER) return triggerObject(await triggerClient(credentials).task(node.primaryKey));
   const readers = new PlatformOntologyOwnerReaders(owner, credentials);
-  const result = await readObjectsOfType(readers, spec.id);
+  return findPlatformOntologyInstance(node, await readObjectsOfType(readers, node.className));
+}
+
+export function requirePlatformOntologyInstanceType(className: string): void {
+  if (!PLATFORM_ONTOLOGY_TYPE_MAP.has(className))
+    throw new HttpError(404, `Unknown platform ontology type: ${className}`, "OBJECT_NOT_FOUND");
+}
+
+export function findPlatformOntologyInstance(
+  node: PlatformOntologyNodeRef, result: OwnerObjectsResult,
+): SearchableOntologyObjectItem {
   if (!result.ok) throw platformOntologyOwnerReadError(result.status, result.reason);
   const item = result.data.find(candidate => candidate.node.primaryKey === node.primaryKey);
   if (!item) throw new HttpError(404, `Object not found: ${node.className}~${node.primaryKey}`, "OBJECT_NOT_FOUND");
   return item;
 }
 
-/** Evaluates one declared relation kind for the requested center node (outgoing or incoming). */
-async function evaluateRelationKind(
-  readers: PlatformOntologyOwnerReaders,
-  spec: PlatformRelationKindDeclaration,
+export function ontologyDefinitionObjects(definitions: OwnerReadResult<RawDefinition[]>): OwnerObjectsResult {
+  return definitions.ok ? { ok: true, data: definitions.data.map(def => ({
+    node: { className: DEFINITION, primaryKey: def.id }, label: def.name, detail: def.objectType,
+  })) } : definitions;
+}
+
+export function evaluateDefinitionObjectType(
+  node: PlatformOntologyNodeRef, definitions: OwnerReadResult<RawDefinition[]>,
+): RelationEvalResult {
+  if (!definitions.ok) return { status: definitions.status, reason: definitions.reason, edges: [] };
+  const edges: RawEdgeCandidate[] = [];
+  for (const def of definitions.data) {
+    if (!def.objectType || def.objectType.startsWith("platform:")) continue;
+    if (
+      (node.className === DEFINITION && def.id === node.primaryKey) ||
+      (node.className === OBJECT_TYPE && def.objectType === node.primaryKey)
+    ) {
+      edges.push({
+        from: { className: DEFINITION, primaryKey: def.id },
+        to: { className: OBJECT_TYPE, primaryKey: def.objectType },
+        fromLabel: def.name,
+      });
+    }
+  }
+  return { status: "ok", edges };
+}
+
+export async function evaluateAgentExecutionUser(
   node: PlatformOntologyNodeRef,
+  agents: OwnerReadResult<readonly { id: string; name?: string; executionUserId: string | null }[]>,
+  normalizeSubjectId: (id: string) => Promise<string>,
 ): Promise<RelationEvalResult> {
-  const locale = readers.credentials.locale;
-  switch (spec.id) {
+  if (!agents.ok) return { status: agents.status, reason: agents.reason, edges: [] };
+  const edges: RawEdgeCandidate[] = [];
+  for (const agent of agents.data) {
+    if (!agent.executionUserId) continue;
+    const userId = await normalizeSubjectId(agent.executionUserId);
+    if (
+      (node.className === AGENT_DEFINITION && agent.id === node.primaryKey) ||
+      (node.className === USER && userId === node.primaryKey)
+    ) {
+      edges.push({
+        from: { className: AGENT_DEFINITION, primaryKey: agent.id },
+        to: { className: USER, primaryKey: userId },
+        fromLabel: agent.name,
+      });
+    }
+  }
+  return { status: "ok", edges };
+}
+
+export function evaluateProjectionBindings(
+  node: PlatformOntologyNodeRef, res: OwnerReadResult<RawProductProjection[]>,
+): RelationEvalResult {
+  if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+  const edges: RawEdgeCandidate[] = [];
+  for (const projection of res.data) {
+    if (node.className === PRODUCT_PROJECTION && projection.id !== node.primaryKey) continue;
+    const bindings = extractProjectionTargetBindings(projection);
+    for (const { target, binding } of bindings) {
+      if (
+        node.className === PRODUCT_PROJECTION ||
+        (target.className === node.className && target.primaryKey === node.primaryKey)
+      ) {
+        edges.push({
+          from: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
+          to: target,
+          fromLabel: projection.name,
+          ...(binding ? { binding } : {}),
+        });
+      }
+    }
+  }
+  return { status: "ok", edges };
+}
+
+/** Use the graph's edge filters when planning endpoint facts before the owner batch. */
+export function neighborCandidate(
+  input: PlatformOntologyNeighborsRequest, candidate: RawEdgeCandidate,
+): { direction: "incoming" | "outgoing"; opposite: PlatformOntologyNodeRef } | undefined {
+  const direction = nodeKey(candidate.from) === nodeKey(input.node) ? "outgoing" : "incoming";
+  if (input.direction && input.direction !== "both" && input.direction !== direction) return;
+  const opposite = direction === "outgoing" ? candidate.to : candidate.from;
+  if (input.targetClass && opposite.className !== input.targetClass) return;
+  const layer = resolveNodeLayer(opposite);
+  if (!layer || (input.layers?.length && !input.layers.includes(layer))) return;
+  return { direction, opposite };
+}
+
+export function evaluateProjectionComponent(
+  node: PlatformOntologyNodeRef, projections: OwnerReadResult<RawProductProjection[]>,
+): RelationEvalResult {
+  if (!projections.ok) return { status: projections.status, reason: projections.reason, edges: [] };
+  const edges: RawEdgeCandidate[] = [];
+  for (const projection of projections.data) {
+    if (
+      (node.className === PRODUCT_PROJECTION && projection.id === node.primaryKey) ||
+      (node.className === SDK_COMPONENT && projection.componentId === node.primaryKey)
+    ) {
+      edges.push({
+        from: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
+        to: { className: SDK_COMPONENT, primaryKey: projection.componentId },
+        fromLabel: projection.name,
+      });
+    }
+  }
+  return { status: "ok", edges };
+}
+
+export function modelRelationEdges(kind: string, node: PlatformOntologyNodeRef, metadata: RawOntologyMeta): RawEdgeCandidate[] {
+  switch (kind) {
     case "object-type.has-attribute": {
-      const res = await readers.ontologyMeta();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
       const edges: RawEdgeCandidate[] = [];
       if (node.className === OBJECT_TYPE) {
-        const cls = res.data.classes.find((c) => c.className === node.primaryKey);
+        const cls = metadata.classes.find((c) => c.className === node.primaryKey);
         if (cls) {
           for (const attr of cls.attrs) {
             edges.push({
@@ -1121,7 +1425,7 @@ async function evaluateRelationKind(
         const parsed = parseAttributeKey(node.primaryKey);
         if (parsed) {
           const [className, attrName] = parsed;
-          const cls = res.data.classes.find((c) => c.className === className);
+          const cls = metadata.classes.find((c) => c.className === className);
           const attr = cls?.attrs.find((a) => a.name === attrName);
           if (cls && attr) {
             edges.push({
@@ -1133,16 +1437,14 @@ async function evaluateRelationKind(
           }
         }
       }
-      return { status: "ok", edges };
+      return edges;
     }
 
     case "relationship.from-object-type":
     case "relationship.to-object-type": {
-      const res = await readers.ontologyMeta();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const field = spec.id === "relationship.from-object-type" ? "fromclass" : "toclass";
+      const field = kind === "relationship.from-object-type" ? "fromclass" : "toclass";
       const edges: RawEdgeCandidate[] = [];
-      for (const rel of res.data.relationships) {
+      for (const rel of metadata.relationships) {
         const targetClass = rel[field];
         if (!targetClass) continue;
         if (
@@ -1156,7 +1458,28 @@ async function evaluateRelationKind(
           });
         }
       }
-      return { status: "ok", edges };
+      return edges;
+    }
+
+    default: throw new Error("Unexpected ontology model relation: " + kind);
+  }
+}
+
+/** Evaluates one declared relation kind for the requested center node (outgoing or incoming). */
+async function evaluateRelationKind(
+  readers: PlatformOntologyOwnerReaders,
+  spec: PlatformRelationKindDeclaration,
+  node: PlatformOntologyNodeRef,
+): Promise<RelationEvalResult> {
+  const locale = readers.credentials.locale;
+  switch (spec.id) {
+    case "object-type.has-attribute":
+    case "relationship.from-object-type":
+    case "relationship.to-object-type": {
+      const res = await readers.ontologyMeta();
+      return res.ok
+        ? { status: "ok", edges: modelRelationEdges(spec.id, node, res.data) }
+        : { status: res.status, reason: res.reason, edges: [] };
     }
 
     case "metric-view.uses-function": {
@@ -1240,25 +1563,8 @@ async function evaluateRelationKind(
       return { status: "ok", edges };
     }
 
-    case "definition.based-on-object-type": {
-      const res = await readers.definitions();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const def of res.data) {
-        if (!def.objectType || def.objectType.startsWith("platform:")) continue;
-        if (
-          (node.className === DEFINITION && def.id === node.primaryKey) ||
-          (node.className === OBJECT_TYPE && def.objectType === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: DEFINITION, primaryKey: def.id },
-            to: { className: OBJECT_TYPE, primaryKey: def.objectType },
-            fromLabel: def.name,
-          });
-        }
-      }
-      return { status: "ok", edges };
-    }
+    case "definition.based-on-object-type":
+      return evaluateDefinitionObjectType(node, await readers.definitions());
 
     case "workflow.step-references-action": {
       const res = await readers.workflows();
@@ -1353,32 +1659,8 @@ async function evaluateRelationKind(
       return { status: "ok", edges: [] };
     }
 
-    case "role.owns-workflow-step": {
-      const res = await readers.grants();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const grant of res.data) {
-        if (!grant.inForce || !grant.roleId || !grant.workflowId || !grant.stepNo) continue;
-        if (
-          (node.className === ROLE && grant.roleId === node.primaryKey) ||
-          (node.className === WORKFLOW && grant.workflowId === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: ROLE, primaryKey: grant.roleId },
-            to: { className: WORKFLOW, primaryKey: grant.workflowId },
-            fromLabel: grant.roleCode ?? undefined,
-            authorization: {
-              stepNo: grant.stepNo,
-              ...(grant.activatedByWorkflowVersion
-                ? { version: Number(grant.activatedByWorkflowVersion) }
-                : {}),
-              ...scopeAuthorization(locale, grant.scope),
-            },
-          });
-        }
-      }
-      return { status: "ok", edges };
-    }
+    case "role.owns-workflow-step":
+      return evaluateWorkflowStepOwnership(node, await readers.grants(), locale);
 
     case "agent.uses-skill": {
       const res = await readers.agentSkillRelations(node.className === AGENT_DEFINITION ? node.primaryKey : undefined);
@@ -1403,152 +1685,24 @@ async function evaluateRelationKind(
       return { status: "ok", edges };
     }
 
-    case "agent.executes-as-user": {
-      const res = await readers.agentExecutionUserRelations(node.className === AGENT_DEFINITION ? node.primaryKey : undefined);
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const agent of res.data) {
-        if (!agent.executionUserId) continue;
-        const userId = await readers.normalizeSubjectId(agent.executionUserId);
-        if (
-          (node.className === AGENT_DEFINITION && agent.id === node.primaryKey) ||
-          (node.className === USER && userId === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: AGENT_DEFINITION, primaryKey: agent.id },
-            to: { className: USER, primaryKey: userId },
-            fromLabel: agent.name,
-          });
-        }
-      }
-      return { status: "ok", edges };
-    }
+    case "agent.executes-as-user":
+      return evaluateAgentExecutionUser(node,
+        await readers.agentExecutionUserRelations(node.className === AGENT_DEFINITION ? node.primaryKey : undefined),
+        rawId => readers.normalizeSubjectId(rawId));
 
-    case "projection.uses-component": {
-      const res = await readers.productProjections();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const projection of res.data) {
-        if (
-          (node.className === PRODUCT_PROJECTION && projection.id === node.primaryKey) ||
-          (node.className === SDK_COMPONENT && projection.componentId === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
-            to: { className: SDK_COMPONENT, primaryKey: projection.componentId },
-            fromLabel: projection.name,
-          });
-        }
-      }
-      return { status: "ok", edges };
-    }
+    case "projection.uses-component":
+      return evaluateProjectionComponent(node, await readers.productProjections());
 
-    case "projection.binds-target": {
-      const res = await readers.productProjections();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const projection of res.data) {
-        if (node.className === PRODUCT_PROJECTION && projection.id !== node.primaryKey) continue;
-        const bindings = extractProjectionTargetBindings(projection);
-        for (const { target, binding } of bindings) {
-          if (
-            node.className === PRODUCT_PROJECTION ||
-            (target.className === node.className && target.primaryKey === node.primaryKey)
-          ) {
-            edges.push({
-              from: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
-              to: target,
-              fromLabel: projection.name,
-              ...(binding ? { binding } : {}),
-            });
-          }
-        }
-      }
-      return { status: "ok", edges };
-    }
+    case "projection.binds-target":
+      return evaluateProjectionBindings(node, await readers.productProjections());
 
-    case "panel.contains-projection": {
-      const panelsRes = await readers.productPanels();
-      if (!panelsRes.ok) return { status: panelsRes.status, reason: panelsRes.reason, edges: [] };
-      const grantsRes = await readers.grantedUseIds();
-      if (!grantsRes.ok) return { status: grantsRes.status, reason: grantsRes.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const panel of panelsRes.data) {
-        const { projectionIds } = extractPanelContainedIds(panel);
-        for (const projectionId of projectionIds) {
-          if (!grantsRes.data.has(projectionId)) continue;
-          if (
-            (node.className === PRODUCT_PANEL && panel.id === node.primaryKey) ||
-            (node.className === PRODUCT_PROJECTION && projectionId === node.primaryKey)
-          ) {
-            edges.push({
-              from: { className: PRODUCT_PANEL, primaryKey: panel.id },
-              to: { className: PRODUCT_PROJECTION, primaryKey: projectionId },
-              fromLabel: panel.name,
-            });
-          }
-        }
-      }
-      return { status: "ok", edges };
-    }
-
-    case "panel.contains-panel": {
-      const panelsRes = await readers.productPanels();
-      if (!panelsRes.ok) return { status: panelsRes.status, reason: panelsRes.reason, edges: [] };
-      const grantsRes = await readers.grantedUseIds();
-      if (!grantsRes.ok) return { status: grantsRes.status, reason: grantsRes.reason, edges: [] };
-      let objectDetailMappings: ReadonlyMap<string, string> | undefined;
-      if (panelsRes.data.some(panelUsesObjectDetailRule)) {
-        const detailRes = await readers.objectDetailPanelMappings();
-        if (!detailRes.ok) return { status: detailRes.status, reason: detailRes.reason, edges: [] };
-        objectDetailMappings = detailRes.data;
-      }
-      const edges: RawEdgeCandidate[] = [];
-      for (const panel of panelsRes.data) {
-        const { panelIds } = extractPanelContainedIds(panel, objectDetailMappings);
-        for (const childPanelId of panelIds) {
-          if (childPanelId === panel.id || !grantsRes.data.has(childPanelId)) {
-            continue;
-          }
-          if (panel.id === node.primaryKey || childPanelId === node.primaryKey) {
-            edges.push({
-              from: { className: PRODUCT_PANEL, primaryKey: panel.id },
-              to: { className: PRODUCT_PANEL, primaryKey: childPanelId },
-              fromLabel: panel.name,
-            });
-          }
-        }
-      }
-      return { status: "ok", edges };
-    }
-
-    case "panel.provides-skill": {
-      const [panelsRes, skillsRes] = await Promise.all([
-        readers.productPanels(),
-        readers.skills(),
-      ]);
-      if (!panelsRes.ok) return { status: panelsRes.status, reason: panelsRes.reason, edges: [] };
-      if (!skillsRes.ok) return { status: skillsRes.status, reason: skillsRes.reason, edges: [] };
-      const skillByKey = new Map(skillsRes.data.map((skill) => [skill.primaryKey, skill]));
-      const edges: RawEdgeCandidate[] = [];
-      for (const panel of panelsRes.data) {
-        const skillKey = runtimeSkillKey(panelSkillRef(readers.owner.domainId, panel.id));
-        const skill = skillByKey.get(skillKey);
-        if (!skill) continue;
-        if (
-          (node.className === PRODUCT_PANEL && panel.id === node.primaryKey) ||
-          (node.className === SKILL && skillKey === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: PRODUCT_PANEL, primaryKey: panel.id },
-            to: { className: SKILL, primaryKey: skillKey },
-            fromLabel: panel.name,
-            toLabel: skill.title,
-          });
-        }
-      }
-      return { status: "ok", edges };
-    }
+    case "panel.contains-projection":
+    case "panel.contains-panel":
+      return evaluatePanelContainment(spec.id, node, undefined, {
+        panels: () => readers.productPanels(),
+        targets: () => readers.grantedUseIds(),
+        objectDetailPanelMappings: () => readers.objectDetailPanelMappings(),
+      });
 
     case "application.uses-panel": {
       const appsRes = await readers.applications();
@@ -1727,38 +1881,70 @@ async function evaluateRelationKind(
     }
 
     case "permission-policy.governs-object-type": {
-      const res = await readers.policyDataPermissions();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
-      const edges: RawEdgeCandidate[] = [];
-      for (const perm of res.data) {
-        if (
-          (node.className === PERMISSION_POLICY && perm.policyId === node.primaryKey) ||
-          (node.className === OBJECT_TYPE && perm.className === node.primaryKey)
-        ) {
-          edges.push({
-            from: { className: PERMISSION_POLICY, primaryKey: perm.policyId },
-            to: { className: OBJECT_TYPE, primaryKey: perm.className },
-          });
-        }
-      }
-      return { status: "ok", edges };
+      return evaluatePolicyDataPermissions(node, await readers.policyDataPermissions());
     }
 
-    case "permission-policy.can-enter-application":
+    case "permission-policy.can-enter-application": {
+      const facts = await readers.authorizationGraphFacts();
+      return evaluatePolicyEntryGrants(node, facts.ok ? { ok: true, data: facts.data.policyGrants } : facts, locale);
+    }
+
     case "permission-policy.can-execute-action":
     case "permission-policy.can-use-object": {
       const facts = await readers.authorizationGraphFacts();
       if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
       const granted = policyGrantEdges(facts.data, node, locale);
-      const collected = spec.id === "permission-policy.can-enter-application"
-        ? granted.application
-        : spec.id === "permission-policy.can-execute-action" ? granted.action : granted.object;
+      const collected = spec.id === "permission-policy.can-execute-action" ? granted.action : granted.object;
       return { status: "ok", edges: collected };
     }
 
     default:
       return { status: "unavailable", reason: `Unhandled relation kind: ${spec.id}`, edges: [] };
   }
+}
+
+export function evaluateWorkflowStepOwnership(
+  node: PlatformOntologyNodeRef, result: OwnerReadResult<RawGrant[]>, locale?: string,
+): RelationEvalResult {
+  if (!result.ok) return { status: result.status, reason: result.reason, edges: [] };
+  const edges: RawEdgeCandidate[] = [];
+  for (const grant of result.data) {
+    if (!grant.inForce || !grant.roleId || !grant.workflowId || !grant.stepNo) continue;
+    if ((node.className === ROLE && grant.roleId === node.primaryKey) ||
+        (node.className === WORKFLOW && grant.workflowId === node.primaryKey)) {
+      edges.push({
+        from: { className: ROLE, primaryKey: grant.roleId },
+        to: { className: WORKFLOW, primaryKey: grant.workflowId },
+        fromLabel: grant.roleCode ?? undefined,
+        authorization: {
+          stepNo: grant.stepNo,
+          ...(grant.activatedByWorkflowVersion ? { version: Number(grant.activatedByWorkflowVersion) } : {}),
+          ...scopeAuthorization(locale, grant.scope),
+        },
+      });
+    }
+  }
+  return { status: "ok", edges };
+}
+
+export function evaluatePolicyDataPermissions(
+  node: PlatformOntologyNodeRef,
+  facts: OwnerReadResult<readonly { policyId: string; className: string }[]>,
+): RelationEvalResult {
+  if (!facts.ok) return { status: facts.status, reason: facts.reason, edges: [] };
+  const edges: RawEdgeCandidate[] = [];
+  for (const perm of facts.data) {
+    if (
+      (node.className === PERMISSION_POLICY && perm.policyId === node.primaryKey) ||
+      (node.className === OBJECT_TYPE && perm.className === node.primaryKey)
+    ) {
+      edges.push({
+        from: { className: PERMISSION_POLICY, primaryKey: perm.policyId },
+        to: { className: OBJECT_TYPE, primaryKey: perm.className },
+      });
+    }
+  }
+  return { status: "ok", edges };
 }
 
 export async function readPlatformOntologyNeighbors(
@@ -1768,33 +1954,31 @@ export async function readPlatformOntologyNeighbors(
   callerUserName?: string,
 ): Promise<PlatformOntologyNeighborsResponse> {
   const started = performance.now();
-  const { className, primaryKey } = input.node;
-  if (className === ONTOLOGY_TYPE && !PLATFORM_ONTOLOGY_TYPE_MAP.has(primaryKey)) {
-    throw new HttpError(404, `Unknown platform ontology type: ${primaryKey}`, "OBJECT_NOT_FOUND");
-  }
-  const centerLayer = requireNodeLayer(input.node);
   const readers = new PlatformOntologyOwnerReaders(owner, credentials);
-  if (className !== ONTOLOGY_TYPE) {
-    const isSelfUser = className === USER && primaryKey === owner.userId;
-    const centerRes = await readObjectsOfType(readers, className);
-    if (centerRes.ok) {
-      // The OSS subject directory is empty, but the authenticated user is still the default start.
-      if (!centerRes.data.some((item) => item.node.primaryKey === primaryKey) &&
-          !(isSelfUser && centerRes.data.length === 0)) {
-        throw new HttpError(404, `Object not found: ${className}~${primaryKey}`, "OBJECT_NOT_FOUND");
-      }
-    } else if (!isSelfUser) throw platformOntologyOwnerReadError(centerRes.status, centerRes.reason);
-  }
-  const centerKey = nodeKey(input.node);
+  const applicable = selectPlatformOntologyRelations(input);
+  const response = await assemblePlatformOntologyNeighbors(owner, input, callerUserName, applicable, {
+    center: () => readObjectsOfType(readers, input.node.className),
+    objects: type => readObjectsOfType(readers, type),
+    relation: spec => evaluateRelationKind(readers, spec, input.node),
+  });
+  logger.info("platform ontology neighbors read", {
+    durationMs: Math.round(performance.now() - started),
+    nodeType: input.node.className,
+    relationCount: applicable.length,
+    ownerCalls: readers.ownerCallCount,
+    neighborCount: response.neighbors.length,
+    edgeCount: response.total,
+  });
+  return response;
+}
 
+export function selectPlatformOntologyRelations(input: PlatformOntologyNeighborsRequest) {
   const kindFilter = input.relationKinds?.length ? new Set(input.relationKinds) : null;
-  const layerFilter = input.layers?.length ? new Set(input.layers) : null;
-  const { targetClass, direction, limit, offset = 0 } = input;
-  const matchesOppositeType = (type: string) =>
-    (!targetClass || type === targetClass)
-    && (!layerFilter || layerFilter.has(PLATFORM_ONTOLOGY_TYPE_MAP.get(type)!.layer));
+  const { className, primaryKey } = input.node;
+  const { targetClass, direction } = input;
+  const matchesOppositeType = (type: string) => matchesOntologyNeighborType(input, type);
 
-  const applicableRelations = PLATFORM_ONTOLOGY_RELATION_KINDS.filter((rel) => {
+  return PLATFORM_ONTOLOGY_RELATION_KINDS.filter((rel) => {
     if (kindFilter && !kindFilter.has(rel.id)) return false;
     const targets = relationTargets(rel);
     // Projection bindings can point to type references as well as instances of the declared target types.
@@ -1805,11 +1989,53 @@ export async function readPlatformOntologyNeighbors(
       && matchesOppositeType(rel.from);
     return (direction !== "incoming" && isOutgoing) || (direction !== "outgoing" && isIncoming);
   });
+}
+
+function matchesOntologyNeighborType(input: PlatformOntologyNeighborsRequest, type: string) {
+  return (!input.targetClass || type === input.targetClass)
+    && (!input.layers?.length || input.layers.includes(PLATFORM_ONTOLOGY_TYPE_MAP.get(type)!.layer));
+}
+
+export function policyObjectTargetKinds(input: PlatformOntologyNeighborsRequest) {
+  const { className } = input.node;
+  return Object.entries(POLICY_OBJECT_KINDS).filter(([, type]) =>
+    className === PERMISSION_POLICY ? matchesOntologyNeighborType(input, type) : className === type);
+}
+
+interface NeighborSources {
+  center(): Promise<OwnerObjectsResult & { emptyDirectory?: boolean }>;
+  objects(type: string, ids: readonly string[]): Promise<OwnerObjectsResult>;
+  relation(spec: PlatformRelationKindDeclaration): Promise<RelationEvalResult>;
+}
+
+export async function assemblePlatformOntologyNeighbors(
+  owner: ProductOwner, input: PlatformOntologyNeighborsRequest, callerUserName: string | null | undefined,
+  applicableRelations: readonly PlatformRelationKindDeclaration[], sources: NeighborSources,
+): Promise<PlatformOntologyNeighborsResponse> {
+  const { className, primaryKey } = input.node;
+  if (className === ONTOLOGY_TYPE && !PLATFORM_ONTOLOGY_TYPE_MAP.has(primaryKey)) {
+    throw new HttpError(404, `Unknown platform ontology type: ${primaryKey}`, "OBJECT_NOT_FOUND");
+  }
+  const centerLayer = requireNodeLayer(input.node);
+  if (className !== ONTOLOGY_TYPE) {
+    const isSelfUser = className === USER && primaryKey === owner.userId;
+    const centerRes = await sources.center();
+    if (centerRes.ok) {
+      // The OSS subject directory is empty, but the authenticated user is still the default start.
+      if (!centerRes.data.some((item) => item.node.primaryKey === primaryKey) &&
+          !(isSelfUser && (centerRes.emptyDirectory ?? centerRes.data.length === 0))) {
+        throw new HttpError(404, `Object not found: ${className}~${primaryKey}`, "OBJECT_NOT_FOUND");
+      }
+    } else if (!isSelfUser) throw platformOntologyOwnerReadError(centerRes.status, centerRes.reason);
+  }
+  const centerKey = nodeKey(input.node);
+
+  const { limit, offset = 0 } = input;
 
   const evaluations = await Promise.all(
     applicableRelations.map(async (rel) => ({
       spec: rel,
-      result: await evaluateRelationKind(readers, rel, input.node),
+      result: await sources.relation(rel),
     })),
   );
 
@@ -1822,13 +2048,9 @@ export async function readPlatformOntologyNeighbors(
     for (const candidate of result.edges) {
       const fromKey = nodeKey(candidate.from);
       const toKey = nodeKey(candidate.to);
-      const direction: "outgoing" | "incoming" = fromKey === centerKey ? "outgoing" : "incoming";
-      const opposite = direction === "outgoing" ? candidate.to : candidate.from;
-      if (input.direction && input.direction !== "both" && input.direction !== direction) continue;
-      if (targetClass && opposite.className !== targetClass) continue;
-      const oppositeLayer = resolveNodeLayer(opposite);
-      if (!oppositeLayer) continue;
-      if (layerFilter && !layerFilter.has(oppositeLayer)) continue;
+      const matched = neighborCandidate(input, candidate);
+      if (!matched) continue;
+      const { direction } = matched;
 
       const dedupKey = `${spec.id}|${fromKey}|${toKey}`;
       if (seenEdges.has(dedupKey)) continue;
@@ -1869,16 +2091,18 @@ export async function readPlatformOntologyNeighbors(
   }
 
   // Resolve canonical labels from each referenced node's owner (reusing per-request cache).
-  const typesToResolve = new Set<string>();
-  if (input.node.className !== ONTOLOGY_TYPE) typesToResolve.add(input.node.className);
-  for (const ref of neighborRefs.values()) {
-    if (ref.className !== ONTOLOGY_TYPE) typesToResolve.add(ref.className);
+  const idsByType = new Map<string, string[]>();
+  for (const ref of [input.node, ...neighborRefs.values()]) {
+    if (ref.className === ONTOLOGY_TYPE) continue;
+    const ids = idsByType.get(ref.className) ?? [];
+    ids.push(ref.primaryKey);
+    idsByType.set(ref.className, ids);
   }
 
   const labelMaps = new Map<string, Map<string, { label: string; detail?: string }>>();
   await Promise.all(
-    [...typesToResolve].map(async (typeId) => {
-      const res = await readObjectsOfType(readers, typeId);
+    [...idsByType].map(async ([typeId, ids]) => {
+      const res = await sources.objects(typeId, ids);
       if (!res.ok) return;
       const map = new Map<string, { label: string; detail?: string }>();
       for (const item of res.data) {
@@ -1918,15 +2142,6 @@ export async function readPlatformOntologyNeighbors(
     layer: centerLayer,
   };
   const neighbors = [...neighborRefs.values()].map(toNode);
-
-  logger.info("platform ontology neighbors read", {
-    durationMs: Math.round(performance.now() - started),
-    nodeType: input.node.className,
-    relationCount: applicableRelations.length,
-    ownerCalls: readers.ownerCallCount,
-    neighborCount: neighbors.length,
-    edgeCount: edges.length,
-  });
 
   return {
     node: centerNode,

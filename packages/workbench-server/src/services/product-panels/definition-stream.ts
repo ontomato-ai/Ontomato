@@ -1,7 +1,7 @@
 import type {PanelDefinitionSnapshot,PanelMemberSnapshot,ProductDefinitionTarget,ProductDefinitionRevision,ProductDefinitionStreamFrame} from '@ontomato/contracts/product-subscriptions';
 import {productPanelSchema,type ProductDefinitionChangedEvent,type ProductPanel} from '@ontomato/contracts/product-panels';
 import {candidateProjectionIds} from '@ontomato/contracts/panel-manifest';
-import type {ProductOwner} from '../product-governance/grants';
+import type {ProductOwner} from '../product-governance/service-authentication';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {HttpError} from '../../utils/errors';
 import {currentProductRecord,findCurrentProduct,type CurrentProductKind} from '../../infrastructure/product-current';

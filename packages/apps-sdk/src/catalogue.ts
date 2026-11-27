@@ -381,7 +381,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Draws a detail header with a title, one-line subtitle, status badge and bound operations; use at the top of a detail view or inside `<page-header #title>`. The subtitle reads in the body font and secondary colour by default, the way prose, summaries, sources and counts do; set `subtitleStyle: 'identifier'` where it carries an identifier, code or key so it reads in the monospace font.\n\n- Its actions are the projection's own declared operations, taken in the owner's order through the platform's shared dispatch, parameter dialog and confirmation path; the rest go to a More menu whose accessible name carries the current record's title.\n- It also stands alone with a title, a subtitle and `#actions`, which is how a create-mode header is written.\n- `fallbackTitle` keeps a quiet single-line placeholder while the record loads or is missing, so the page below does not jump.\n- Named scalar outputs the bound read's owner declares pass through it beside its own, without the page having to read them elsewhere.\n- One read per display: given a `record` by a parent it draws that snapshot alone \u2014 the title, the status badge read from that record's `tones`, and any failure all come from it \u2014 and reads no datum of its own, leaving \"loading\" to the parent that read it. A parent that reads the record itself passes `null` while it has nothing yet, and `undefined` only to leave the read to this header.",
+      "Draws a detail header with a title, one-line subtitle, status badge and bound operations; use at the top of a detail view or inside `<page-header #title>`. The subtitle reads in the body font and secondary colour by default, the way prose, summaries, sources and counts do; set `subtitleStyle: 'identifier'` where it carries an identifier, code or key so it reads in the monospace font.\n\n- Its actions are the projection's own declared operations, taken in the owner's order through the platform's shared dispatch, parameter dialog and confirmation path; the rest go to a More menu whose accessible name carries the current record's title. Unavailable operations stay disabled and show the owner's reason in a hover/focus tooltip.\n- It also stands alone with a title, a subtitle and `#actions`, which is how a create-mode header is written.\n- `fallbackTitle` keeps a quiet single-line placeholder while the record loads or is missing, so the page below does not jump.\n- Named scalar outputs the bound read's owner declares pass through it beside its own, without the page having to read them elsewhere.\n- One read per display: given a `record` by a parent it draws that snapshot alone \u2014 the title, the status badge read from that record's `tones`, and any failure all come from it \u2014 and reads no datum of its own, leaving \"loading\" to the parent that read it. A parent that reads the record itself passes `null` while it has nothing yet, and `undefined` only to leave the read to this header.",
     effects: "Reads the bound object's `record` datum when declared and runs projection operations through the platform coordinator.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: { record: { results: ["panelRecord"], required: false } },
@@ -449,7 +449,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "action",
     meaning:
-      "Runs one declared platform operation or customer business Action on an object, on a checked list, or with no target; use for writes and batch actions.\n\n- It shows and runs the operation as its owner admits it now, never a copy of what the page knew when the panel was written.\n- When the owner declares editable inputs, a click collects and validates them in a parameter dialog first; an operation without editable parameters runs straight away.\n- The outcome is reported where the reader is looking: one message for a single write, item by item beside a batch, and a refusal or failure beside the button. A read that answers with a top-level message is said in the owner's words too.\n- What a write removed is let go of by the panel: a selection holding it is cleared and a checked list drops it.",
+      "Runs one declared platform operation or customer business Action on an object, on a checked list, or with no target; use for writes and batch actions.\n\n- It shows and runs the operation as its owner admits it now, never a copy of what the page knew when the panel was written. When the owner marks the operation unavailable and `hideWhenUnavailable` is false, the button stays disabled and shows the owner's reason in a hover/focus tooltip.\n- When the owner declares editable inputs, a click collects and validates them in a parameter dialog first; an operation without editable parameters runs straight away.\n- The outcome is reported where the reader is looking: one message for a single write, item by item beside a batch, and a refusal or failure beside the button. A read that answers with a top-level message is said in the owner's words too.\n- What a write removed is let go of by the panel: a selection holding it is cleared and a checked list drops it.",
     effects: "Runs the named operation as the reader, as its owner admits it now.",
     bindsElement: ["PlatformOperation:*", "Action:*"],
     // The button reads no datum: its operation is the projection's, described by its owner as admitted now.
@@ -476,7 +476,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "action",
     meaning:
-      "Validates, uploads and runs a declared file-upload operation on the file the reader picks; use for file imports.\n\n- The operation is the projection's and its owner must declare an upload: the control checks the picked file's kind and size against that declaration, uploads it, and runs the operation once with it.\n- An owner refusal is the panel's to follow up: the control hands back the host's response and the staged file's receipt and stops there.\n- It reads no datum: the operation's owner describes it as admitted now.",
+      "Validates, uploads and runs a declared file-upload operation on the file the reader picks; use for file imports.\n\n- The operation is the projection's and its owner must declare an upload: the control checks the picked file's kind and size against that declaration, uploads it, and runs the operation once with it. When the owner marks the operation unavailable, the trigger stays disabled and shows the owner's reason in a hover/focus tooltip.\n- An owner refusal is the panel's to follow up: the control hands back the host's response and the staged file's receipt and stops there.\n- It reads no datum: the operation's owner describes it as admitted now.",
     effects: "Uploads the picked file for the named operation and runs it as the reader, as its owner admits it now.",
     bindsElement: ["PlatformOperation:*"],
     // The control reads no datum: its operation is the projection's, described by its owner as admitted now.
@@ -507,6 +507,34 @@ export const components: readonly ComponentMetadata[] = [
     configProps: [
       "placeholder", "placeholderKey", "clearable", "disabled", "size", "groupBy", "metaField", "showDraftIndicator",
       "fallbackToFirst", "refreshable",
+    ],
+  }),
+  defineComponentMeta({
+    componentId: "PickerDialog",
+    module: "@ontomato/sdk/base",
+    exportName: "PickerDialog",
+    role: "control",
+    group: "form",
+    meaning:
+      "Picks multiple items to add from the bound type's options or records inside a centered dialog with search, checkboxes and a count-bearing confirm button; use for every 'pick items to add' flow instead of hand-writing a dialog.\n\n- Search is automatic with no configuration: a complete list returned by the owner is filtered in memory, while a truncated list (`total > loaded`, `hasMore`, or `nextCursor`) sends the query to the owner (`keyword` on `options`, or `keyword`/`search` on `rows`) and shows a notice asking the reader to search to narrow results.\n- Items already in `selected` are pre-checked on open, unavailable items stay listed with disabled checkboxes and their `disabledReason` inline in the secondary description (never a hover tooltip), and Confirm stays disabled until the selection differs from when the dialog opened.\n- Agents share the same path (standard 2.4.2): `open` and `selected` bind to public panel state so an agent can inspect or update them; when confirming triggers an owner write (such as adding members or policies), the panel invokes a registered panel operation whose parameter reads from `selected` so human confirm and agent `page_action` run the same operation (`PickerDialog` never calls owners directly); when confirming writes into a form field (such as agent skills), agents fill the form directly without going through the dialog.\n- Placement-specific controls (such as a shared grant level) go in `#extra`, backed by the panel's own state. No pagination, inline creation, or tree view.",
+    effects:
+      "Reads the bound type's `options` or `rows` datum as the reader when opened (and on owner search when truncated), writes only the bound `open` and `selected` panel states on close/confirm, and never invokes owner write operations directly.",
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    data: {
+      options: { results: ["panelOptionList"], required: false, runtimeParams: ["keyword", "page"] },
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["keyword", "search", "page", "size"] },
+    },
+    inputs: {
+      open: { kind: "scalar", type: "boolean" },
+      selected: { kind: "list", items: { kind: "scalar", type: "string" } },
+    },
+    outputs: {
+      open: { kind: "scalar", type: "boolean" },
+      selected: { kind: "list", items: { kind: "scalar", type: "string" } },
+    },
+    configProps: [
+      "title", "titleKey", "confirmLabel", "confirmLabelKey", "searchPlaceholder", "searchPlaceholderKey",
+      "emptyText", "width", "options",
     ],
   }),
   defineComponentMeta({
@@ -749,7 +777,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "layout",
     meaning:
-      "Draws a page header \u2014 a back link, an optional leading visual, a title, a description and right-side actions, with the page's own draft controls; use at the top of a panel's content.\n\n- The title is plain text, a locale map or a projection-bound component, so a header can name the record the page follows without the page assembling it.\n- It asks nothing of the platform host and lays itself out by its own width, so a panel places it and a narrow column still reads.\n- Save and Discard appear only when the page hands it a draft; a header without one is a title bar.\n- When another panel embeds it, only the actions and the draft controls are drawn, in one compact row, and a header with neither draws nothing.",
+      "Draws a page header \u2014 a back link, an optional leading visual, a title, a description and right-side actions, with the page's own draft controls; use at the top of a panel's content.\n\n- The title is plain text, a locale map or a projection-bound component, so a header can name the record the page follows without the page assembling it.\n- It asks nothing of the platform host and lays itself out by its own width, so a panel places it and a narrow column still reads.\n- The back button only emits `back`; on a detail entry wire `@back` to `usePanelContext().navigateBack(catalogPath)` so the host steps back to the in-platform previous page or falls back to the catalog, and use `usePanelBack` for panel-local views.\n- Save and Discard appear only when the page hands it a draft; a header without one is a title bar.\n- When another panel embeds it, only the actions and the draft controls are drawn, in one compact row, and a header with neither draws nothing.",
     configProps: ["title", "description", "backLabel", "density", "draft", "labels"],
   }),
   defineComponentMeta({
@@ -1183,11 +1211,11 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "agentId", "agentKind", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAppId", "defaultCommit", "direction", "editMode",
-          "entryId", "favoritesOnly", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
+          "agentId", "agentKind", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAgentId", "defaultAppId", "defaultCommit", "direction", "editMode",
+          "entryId", "favoritesOnly", "field", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
           "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
-          "runId", "sampleToken", "scope", "search", "section", "size", "sort", "source", "sourceType", "status",
-          "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version",
+          "runId", "sampleToken", "scope", "search", "section", "selectedTask", "size", "sort", "source", "sourceType", "status",
+          "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version", "workspace", "workspaceAgent",
         ],
       },
     },

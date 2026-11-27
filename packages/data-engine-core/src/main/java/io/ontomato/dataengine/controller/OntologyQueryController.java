@@ -6,7 +6,6 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.UUID;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -128,23 +127,7 @@ public class OntologyQueryController {
 
   @PostMapping("/ontology/query/metrics/execute")
   public Object metric(@RequestBody JSONObject body, HttpServletRequest request) throws Exception {
-    JSONObject recipe =
-        JSONObject.of(
-            "kind",
-            "metric",
-            "metricId",
-            body.getString("id"),
-            "revision",
-            body.getString("revision"),
-            "parameters",
-            body.getJSONObject("parameters"));
-    if (body.containsKey("bindingId")) recipe.put("bindingId", body.getString("bindingId"));
-    return outputs.execute(
-        UUID.randomUUID().toString(),
-        recipe,
-        null,
-        access(request),
-        language(request));
+    return outputs.executeMetric(body, access(request), language(request));
   }
 
   @PostMapping("/ontology/query/outputs")

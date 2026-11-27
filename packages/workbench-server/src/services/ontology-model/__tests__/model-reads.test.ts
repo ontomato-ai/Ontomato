@@ -12,7 +12,7 @@ import {
 import { panelFormDescriptionSchema, panelOptionListSchema, panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { createOntologyModelReadAdapter } from "../model-reads";
+import { createOntologyModelReadAdapter, renderModelRead } from "../model-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test/" } } }));
 
@@ -670,19 +670,25 @@ describe("ontology model read adapter", () => {
   });
 
   it("offers the classes as picker options and resolves chosen class names, keeping a vanished one as unavailable", async () => {
+    const views = [{ ...objectTypes[0], showName: "Site" }, objectTypes[1]];
     stubOwner(request => request.url.pathname === "/ontology/model/object-types"
-      ? Response.json([{ ...objectTypes[0], showName: "Site" }, objectTypes[1]])
+      ? Response.json(views)
       : catalogRoute(request));
     const adapter = createOntologyModelReadAdapter(owner, viewer);
 
-    expect(panelOptionListSchema.parse(await adapter.objectTypeOptions())).toEqual({ options: [
+    const options = panelOptionListSchema.parse(await adapter.objectTypeOptions());
+    expect(options).toEqual({ options: [
       { primaryKey: "Device", value: "Device", label: "Site (Device)", description: "A device" },
       { primaryKey: "Site", value: "Site", label: "Site", description: "A site" },
     ] });
-    expect(panelOptionListSchema.parse(await adapter.resolveObjectTypes(["Device", "Gone"]))).toEqual({ options: [
+    const values = ["Device", "Gone"];
+    const resolved = panelOptionListSchema.parse(await adapter.resolveObjectTypes(values));
+    expect(resolved).toEqual({ options: [
       { primaryKey: "Device", value: "Device", label: "Site (Device)", description: "A device" },
       { primaryKey: "Gone", value: "Gone", label: "Gone", unavailable: { reason: "This object type no longer exists." } },
     ] });
+    expect(renderModelRead(OBJECT_TYPE, "options", views, {}, viewer.locale)).toEqual(options);
+    expect(renderModelRead(OBJECT_TYPE, "resolve", views, { values }, viewer.locale)).toEqual(resolved);
   });
 });
 

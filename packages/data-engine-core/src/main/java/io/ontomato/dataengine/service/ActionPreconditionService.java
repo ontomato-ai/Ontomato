@@ -11,6 +11,7 @@ import io.ontomato.dataengine.util.DslUtil;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 /**
@@ -73,11 +74,7 @@ public class ActionPreconditionService {
         JSONArray conditions = criteria.getJSONArray("conditions");
         if (conditions == null || conditions.isEmpty()) return Verdict.pass();
 
-        String domainId = user.getDomainId();
-        Map<String, Object> jsonRule = admin.getJSONRule(domainId);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> classDefs =
-                (List<Map<String, Object>>) jsonRule.get("classDef");
+        var classDefs = classDefinitions(user.getDomainId());
 
         List<String> violations = new ArrayList<>();
         for (Object value : conditions) {
@@ -87,6 +84,35 @@ public class ActionPreconditionService {
             }
         }
         return new Verdict(violations.isEmpty(), List.copyOf(violations));
+    }
+
+    /** The target and independent condition sources must be in scope before reading any rows. */
+    public void requireCallerClasses(Action action, String domainId, ExecutionTarget target) {
+        if (target.testing() || target.classNames().isEmpty()) return;
+
+        if (action.getTarget() != null && !target.allowsClasses(List.of(action.getTarget().className())))
+            throw new CallerScopeDenied();
+
+        var criteria = action.getSubmissionCriteria();
+        if (criteria == null) return;
+        var conditions = criteria.getJSONArray("conditions");
+        if (conditions == null || conditions.isEmpty()) return;
+        var classDefs = classDefinitions(domainId);
+        var classes = conditions.stream().map(JSONObject::from)
+                .map(condition -> normalize(condition.getString("className"), classDefs))
+                .filter(Objects::nonNull).distinct().toList();
+        if (!classes.isEmpty() && !target.allowsClasses(classes)) throw new CallerScopeDenied();
+    }
+
+    public static final class CallerScopeDenied extends OwnerRefusal {
+        public CallerScopeDenied() {
+            super("ACTION_TARGET_OUT_OF_SCOPE", "超出本轮数据范围");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> classDefinitions(String domainId) {
+        return (List<Map<String, Object>>) admin.getJSONRule(domainId).get("classDef");
     }
 
     /**

@@ -13,7 +13,7 @@ import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { UnavailableObjectAction } from "@ontomato/contracts/platform-type-table";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import {
-  panelFormDescriptionSchema, type PanelFieldTone, type PanelFormDescription, type PanelFormValues, type PanelRecord,
+  panelFormDescriptionSchema, type PanelFieldTone, type PanelFormValues, type PanelRecord,
   type PanelRecordChildReferenceFieldValue, type PanelRecordFieldArrayItem, type PanelRecordFieldValue,
 } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
@@ -22,7 +22,7 @@ import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { objectActionDeclaration, readRefusal, storedObjectActionSchema } from "./object-actions";
 import { sandboxPermissionPresentation } from "../product-panels/sandbox-permission";
 import { operationHost } from "../product-panels/operation-host";
@@ -475,17 +475,17 @@ function actionRecord(action: ActionAsset, fieldLabels: Record<string, string>):
   };
 }
 
-/** One read from the action owner as the viewer: its envelope's data checked against the schema, or its refusal. */
+/** Reads the action owner's payload as the viewer, or raises its refusal. */
 function actionOwner(viewer: AssistantCredentials) {
   const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
   const base = config.dataQuery.baseUrl.replace(/\/$/, "");
-  return async function owner<T>(name: string, path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+  return async function owner(name: string, path: string, body: unknown): Promise<unknown> {
     const response = body === undefined
       ? await backendGet(name, base + path, options)
       : await backendPost(name, base + path, body, options);
     const envelope = ownerEnvelopeSchema.parse(JSON.parse(response.text));
     if (!envelope.success) throw readRefusal(envelope, "ACTION_READ_FAILED", "The owner could not read the actions");
-    return schema.parse(envelope.data);
+    return envelope.data;
   };
 }
 
@@ -502,7 +502,14 @@ export interface ObjectActionCatalog {
  */
 export async function readObjectActions(viewer: AssistantCredentials, objectType?: string): Promise<ObjectActionCatalog> {
   const owner = actionOwner(viewer);
-  const published = await owner("action-object-catalog", "/action/queryList", { purpose: "execute", status: "PUBLISHED" }, z.array(z.unknown()));
+  return presentObjectActionCatalog(
+    await owner("action-object-catalog", "/action/queryList", { purpose: "execute", status: "PUBLISHED" }),
+    objectType,
+  );
+}
+
+export function presentObjectActionCatalog(payload: unknown, objectType?: string): ObjectActionCatalog {
+  const published = z.array(z.unknown()).parse(payload);
   const actions: ObjectActionEntry[] = [];
   const unavailableActions: UnavailableObjectAction[] = [];
   for (const raw of published) {
@@ -540,24 +547,22 @@ export async function readObjectActions(viewer: AssistantCredentials, objectType
   return { actions, unavailableActions };
 }
 
-export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
-  const owner = actionOwner(viewer);
-  const readActions = () => owner("action-list", "/action/queryList", {}, z.array(actionSchema));
-  const translate = (key: string) => tForLocale(viewer.locale, key);
+const derivedActionSchema = explainedActionSchema.extend({ definition: actionDefinitionSchema });
+
+/** Presents successful action payloads without reading the owner again. */
+export function createActionPanelReadPresenter(locale?: string) {
+  const translate = (key: string) => tForLocale(locale, key);
   const fieldLabels = () => Object.fromEntries(
     ["status", "origin", "createdBy", "reviewedBy", "function", "updatedAt"]
       .map(name => [name, translate(`panels.action.fields.${name}`)]),
   );
-  function definitionForm(name: string, target: PanelFormTarget, { values, changedField }: ActionFormParams) {
-    return owner(name, "/action/definitionForm", {
-      target, ...(values !== undefined && { values }), changedField: changedField ?? null,
-    }, panelFormDescriptionSchema);
-  }
+  const form = (payload: unknown) => panelFormDescriptionSchema.parse(payload);
   return {
-    async sandboxCapability(): Promise<PanelRecord> {
-      const { status, supported, canCreateAndDrop, reason, probeNote } =
-        await owner("action-sandbox-capability", "/action/sandboxCapability", undefined, sandboxCapabilitySchema);
-      const sandbox = sandboxPermissionPresentation({ status, reason }, viewer.locale);
+    form,
+    createForm: form,
+    sandboxCapability(payload: unknown): PanelRecord {
+      const { status, supported, canCreateAndDrop, reason, probeNote } = sandboxCapabilitySchema.parse(payload);
+      const sandbox = sandboxPermissionPresentation({ status, reason }, locale);
       return {
         primaryKey: "domain",
         label: translate("panels.dataAdapters.sandbox.title"),
@@ -576,19 +581,28 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         },
       };
     },
-    async list(): Promise<PanelRecord[]> {
+    list(payload: unknown): PanelRecord[] {
       const labels = fieldLabels();
-      return (await readActions()).map(action => actionRecord(action, labels));
+      return z.array(actionSchema).parse(payload).map(action => actionRecord(action, labels));
     },
-    async count() {
-      const { total } = await owner("action-count", "/action/queryList", { countOnly: true }, actionCountSchema);
-      return { rows: [], total };
+    record(payload: unknown): PanelRecord {
+      return actionRecord(actionSchema.parse(payload), fieldLabels());
     },
-    async record(primaryKey: string): Promise<PanelRecord> {
-      return actionRecord(await owner("action-record", "/action/queryById", { id: primaryKey }, actionSchema), fieldLabels());
+    definition(payload: unknown): ActionDefinition {
+      return z.object({ definition: actionDefinitionSchema }).parse(payload).definition;
     },
-    async trialSummary(primaryKey: string): Promise<PanelRecord> {
-      const action = await owner("action-trial-summary", "/action/queryById", { id: primaryKey }, actionSchema);
+    explanation(payload: unknown): ActionExplanation {
+      const action = explainedActionSchema.parse(payload);
+      return actionExplanationSchema.parse({
+        ...(action.function?.code != null && { code: action.function.code }),
+        ...(action.codeHash != null && { codeHash: action.codeHash }),
+        ...(action.explanationVersion != null && { explanationVersion: action.explanationVersion }),
+        codeSegments: action.codeSegments ?? [],
+        ...(action.businessMeaning != null && { businessMeaning: action.businessMeaning }),
+      });
+    },
+    trialSummary(payload: unknown): PanelRecord {
+      const action = actionSchema.parse(payload);
       const outputs = actionTrialOutputs(action);
       const { actionStatus, trialStatus, trialStatusLabel, lastTrialAt, lastTrialError, publishBlockedCode, publishBlockedReason } = outputs;
       const trialText = (key: string) => translate(`panels.action.trial.${key}`);
@@ -608,23 +622,8 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         outputs,
       };
     },
-    async form(primaryKey: string, params: ActionFormParams): Promise<PanelFormDescription> {
-      return definitionForm("action-form", { kind: "object", objectType: ACTION, primaryKey }, params);
-    },
-    /** What the data engine derives from the action's explained code: what it writes, reads, takes and checks. */
-    async definition(primaryKey: string): Promise<ActionDefinition> {
-      const action = await owner("action-definition", "/action/queryById", { id: primaryKey },
-        z.object({ definition: actionDefinitionSchema }).passthrough());
-      return action.definition;
-    },
-    /**
-     * Standard summary record for the action's derived definition: unverified status, declared target, affected object
-     * types, and curated business meaning (suppressing redundant operation summary when derived rules are present while
-     * preserving negative effect).
-     */
-    async derivedSummary(primaryKey: string): Promise<PanelRecord> {
-      const action = await owner("action-derived-summary", "/action/queryById", { id: primaryKey },
-        explainedActionSchema.extend({ definition: actionDefinitionSchema }));
+    derivedSummary(payload: unknown, { primaryKey }: { primaryKey: string }): PanelRecord {
+      const action = derivedActionSchema.parse(payload);
       const definition = action.definition;
       const affects = definition.affects ?? [];
       const description = definition.description?.trim() ?? "";
@@ -671,10 +670,8 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         ...(affects.length > 0 ? { tags: { affects } } : {}),
       };
     },
-    /** Standard record list of derived effects ordered by semantic group (create, update, delete, link, vector, other). */
-    async derivedEffects(primaryKey: string): Promise<PanelRecord[]> {
-      const action = await owner("action-derived-effects", "/action/queryById", { id: primaryKey },
-        explainedActionSchema.extend({ definition: actionDefinitionSchema }));
+    derivedEffects(payload: unknown, { primaryKey }: { primaryKey: string }): PanelRecord[] {
+      const action = derivedActionSchema.parse(payload);
       const effects = action.definition.effects ?? [];
       if (effects.length === 0) return [];
       const parameterNames = (action.definition.parameters ?? action.function?.parameters ?? []).map(parameter => parameter.name);
@@ -742,10 +739,8 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
       }
       return rows;
     },
-    /** Standard record list of derived parameters keyed by parameter name for cross-tab reference highlighting. */
-    async derivedParameters(primaryKey: string): Promise<PanelRecord[]> {
-      const action = await owner("action-derived-parameters", "/action/queryById", { id: primaryKey },
-        explainedActionSchema.extend({ definition: actionDefinitionSchema }));
+    derivedParameters(payload: unknown, { primaryKey }: { primaryKey: string }): PanelRecord[] {
+      const action = derivedActionSchema.parse(payload);
       const parameters = action.definition.parameters ?? [];
       if (parameters.length === 0) return [];
       const paramPattern = buildParameterPattern(parameters.map(parameter => parameter.name));
@@ -783,10 +778,8 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         };
       });
     },
-    /** Standard record list of derived submission conditions and unrepresentable custom checks. */
-    async derivedConditions(primaryKey: string): Promise<PanelRecord[]> {
-      const action = await owner("action-derived-conditions", "/action/queryById", { id: primaryKey },
-        explainedActionSchema.extend({ definition: actionDefinitionSchema }));
+    derivedConditions(payload: unknown, { primaryKey }: { primaryKey: string }): PanelRecord[] {
+      const action = derivedActionSchema.parse(payload);
       const criteria = action.definition.submissionCriteria;
       const conditions = criteria?.conditions ?? [];
       const rawUnrepresentable = Array.isArray((criteria as Record<string, unknown> | undefined)?.unrepresentable)
@@ -859,20 +852,8 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
       }
       return rows;
     },
-    /** The saved code and its explanation; an action saved before it was explained has no segments yet. */
-    async explanation(primaryKey: string): Promise<ActionExplanation> {
-      const action = await owner("action-explanation", "/action/queryById", { id: primaryKey }, explainedActionSchema);
-      return actionExplanationSchema.parse({
-        ...(action.function?.code != null && { code: action.function.code }),
-        ...(action.codeHash != null && { codeHash: action.codeHash }),
-        ...(action.explanationVersion != null && { explanationVersion: action.explanationVersion }),
-        codeSegments: action.codeSegments ?? [],
-        ...(action.businessMeaning != null && { businessMeaning: action.businessMeaning }),
-      });
-    },
-    /** Standard annotatedCode projection of the saved code, hierarchical segments with parameter refs, and business meaning. */
-    async annotatedExplanation(primaryKey: string): Promise<AnnotatedCode> {
-      const action = await owner("action-annotated-explanation", "/action/queryById", { id: primaryKey }, explainedActionSchema);
+    annotatedExplanation(payload: unknown): AnnotatedCode {
+      const action = explainedActionSchema.parse(payload);
       const parameterNames = (action.definition?.parameters ?? action.function?.parameters ?? []).map(parameter => parameter.name);
       const paramPattern = buildParameterPattern(parameterNames);
       const parsedSegments = z.array(actionCodeSegmentSchema).parse(action.codeSegments ?? []);
@@ -903,9 +884,62 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         ...(summary.length > 0 && { summary }),
       });
     },
-    /** The owner's form for a new action draft. */
-    async createForm(params: ActionFormParams): Promise<PanelFormDescription> {
-      return definitionForm("action-create-form", { kind: "draft" }, params);
+  };
+}
+
+export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
+  const owner = actionOwner(viewer);
+  const present = createActionPanelReadPresenter(viewer.locale);
+  const readAction = (name: string, id: string) => owner(name, "/action/queryById", { id });
+  function definitionForm(name: string, target: PanelFormTarget, { values, changedField }: ActionFormParams) {
+    return owner(name, "/action/definitionForm", {
+      target, ...(values !== undefined && { values }), changedField: changedField ?? null,
+    });
+  }
+  return {
+    async sandboxCapability() {
+      return present.sandboxCapability(await owner("action-sandbox-capability", "/action/sandboxCapability", undefined));
+    },
+    async list() {
+      return present.list(await owner("action-list", "/action/queryList", {}));
+    },
+    async count() {
+      const { total } = actionCountSchema.parse(await owner("action-count", "/action/queryList", { countOnly: true }));
+      return { rows: [], total };
+    },
+    async record(primaryKey: string) {
+      return present.record(await readAction("action-record", primaryKey));
+    },
+    async trialSummary(primaryKey: string) {
+      return present.trialSummary(await readAction("action-trial-summary", primaryKey));
+    },
+    async form(primaryKey: string, params: ActionFormParams) {
+      return present.form(await definitionForm("action-form", { kind: "object", objectType: ACTION, primaryKey }, params));
+    },
+    /** What the data engine derives from the action's explained code: what it writes, reads, takes and checks. */
+    async definition(primaryKey: string): Promise<ActionDefinition> {
+      return present.definition(await readAction("action-definition", primaryKey));
+    },
+    async derivedSummary(primaryKey: string) {
+      return present.derivedSummary(await readAction("action-derived-summary", primaryKey), { primaryKey });
+    },
+    async derivedEffects(primaryKey: string) {
+      return present.derivedEffects(await readAction("action-derived-effects", primaryKey), { primaryKey });
+    },
+    async derivedParameters(primaryKey: string) {
+      return present.derivedParameters(await readAction("action-derived-parameters", primaryKey), { primaryKey });
+    },
+    async derivedConditions(primaryKey: string) {
+      return present.derivedConditions(await readAction("action-derived-conditions", primaryKey), { primaryKey });
+    },
+    async annotatedExplanation(primaryKey: string) {
+      return present.annotatedExplanation(await readAction("action-annotated-explanation", primaryKey));
+    },
+    async explanation(primaryKey: string): Promise<ActionExplanation> {
+      return present.explanation(await readAction("action-explanation", primaryKey));
+    },
+    async createForm(params: ActionFormParams) {
+      return present.createForm(await definitionForm("action-create-form", { kind: "draft" }, params));
     },
     /** The published object Actions for an author's type table: `readObjectActions` as this viewer. */
     objectActions: (objectType?: string) => readObjectActions(viewer, objectType),

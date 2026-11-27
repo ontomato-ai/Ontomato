@@ -35,6 +35,7 @@ import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.dataAdapter.DslExecutionMode;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
+import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.QueryPermissions;
 import io.ontomato.dataengine.service.QuerySourceAnalysis;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -66,7 +67,7 @@ public class LiveInstanceGraph {
     });
     private record CachedStatistics(long expiresAt, JSONObject data) {}
     private record CachedOverview(long expiresAt, JSONObject data) {}
-    private record CacheKey(String domainId, String version, int connections, String permission, boolean nodesOnly) {}
+    private record CacheKey(String domainId, String version, int connections, String permission, Set<String> classScope, boolean nodesOnly) {}
     private record Reader(DataAdapter adapter, Map<String, Object> schema, UserDataPermission permission) {}
     private record SchemaSnapshot(String version, Map<String, Object> schema,
             Map<String, ObjectType> types, long expiresAt) {}
@@ -140,7 +141,7 @@ public class LiveInstanceGraph {
     }
 
     @SuppressWarnings("unchecked")
-    public JSONObject query(String operation, JSONObject request, UserDataPermission permission, String domainId) {
+    public JSONObject query(String operation, JSONObject request, UserDataPermission permission, String domainId, ExecutionTarget target) {
         if (!permits.tryAcquire()) throw new IllegalStateException("Graph queries are busy. Please retry.");
         try {
             var config = configs.get(domainId);
@@ -148,9 +149,9 @@ public class LiveInstanceGraph {
             String version = snapshot.version;
             if (request.getString("version") != null && !version.equals(request.getString("version")))
                 return JSONObject.of("success", false, "code", "GRAPH_VERSION_CHANGED", "message", "Ontology changed. Reload the overview.");
-            // Cache and single-flight sharing require the same effective row AND column permissions.
+            // Samples and counts also depend on the caller's class scope.
             CacheKey cacheKey = new CacheKey(domainId, version, config.getDataAdapterConnections().hashCode(),
-                    JSON.toJSONString(permission), "nodes".equals(operation) || "connections".equals(operation));
+                    JSON.toJSONString(permission), Set.copyOf(target.classNames()), "nodes".equals(operation) || "connections".equals(operation));
             if ("statistics".equals(operation)) {
                 CachedStatistics cached = statisticsCache.get(cacheKey);
                 if (cached != null && cached.expiresAt > System.currentTimeMillis())
@@ -161,7 +162,7 @@ public class LiveInstanceGraph {
                 if (cached != null && cached.expiresAt > System.currentTimeMillis())
                     return ready(cached.data);
             }
-            Map<String, ObjectType> types = visibleTypes(snapshot.types, permission);
+            Map<String, ObjectType> types = visibleTypes(snapshot.types, permission, target);
             Map<String, ObjectType> nodeTypes = new LinkedHashMap<>();
             types.forEach((name, type) -> {
                 if (QueryPermissions.allowed(permission, name, type.pk, QueryPermissions.Use.DETAIL)) nodeTypes.put(name, type);
@@ -311,7 +312,7 @@ public class LiveInstanceGraph {
 
     private JSONObject cachedStatistics(Reader adapter, AdapterPool pool,
             Map<String, ObjectType> types, CacheKey cacheKey) throws Exception {
-        cacheKey = new CacheKey(cacheKey.domainId, cacheKey.version, cacheKey.connections, cacheKey.permission, false);
+        cacheKey = new CacheKey(cacheKey.domainId, cacheKey.version, cacheKey.connections, cacheKey.permission, cacheKey.classScope, false);
         CachedStatistics cached = statisticsCache.get(cacheKey);
         if (cached != null && cached.expiresAt > System.currentTimeMillis()) return cached.data;
         JSONObject data = statistics(adapter, pool, types);
@@ -338,10 +339,10 @@ public class LiveInstanceGraph {
     // Schema parsing
     // ----------------------------------------------------------------------------------
 
-    private Map<String, ObjectType> visibleTypes(Map<String, ObjectType> types, UserDataPermission permission) {
+    private Map<String, ObjectType> visibleTypes(Map<String, ObjectType> types, UserDataPermission permission, ExecutionTarget target) {
         Map<String, ObjectType> visible = new LinkedHashMap<>();
         for (ObjectType type : types.values()) {
-            if (!QueryPermissions.classAllowed(permission, type.name)
+            if (!target.allowsClasses(List.of(type.name)) || !QueryPermissions.classAllowed(permission, type.name)
                     || !QueryPermissions.allowed(permission, type.name, type.pk, QueryPermissions.Use.AGGREGATE)) continue;
             boolean labelVisible = QueryPermissions.allowed(permission, type.name, type.label, QueryPermissions.Use.DETAIL);
             String label = labelVisible ? type.label : type.pk;

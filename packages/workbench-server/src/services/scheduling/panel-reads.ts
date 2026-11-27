@@ -1,13 +1,27 @@
-import { createScheduledTaskReads, type ScheduledApplicationsStatus } from "@ontomato/platform-schedules/panel-reads";
+import { createScheduledTaskReads, type ScheduledApplicationsStatus, type TriggerListParams } from "@ontomato/platform-schedules/panel-reads";
+import { panelReadParameterSchemas } from "@ontomato/contracts/panel-projection";
+import { platformTaskStatusSchema } from "@ontomato/contracts/platform-schedules";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readPrincipalDirectory } from "../identity/principal-directory";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { withReadDirective } from "../product-panels/read-directive";
 import { triggerClient } from "./trigger-client";
 
-const SCHEDULE_LIST_REREAD_MS = 30_000;
-const SCHEDULE_RUN_REREAD_MS = 5_000;
+export const SCHEDULE_LIST_REREAD_MS = 30_000;
+export const SCHEDULE_RUN_REREAD_MS = 5_000;
+
+export function triggerCatalogueParams(params: Record<string, unknown>): TriggerListParams {
+  const workspace = params.workspace === "agent";
+  const taskId = workspace ? panelReadParameterSchemas.triggerRef.nullish().parse(params.selectedTask)?.primaryKey : undefined;
+  return {
+    scope: panelReadParameterSchemas.keyword.optional().parse(params.scope),
+    search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+    status: platformTaskStatusSchema.optional().parse(params.status === "" ? undefined : params.status),
+    taskId,
+    agentId: workspace && !taskId ? panelReadParameterSchemas.keyword.optional().parse(params.workspaceAgent) : undefined,
+  };
+}
 
 export function createScheduledTaskReadAdapter(
   owner: ProductOwner, viewer: AssistantCredentials, signal?: AbortSignal,

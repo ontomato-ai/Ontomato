@@ -61,6 +61,8 @@ const props = withDefaults(defineProps<{
    * candidate preview; false beside a conversation or for a custom application frame panel.
    */
   historyBack?: boolean;
+  /** Whether this host is mounted beside a conversation (its address rides in the host route's `?page=` query). */
+  beside?: boolean;
   /** Optional override for confirming unsaved-change leave outside an enclosing platform shell. */
   confirmLeave?: () => Promise<boolean>;
   /** Optional current user display info override outside an enclosing platform shell. */
@@ -71,6 +73,7 @@ const props = withDefaults(defineProps<{
   currentEntry: undefined,
   frameState: undefined,
   historyBack: true,
+  beside: false,
   confirmLeave: undefined,
   currentUser: undefined,
   liveState: null,
@@ -131,8 +134,10 @@ const backController = createPanelBackController({
   active: () => props.shown,
   scopeElement: () => hostElement.value,
   allowHistory: () => props.historyBack,
+  beside: () => props.beside,
   isDirty: () => view.dirty.value,
   confirmLeaveUnsaved,
+  guardNavigationBack: () => !shellLeave,
 });
 onBeforeUnmount(() => backController.dispose());
 
@@ -163,6 +168,7 @@ const view = usePanelInstance(props.port, {
   frameState: () => props.frameState as Readonly<Record<string, import("@ontomato/contracts/agent-runtime-values").RuntimeJsonValue>> | undefined,
   ...(overlayContainer ? { overlayContainer: () => overlayContainer.value } : {}),
   registerBackHandler: backController.register,
+  navigateBack: backController.navigateBack,
   confirmLeaveUnsaved,
   ...(hasCurrentUserSource ? { currentUser: readCurrentUser } : {}),
 });
@@ -294,7 +300,8 @@ defineExpose({ ...view, operations });
 [data-panel-overlay-root] .el-drawer:is(.ttb, .btt) {
   max-height: 100%;
 }
-[data-panel-overlay-root] .el-message {
+[data-panel-overlay-root] .el-message,
+:has(> [data-panel-overlay-root]) > .el-message {
   max-width: calc(100% - 32px);
 }
 [data-panel-overlay-root] .el-message-box {

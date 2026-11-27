@@ -1,10 +1,12 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema, type RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import {
   ADD_ORG_UNIT_MEMBER,
+  ADD_ROLE_MEMBERS,
+  ADD_ROLE_POLICIES,
   ADD_USER_MEMBER,
   DELETE_ORG_GRANT,
   DELETE_ORG_POSITION,
@@ -14,6 +16,7 @@ import {
   GENERATE_USER_API_KEY,
   GRANT_MEMBER_ACCESS,
   GRANT_POLICY_ENTRIES,
+  REVOKE_POLICY_ENTRIES,
   INSPECT_MEMBER_ACCESS,
   INSPECT_POLICY_ACCESS,
   ISSUE_USER_API_KEY_BATCH,
@@ -25,9 +28,12 @@ import {
   ORG_UNIT,
   PERMISSION_POLICY,
   PREVIEW_POLICY_ENTRY_GRANT,
+  PREVIEW_POLICY_ENTRY_REVOKE,
   READ_MEMBER_ACCESS_CONTEXT,
   REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
+  REMOVE_ROLE_MEMBERS,
+  REMOVE_ROLE_POLICIES,
   REMOVE_USER,
   RESET_USER_PASSWORD,
   RESOLVE_PENDING_POLICY_GRANT,
@@ -60,17 +66,22 @@ import {
   type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
 import { readMemberAccessContext } from "./panel-reads";
+import { loadPolicyWorkbenchCatalog } from "./policy-catalog";
 import {
   grantMemberAccessInputSchema,
   grantPolicyEntries,
+  revokePolicyEntries,
   grantPolicyEntriesInputSchema,
   grantPolicyEntriesResultSchema,
+  revokePolicyEntriesInputSchema,
+  revokePolicyEntriesResultSchema,
   inspectMemberAccessInputSchema,
   inspectPolicyAccessInputSchema,
   inspectPolicyAccessPayload,
   listPendingPolicyGrantsPayload,
   memberAccessContextInputSchema,
   previewEntryGrantPayload,
+  policyEntryRevokePreviewPayload,
   previewPolicyEntryGrantInputSchema,
   resolvePendingPolicyGrants,
   resolvePendingPolicyGrantsInputSchema,
@@ -89,7 +100,40 @@ const recordLabelSchema = z.object({ label: z.string().min(1) }).passthrough();
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const emptyInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
+const previewEntryRevokeInputSchema = z.object({ entryId: z.string().min(1) }).strict();
+const policyUsageSchema = z.object({
+  roleCount: z.number().int().nonnegative(),
+  userCount: z.number().int().nonnegative(),
+  roles: z.array(z.object({ id: z.string().min(1), name: z.string() })),
+  kindLabels: z.record(z.string(), z.string()),
+  verbLabels: z.record(z.string(), z.string()),
+}).strict();
 const jsonReadResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonObjectSchema });
+
+async function readPolicyUsage(host: PanelOperationHost, policyId: string) {
+  const envelope = await ownerPost(host, "/panel/governance/policies/usage", { id: policyId }, ownerEnvelopeSchema);
+  if (!envelope.success) {
+    throw new HttpError(422, envelope.message ?? "The owner could not read the policy impact",
+      "PERMISSION_POLICY_USAGE_UNAVAILABLE");
+  }
+  return policyUsageSchema.parse(envelope.data);
+}
+
+function labelGrantList(
+  items: unknown,
+  kindLabels: Record<string, string>,
+  verbLabels: Record<string, string>,
+): RuntimeJsonObject[] {
+  return (items as RuntimeJsonObject[]).map(item => {
+    const kind = String(item.kind);
+    const verb = String(item.verb);
+    return {
+      ...item,
+      kindLabel: kindLabels[kind] ?? kind,
+      verbLabel: verbLabels[verb] ?? verb,
+    };
+  });
+}
 
 function policyReadTargetId(target?: { kind: string; primaryKey?: string } | null): string {
   if (!target || target.kind !== "object" || !target.primaryKey) {
@@ -107,7 +151,7 @@ function memberReadTargetId(target?: { kind: string; primaryKey?: string } | nul
 
 async function writePolicyGrants(
   target: PanelOperationTarget,
-  write: (policyId: string) => Promise<z.infer<typeof grantPolicyEntriesResultSchema> | z.infer<typeof resolvePendingPolicyGrantsResultSchema>>,
+  write: (policyId: string) => Promise<z.infer<typeof grantPolicyEntriesResultSchema> | z.infer<typeof revokePolicyEntriesResultSchema> | z.infer<typeof resolvePendingPolicyGrantsResultSchema>>,
 ): Promise<SinglePanelOperationOutcome> {
   if (target.kind !== "object") throw new Error("Policy grants require a selected permission policy");
   try {
@@ -164,6 +208,14 @@ const apiKeyBatchInspectSchema = z.object({
 
 const addOrgUnitMemberInputSchema = z.object({
   userId: z.string().min(1),
+}).strict();
+
+const roleMembersInputSchema = z.object({
+  userIds: z.array(z.string().min(1)).min(1),
+}).strict();
+
+const rolePoliciesInputSchema = z.object({
+  policyIds: z.array(z.string().min(1)).min(1),
 }).strict();
 
 const addOrgUnitMemberResultSchema = z.object({
@@ -372,6 +424,71 @@ async function postAction(
   return onSuccess(runtimeJsonObjectSchema.parse(envelope.data));
 }
 
+async function writeRoleRelation(
+  host: Host,
+  path: string,
+  target: PanelOperationTarget,
+  input: Record<string, unknown>,
+  inputSchema: z.ZodType<Record<string, unknown>>,
+  failureCode: string,
+  fallbackMessage: string,
+): Promise<SinglePanelOperationOutcome> {
+  if (target.kind !== "object") throw new Error("Role relation writes act on a selected role");
+  const ids = inputSchema.parse(input);
+  return postAction(
+    host,
+    path,
+    { id: target.primaryKey, ...ids },
+    failureCode,
+    fallbackMessage,
+    data => {
+      const parsed = runtimeJsonObjectSchema.parse(data);
+      return {
+        kind: "success",
+        data: parsed,
+        affected: affected(ROLE, target.primaryKey, [ROLE, USER, PERMISSION_POLICY]),
+      };
+    },
+  );
+}
+
+function roleRelationOperation(options: {
+  handlerRef: string;
+  labelKey: string;
+  path: string;
+  inputSchema: z.ZodType<Record<string, unknown>>;
+  resultSchema: z.ZodType<Record<string, unknown>>;
+}) {
+  return {
+    handlerRef: options.handlerRef,
+    labelKey: options.labelKey,
+    kind: "action" as const,
+    binding: { kind: "PlatformOperation" as const, id: options.handlerRef },
+    effect: "write" as const,
+    batch: false as const,
+    targetType: ROLE,
+    targetSchema: objectTarget(ROLE),
+    inputSchema: options.inputSchema,
+    resultSchema: options.resultSchema,
+    targetInput: "role",
+    targetLabel: (host: Host, target: PanelRecordTarget) =>
+      governanceTargetLabel(host, target, "/panel/governance/roles/record", "ROLE_UNAVAILABLE"),
+    unavailable: (host: Host, target: PanelRecordTarget) =>
+      ownerDeleteUnavailable(host, "/panel/governance/roles/assign/unavailable", { id: target.primaryKey }, "ROLE_UNAVAILABLE"),
+    execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      return writeRoleRelation(
+        host,
+        options.path,
+        target,
+        input,
+        options.inputSchema,
+        "ROLE_RELATION_WRITE_FAILED",
+        "The owner could not update the role assignments",
+      );
+    },
+  };
+}
+
 async function removeWithAffected(
   host: Host,
   path: string,
@@ -545,7 +662,7 @@ export const governanceServerOperations = [
     targetSchema: objectTarget(USER),
     inputSchema: resetPasswordInputSchema,
     secretFields: ["/newPassword"],
-    describeInputSchema: (_host, locale) => ({
+    describeLocalInputSchema: locale => ({
       type: "object",
       properties: {
         newPassword: {
@@ -830,6 +947,35 @@ export const governanceServerOperations = [
     },
   },
 
+  roleRelationOperation({
+    handlerRef: ADD_ROLE_MEMBERS,
+    labelKey: "panels.governance.role.operations.addMembers",
+    path: "/panel/governance/roles/add-members",
+    inputSchema: roleMembersInputSchema,
+    resultSchema: savedIdSchema,
+  }),
+  roleRelationOperation({
+    handlerRef: REMOVE_ROLE_MEMBERS,
+    labelKey: "panels.governance.role.operations.removeMembers",
+    path: "/panel/governance/roles/remove-members",
+    inputSchema: roleMembersInputSchema,
+    resultSchema: savedIdSchema,
+  }),
+  roleRelationOperation({
+    handlerRef: ADD_ROLE_POLICIES,
+    labelKey: "panels.governance.role.operations.addPolicies",
+    path: "/panel/governance/roles/add-policies",
+    inputSchema: rolePoliciesInputSchema,
+    resultSchema: savedIdSchema,
+  }),
+  roleRelationOperation({
+    handlerRef: REMOVE_ROLE_POLICIES,
+    labelKey: "panels.governance.role.operations.removePolicies",
+    path: "/panel/governance/roles/remove-policies",
+    inputSchema: rolePoliciesInputSchema,
+    resultSchema: savedIdSchema,
+  }),
+
   // -------------------------------------------------------------------------
   // platform:PermissionPolicy
   // -------------------------------------------------------------------------
@@ -916,9 +1062,17 @@ export const governanceServerOperations = [
     async execute(host: PanelOperationHost, call) {
       const policyId = policyReadTargetId(call.target);
       const { entryIds } = previewPolicyEntryGrantInputSchema.parse(call.input);
+      const [preview, usage] = await Promise.all([
+        previewEntryGrantPayload(host.executor.credentials, host.executor.owner.domainId, policyId, entryIds),
+        readPolicyUsage(host, policyId),
+      ]);
       return {
         kind: "json" as const,
-        value: await previewEntryGrantPayload(host.executor.credentials, host.executor.owner.domainId, policyId, entryIds),
+        value: {
+          ...preview,
+          targetPolicyRoles: usage.roles,
+          candidates: labelGrantList(preview.candidates, usage.kindLabels, usage.verbLabels),
+        },
       };
     },
   },
@@ -941,6 +1095,54 @@ export const governanceServerOperations = [
     },
   },
   {
+    handlerRef: PREVIEW_POLICY_ENTRY_REVOKE,
+    labelKey: "panels.governance.policy.operations.previewEntryRevoke",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: PREVIEW_POLICY_ENTRY_REVOKE },
+    effect: "read",
+    batch: false,
+    target: { source: "input", input: "policy" },
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: previewEntryRevokeInputSchema,
+    resultSchema: jsonReadResultSchema,
+    async execute(host: PanelOperationHost, call) {
+      const policyId = policyReadTargetId(call.target);
+      const { entryId } = previewEntryRevokeInputSchema.parse(call.input);
+      const [preview, usage] = await Promise.all([
+        policyEntryRevokePreviewPayload(
+          host.executor.credentials, host.executor.owner.domainId, policyId, entryId,
+        ),
+        readPolicyUsage(host, policyId),
+      ]);
+      return {
+        kind: "json" as const,
+        value: {
+          ...preview,
+          impact: { roleCount: usage.roleCount, userCount: usage.userCount, roles: usage.roles },
+        },
+      };
+    },
+  },
+  {
+    handlerRef: REVOKE_POLICY_ENTRIES,
+    labelKey: "panels.governance.policy.operations.revokeEntries",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: REVOKE_POLICY_ENTRIES },
+    effect: "write",
+    batch: false,
+    targetType: PERMISSION_POLICY,
+    targetSchema: objectTarget(PERMISSION_POLICY),
+    inputSchema: revokePolicyEntriesInputSchema,
+    resultSchema: revokePolicyEntriesResultSchema,
+    targetInput: "policy",
+    targetLabel: (host: Host, target: PanelRecordTarget) =>
+      governanceTargetLabel(host, target, "/panel/governance/policies/record", "PERMISSION_POLICY_UNAVAILABLE"),
+    execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>) {
+      return writePolicyGrants(target, policyId => revokePolicyEntries(host.executor.credentials, policyId, input));
+    },
+  },
+  {
     handlerRef: LIST_PENDING_POLICY_GRANTS,
     labelKey: "panels.governance.policy.operations.listPending",
     kind: "action",
@@ -954,9 +1156,17 @@ export const governanceServerOperations = [
     resultSchema: jsonReadResultSchema,
     async execute(host: PanelOperationHost, call) {
       const policyId = policyReadTargetId(call.target);
+      const [pending, usage] = await Promise.all([
+        listPendingPolicyGrantsPayload(host.executor.credentials, host.executor.owner.domainId, policyId),
+        readPolicyUsage(host, policyId),
+      ]);
       return {
         kind: "json" as const,
-        value: await listPendingPolicyGrantsPayload(host.executor.credentials, host.executor.owner.domainId, policyId),
+        value: {
+          ...pending,
+          targetPolicyRoles: usage.roles,
+          items: labelGrantList(pending.items, usage.kindLabels, usage.verbLabels),
+        },
       };
     },
   },

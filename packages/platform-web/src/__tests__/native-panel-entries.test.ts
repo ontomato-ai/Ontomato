@@ -16,41 +16,53 @@ import { catalogFixture, closedAccess, generatedNavigation } from "./fixtures";
 
 const t = (key: string) => key;
 const access = closedAccess(["ontology-modeling", "business-knowledge"]);
+const legacyRenderers = {
+  ontology: {
+    sections: [
+      { key: "ontology:facts", titleKey: "platform.layers.facts", paths: ["/ontology/playground", "/ontology/objects", "/ontology/knowledge"] },
+    ],
+  },
+};
 
-function ontologyPages(catalog: ReturnType<typeof catalogFixture>) {
-  const apps = appDeclarations(generatedNavigation(), access, catalogPartition(catalog, "en"), t);
+function legacyOntologyPages(catalog: ReturnType<typeof catalogFixture>) {
+  const apps = appDeclarations(generatedNavigation(), access, catalogPartition(catalog, "en", legacyRenderers), t);
   return apps.find((app) => app.id === "ontology")!.groups!.flatMap((group) => group.pages.map((page) => ({ id: page.id, label: page.label })));
 }
 
 it("stands a built-in application's named entry where its menu table lists the address, by the entry's name", () => {
-  const before = ontologyPages(catalogFixture());
+  const before = legacyOntologyPages(catalogFixture());
   const knowledgeAt = before.findIndex((page) => page.id === "/ontology/knowledge");
   expect(knowledgeAt).toBeGreaterThanOrEqual(0);
 
   const catalog = catalogFixture().map((app) => app.id !== "ontology" ? app : {
     ...app,
-    // Added to the entries the application already declares.
-    panelUses: [...app.panelUses ?? [], {
-      id: "use-knowledge", pageKey: "ontology-knowledge", panelId: "builtin-knowledge", path: "/ontology/knowledge",
-      names: { en: "Business knowledge" },
-    }],
+    panelUses: [
+      ...(app.panelUses ?? []).filter((use) => use.path !== "/ontology/knowledge"),
+      {
+        id: "use-knowledge", pageKey: "ontology-knowledge", panelId: "builtin-knowledge", path: "/ontology/knowledge",
+        names: { en: "Custom knowledge" },
+      },
+    ],
   });
-  const after = ontologyPages(catalog);
+  const after = legacyOntologyPages(catalog);
   // The same place, the entry's own name; every other page as it was.
   expect(after.map((page) => page.id)).toEqual(before.map((page) => page.id));
-  expect(after[knowledgeAt]).toEqual({ id: "/ontology/knowledge", label: "Business knowledge" });
+  expect(after[knowledgeAt]).toEqual({ id: "/ontology/knowledge", label: "Custom knowledge" });
   expect(after.filter((_, index) => index !== knowledgeAt)).toEqual(before.filter((_, index) => index !== knowledgeAt));
 });
 
 it("draws an entry's row with the look of the native page it replaced: the listed page's, else its navigation row's", () => {
   const catalog = catalogFixture().map((app) => app.id !== "ontology" ? app : {
     ...app,
-    panelUses: [...app.panelUses ?? [], {
-      id: "use-knowledge", pageKey: "ontology-knowledge", panelId: "builtin-knowledge", path: "/ontology/knowledge",
-      names: { en: "Business knowledge" },
-    }],
+    panelUses: [
+      ...(app.panelUses ?? []).filter((use) => use.path !== "/ontology/knowledge"),
+      {
+        id: "use-knowledge", pageKey: "ontology-knowledge", panelId: "builtin-knowledge", path: "/ontology/knowledge",
+        names: { en: "Business knowledge" },
+      },
+    ],
   });
-  const row = (navigation: ReturnType<typeof generatedNavigation>) => appDeclarations(navigation, access, catalogPartition(catalog, "en"), t)
+  const row = (navigation: ReturnType<typeof generatedNavigation>) => appDeclarations(navigation, access, catalogPartition(catalog, "en", legacyRenderers), t)
     .find((app) => app.id === "ontology")!.groups!.flatMap((group) => group.pages).find((page) => page.id === "/ontology/knowledge")!;
   const navigation = generatedNavigation();
   const pageGone = { ...navigation, pages: navigation.pages.filter((page) => page.path !== "/ontology/knowledge") };
@@ -63,27 +75,18 @@ it("draws an entry's row with the look of the native page it replaced: the liste
   expect(row(pageGone)).toMatchObject({ icon: "pages" });
 });
 
-it("lists a permissions panel entry in both the owning menu and ontology governance after native removal", () => {
-  const path = "/permissions/organization";
-  const catalog = catalogFixture([{
-    id: "permissions", kind: "native", rail: "bottom", category: "admin", sort: 10,
-    entry: { path: "/permissions", renderer: "permissions", entryKey: "organization" },
-    scheduleAdapter: null, allowStandalone: false,
-    declaration: {
-      names: { en: "Permissions" }, descriptions: {}, icon: "permissions", groups: [],
-      panelUses: [{
-        id: "organization", pageKey: "organization", panelId: "builtin-organization", path,
-        names: { en: "Organization" },
-      }],
-    },
-  }]);
-  const partition = catalogPartition(catalog, "en", {
-    permissions: { sections: [{ key: "permissions:pages", paths: [path] }] },
+it("drives ontology manager from its own catalog entries without a native-layouts table", () => {
+  const catalog = catalogFixture().map((app) => app.id !== "ontology" ? app : {
+    ...app,
+    panelUses: [{
+      id: "ontology-members", pageKey: "ontology-members", panelId: "builtin-product-governance-members",
+      path: "/ontology/members", icon: "users", groupKey: "governance",
+      names: { en: "Members" },
+    }],
   });
-  const navigation = { ...generatedNavigation(), entries: [{ path, icon: Network }] };
-  const apps = appDeclarations(navigation, access, partition, t);
-  for (const [id, group] of [["permissions", "permissions:pages"], ["ontology", "ontology:governance"]]) {
-    expect(apps.find(app => app.id === id)?.groups?.find(section => section.key === group)?.pages)
-      .toContainEqual({ id: path, label: "Organization", icon: Network });
-  }
+  const ontology = appDeclarations(generatedNavigation(), closedAccess([]), catalogPartition(catalog, "en"), t)
+    .find((app) => app.id === "ontology")!;
+  expect(ontology.framePanelId).toBe("builtin-product-ontology-frame");
+  expect(ontology.groups).toEqual([]);
+  expect(ontology.home).toBe("/ontology/members");
 });

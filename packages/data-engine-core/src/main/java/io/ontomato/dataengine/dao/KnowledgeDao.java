@@ -98,6 +98,20 @@ public class KnowledgeDao extends BaseDao {
         return knowledgeEntities;
     }
 
+    public List<Integer> approvalStatuses(String domainId, List<String> ids) {
+        var statuses = jdbcTemplate.query(
+                "SELECT knowledge_id, status FROM " + TABLE_NAME + " WHERE domain_id = ? AND knowledge_id = ANY(?)",
+                statement -> {
+                    statement.setString(1, domainId);
+                    statement.setArray(2, statement.getConnection().createArrayOf("varchar", ids.toArray()));
+                }, rs -> {
+                    Map<String, Integer> byId = new HashMap<>();
+                    while (rs.next()) byId.put(rs.getString("knowledge_id"), rs.getInt("status"));
+                    return byId;
+                });
+        return ids.stream().map(statuses::get).toList();
+    }
+
     public void insertKnowledge(String knowledgeid, String domainId,
                                 String knowledgeTitle, String knowledgeText,
                                 List<String> knowledgeTags, int creatorType, int status,

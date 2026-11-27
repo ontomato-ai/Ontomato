@@ -23,7 +23,7 @@ import {
   type PlatformScheduleForm,
   type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
-import { isApplicationPanelUse, type ApplicationEntryResolution, type ApplicationPanelUse, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
+import { isApplicationPanelUse, type ApplicationEntryResolution, type ApplicationOpenResponse, type ApplicationPanelUse, type ProductPanel, type ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -299,28 +299,6 @@ export const ignoreChanges = () => {};
 export const registered = (applicationId: string, use: ApplicationPanelUse, panel: ProductPanel) =>
   ({ kind: "registered", applicationId, use, panel }) as const;
 
-/** The page skill ref Node names for a panel read for one page: one ref per panel, by a name derived from the panel alone. */
-export const memberRefOf = (panelId: string) => ({
-  namespace: { kind: "provider" as const, provider: "product-panels" },
-  name: `pvt-${[...panelId].map(char => char.charCodeAt(0).toString(16)).join("").slice(0, 48).padEnd(48, "0")}`,
-});
-
-/**
- * The page skill context Node answers for a panel read or a snapshot read made for one page: which member a message
- * beside that page reaches. A read that names no page gets none.
- */
-export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Sent) {
-  const query = new URLSearchParams(request.search);
-  const applicationId = query.get("applicationId");
-  if (!applicationId || query.get("source") === "frame") return undefined;
-  const pageKey = query.get("pageKey")!;
-  const locator = { applicationId, entryKey: query.get("useId")!, pageKey };
-  return {
-    mode: "member", locator,
-    member: { source: { kind: "application-use", applicationId, useId: query.get("useId")! }, memberPath: [], ref: memberRefOf(panel.id) },
-  };
-}
-
 /** Node's ordinary panel read only supplies the definition. */
 export function panelAnswer(panel: ProductPanel, _request?: Sent) {
   return Response.json({ panel });
@@ -463,10 +441,16 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
 
 export const APPLICATION_ENTRY_PATH = "/api/product-panels/application-entry";
 
-export function applicationEntrySkill(applicationId: string, use: ApplicationPanelUse): NonNullable<ApplicationEntryResolution["pageSkillContext"]> {
-  const locator = { applicationId, entryKey: use.id, pageKey: use.pageKey };
-  const entry = { kind: "application-use" as const, applicationId, useId: use.id };
-  return { mode: "member", locator, entry, member: { source: entry, memberPath: [], ref: memberRefOf(use.panelId) } };
+export function applicationEntryPageContext(applicationId: string, use: ApplicationPanelUse): NonNullable<ApplicationEntryResolution["pageSkillContext"]> {
+  return {
+    applicationId,
+    entryKey: use.id,
+    pageKey: use.pageKey,
+    useId: use.id,
+    panelId: use.panelId,
+    path: use.path,
+    memberPath: [],
+  };
 }
 
 /**
@@ -495,19 +479,23 @@ async function resolveEntryFrom(answer: (request: Sent) => Response | Promise<Re
   const use = uses.find((candidate) => useId ? candidate.id === useId : panelUsePath(candidate.path) === path);
   if (!use) return notFound(`No entry of ${applicationId} at ${path ?? useId}`);
   // A \`panels\` application's frame panel and theme, where the test declares them beside its uses.
-  const { framePanelId, theme, groups, names, singleEntry } = (body.data ?? body) as {
+  const { framePanelId, theme, groups, names, singleEntry, allowStandalone } = (body.data ?? body) as {
     framePanelId?: string;
     theme?: unknown;
     groups?: unknown[];
     names?: Record<string, string>;
     singleEntry?: boolean;
+    allowStandalone?: boolean;
   };
   const namedUses = uses.filter((one) => one.names);
   return Response.json({
     applicationId, use,
+    allowStandalone: allowStandalone ?? true,
+    frame: null,
+    content: null,
     menu: { singleEntry: singleEntry ?? namedUses.length <= 1, ...(names ? { names } : {}), groups: groups ?? [], panelUses: namedUses },
     ...(framePanelId ? { framePanelId } : {}), ...(theme ? { theme } : {}),
-    ...(isApplicationPanelUse(use) && { pageSkillContext: applicationEntrySkill(applicationId, use) }),
+    ...(isApplicationPanelUse(use) && { pageSkillContext: applicationEntryPageContext(applicationId, use) }),
   });
 }
 

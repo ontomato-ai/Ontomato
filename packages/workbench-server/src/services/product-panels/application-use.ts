@@ -18,6 +18,11 @@ const registeredResponseSchema = z.object({
     .extend({ use: panelApplicationEntryUseSchema }),
 });
 
+export function withPanelReadRegistration<T extends Pick<ApplicationEntryResolution, "use" | "framePanelId">>(entry: T) {
+  const use = isApplicationPanelUse(entry.use) ? entry.use : null;
+  return { ...entry, registration: { panelId: use?.panelId ?? null, framePanelId: entry.framePanelId ?? null, inputs: use?.inputs } };
+}
+
 export async function personalEntry<T extends Pick<ApplicationEntryResolution, "applicationId" | "use">>(entry: T, owner?: PlatformHomeOwner): Promise<T> {
   if (entry.applicationId === "home" && entry.use.id === "home" && owner && isApplicationPanelUse(entry.use)) {
     const homePanelId = await platformHomeStore.homePanelId(owner);
@@ -44,7 +49,7 @@ export async function requirePanelEntry(
   ).catch(error => {
     if ("applicationId" in ref && error instanceof HttpError && error.status === 404)
       throw new HttpError(404, "No registered panel entrance matches the supplied applicationId and useId. "
-        + "Use the applicationId and useId listed under Available entrances in the panel skill.", error.code);
+        + "Use the applicationId and useId listed under Available entrances in the generated page description.", error.code);
     if (error instanceof HttpError && error.status === 403)
       throw new HttpError(403, "The initiating user does not have access to this panel entrance.", error.code);
     throw error;
@@ -65,7 +70,7 @@ export async function readRegisteredPanelEntry(credentials: AssistantCredentials
     }), retries: 1 });
   const { data } = registeredResponseSchema.parse(JSON.parse(reply.text));
   requireMatchingRef(data, ref);
-  return personalEntry(data, owner);
+  return personalEntry(withPanelReadRegistration(data), owner);
 }
 
 export async function requirePanelUseEntry(

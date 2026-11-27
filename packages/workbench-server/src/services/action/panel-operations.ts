@@ -68,9 +68,17 @@ const statusInputSchema = z.object({
 async function describeStatusInputSchema(host: Host) {
   const result = await ownerPost(host, "/action/definitionForm", { target: { kind: "draft" }, changedField: null }, ownerEnvelopeSchema);
   if (!result.success) throw readRefusal(result, "ACTION_READ_FAILED", "The owner could not read the action definition form");
-  const status = panelFormDescriptionSchema.parse(result.data).fields.find(field => field.path === "/status");
-  if (status?.control.kind !== "select") throw new Error("The Action definition form must describe /status as a select");
+  return renderActionStatusInputSchema(actionStatusFieldSchema.parse(result.data));
+}
 
+export const actionStatusFieldSchema = panelFormDescriptionSchema.transform((form, context) => {
+  const status = form.fields.find(field => field.path === "/status");
+  if (status?.control.kind === "select") return { ...status, control: status.control };
+  context.addIssue({ code: "custom", message: "The Action definition form must describe /status as a select" });
+  return z.NEVER;
+});
+
+export function renderActionStatusInputSchema(status: z.infer<typeof actionStatusFieldSchema>) {
   const inputSchema = cachedZodToRuntimeJsonSchema(statusInputSchema, { effectStrategy: "input" });
   const properties = inputSchema.properties as { status: Record<string, RuntimeJsonValue> };
   const { description: _rawDescription, ...statusProperty } = properties.status;
@@ -275,8 +283,8 @@ export const m6ServerOperations = [
     resultSchema: trialReceiptSchema,
     targetInput: "action",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/action/queryById", "ACTION_UNAVAILABLE"),
-    describeInputSchema(host: PanelOperationHost) {
-      const translate = (key: string) => tForLocale(host.locale, `panels.action.trial.${key}`);
+    describeLocalInputSchema(locale) {
+      const translate = (key: string) => tForLocale(locale, `panels.action.trial.${key}`);
       return {
         type: "object",
         properties: {

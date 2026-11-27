@@ -221,7 +221,7 @@ async function submit(value: ShellFeedbackValue) {
         <template v-for="block in item.process" :key="block.key">
           <ShellProcess v-if="block.kind === 'steps'" :steps="block.steps" :active="block.active" />
           <TaskCard v-else-if="block.kind === 'task'" :task="block.task" :session-id="sessionId ?? ''" />
-          <ProcessInput v-else-if="block.kind === 'input'" :text="block.text" :answer="block.replyTo !== undefined" />
+          <ProcessInput v-else-if="block.kind === 'input'" :text="block.text" :answer="block.replyTo !== undefined" :question="block.question" />
           <ProcessDetail v-else-if="block.kind === 'detail'" :detail="block.detail" :running="item.running" />
           <div v-else class="process-note">
             <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />

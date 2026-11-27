@@ -172,6 +172,24 @@ it("omits hidden local system agents without loading their model settings and ke
   await expect(directory.count()).resolves.toMatchObject({ total: 1 });
 });
 
+it("builds the registered list from the admitted VIEW and EDIT ranges and the retriever fact", async () => {
+  const directory = createAgentDefinitionDirectory(owner, credentials);
+  const range = (...objectIds: string[]) => ({ fixed: false, all: false, authorId: null, objectIds });
+  const scopes = { VIEW: range(presetId, customId, builderId, DIAGNOSIS_AGENT_ID), EDIT: range(customId, DIAGNOSIS_AGENT_ID) };
+  const rows = await directory.listFromBatch(scopes, { retriever: { ...retrieval, editable: false } });
+  expect(rows.map(row => [row.primaryKey, row.label, row.outputs?.category, row.outputs?.canEdit])).toEqual([
+    [presetId, "Preset", "preset", false], [customId, "Custom", "custom", true],
+    [builderId, "App builder", "system", false], [DIAGNOSIS_AGENT_ID, "Operations diagnosis", "system", true],
+    [retrievalId, "Data retrieval", "system", false],
+  ]);
+  expect(mocks.summaries).toHaveBeenCalledWith(owner.domainId, scopes.VIEW, { includeSystem: true, editRange: scopes.EDIT });
+  mocks.opsDiagnosis.mockClear();
+  const restricted = await directory.listFromBatch({ ...scopes, VIEW: range(customId, builderId) }, { retriever: null });
+  expect(restricted.map(row => row.primaryKey)).toEqual([customId, builderId]);
+  expect(mocks.opsDiagnosis).not.toHaveBeenCalled();
+  expect(fetchOwner).not.toHaveBeenCalled();
+});
+
 it.each(systemIds)("checks view and edit separately for system agent %s", async id => {
   const directory = createAgentDefinitionDirectory(owner, credentials);
   decision.mockImplementation(request => "verb" in request && request.verb === "VIEW");

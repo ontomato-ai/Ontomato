@@ -3,11 +3,16 @@ package io.ontomato.dataengine.controller;
 import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 
 import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
 
 import java.util.List;
+import java.util.Map;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.i18n.LocaleContextHolder;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -153,14 +158,8 @@ public class FunctionController {
 		try {
 			String id = param.getString("id");
 			User user = SystemUtils.getCurUser();
-			Function function = functionService.queryById(id);
-			// A Function is read in its own domain, as the list and the form read it; elsewhere it does not exist.
-			if (function == null || !user.getDomainId().equals(function.getDomainId()))
-				throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
+			ret.put("data", readFunction(id, lang, definitions.subject(user)));
 			ret.put("success", true);
-			if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
-                definitions.requireRead(definitions.current(), access(function, Verb.USE));
-            ret.put("data", withDisplay(function, lang));
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
 		} catch (org.springframework.web.server.ResponseStatusException e) {
@@ -179,8 +178,7 @@ public class FunctionController {
     public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
-			User user = SystemUtils.getCurUser();
-			ret.put("data", functionService.form(param, lang, user.getDomainId()));
+			ret.put("data", functionService.form(param, lang, definitions.current()));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
@@ -194,6 +192,19 @@ public class FunctionController {
 		return ret;
 	}
 
+	@Bean
+	WorkbenchPanelRead functionPanelDeleteRefusal() {
+		return new WorkbenchPanelRead("platform:Function", "deleteRefusal", (subject, parameters) ->
+				JSONObject.of("reason", functionService.deleteRefusal((String) parameters.get("primaryKey"),
+						LocaleContextHolder.getLocale().toLanguageTag(), subject)));
+	}
+
+	@Bean
+	WorkbenchPanelRead functionPanelCount() {
+		return new WorkbenchPanelRead("platform:Function", "count", (subject, parameters) ->
+				Map.of("rows", List.of(), "total", functionService.countVisible(subject)));
+	}
+
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/function/queryList")
     @ResponseBody
@@ -204,16 +215,15 @@ public class FunctionController {
 			if (param.containsKey("operation") || param.containsKey("className")) {
 				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "countOnly does not support operation or className");
 			}
-			return JSONObject.of("success", true, "data", JSONObject.of("total", functionService.countVisible(user)));
+			return JSONObject.of("success", true, "data", JSONObject.of("total", functionService.countVisible(definitions.subject(user))));
 		}
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
 			String operation = param.getString("operation");
 			String className = param.getString("className");
-			List<Function> functions = functionService.listVisible(operation, className, user);
+			ret.put("data", readFunctions(operation, className, lang, definitions.subject(user)));
 			ret.put("success", true);
-			ret.put("data", withDisplay(functions, lang));
 		} catch (org.springframework.web.server.ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
@@ -222,6 +232,42 @@ public class FunctionController {
 			ret.put("message", e.getMessage());
 		}
 		return ret;
+	}
+
+	@Bean
+	WorkbenchPanelRead functionPanelList() {
+		return new WorkbenchPanelRead("platform:Function", "list", (subject, parameters) ->
+				readFunctions((String) parameters.get("operation"), null, LocaleContextHolder.getLocale().toLanguageTag(), subject));
+	}
+
+	@Bean
+	WorkbenchPanelRead functionPanelRecord() {
+		return new WorkbenchPanelRead("platform:Function", "record", (subject, parameters) ->
+				readFunction((String) parameters.get("primaryKey"), LocaleContextHolder.getLocale().toLanguageTag(), subject));
+	}
+
+	@Bean
+	WorkbenchPanelRead functionPanelForm() {
+		return WorkbenchPanelRead.form("platform:Function", false, functionService::form);
+	}
+
+	@Bean
+	WorkbenchPanelRead functionPanelCreateForm() {
+		return WorkbenchPanelRead.form("platform:Function", true, functionService::form);
+	}
+
+	private ObjectNode readFunction(String id, String lang, SubjectContext subject) {
+		Function function = functionService.queryById(id);
+		// A Function is read in its own domain, as the list and the form read it; elsewhere it does not exist.
+		if (function == null || !subject.identity().domainId().equals(function.getDomainId()))
+			throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
+		if (!Function.OPERATION_PRODUCT.equals(function.getOperation()))
+			definitions.requireRead(subject, access(function, Verb.USE));
+		return withDisplay(function, lang);
+	}
+
+	private ArrayNode readFunctions(String operation, String className, String lang, SubjectContext subject) {
+		return withDisplay(functionService.listVisible(operation, className, subject), lang);
 	}
 
 	private ObjectNode withDisplay(Function function, String lang) {

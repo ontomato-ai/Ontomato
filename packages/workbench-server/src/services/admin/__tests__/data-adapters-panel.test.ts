@@ -22,6 +22,7 @@ import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-
 import { configureI18n } from "../../../i18n";
 import { en } from "../../../i18n/locales/en";
 import {
+  createDataAdapterConfigPanelReadPresenter,
   createDataAdapterConfigReads,
   dataAdaptersServerOperations,
 } from "../data-adapters-panel";
@@ -294,6 +295,26 @@ const failedCapability = {
   status: "failed", supported: true, canCreateAndDrop: false, reason: "CREATE denied",
   probeNote: "Creates and drops an empty probe table", details: { operation: "create" },
 } satisfies SandboxCapability;
+
+it("presents the same adapter facts as the HTTP reader without fetching configuration or an outline", async () => {
+  const reads = createDataAdapterConfigReads(actor);
+  const present = createDataAdapterConfigPanelReadPresenter(actor.credentials.locale);
+  const config = { ...storedConfig, sandboxCapability: failedCapability };
+  storedConfig.sandboxCapability = failedCapability;
+  const facts = { config, catalogue: { currentType: storedConfig.dataAdapter, adapters: installedAdapters } };
+  const selected = { primaryKey: "domain" };
+  const draft = { values: { adapterMode: multiDataSourceType }, changedField: "/adapterMode" };
+  const [record, form, routing] = await Promise.all([
+    reads.record(selected.primaryKey), reads.form(selected.primaryKey, draft), reads.routingForm(selected.primaryKey, {}),
+  ]);
+  const calls = mockFetch.mock.calls.length;
+
+  expect(present.record(facts, selected)).toEqual(record);
+  expect(present.form(facts, { ...selected, ...draft })).toEqual(form);
+  expect(present.routingForm({ ...facts, ontology: storedSchema }, selected)).toEqual(routing);
+  expect(() => present.routingForm(facts, selected)).toThrow(z.ZodError);
+  expect(mockFetch).toHaveBeenCalledTimes(calls);
+});
 
 describe("platform:DataAdapterConfig record read", () => {
   it("summarizes single-source and multi-source configurations without leaking secrets", async () => {
@@ -859,7 +880,7 @@ describe("sandbox permission writes", () => {
 describe("dataAdapters.testConnection read operation", () => {
   it("declares pre-execution resultSections and returns structured sections for SQL catalog report", async () => {
     const op = testOp();
-    expect(op.describeResultSections?.(makeHost(), "en")).toEqual([
+    expect(op.describeResultSections?.("en")).toEqual([
       { id: "summary", label: "Summary", kind: "fields" },
       { id: "objects", label: "Name", kind: "records" },
     ]);

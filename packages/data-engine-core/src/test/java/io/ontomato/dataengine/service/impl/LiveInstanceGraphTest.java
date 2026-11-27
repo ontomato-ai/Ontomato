@@ -20,6 +20,7 @@ import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
@@ -69,7 +70,7 @@ class LiveInstanceGraphTest {
         });
         var service = new LiveInstanceGraph(admin, configs, adapters);
         long firstStarted = System.nanoTime();
-        var firstScreen = service.query("nodes", new JSONObject(), fullPermission(), "test");
+        var firstScreen = service.query("nodes", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
         long firstScreenMs = (System.nanoTime() - firstStarted) / 1_000_000;
         assertTrue(firstScreen.getBooleanValue("success"));
         assertEquals(1, firstScreen.getJSONObject("data").getJSONArray("overviewNodes").size());
@@ -77,14 +78,14 @@ class LiveInstanceGraphTest {
         assertEquals(2, dsls.size(), "First screen must not execute relationship queries");
         var connections = service.query("connections", JSONObject.of(
                 "version", firstScreen.getJSONObject("data").getString("version"),
-                "sampleToken", firstScreen.getJSONObject("data").getString("sampleToken")), fullPermission(), "test");
+                "sampleToken", firstScreen.getJSONObject("data").getString("sampleToken")), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(connections.getBooleanValue("success"));
         assertEquals(1, connections.getJSONObject("data").getJSONArray("overviewEdges").size());
-        assertFalse(service.query("connections", JSONObject.of("sampleToken", "wrong"), fullPermission(), "test")
+        assertFalse(service.query("connections", JSONObject.of("sampleToken", "wrong"), fullPermission(), "test", ExecutionTarget.LIVE)
                 .getBooleanValue("success"));
         dsls.clear();
         long fullStarted = System.nanoTime();
-        var response = service.query("summary", new JSONObject(), fullPermission(), "test");
+        var response = service.query("summary", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
         long fullMs = (System.nanoTime() - fullStarted) / 1_000_000;
         System.out.printf("Graph latency fixture (120ms relationship read): nodes=%dms, full=%dms%n", firstScreenMs, fullMs);
         assertTrue(fullMs >= 100, "Full overview still waits for the slow relationship read");
@@ -103,14 +104,14 @@ class LiveInstanceGraphTest {
         assertTrue(edgeStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).containsKey("relationship"));
         assertEquals("/univ_demo/org", edgeStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
                 .getJSONArray("objects").getJSONObject(1).getString("class"));
-        assertEquals(1, service.query("statistics", new JSONObject(), fullPermission(), "test").getJSONObject("data").getLongValue("nodeCount"));
+        assertEquals(1, service.query("statistics", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE).getJSONObject("data").getLongValue("nodeCount"));
         // A second overview and its statistics reuse the cached snapshot instead of querying the datasource again.
-        service.query("summary", new JSONObject(), fullPermission(), "test");
-        service.query("statistics", new JSONObject(), fullPermission(), "test");
-        JSONObject search = service.query("search", JSONObject.of("class", "/univ_demo/org"), fullPermission(), "test");
+        service.query("summary", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
+        service.query("statistics", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
+        JSONObject search = service.query("search", JSONObject.of("class", "/univ_demo/org"), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(search.getBooleanValue("success"), search.toJSONString());
         assertEquals("/univ_demo/org:1", search.getJSONObject("data").getJSONArray("nodes").getJSONObject(0).getString("id"));
-        service.query("search", JSONObject.of("term", "Entity"), fullPermission(), "test");
+        service.query("search", JSONObject.of("term", "Entity"), fullPermission(), "test", ExecutionTarget.LIVE);
         JSONObject searchStep = JSON.parseArray(dsls.get(dsls.size() - 1)).getJSONObject(0)
                 .getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
         JSONObject searchConditions = searchStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
@@ -118,7 +119,7 @@ class LiveInstanceGraphTest {
         // M3 needs the logic marker; without it the engine reads a leaf with no field and emits "n". null.
         assertEquals("logic", searchConditions.getString("operator"));
         assertFalse(searchConditions.getJSONArray("or").isEmpty());
-        JSONObject neighborhood = service.query("neighborhood", JSONObject.of("id", "/univ_demo/org:1"), fullPermission(), "test");
+        JSONObject neighborhood = service.query("neighborhood", JSONObject.of("id", "/univ_demo/org:1"), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(neighborhood.getBooleanValue("success"), neighborhood.toJSONString());
         assertFalse(neighborhood.getJSONObject("data").getJSONArray("edges").isEmpty());
         // Neighbour reads ask only for the requested page plus one probe row per relation side.
@@ -165,7 +166,7 @@ class LiveInstanceGraphTest {
             }
             return JSONArray.of(JSONObject.of("answer", rows)).toJSONString();
         });
-        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test");
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         JSONObject data = result.getJSONObject("data");
         assertEquals(2000, data.getJSONArray("overviewEdges").size());
@@ -195,7 +196,7 @@ class LiveInstanceGraphTest {
             return JSONArray.of(JSONObject.of("answer", JSONArray.of(JSONObject.of("cnt", 10 + value))))
                     .toJSONString();
         });
-        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("statistics", new JSONObject(), fullPermission(), "test");
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("statistics", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         assertEquals(108, result.getJSONObject("data").getLongValue("nodeCount"));
         JSONArray classes = result.getJSONObject("data").getJSONArray("classes");
@@ -237,7 +238,7 @@ class LiveInstanceGraphTest {
             }
             return JSONArray.of(JSONObject.of("answer", rows)).toJSONString();
         });
-        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test");
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         assertEquals(2000, result.getJSONObject("data").getJSONArray("overviewEdges").size());
         assertTrue(result.getJSONObject("data").getBooleanValue("overviewEdgesTruncated"));
@@ -274,7 +275,7 @@ class LiveInstanceGraphTest {
             }
             return JSONArray.of(JSONObject.of("answer", rows)).toJSONString();
         });
-        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test");
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         assertEquals(java.util.Map.of("A", 800, "B", 200), limits);
         assertEquals(1000, result.getJSONObject("data").getJSONArray("overviewNodes").size());
@@ -334,7 +335,7 @@ class LiveInstanceGraphTest {
                 "neighborhood",
                 JSONObject.of("node", JSONObject.of("className", "Task", "primaryKey", "t1")),
                 fullPermission(),
-                "test");
+                "test", ExecutionTarget.LIVE);
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         JSONObject data = result.getJSONObject("data");
         assertEquals(1, data.getJSONArray("edges").size());
@@ -407,11 +408,11 @@ class LiveInstanceGraphTest {
         });
 
         var service = new LiveInstanceGraph(admin, configs, adapters);
-        JSONObject nodes = service.query("nodes", new JSONObject(), fullPermission(), "test");
+        JSONObject nodes = service.query("nodes", new JSONObject(), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(nodes.getBooleanValue("success"), nodes.toJSONString());
         JSONObject connections = service.query("connections", JSONObject.of(
                 "version", nodes.getJSONObject("data").getString("version"),
-                "sampleToken", nodes.getJSONObject("data").getString("sampleToken")), fullPermission(), "test");
+                "sampleToken", nodes.getJSONObject("data").getString("sampleToken")), fullPermission(), "test", ExecutionTarget.LIVE);
         assertTrue(connections.getBooleanValue("success"), connections.toJSONString());
         JSONObject connData = connections.getJSONObject("data");
         assertEquals(6, connData.getJSONArray("overviewEdges").size());

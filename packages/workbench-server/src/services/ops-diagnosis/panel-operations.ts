@@ -45,7 +45,9 @@ import { autotestConfig } from "../../platform/diagnosis/autotest/config";
 import {
   deleteRun,
   hasActiveRunArtifactWrites,
+  isAutotestResultId,
   loadRunMeta,
+  loadRunMetaForDomain,
 } from "../../platform/diagnosis/autotest/results/store";
 import { getActiveRun } from "../../platform/diagnosis/autotest/runner/run-controller";
 import {
@@ -62,7 +64,7 @@ import {
 } from "../../platform/diagnosis/observe/workspaces/artifact-file";
 import { assistantEvidenceReader } from "../../platform/diagnosis/observe/workspaces/assistant-source";
 import { buildTurnWorkspace } from "../../platform/diagnosis/observe/workspaces/builder";
-import { deleteWorkspace, loadManifest } from "../../platform/diagnosis/observe/workspaces/store";
+import { deleteWorkspace, isWorkspaceId, loadManifest } from "../../platform/diagnosis/observe/workspaces/store";
 import { HttpError } from "../../utils/errors";
 import type {
   PanelImpactInspector,
@@ -197,38 +199,118 @@ const deleteAutotestRunImpact: PanelImpactInspector = {
   },
 };
 
-function retentionUnavailable(
-  artifactType: "turn-workspace" | "autotest-run",
-  wantKept: boolean,
-) {
+function retentionUnavailableReason(locale: string | undefined, currentlyKept: boolean, wantKept: boolean) {
+  if (wantKept === currentlyKept) {
+    return { reason: tForLocale(locale, wantKept ? "panels.ops.alreadyKept" : "panels.ops.notKept") };
+  }
+}
+
+function retentionUnavailable(artifactType: "turn-workspace" | "autotest-run", wantKept: boolean) {
   return {
     async unavailable(host: PanelOperationHost, target: PanelRecordTarget | null) {
       if (!target) return undefined;
       const keptKeys = await getArtifactRetentionSnapshot();
-      const currentlyKept = hasArtifactRetention(keptKeys, artifactType, target.primaryKey);
-      if (wantKept && currentlyKept) {
-        return { reason: tForLocale(host.locale, "panels.ops.alreadyKept") };
-      }
-      if (!wantKept && !currentlyKept) {
-        return { reason: tForLocale(host.locale, "panels.ops.notKept") };
-      }
-      return undefined;
+      return retentionUnavailableReason(host.locale, hasArtifactRetention(keptKeys, artifactType, target.primaryKey), wantKept);
     },
     async unavailableBatch(
       host: PanelOperationHost,
       targets: readonly { target: PanelRecordTarget; rowKey: string }[],
     ) {
       const keptKeys = await getArtifactRetentionSnapshot();
-      const reasons = new Map<string, { reason: string } | undefined>();
+      const reasons = new Map<string, { reason: string }>();
       for (const { target, rowKey } of targets) {
-        const currentlyKept = hasArtifactRetention(keptKeys, artifactType, target.primaryKey);
-        if (wantKept && currentlyKept) {
-          reasons.set(rowKey, { reason: tForLocale(host.locale, "panels.ops.alreadyKept") });
-        } else if (!wantKept && !currentlyKept) {
-          reasons.set(rowKey, { reason: tForLocale(host.locale, "panels.ops.notKept") });
-        }
+        const reason = retentionUnavailableReason(host.locale, hasArtifactRetention(keptKeys, artifactType, target.primaryKey), wantKept);
+        if (reason) reasons.set(rowKey, reason);
       }
       return reasons;
+    },
+  };
+}
+
+export function turnRetentionUnavailable(operation: string, locale: string | undefined, kept: boolean) {
+  if (operation === KEEP_TURN_EVIDENCE || operation === UNKEEP_TURN_EVIDENCE)
+    return retentionUnavailableReason(locale, kept, operation === KEEP_TURN_EVIDENCE);
+}
+
+export function autotestRunOperationUnavailable(
+  operation: string, locale: string | undefined, run: { runId: string; status: string; kept: boolean },
+) {
+  if (operation === DELETE_AUTOTEST_RUN) {
+    return isRunBusy(run.runId, run.status) ? { reason: tForLocale(locale, "panels.ops.errors.runBusy") } : undefined;
+  }
+  return retentionUnavailableReason(locale, run.kept, operation === KEEP_AUTOTEST_RUN);
+}
+
+function visibleTurnManifest(domainId: string, turnKey: string) {
+  const manifest = loadManifest(turnKey);
+  return manifest?.domainId === domainId ? manifest : undefined;
+}
+
+function downloadUnavailableReason(locale: string | undefined, hasEvidence: boolean) {
+  if (!hasEvidence) return { reason: tForLocale(locale, "panels.ops.errors.noEvidenceToDownload") };
+}
+
+function caseArtifactHasEvidence(domainId: string, { runId, caseId }: ReturnType<typeof parseAutotestCaseArtifactKey>) {
+  const meta = loadRunMeta(runId);
+  if (!meta || meta.domainId !== domainId) return undefined;
+  const artifactDir = resolveCaseArtifactDir(autotestConfig.dataDir, runId, caseId);
+  return artifactDir !== null && Boolean(loadManifestAtArtifactDir(artifactDir, "")?.evidence);
+}
+
+export function prepareOpsEvidenceAvailability(operation: string, domainId: string, ids: string[], locale?: string) {
+  if (operation === DOWNLOAD_AUTOTEST_CASE_ARTIFACT) {
+    const keys = ids.map(id => {
+      const key = parseAutotestCaseArtifactKey(id);
+      if (!isAutotestResultId(key.runId))
+        throw new HttpError(400, "Invalid case artifact key");
+      return key;
+    });
+    return {
+      type: AUTOTEST_CASE_ARTIFACT,
+      approval: workbenchManagement.opsRunsRead.id,
+      async read() {
+        return keys.map(key => {
+          const hasEvidence = caseArtifactHasEvidence(domainId, key);
+          return hasEvidence === undefined ? { reason: "Test run not found" } : downloadUnavailableReason(locale, hasEvidence);
+        });
+      },
+    };
+  }
+  if (operation === KEEP_AUTOTEST_RUN || operation === UNKEEP_AUTOTEST_RUN || operation === DELETE_AUTOTEST_RUN) {
+    if (ids.some(id => !isAutotestResultId(id))) throw new HttpError(400, "Invalid runId");
+    return {
+      type: AUTOTEST_RUN,
+      approval: workbenchManagement.opsRunsRead.id,
+      async read() {
+        const runs = ids.map(id => {
+          const meta = loadRunMetaForDomain(id, domainId);
+          if (!meta) throw new HttpError(403, tForLocale(locale, "panels.ops.errors.runNotFound"));
+          return meta;
+        });
+        const kept = operation === DELETE_AUTOTEST_RUN ? [] : await getArtifactRetentionSnapshot();
+        return runs.map(({ runId, status }) => autotestRunOperationUnavailable(operation, locale, {
+          runId, status, kept: hasArtifactRetention(kept, "autotest-run", runId),
+        }));
+      },
+    };
+  }
+  if (operation !== DOWNLOAD_TURN_EVIDENCE && operation !== KEEP_TURN_EVIDENCE && operation !== UNKEEP_TURN_EVIDENCE) return;
+  for (const id of ids) {
+    if (!parseTurnKey(id) || !isWorkspaceId(id)) throw new HttpError(400, "Invalid turnKey");
+  }
+  return {
+    type: TURN_EVIDENCE,
+    approval: workbenchManagement.opsTurnEvidenceRead.id,
+    async read() {
+      const manifests = ids.map(id => visibleTurnManifest(domainId, id));
+      const keptKeys = operation !== DOWNLOAD_TURN_EVIDENCE && manifests.some(Boolean) ? await getArtifactRetentionSnapshot() : [];
+      return ids.map((id, index) => {
+        const manifest = manifests[index];
+        if (!manifest) return { reason: "Turn workspace not found" };
+        return operation === DOWNLOAD_TURN_EVIDENCE
+          ? downloadUnavailableReason(locale, Boolean(manifest.evidence))
+          : turnRetentionUnavailable(operation, locale, hasArtifactRetention(keptKeys, "turn-workspace", id));
+      });
     },
   };
 }
@@ -249,7 +331,7 @@ export const opsDiagnosisWriteOperations = [
     targetSchema: z.null(),
     inputSchema: buildTurnInputSchema,
     resultSchema: buildTurnResultSchema,
-    describeInputSchema(_host, locale) {
+    describeLocalInputSchema(locale) {
       return {
         type: "object",
         properties: {
@@ -699,11 +781,8 @@ export const opsDiagnosisReadOperations = [
     resultSchema: panelDownloadReceiptSchema,
     async unavailable(host, target) {
       if (!target) return undefined;
-      const manifest = loadManifest(target.primaryKey);
-      if (manifest && manifest.domainId === host.initiator.owner.domainId && !manifest.evidence) {
-        return { reason: tForLocale(host.locale, "panels.ops.errors.noEvidenceToDownload") };
-      }
-      return undefined;
+      const manifest = visibleTurnManifest(host.initiator.owner.domainId, target.primaryKey);
+      if (manifest) return downloadUnavailableReason(host.locale, Boolean(manifest.evidence));
     },
     async execute(host, call) {
       const { primaryKey } = turnTargetSchema.parse(call.target);
@@ -764,15 +843,10 @@ export const opsDiagnosisReadOperations = [
     async unavailable(host, target) {
       if (!target) return undefined;
       try {
-        const { runId, caseId } = parseAutotestCaseArtifactKey(target.primaryKey);
-        const meta = loadRunMeta(runId);
-        if (!meta || meta.domainId !== host.initiator.owner.domainId) return undefined;
-        const artifactDir = resolveCaseArtifactDir(autotestConfig.dataDir, runId, caseId);
-        if (!artifactDir) return { reason: tForLocale(host.locale, "panels.ops.errors.noEvidenceToDownload") };
-        const manifest = loadManifestAtArtifactDir(artifactDir, "");
-        if (!manifest?.evidence) {
-          return { reason: tForLocale(host.locale, "panels.ops.errors.noEvidenceToDownload") };
-        }
+        const hasEvidence = caseArtifactHasEvidence(
+          host.initiator.owner.domainId, parseAutotestCaseArtifactKey(target.primaryKey),
+        );
+        if (hasEvidence !== undefined) return downloadUnavailableReason(host.locale, hasEvidence);
       } catch {
         // Ignore lookup errors during availability check.
       }
@@ -806,7 +880,7 @@ export const opsDiagnosisReadOperations = [
     targetSchema: panelFormTargetSchema.optional(),
     inputSchema: panelReadOperationInputSchema,
     resultSchema: panelReadOperationSectionsResultSchema,
-    describeResultSections(_host, locale) {
+    describeResultSections(locale) {
       return [describeDslTable(locale), ...describeDslResultSections(locale), describeDslRawResponse(locale)];
     },
     async execute(host, call) {

@@ -68,10 +68,12 @@ export { confirmDanger, confirmUnsavedSwitch, type UnsavedSwitchDecision } from 
 export {
   createPanelBackController,
   hasOpenOverlay,
+  hasPlatformPreviousPage,
   installPanelBackPopStateListener,
   type PanelBackController,
   type PanelBackControllerOptions,
   type PanelBackHandlerRegistration,
+  type PlatformBackHistoryContext,
 } from "./panel-back";
 export {
   provideUnsavedChanges,

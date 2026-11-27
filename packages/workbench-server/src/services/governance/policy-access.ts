@@ -7,7 +7,7 @@ import { config } from "../../config/application";
 import { getPostgresPool } from "../../infrastructure/postgres";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost } from "../../utils/backend-client";
-import { productDefinitionOwnerHeaders } from "../product-governance/grants";
+import { productDefinitionOwnerHeaders } from "../product-governance/service-authentication";
 import { readPanelDependencies } from "../product-panels/entry-dependency-store";
 import { listObjectDetailPanelMappings } from "../product-panels/object-detail";
 import { loadPolicyWorkbenchCatalog, readPolicyWorkbenchObjects, type PolicyWorkbenchCatalog } from "./policy-catalog";
@@ -36,6 +36,12 @@ export const grantPolicyEntriesResultSchema = z.object({
   policyId: id,
   grantedEntryCount: z.number().int().nonnegative(),
   grantedObjectCount: z.number().int().nonnegative(),
+});
+export const revokePolicyEntriesInputSchema = grantPolicyEntriesInputSchema;
+export const revokePolicyEntriesResultSchema = z.object({
+  policyId: id,
+  revokedEntryCount: z.number().int().nonnegative(),
+  revokedObjectCount: z.number().int().nonnegative(),
 });
 export const resolvePendingPolicyGrantsInputSchema = z.object({
   resolutions: z.array(z.object({ id: z.number().int().positive(), confirm: z.boolean(), scope: scope.nullish() }).strict()),
@@ -121,13 +127,17 @@ const inspectResultSchema = z.object({
   items: z.array(inspectedItemSchema),
 });
 
+export const graphPolicyGrantSchema = z.object({
+  policyId: id, targetKind: id, targetKey: z.string(), verb: id, scope: scope.nullish(),
+});
 const graphFactsSchema = z.object({
   rolePolicies: z.array(z.object({ roleId: id, policyId: id, kind: z.enum(["MANAGEMENT", "OBJECT"]) })),
   domainPolicyId: id,
   entries: z.array(z.object({ id, applicationId: id, names: z.record(z.string()), pageKey: id })),
-  policyGrants: z.array(z.object({ policyId: id, targetKind: id, targetKey: z.string(), verb: id, scope: scope.nullish() })),
+  policyGrants: z.array(graphPolicyGrantSchema),
 });
 export type AuthorizationGraphFacts = z.infer<typeof graphFactsSchema>;
+export const productGraphAuthorizationFactsSchema = graphFactsSchema.omit({ domainPolicyId: true });
 
 async function policyPost<T>(viewer: AssistantCredentials, endpoint: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
   const response = await backendPost(
@@ -154,16 +164,18 @@ const executeAction = ({ kind, verb }: ItemKey) => kind === "ACTION" && verb ===
 async function entryContext(viewer: AssistantCredentials, domainId: string, policyId: string | undefined, entryIds: string[]) {
   const roots = await policyPost(viewer, "entry-roots", { policyId, entryIds }, entryRootsResultSchema);
   const client = getPostgresPool();
+  const includeAll = entryIds.length === 0;
   const selected = new Set(entryIds);
   const detailIds = new Set(entryIds.filter(id => id.startsWith(objectDetailPrefix)));
-  const details = detailIds.size ? await listObjectDetailPanelMappings(domainId, client) : [];
+  const details = includeAll || detailIds.size ? await listObjectDetailPanelMappings(domainId, client) : [];
   const detailPanels = new Map(details
     .map(({ className, panelId }) => [objectDetailPrefix + className, panelId] as const)
-    .filter(([entryId]) => detailIds.has(entryId)));
-  const entries = roots.entries.filter(entry => selected.has(entry.entryId)).map(entry => {
+    .filter(([entryId]) => includeAll || detailIds.has(entryId)));
+  const entries = roots.entries.filter(entry => includeAll || selected.has(entry.entryId)).map(entry => {
     const panelId = detailPanels.get(entry.entryId);
     return panelId ? { ...entry, panelIds: [...new Set([...entry.panelIds, panelId])] } : entry;
   });
+  const entryPanels = new Map(entries.map(entry => [entry.entryId, new Set(entry.panelIds)] as const));
   const seenEntries = new Set(entries.map(entry => entry.entryId));
   for (const [entryId, panelId] of detailPanels) {
     if (seenEntries.has(entryId)) continue;
@@ -177,12 +189,21 @@ async function entryContext(viewer: AssistantCredentials, domainId: string, poli
   const panelIds = [...new Set([...entries.flatMap(entry => entry.panelIds), ...detailPanels.values()])];
   const dependencies = await readPanelDependencies(client, domainId, panelIds);
   const direct = new Map<string, ItemKey>();
-  const add = (item: ItemKey) => direct.set(itemKey(item), item);
-  for (const entry of entries) for (const id of entry.agentIds) add({ kind: "AGENT", id, verb: "USE" });
+  const entryObjects = new Map<string, Map<string, ItemKey>>();
+  const add = (item: ItemKey, owners: string[] = []) => {
+    direct.set(itemKey(item), item);
+    for (const entryId of owners) entryObjects.get(entryId)?.set(itemKey(item), item);
+  };
+  for (const entry of entries) {
+    entryObjects.set(entry.entryId, new Map());
+    for (const id of entry.agentIds) add({ kind: "AGENT", id, verb: "USE" }, [entry.entryId]);
+  }
   for (const panelId of panelIds) {
-    add({ kind: "PANEL", id: panelId, verb: "USE" });
+    const owners = entries.filter(entry => entryPanels.get(entry.entryId)?.has(panelId)).map(entry => entry.entryId);
+    add({ kind: "PANEL", id: panelId, verb: "USE" }, owners);
     for (const { objectType, objectKey, verb } of dependencies.get(panelId) ?? []) {
-      add({ kind: objectType, id: objectKey, verb });
+      if (objectType === "COMPONENT" && !isDomainComponentId(objectKey)) continue;
+      add({ kind: objectType, id: objectKey, verb }, owners);
     }
   }
 
@@ -197,7 +218,7 @@ async function entryContext(viewer: AssistantCredentials, domainId: string, poli
   }
   const items = new Map(direct);
   for (const [key, [step]] of steps) items.set(key, { kind: "ACTION", id: step.actionId, verb: "EXECUTE" });
-  return { ...roots, entries, items, direct, steps };
+  return { ...roots, entries, items, direct, steps, entryObjects };
 }
 
 function labelFor(catalog: PolicyWorkbenchCatalog, actions: EntryRootsResult["publishedActions"] = []) {
@@ -226,6 +247,74 @@ function policyRecord(id: string, fields: Record<string, RuntimeJsonValue | unde
     recordFields[key] = typeof value === "object" ? { kind: "json", value } : value;
   }
   return panelRecordSchema.parse({ primaryKey: id, label: id, fields: recordFields });
+}
+
+function objectUsageKey(kind: string, objectId: string) {
+  return JSON.stringify([kind, objectId]);
+}
+
+function grantedEntryIds(context: EntryRootsResult) {
+  return new Set(context.existingGrants
+    .filter(grant => grant.kind === "ENTRY" && grant.verb === "ENTER")
+    .map(grant => grant.id));
+}
+
+function entryUsageByObject(context: Awaited<ReturnType<typeof entryContext>>) {
+  const grantedEntries = grantedEntryIds(context);
+  const usage = new Map<string, Array<{ id: string; label: string }>>();
+  for (const [entryId, objects] of context.entryObjects) {
+    if (!grantedEntries.has(entryId)) continue;
+    const label = context.entries.find(entry => entry.entryId === entryId)?.label ?? entryId;
+    for (const item of objects.values()) {
+      const key = objectUsageKey(item.kind, item.id);
+      const entries = usage.get(key) ?? [];
+      if (!entries.some(entry => entry.id === entryId)) entries.push({ id: entryId, label });
+      usage.set(key, entries);
+    }
+  }
+  return usage;
+}
+
+/** For every object this policy grants, which currently granted entries use it through the same dependency roots as the entry grant preview. */
+export async function policyObjectEntryUsagePayload(
+  viewer: AssistantCredentials, domainId: string, policyId: string,
+): Promise<RuntimeJsonObject> {
+  const context = await entryContext(viewer, domainId, policyId, []);
+  const usage = entryUsageByObject(context);
+  const seen = new Set<string>();
+  const items = [];
+  for (const grant of context.existingGrants) {
+    if (grant.kind === "ENTRY" || grant.verb === "CREATE") continue;
+    const key = objectUsageKey(grant.kind, grant.id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ kind: grant.kind, id: grant.id, entries: usage.get(key) ?? [] });
+  }
+  return { policyId, items };
+}
+
+/** Exact grants that only this entry uses among the policy's granted entries, plus the policy's current role impact. */
+export async function policyEntryRevokePreviewPayload(
+  viewer: AssistantCredentials, domainId: string, policyId: string, entryId: string,
+): Promise<RuntimeJsonObject> {
+  const context = await entryContext(viewer, domainId, policyId, []);
+  const usage = entryUsageByObject(context);
+  const objects = [];
+  for (const item of context.entryObjects.get(entryId)?.values() ?? []) {
+    const entries = usage.get(objectUsageKey(item.kind, item.id)) ?? [];
+    if (entries.some(entry => entry.id !== entryId)) continue;
+    for (const grant of context.existingGrants) {
+      if (grant.kind === item.kind && grant.id === item.id && grant.verb !== "CREATE" && grant.kind !== "ENTRY") {
+        objects.push({
+          kind: grant.kind, id: grant.id, verb: grant.verb, scope: grant.scope, label: grant.id,
+        });
+      }
+    }
+  }
+  return {
+    policyId, entryId, objects,
+    impact: { roleCount: context.targetPolicyRoleIds.length },
+  };
 }
 
 export async function previewEntryGrantPayload(
@@ -262,6 +351,7 @@ export async function previewEntryGrantPayload(
   });
   return {
     policyId, entries: context.entries, candidates, existingGrants: context.existingGrants,
+    entryObjects: Object.fromEntries([...context.entryObjects].map(([entryId, objects]) => [entryId, [...objects.values()]])),
     targetPolicyRoleIds: context.targetPolicyRoleIds, publishedActions: context.publishedActions,
     summary: {
       entryCount: context.entries.length,
@@ -280,6 +370,12 @@ export function grantPolicyEntries(viewer: AssistantCredentials, policyId: strin
   return policyPost(viewer, "entries:grant", {
     policyId: id.parse(policyId), ...grantPolicyEntriesInputSchema.parse(input),
   }, grantPolicyEntriesResultSchema);
+}
+
+export function revokePolicyEntries(viewer: AssistantCredentials, policyId: string, input: unknown) {
+  return policyPost(viewer, "entries:revoke", {
+    policyId: id.parse(policyId), ...revokePolicyEntriesInputSchema.parse(input),
+  }, revokePolicyEntriesResultSchema);
 }
 
 export async function listPendingPolicyGrantsPayload(

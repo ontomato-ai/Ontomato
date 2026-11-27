@@ -1,9 +1,11 @@
 import { z } from "zod";
-import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { panelAddress } from "@ontomato/contracts/panel-host";
+import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import {
   panelFieldToneSchema,
   panelFormDescriptionSchema,
+  panelReadParameterSchemas,
   type recordFiltersSchema,
   type recordSortSchema,
   type PanelFieldTone,
@@ -16,14 +18,11 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyNode } from "@ontomato/contracts/platform-ontology";
 import { config } from "../../config/application";
-import { tApp } from "../../i18n";
-import { createLogger } from "../../logging/logger";
+import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { BackendUnavailableError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
+import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
-
-const logger = createLogger("ontology:customer-reads");
+import type { ProductOwner } from "../product-governance/service-authentication";
 
 /** One class attribute from the Java model catalog (GET /ontology/model/attributes). */
 const attributeOptionSchema = z.object({
@@ -48,19 +47,6 @@ const classAttributesSchema = z.array(z.object({
 }));
 type ClassAttribute = z.infer<typeof classAttributesSchema>[number];
 
-/** One relationship touching a class (GET /ontology/model/relationships). */
-const classRelationshipsSchema = z.array(z.object({
-  relationship: z.string(),
-  fromclass: z.string(),
-  toclass: z.string(),
-  fromShowName: z.string().optional(),
-  toShowName: z.string().optional(),
-  desc: z.string(),
-  fromField: z.string(),
-  toField: z.string(),
-}));
-type ClassRelationship = z.infer<typeof classRelationshipsSchema>[number];
-
 /** POST /data/getWholeClassDataByPage: the class's rows with the real total, or the owner's refusal. */
 const classPageSchema = z.union([
   z.object({ success: z.literal(true), data: z.array(z.record(z.unknown())), total_count: z.number(), readable_fields: z.array(z.string()) }),
@@ -77,12 +63,6 @@ const objectRecordSchema = z.union([
   }),
 ]);
 
-/** POST /dsl/executeV1: the owner's answer rows, or the execution error it reports. */
-const dslAnswerSchema = z.union([
-  z.object({ error: z.string() }),
-  z.object({ data: z.array(z.object({ answer: z.array(z.record(z.unknown())) })).min(1) }),
-]);
-
 export interface CustomerOntologyNodeRef {
   className: string;
   primaryKey: string;
@@ -96,13 +76,6 @@ export interface CustomerOntologyQueryParams {
   sort?: z.infer<typeof recordSortSchema>;
 }
 
-export interface CustomerOntologyNeighborsParams {
-  node: CustomerOntologyNodeRef;
-  relationKinds?: readonly string[];
-  limit?: number;
-  offset?: number;
-}
-
 export interface CustomerOntologyFormParams {
   values?: PanelFormValues;
   changedField?: string | null;
@@ -110,7 +83,7 @@ export interface CustomerOntologyFormParams {
 
 /**
  * The customer-ontology reads a projection can name: a class's rows, one object and standard edit/create forms
- * (an ObjectType source), and an object's neighbors along one relationship (a Relationship source).
+ * (an ObjectType source).
  * Changes to an object go through actions.
  */
 export interface CustomerOntologyReadAdapter {
@@ -118,11 +91,9 @@ export interface CustomerOntologyReadAdapter {
   record(typeId: string, primaryKey: string): Promise<PanelRecord>;
   form(typeId: string, primaryKey: string, params?: CustomerOntologyFormParams): Promise<PanelFormDescription>;
   createForm(typeId: string, params?: CustomerOntologyFormParams): Promise<PanelFormDescription>;
-  neighbors(relationshipId: string, params: CustomerOntologyNeighborsParams): Promise<PanelRelationNeighbors>;
 }
 
 const NEIGHBORS_LIMIT_DEFAULT = 50;
-const NEIGHBORS_LIMIT_MAX = 100;
 
 /** Row values cross the owner boundary as display text: null is empty, objects and arrays become JSON text. */
 function displayText(value: unknown): string {
@@ -479,82 +450,12 @@ type NeighborQueryResult =
   | { ok: true; rows: Record<string, unknown>[] }
   | { ok: false; status: "refused" | "failed"; reason: string };
 
-/** One relation's plan: the directions it offers the anchor, or a declared kind that never matched the class's model. */
-type NeighborRelationPlan =
-  | { relationKind: string; label: string; directions: NeighborDirection[] }
-  | { relationKind: string; unknownReason: string };
-
 /** One relation's executed plan for the assembly. */
 interface NeighborRelationRead {
   relationKind: string;
   label?: string;
   directions: (NeighborDirection & { result: NeighborQueryResult })[];
   unknownReason?: string;
-}
-
-/** Both directions a relation offers the anchor; a self-loop reads once per side. */
-function relationDirections(relation: ClassRelationship, anchorClass: string): NeighborDirection[] {
-  const directions: NeighborDirection[] = [];
-  if (relation.fromclass === anchorClass) directions.push({ direction: "outgoing", targetClass: relation.toclass });
-  if (relation.toclass === anchorClass) directions.push({ direction: "incoming", targetClass: relation.fromclass });
-  return directions;
-}
-
-/** The source relationship's plan for the anchor's class, or its failure when the class's model has no such relationship. */
-function planRelation(catalog: readonly ClassRelationship[], relationshipId: string, anchorClass: string): NeighborRelationPlan {
-  const relation = catalog.find(item => item.relationship === relationshipId);
-  return relation
-    ? { relationKind: relationshipId, label: relation.desc || relation.relationship, directions: relationDirections(relation, anchorClass) }
-    : { relationKind: relationshipId, unknownReason: "Relationship does not exist or does not touch this class" };
-}
-
-/**
- * The per-relation DSL, following the object detail page's loadViewLinks: anchor and target at idx 0/1, the
- * relationship's own from/to, and distinct target rows sorted by primary key before pagination.
- */
-function neighborsDsl(
-  anchor: CustomerOntologyNodeRef,
-  anchorPrimaryKeyName: string,
-  relationKind: string,
-  { direction, targetClass }: NeighborDirection,
-  targetAttributes: readonly ClassAttribute[],
-  count: number,
-  offset: number,
-): Record<string, unknown> {
-  const targetPrimaryKey = primaryKeyName(targetAttributes);
-  const fields = [...new Set([
-    targetPrimaryKey,
-    ...targetAttributes.filter(attribute => attribute.enable && attribute.businessKey).map(attribute => attribute.name),
-  ])].map(name => ({
-    variable: "target", field: name, as: name,
-    ...(name === targetPrimaryKey && { distinct: true }),
-  }));
-  return {
-    problem: "",
-    answer: { steps: [{
-      graph: {
-        pattern_logic: "and",
-        patterns: [{
-          objects: [
-            {
-              idx: 0,
-              variable: "source",
-              class: anchor.className,
-              conditions: { properties: { field: anchorPrimaryKeyName, operator: "=", value: anchor.primaryKey } },
-            },
-            { idx: 1, variable: "target", class: targetClass },
-          ],
-          relationship: [{ from: direction === "outgoing" ? 0 : 1, to: direction === "outgoing" ? 1 : 0, type: [relationKind] }],
-        }],
-      },
-      output: {
-        to_user: true,
-        fields,
-        sort: { fields: [{ variable: "target", field: targetPrimaryKey, order: "asc" }] },
-        limit: { count, offset },
-      },
-    }] },
-  };
 }
 
 function assembleCustomerNeighbors(
@@ -576,8 +477,10 @@ function assembleCustomerNeighbors(
   // A self-relation is one ordered edge stream: outgoing first, then incoming.
   // With just one direction the DSL already applied the offset.
   let skip = read.directions.length > 1 ? offset : 0;
+  const directionOrder = { outgoing: 0, incoming: 1 };
+  const directions = [...read.directions].sort((a, b) => directionOrder[a.direction] - directionOrder[b.direction]);
 
-  for (const { direction, targetClass, result } of read.directions) {
+  for (const { direction, targetClass, result } of directions) {
     if (!result.ok) {
       if (severity[result.status] > severity[status]) {
         status = result.status;
@@ -633,6 +536,159 @@ function assembleCustomerNeighbors(
   };
 }
 
+export function customerQueryParams(params: Record<string, unknown>): CustomerOntologyQueryParams {
+  const read = panelReadParameterSchemas;
+  return {
+    search: read.keyword.optional().parse(params.search),
+    page: read.page.optional().parse(params.page),
+    size: read.size.optional().parse(params.size),
+    filters: read.recordFilters.optional().parse(params.filters),
+    sort: read.recordSort.optional().parse(params.sort),
+  };
+}
+
+function objectDetailPath(className: string, primaryKey: string) {
+  return panelAddress("/browser/views", { selected: { className, primaryKey } });
+}
+
+export function withInstanceDetailPaths(className: string, page: PanelRecordQuery): PanelRecordQuery {
+  return {
+    ...page,
+    rows: page.rows.map(row => ({ ...row, outputs: { detailPath: objectDetailPath(className, row.primaryKey) } })),
+  };
+}
+
+export function withInstanceDetail(record: PanelRecord, className: string, primaryKey: string, typeLabel: string): PanelRecord {
+  return { ...record, outputs: { typeLabel, detailPath: objectDetailPath(className, primaryKey) } };
+}
+
+export function customerClassPageRequest(typeId: string, { search, page, size, filters, sort }: CustomerOntologyQueryParams) {
+  return {
+    classname: typeId,
+    pagenum: page?.number ?? 1,
+    pagecount: size ?? page?.size ?? 20,
+    ...(search !== undefined && { search }),
+    ...(filters !== undefined && { filters }),
+    ...(sort !== undefined && { sort }),
+  };
+}
+
+function customerClassPage(typeId: string, attributes: readonly ClassAttribute[], payload: unknown): PanelRecordQuery {
+  const answer = classPageSchema.parse(payload);
+  if (!answer.success) throw new HttpError(422, answer.message, answer.code);
+  if (answer.data.length && !answer.readable_fields.includes(primaryKeyName(attributes)))
+    throw new HttpError(422, "The object's primary key is unreadable", "NO_READABLE_OBJECT_KEY");
+  const readable = new Set(answer.readable_fields);
+  const fieldLabels = Object.fromEntries(attributes
+    .filter(attribute => attribute.enable && readable.has(attribute.name) && !ARRAY_TYPES.has(attribute.type.toLowerCase()))
+    .map(attribute => [attribute.name, attribute.showName]));
+  const rows = answer.data.map(row => ({ ...panelRecord(typeId, attributes, row), fieldLabels }));
+  return { rows, fieldLabels, total: answer.total_count };
+}
+
+export function customerObjectRecordCall(className: string, primaryKey: string) {
+  return { type: "customer:ObjectType", name: "record", parameters: { className, primaryKey } };
+}
+
+function decodeCustomerObjectRow(primaryKey: string, attributes: readonly ClassAttribute[], payload: unknown) {
+  const answer = objectRecordSchema.parse(payload);
+  if (!answer.success) return { ok: false as const, error: objectFailure(answer.code, answer.message) };
+  // Java omits a primary-key column named "id"; the requested value is authoritative.
+  return { ok: true as const, row: { ...answer.data.data, [primaryKeyName(attributes)]: primaryKey } };
+}
+
+function customerObjectRow(primaryKey: string, attributes: readonly ClassAttribute[], payload: unknown) {
+  const result = decodeCustomerObjectRow(primaryKey, attributes, payload);
+  if (!result.ok) throw result.error;
+  return result.row;
+}
+
+const customerReadFacts = z.object({ attributes: classAttributesSchema, answer: z.unknown() });
+const customerCreateFormFacts = customerReadFacts.pick({ attributes: true });
+
+const directionFacts = z.object({ direction: z.enum(["outgoing", "incoming"]), targetClass: z.string() })
+  .and(z.discriminatedUnion("status", [
+    z.object({ status: z.literal("ok"), rows: z.array(z.record(z.unknown())) }),
+    z.object({ status: z.literal("refused"), reason: z.string() }),
+    z.object({ status: z.literal("failed") }),
+  ]));
+const customerNeighborFacts = z.object({
+  anchor: customerReadFacts,
+  label: z.string().nullish(),
+  typeLabels: z.record(z.string()),
+  targetAttributes: z.record(classAttributesSchema),
+  directions: z.array(directionFacts),
+});
+
+export function prepareCustomerNeighborsRead(relationshipId: string, params: Record<string, unknown>, locale?: string) {
+  const read = panelReadParameterSchemas;
+  const node = read.graphNode.parse(params.node);
+  const relationKinds = read.relationKinds.optional().parse(params.relationKinds);
+  if (relationKinds?.some(kind => kind !== relationshipId))
+    throw new HttpError(400, "relationKinds can only name the source relationship");
+  const limit = read.neighborsLimit.optional().parse(params.limit) ?? NEIGHBORS_LIMIT_DEFAULT;
+  const offset = read.nonNegativeInt.optional().parse(params.offset) ?? 0;
+  return {
+    call: { type: "customer:Relationship", name: "neighbors", parameters: runtimeJsonObjectSchema.parse({ relationshipId, node, limit, offset }) },
+    present(payload: unknown) {
+      const { anchor, directions, label, targetAttributes, typeLabels } = customerNeighborFacts.parse(payload);
+      const record = presentCustomerObjectRecord(node.className, node.primaryKey, anchor);
+      const reads = directions.map(({ direction, targetClass, ...fact }): NeighborRelationRead["directions"][number] => ({
+        direction, targetClass,
+        result: fact.status === "ok" ? { ok: true, rows: fact.rows }
+          : { ok: false, status: fact.status, reason: fact.status === "refused" ? fact.reason
+            : tForLocale(locale, "panels.objectDetail.relationReadFailed") },
+      }));
+      return assembleCustomerNeighbors(
+        { ...node, label: record.label }, limit, offset,
+        { relationKind: relationshipId, label: label ?? undefined, directions: reads,
+          unknownReason: label == null ? "Relationship does not exist or does not touch this class" : undefined },
+        className => className === node.className ? anchor.attributes : targetAttributes[className],
+        new Map(Object.entries(typeLabels)),
+      );
+    },
+  };
+}
+
+
+function requireEditFormPrimaryKey(typeId: string, attributes: readonly ClassAttribute[]) {
+  if (!attributes.some(attribute => attribute.primaryKey))
+    throw new HttpError(404, `Object type '${typeId}' has no primary key attribute`, "OBJECT_NOT_FOUND");
+}
+
+function customerCreateForm(typeId: string, attributes: readonly ClassAttribute[], params?: CustomerOntologyFormParams) {
+  if (attributes.length === 0)
+    throw new HttpError(404, `Object type '${typeId}' has no attributes`, "OBJECT_NOT_FOUND");
+  return buildCustomerFormDescription(typeId, attributes, "create", undefined, params);
+}
+
+export function presentCustomerClassPage(typeId: string, payload: unknown): PanelRecordQuery {
+  const { attributes, answer } = customerReadFacts.parse(payload);
+  return customerClassPage(typeId, attributes, answer);
+}
+
+export function customerObjectRecordResult(typeId: string, primaryKey: string, payload: unknown) {
+  const { attributes, answer } = customerReadFacts.parse(payload);
+  const result = decodeCustomerObjectRow(primaryKey, attributes, answer);
+  return result.ok ? { ok: true as const, record: panelRecord(typeId, attributes, result.row) } : result;
+}
+
+export function presentCustomerObjectRecord(typeId: string, primaryKey: string, payload: unknown): PanelRecord {
+  const result = customerObjectRecordResult(typeId, primaryKey, payload);
+  if (!result.ok) throw result.error;
+  return result.record;
+}
+
+export function presentCustomerEditForm(typeId: string, primaryKey: string, payload: unknown, params: CustomerOntologyFormParams) {
+  const { attributes, answer } = customerReadFacts.parse(payload);
+  requireEditFormPrimaryKey(typeId, attributes);
+  return buildCustomerFormDescription(typeId, attributes, "edit", customerObjectRow(primaryKey, attributes, answer), params);
+}
+
+export function presentCustomerCreateForm(typeId: string, payload: unknown, params: CustomerOntologyFormParams) {
+  return customerCreateForm(typeId, customerCreateFormFacts.parse(payload).attributes, params);
+}
+
 /**
  * Reads of the customer ontology for panel projections. Class, attribute and relationship identities come from the
  * Java model catalog of the current domain on every call; Java keeps cutting rows and columns by the viewer's data
@@ -658,15 +714,6 @@ export function createCustomerOntologyReadAdapter(
     return classAttributesSchema.parse(JSON.parse(response.text));
   }
 
-  async function classRelationships(typeId: string): Promise<ClassRelationship[]> {
-    const response = await backendGet(
-      "customer-class-relationships",
-      `${baseUrl}/ontology/model/relationships?className=${encodeURIComponent(typeId)}`,
-      options,
-    );
-    return classRelationshipsSchema.parse(JSON.parse(response.text));
-  }
-
   /** One object's raw attribute row from the owner; enforces viewer data permissions and preserves primary key. */
   async function readRawObject(typeId: string, primaryKey: string, attributes: readonly ClassAttribute[]): Promise<Record<string, unknown>> {
     const response = await backendPost(
@@ -675,10 +722,7 @@ export function createCustomerOntologyReadAdapter(
       { class: typeId, id: `${typeId}:${primaryKey}` },
       options,
     );
-    const answer = objectRecordSchema.parse(JSON.parse(response.text));
-    if (!answer.success) throw objectFailure(answer.code, answer.message);
-    // Java drops a primary-key column literally named "id" from the answer, so the requested key is the authoritative value.
-    return { ...answer.data.data, [primaryKeyName(attributes)]: primaryKey };
+    return customerObjectRow(primaryKey, attributes, JSON.parse(response.text));
   }
 
   /** One object's attribute values; the attributes are read once per call and shared with the caller. */
@@ -686,51 +730,16 @@ export function createCustomerOntologyReadAdapter(
     return panelRecord(typeId, attributes, await readRawObject(typeId, primaryKey, attributes));
   }
 
-  /** One relation-direction query: a refusal names the viewer's permission; anything else the owner's or the transport's failure. */
-  async function readNeighborEdges(dsl: Record<string, unknown>): Promise<NeighborQueryResult> {
-    try {
-      const response = await backendPost("customer-neighbor-edges", `${baseUrl}/dsl/executeV1`, dsl, options);
-      const answer = dslAnswerSchema.parse(JSON.parse(response.text));
-      if ("error" in answer) {
-        logger.warn(`Relationship read failed: ${answer.error}`);
-        return { ok: false, status: "failed", reason: tApp("panels.objectDetail.relationReadFailed") };
-      }
-      return { ok: true, rows: answer.data[0].answer };
-    } catch (error) {
-      if (error instanceof HttpError && (error.status === 401 || error.status === 403))
-        return { ok: false, status: "refused", reason: error.message };
-      if (error instanceof HttpError || error instanceof BackendUnavailableError
-        || error instanceof z.ZodError || error instanceof SyntaxError) {
-        logger.warn("Relationship read failed", error);
-        return { ok: false, status: "failed", reason: tApp("panels.objectDetail.relationReadFailed") };
-      }
-      throw error;
-    }
-  }
-
   return {
-    async query(typeId, { search, page, size, filters, sort }) {
+    async query(typeId, params) {
       const attributes = await classAttributes(typeId);
-      const pageSize = size ?? page?.size ?? 20;
       const response = await backendPost(
         "customer-class-page",
         `${baseUrl}/data/getWholeClassDataByPage`,
-        { classname: typeId, pagenum: page?.number ?? 1, pagecount: pageSize, search, filters, sort },
+        customerClassPageRequest(typeId, params),
         options,
       );
-      const answer = classPageSchema.parse(JSON.parse(response.text));
-      if (!answer.success) throw new HttpError(422, answer.message, answer.code);
-      if (answer.data.length && !answer.readable_fields.includes(primaryKeyName(attributes)))
-        throw new HttpError(422, "The object's primary key is unreadable", "NO_READABLE_OBJECT_KEY");
-      const readable = new Set(answer.readable_fields);
-      const fieldLabels = Object.fromEntries(attributes
-        .filter(attribute => attribute.enable && readable.has(attribute.name) && !ARRAY_TYPES.has(attribute.type.toLowerCase()))
-        .map(attribute => [attribute.name, attribute.showName]));
-      const rows = answer.data.map(row => {
-        const record = panelRecord(typeId, attributes, row);
-        return { ...record, fieldLabels };
-      });
-      return { rows, fieldLabels, total: answer.total_count };
+      return customerClassPage(typeId, attributes, JSON.parse(response.text));
     },
 
     async record(typeId, primaryKey) {
@@ -739,68 +748,13 @@ export function createCustomerOntologyReadAdapter(
 
     async form(typeId, primaryKey, params) {
       const attributes = await classAttributes(typeId);
-      if (!attributes.some(attribute => attribute.primaryKey)) {
-        throw new HttpError(404, `Object type '${typeId}' has no primary key attribute`, "OBJECT_NOT_FOUND");
-      }
+      requireEditFormPrimaryKey(typeId, attributes);
       const row = await readRawObject(typeId, primaryKey, attributes);
       return buildCustomerFormDescription(typeId, attributes, "edit", row, params);
     },
 
     async createForm(typeId, params) {
-      const attributes = await classAttributes(typeId);
-      if (attributes.length === 0) {
-        throw new HttpError(404, `Object type '${typeId}' has no attributes`, "OBJECT_NOT_FOUND");
-      }
-      return buildCustomerFormDescription(typeId, attributes, "create", undefined, params);
-    },
-
-    async neighbors(relationshipId, { node, relationKinds, limit: requested, offset = 0 }) {
-      // The source names its relationship; a parameter cannot point the read at another one.
-      if (relationKinds?.some(kind => kind !== relationshipId))
-        throw new HttpError(400, "relationKinds can only name the source relationship", "PANEL_INPUT_TYPE_MISMATCH");
-      const limit = Math.min(requested ?? NEIGHBORS_LIMIT_DEFAULT, NEIGHBORS_LIMIT_MAX);
-      const anchorAttributes = await classAttributes(node.className);
-      const [anchorRecord, catalog] = await Promise.all([
-        readObject(node.className, node.primaryKey, anchorAttributes),
-        classRelationships(node.className),
-      ]);
-      const plan = planRelation(catalog, relationshipId, node.className);
-      const typeLabels = new Map<string, string>();
-      for (const relation of catalog) {
-        if (relation.fromShowName) typeLabels.set(relation.fromclass, relation.fromShowName);
-        if (relation.toShowName) typeLabels.set(relation.toclass, relation.toShowName);
-      }
-
-      // The attributes each class needs are read once per call and reused; a self-loop's target is the anchor's own class.
-      const attributesByClass = new Map<string, ClassAttribute[]>([[node.className, anchorAttributes]]);
-      const directions = "directions" in plan ? plan.directions : [];
-      await Promise.all(
-        [...new Set(directions.map(({ targetClass }) => targetClass))]
-          .filter(targetClass => !attributesByClass.has(targetClass))
-          .map(async targetClass => { attributesByClass.set(targetClass, await classAttributes(targetClass)); }),
-      );
-
-      // Both sides of a self-relation share the page. Each query returns only the prefix that can affect it.
-      const queryOffset = directions.length > 1 ? 0 : offset;
-      const queryCount = offset - queryOffset + limit + 1;
-      const directionReads = await Promise.all(directions.map(async direction => ({
-        ...direction,
-        result: await readNeighborEdges(neighborsDsl(
-          node, primaryKeyName(anchorAttributes), plan.relationKind, direction,
-          attributesByClass.get(direction.targetClass)!, queryCount, queryOffset,
-        )),
-      })));
-      const read = "unknownReason" in plan
-        ? { ...plan, directions: directionReads }
-        : { relationKind: plan.relationKind, label: plan.label, directions: directionReads };
-      return assembleCustomerNeighbors(
-        { ...node, label: anchorRecord.label },
-        limit,
-        offset,
-        read,
-        className => attributesByClass.get(className)!,
-        typeLabels,
-      );
+      return customerCreateForm(typeId, await classAttributes(typeId), params);
     },
   };
 }

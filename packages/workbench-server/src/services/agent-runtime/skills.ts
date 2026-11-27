@@ -6,21 +6,13 @@ import type { SkillPackage } from "../../core/skills/providers";
 import fs from "node:fs";
 import { exportChartTheme } from "../chart-theme";
 import path from "node:path";
-import { publicSkillsRoot, publicSkillTranslationsRoot } from "../../content/layout";
+import { publicSkillTranslationsRoot } from "../../content/layout";
 import { environment } from "../../config/environment";
 import { getApiConfig } from "../../config/data-query-api";
 import { backendPost } from "../../utils/backend-client";
-import { workbenchServerResourceRoot } from "../../content/resources";
+import { translatedSkillRelativePath, workbenchBuiltinSkillRoot } from "../skills/builtin-paths";
 
-export function workbenchBuiltinSkillRoot(skill: RuntimeSkillRef): string {
-  if (skill.name === "ontomato-app-builder") {
-    return path.resolve(workbenchServerResourceRoot, "../../agent-skills", skill.name);
-  }
-  if (skill.name === "dashboard-pages") {
-    return path.join(publicSkillsRoot(), "pages", skill.name);
-  }
-  return path.join(workbenchServerResourceRoot, "resources/runtime-skills", skill.name);
-}
+export { workbenchBuiltinSkillRoot };
 
 /** Push one standard package to the runtime, using the caller's verified domain. */
 export async function publishSkillPackage(pkg: SkillPackage, domainId?: string) {
@@ -37,9 +29,8 @@ export async function publishSkill(root: string, skill: RuntimeSkillRef, domainI
   if (skill.namespace.kind === "provider" && skill.namespace.provider === "workbench" && skill.name === "assistant-report")
     pkg.files.push({ path: "resources/chart-theme.json", content: JSON.stringify(exportChartTheme()) });
   const translations = publicSkillTranslationsRoot();
-  const relative = path.relative(publicSkillsRoot(), root);
-  if (skill.namespace.kind === "provider" && translations && relative &&
-      relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+  const relative = translatedSkillRelativePath(root);
+  if (skill.namespace.kind === "provider" && translations && relative) {
     const translated = path.join(translations, "zh-CN", relative, "SKILL.md");
     if (fs.existsSync(translated)) {
       pkg.files.push({ path: "references/zh-CN.md", content: fs.readFileSync(translated, "utf8") });

@@ -47,7 +47,7 @@ export function executionBusinessCallbacks(
   if (scope === "authoring-only") return { authoring };
   const workbench = sealedCallback(`${base}/workbench`, { purpose: "execution", capability: "workbench" }, runId, expiresAt, initiatorCredentials);
   const ontology = sealedCallback(`${base}/ontology`, { purpose: "execution", capability: "ontology" }, runId, expiresAt, initiatorCredentials);
-  const panelCallbacks = scope === "full" || options.pageControl ? {
+  const panelCallbacks = options.pageControl ? {
     panelOperations: sealedCallback(`${base}/panels`, { purpose: "execution", capability: "panels" }, runId, expiresAt, initiatorCredentials),
   } : {};
   if (scope === "app-builder") return { workbench, ontology, authoring, ...panelCallbacks };

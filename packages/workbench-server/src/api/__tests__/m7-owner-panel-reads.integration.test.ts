@@ -1,3 +1,4 @@
+import { mountWorkbenchPanelReadsOwner, type PanelFixtureRead } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
@@ -20,7 +21,6 @@ import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { installContentLayout } from "../../content/layout";
-import { registerSkillProvider } from "../../core/skills/providers";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
@@ -282,24 +282,7 @@ beforeAll(async () => {
   );
   await writeFile(path.join(domainSkillDir, "scripts", "main.mjs"), "export const ok = true;\n");
 
-  registerSkillProvider({
-    id: "provider-m7",
-    name: "M7 Provider",
-    async list(context) {
-      return [
-        {
-          skill: { namespace: { kind: "domain", domainId: context.domainId }, name: "provider-m7-skill" },
-          manifest: { name: "provider-m7-skill", description: "Provider managed skill" },
-          async provide() {
-            return {
-              skill: { namespace: { kind: "domain" as const, domainId: context.domainId }, name: "provider-m7-skill" },
-              files: [{ path: "SKILL.md", content: "---\nname: provider-m7-skill\ndescription: Provider managed skill\n---\n" }],
-            };
-          },
-        },
-      ];
-    },
-  });
+
 
   // Seed PG feedback rows and referencing agents.
   const regularAgentId = randomUUID();
@@ -385,9 +368,6 @@ beforeAll(async () => {
       },
     });
   });
-  app.get("/platform/page-skills", (_req, res) => {
-    res.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
-  });
   app.get("/v1/runs/:runId", (req, res) => {
     const runId = req.params.runId;
     const targetId = Object.entries(runIds).find(([, value]) => value === runId)?.[0];
@@ -449,11 +429,38 @@ beforeAll(async () => {
     });
   });
 
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     const token = req.header("tk") ?? "m7-reader";
     Object.assign(req, { domainId, userId: "owner-1", token, locale: req.header("Accept-Language") ?? "en" });
     next();
+  };
+  const m7OwnerRead: PanelFixtureRead = async ({ type, name }, owner) => {
+    if (type === FEEDBACK_RECORD && ["query", "counts", "record"].includes(name)) {
+      const operationId = workbenchManagement.feedbackRead.id;
+      await owner.post("/internal/workbench-management/require", { domainId, operationId });
+      return operationId;
+    }
+    if (type === SKILL) {
+      if (name === "count" || name === "queryWithDeleteAccess") {
+        await owner.post("/internal/workbench-management/require", { domainId, operationId: workbenchManagement.skillLibraryRead.id });
+        if (name === "count") return true;
+      }
+      if (name === "queryWithDeleteAccess" || name === "deleteAccess")
+        return managementOperations.has(workbenchManagement.skillLibraryChange.id)
+          ? { allowed: true }
+          : { allowed: false, code: "PERMISSION_DENIED", reason: "Management operation forbidden" };
+    }
+  };
+  app.post("/authorization/objects/read-ranges", (req, res) => {
+    expect(["PANEL", "PROJECTION"]).toContain(req.body.kind);
+    res.json({ ranges: { USE: { all: false, fixed: false, authorId: "owner-1", objectIds: [] } } });
   });
+  mountWorkbenchPanelReadsOwner(app, {
+    token: "fixture-service", viewer: () => ({ domainId, userId: "owner-1" }), read: m7OwnerRead,
+  });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
@@ -480,7 +487,7 @@ afterAll(async () => {
 function request(method: string, resource: string, body?: object, locale = "en", headers?: Record<string, string>) {
   return fetch(`${state.base}/api/${resource}`, {
     method,
-    headers: { "Content-Type": "application/json", "Accept-Language": locale, ...headers },
+    headers: { tk: "m7-reader", "Content-Type": "application/json", "Accept-Language": locale, ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
@@ -593,7 +600,7 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   const skillPage = await read("skillList", "rows", { size: 2 });
   expect(skillPage).toMatchObject({
     status: "ready",
-    value: { nextCursor: "2", total: 3 },
+    value: { total: 2 },
   });
   expect(skillPage.value.rows).toHaveLength(2);
 
@@ -605,18 +612,6 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
       fields: {
         source: "Platform",
         writeRestriction: "Built-in skills come with the product and cannot be deleted",
-      },
-    },
-  });
-
-  const providerSkillRef = { className: SKILL, primaryKey: "provider-m7-skill" };
-  expect(await read("skillDetail", "record", { skill: providerSkillRef })).toMatchObject({
-    status: "ready",
-    value: {
-      primaryKey: "provider-m7-skill",
-      fields: {
-        source: "M7 Provider",
-        writeRestriction: "Provided by M7 Provider and cannot be deleted here",
       },
     },
   });
@@ -725,21 +720,6 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
       kind: "refusal",
       code: "PUBLIC_SKILL_READ_ONLY",
       message: "内置技能随产品提供，不能删除",
-    },
-  });
-
-  const providerIntent = await (await request("POST", "panel-operations/intents", {
-    applicationId: "app-m7",
-    useId: "owners",
-    operationId: "skillDetail.delete",
-    call: { target: { kind: "object", objectType: SKILL, primaryKey: "provider-m7-skill" }, input: {} },
-  }, "zh-CN")).json();
-  expect(await (await request("POST", `panel-operations/intents/${providerIntent.intentId}/dispatch`, {}, "zh-CN")).json()).toMatchObject({
-    kind: "dispatched",
-    outcome: {
-      kind: "refusal",
-      code: "SKILL_PROVIDER_READ_ONLY",
-      message: "由 M7 Provider 提供，不能在这里删除",
     },
   });
 

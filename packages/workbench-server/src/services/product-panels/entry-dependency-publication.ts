@@ -12,9 +12,9 @@ import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postg
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { backendPost } from "../../utils/backend-client";
-import { agentDependency, entryDependencyCompiler, mergeDependencies } from "./entry-dependency-compiler";
+import { agentDependency, entryDependencyCompiler, mergeDependencies, type CompiledEntryDependencies } from "./entry-dependency-compiler";
 import {
-  deleteBoundEntryDependencies, readBoundEntryDependencies, readPanelDependencies, sameDependencies,
+  deleteBoundEntryDependencies, emptyEntryDependencies, readBoundEntryDependencies, readCompiledPanelDependencies, sameDependencies,
   saveBoundEntryDependencies, type DependencyMap, type EntryDependencyPublication,
 } from "./entry-dependency-store";
 import { listObjectDetailPanelMappings } from "./object-detail";
@@ -35,7 +35,7 @@ async function submit(change: EntryDependencyChangeRequest) {
   publicationResponse.parse(await request("/permissions/service/entry-dependency-changes", change));
 }
 
-export async function readAffectedEntryRoots(domainId: string, panelIds: string[]) {
+export async function readAffectedEntryRoots(domainId: string | null, panelIds: string[]) {
   const result = affectedRootsResponse.parse(await request("/platform/applications/service/affected-entry-roots", { domainId, panelIds }));
   return result.data.entries;
 }
@@ -56,13 +56,17 @@ function sameBinding(root: BoundPanelRoot, stored: Pick<BoundPanelRoot, "panelId
   return stored !== undefined && root.panelId === stored.panelId && isDeepStrictEqual(root.inputs, stored.inputs);
 }
 
-function mergeRoots(roots: EntryRoots, panels: DependencyMap, bound: EntryDependency[]) {
+function mergeRoots(roots: EntryRoots, panels: DependencyMap, bound: CompiledEntryDependencies) {
   const dependencies = unboundPanelIds(roots).map(id => {
     const list = panels.get(id);
     if (!list) throw new Error(`Missing saved entry dependencies for panel '${id}'`);
-    return list;
+    return list.dependencies;
   });
-  return mergeDependencies(...dependencies, bound, roots.agentIds.map(agentDependency)).filter(grantableDependency);
+  return mergeDependencies(...dependencies, bound.dependencies, roots.agentIds.map(agentDependency)).filter(grantableDependency);
+}
+
+function compiled(dependencies: EntryDependency[]): CompiledEntryDependencies {
+  return { dependencies };
 }
 
 const detailRoots = (panel: string | null): EntryRoots => ({ panelIds: panel === null ? [] : [panel], agentIds: [] });
@@ -72,7 +76,7 @@ async function publish(client: PoolClient, domainId: string, { source, panels, b
   sequence: string, later: EntryDependencyPublication[]) {
   const panelIds = panels.map(panel => panel.panelId);
   const affectedPanelIds = [...new Set([...panelIds, ...boundPanels.map(panel => panel.panelId)])];
-  const roots = [];
+  const roots: { entryId: string; before: EntryRoots; after: EntryRoots }[] = [];
   if (affectedPanelIds.length) {
     for (const { entryId, roots: entryRoots } of await readAffectedEntryRoots(domainId, affectedPanelIds))
       roots.push({ entryId, before: entryRoots, after: entryRoots });
@@ -90,16 +94,16 @@ async function publish(client: PoolClient, domainId: string, { source, panels, b
   }
   if (detail) roots.push({ entryId: detailEntryId(source.id), before: detailRoots(detail.before), after: detailRoots(detail.after) });
 
-  const saved = await readPanelDependencies(client, domainId,
+  const saved = await readCompiledPanelDependencies(client, domainId,
     [...new Set(roots.flatMap(({ before, after }) => [...unboundPanelIds(before), ...unboundPanelIds(after)]))]);
   for (const queued of [...later].reverse()) {
-    for (const { panelId, before } of queued.panels) saved.set(panelId, before);
+    for (const { panelId, before } of queued.panels) saved.set(panelId, compiled(before));
   }
   const oldLists = new Map(saved);
   const newLists = new Map(saved);
   for (const { panelId, before, after } of panels) {
-    oldLists.set(panelId, before);
-    newLists.set(panelId, after);
+    oldLists.set(panelId, compiled(before));
+    newLists.set(panelId, compiled(after));
   }
   const bound = await readBoundEntryDependencies(client, domainId,
     roots.filter(({ after }) => after.boundPanelRoot).map(({ entryId }) => entryId));
@@ -107,22 +111,23 @@ async function publish(client: PoolClient, domainId: string, { source, panels, b
   const entries = [];
   for (const { entryId, before, after } of roots) {
     const root = after.boundPanelRoot;
-    let oldBound: EntryDependency[] = [];
-    let newBound: EntryDependency[] = [];
+    let oldBound = emptyEntryDependencies;
+    let newBound = emptyEntryDependencies;
     if (root) {
       const current = bound.get(entryId);
-      oldBound = current && sameBinding(root, current) ? current.dependencies : await compile(root.panelId, root.inputs);
+      oldBound = current && sameBinding(root, current) ? current : await compile(root.panelId, root.inputs);
       for (const queued of [...later].reverse()) {
         const change = queued.boundPanels?.find(item => item.entryId === entryId && sameBinding(root, item));
-        if (change) oldBound = change.before;
+        if (change) oldBound = compiled(change.before);
       }
       const change = boundPanels.find(item => item.entryId === entryId && sameBinding(root, item));
-      newBound = change ? change.after : oldBound;
-      if (change) oldBound = change.before;
+      newBound = change ? compiled(change.after) : oldBound;
+      if (change) oldBound = compiled(change.before);
     }
     const previous = mergeRoots(before, oldLists, oldBound);
     const next = mergeRoots(after, newLists, newBound);
-    if (!sameDependencies(previous, next)) entries.push({ entryId, before: previous, after: next });
+    if (!sameDependencies(previous, next))
+      entries.push({ entryId, before: previous, after: next });
   }
   await submit({ domainId, source: { kind: source.kind, actorId: source.actorId, sequence }, entries });
 }
@@ -157,17 +162,17 @@ export async function deliverEntryDependencyPublications(domainId: string) {
 export async function publishApplicationEntryRoots({ domainId, actorId, entryId, sequence, before, after }: ApplicationEntryRootsChanged) {
   await transaction(async client => {
     await lockProducts(client, { domainId });
-    const panels = await readPanelDependencies(client, domainId, [...new Set([...before.panelIds, ...after.panelIds])]);
+    const panels = await readCompiledPanelDependencies(client, domainId, [...new Set([...before.panelIds, ...after.panelIds])]);
     const compile = entryDependencyCompiler(client, domainId);
     const afterBound = after.boundPanelRoot;
     const beforeBound = before.boundPanelRoot;
-    const nextBound = afterBound ? await compile(afterBound.panelId, afterBound.inputs) : [];
+    const nextBound = afterBound ? await compile(afterBound.panelId, afterBound.inputs) : emptyEntryDependencies;
     const previousRead = beforeBound ? (await readBoundEntryDependencies(client, domainId, [entryId])).get(entryId) : undefined;
     // An unreferenced former root can be retired before this event is consumed.
     // The permission owner reconciles waiting proposals against the complete new list.
-    let previousBound: EntryDependency[] = [];
+    let previousBound = emptyEntryDependencies;
     if (beforeBound) {
-      if (previousRead && sameBinding(beforeBound, previousRead)) previousBound = previousRead.dependencies;
+      if (previousRead && sameBinding(beforeBound, previousRead)) previousBound = previousRead;
       else if (panels.has(beforeBound.panelId)) previousBound = await compile(beforeBound.panelId, beforeBound.inputs);
     }
     const previous = mergeRoots({ ...before, panelIds: before.panelIds.filter(id => panels.has(id)) }, panels, previousBound);

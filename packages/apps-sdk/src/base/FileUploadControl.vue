@@ -7,6 +7,7 @@ import { panelUploadAccepted, panelUploadSize, type PanelUploadReceipt } from "@
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMemberOperations } from "../panel/member";
 import { formatOperationOutcome } from "./operation-dispatch";
+import UnavailableTooltip from "./UnavailableTooltip.vue";
 
 /**
  * The control of one operation that takes a file (its owner declares an `upload`), run as the reader the way an
@@ -14,6 +15,8 @@ import { formatOperationOutcome } from "./operation-dispatch";
  * kinds, checks the picked file against the declared kinds and size, stages it, and writes once with the staged file as
  * the declared input. The host confirms where the owner asks, naming the file. The owner's receipt is shown beneath,
  * and a refusal emits `refused` with the staged file receipt so the hosting panel can decide any domain-specific follow-up.
+ * When the owner marks the operation unavailable, the trigger stays disabled and shows the owner's reason in a hover/focus
+ * tooltip.
  */
 const props = withDefaults(
   defineProps<{
@@ -86,6 +89,7 @@ const triggerLabel = computed(() => (props.label ? panel.t(props.label) : publis
 const hasRulesDialog = computed(() => Boolean(props.intro || props.rules?.length));
 const extensions = computed(() => declared.value?.accept.map((kind) => kind.extension).join(",") ?? "");
 const isDisabled = computed(() => props.disabled || uploading.value || declared.value === null || Boolean(published.value?.unavailable));
+const unavailableReason = computed(() => published.value?.unavailable?.reason || undefined);
 
 function openPicker() {
   if (fileInput.value) {
@@ -95,6 +99,7 @@ function openPicker() {
 }
 
 function onTriggerClick() {
+  if (isDisabled.value) return;
   failure.value = null;
   if (hasRulesDialog.value) rulesOpen.value = true;
   else openPicker();
@@ -157,15 +162,17 @@ async function onFileChange(event: Event) {
 
 <template>
   <div class="sdk-file-upload">
-    <button
-      type="button"
-      class="sdk-file-upload-btn sdk-file-upload-trigger"
-      :class="{ primary: type === 'primary' }"
-      :disabled="isDisabled"
-      @click="onTriggerClick"
-    >
-      {{ uploading ? t("platform.uploadUploading") : triggerLabel }}
-    </button>
+    <UnavailableTooltip :reason="unavailableReason" :label="triggerLabel">
+      <button
+        type="button"
+        class="sdk-file-upload-btn sdk-file-upload-trigger"
+        :class="{ primary: type === 'primary' }"
+        :disabled="isDisabled"
+        @click="onTriggerClick"
+      >
+        {{ uploading ? t("platform.uploadUploading") : triggerLabel }}
+      </button>
+    </UnavailableTooltip>
     <input
       ref="fileInput"
       type="file"
@@ -173,7 +180,6 @@ async function onFileChange(event: Event) {
       :accept="extensions"
       @change="onFileChange"
     />
-    <p v-if="published?.unavailable" class="sdk-file-upload-hint">{{ published.unavailable.reason }}</p>
     <p v-if="failure" role="alert" class="sdk-file-upload-error">{{ failure.message }}</p>
     <p v-if="receipt" :role="receipt.ok ? 'status' : 'alert'" :class="receipt.ok ? 'sdk-file-upload-done' : 'sdk-file-upload-error'">
       {{ receipt.message }}
@@ -229,7 +235,6 @@ async function onFileChange(event: Event) {
   cursor: not-allowed;
   opacity: 0.55;
 }
-.sdk-file-upload-hint,
 .sdk-file-upload-done {
   color: var(--el-text-color-regular);
   font-size: var(--el-font-size-small, 12px);

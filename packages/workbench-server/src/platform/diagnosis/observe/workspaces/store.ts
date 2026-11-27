@@ -60,8 +60,12 @@ function workspacesRoot(): string {
 }
 
 /** Validate workspaceId to prevent path traversal attacks. */
+export function isWorkspaceId(workspaceId: string): boolean {
+  return Boolean(workspaceId) && !/[/\\:*?"<>|]/.test(workspaceId) && !workspaceId.includes("..");
+}
+
 function validateWorkspaceId(workspaceId: string): void {
-  if (!workspaceId || /[/\\:*?"<>|]/.test(workspaceId) || workspaceId.includes("..")) {
+  if (!isWorkspaceId(workspaceId)) {
     throw new Error(`Invalid workspaceId: ${workspaceId}`);
   }
 }

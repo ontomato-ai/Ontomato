@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { defineComponent, h, nextTick, ref } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import type { ApplicationEntryResolution, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import type { ApplicationOpenResponse, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DirectPanelRun } from "@ontomato/platform-shell";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -46,7 +46,7 @@ const appBUse: ApplicationPanelUse = {
   names: { en: "App B Home" },
 };
 
-const resolveApplicationEntryMock = vi.fn<[{ path?: string; useId?: string }], Promise<ApplicationEntryResolution>>();
+const resolveApplicationEntryMock = vi.fn<[{ path?: string; useId?: string }], Promise<ApplicationOpenResponse>>();
 const catalogRefreshMock = vi.fn<[], Promise<unknown[]>>().mockResolvedValue([]);
 const refreshApplicationMock = vi.fn<[string], Promise<unknown>>().mockResolvedValue(null);
 const catalogApplications = ref<unknown[]>([]);
@@ -84,7 +84,6 @@ vi.mock("@ontomato/foundation-ui/visibility", () => ({
 
 vi.mock("../panel-host", () => ({
   resolveApplicationEntry: (query: { path?: string; useId?: string }) => resolveApplicationEntryMock(query),
-  readApplicationFrameManifest: vi.fn(),
   cachedApplicationFrameManifest: vi.fn(() => null),
   builtinFramePanelHost: (applicationId: string, framePanelId: string) => ({
     kind: "frame",
@@ -155,11 +154,14 @@ function resolutionOf(
   use: ApplicationPanelUse,
   panelUses: ApplicationPanelUse[],
   framePanelId?: string,
-): ApplicationEntryResolution {
+): ApplicationOpenResponse {
   return {
     applicationId,
     use,
     ...(framePanelId ? { framePanelId } : {}),
+    allowStandalone: true,
+    frame: null,
+    content: null,
     menu: { singleEntry: panelUses.filter((entry) => Boolean(entry.names)).length <= 1, groups: [], panelUses },
   };
 }
@@ -230,7 +232,7 @@ describe("entry-table admission, refresh, and transition experience", () => {
     catalogApplications.value = [
       { id: appA, framePanelId: "frame-a", panelUses: menuUses },
     ];
-    const openingSummary = deferred<ApplicationEntryResolution>();
+    const openingSummary = deferred<ApplicationOpenResponse>();
     resolveApplicationEntryMock.mockResolvedValueOnce(resolutionOf(appA, tasksUse, menuUses, "frame-a"))
       .mockReturnValueOnce(openingSummary.promise);
 
@@ -258,7 +260,7 @@ describe("entry-table admission, refresh, and transition experience", () => {
   });
 
   it("blocks direct links outside the entry table until resolve-entry answers, showing only the loading placeholder without leaking content/context/skills", async () => {
-    const pending = deferred<ApplicationEntryResolution>();
+    const pending = deferred<ApplicationOpenResponse>();
     resolveApplicationEntryMock.mockReturnValueOnce(pending.promise);
     const onContext = vi.fn();
     const onDisplaySkill = vi.fn();
@@ -354,7 +356,7 @@ describe("entry-table admission, refresh, and transition experience", () => {
       { id: appA, framePanelId: "frame-a", panelUses: [tasksUse] },
       { id: appB, framePanelId: "frame-b", panelUses: [appBUse] },
     ];
-    const pendingB = deferred<ApplicationEntryResolution>();
+    const pendingB = deferred<ApplicationOpenResponse>();
     resolveApplicationEntryMock
       .mockResolvedValueOnce(resolutionOf(appA, tasksUse, [tasksUse], "frame-a"))
       .mockReturnValueOnce(pendingB.promise);

@@ -155,6 +155,7 @@ class OwnerListQueryBudgetTest {
     }).toList());
     var service = new ActionServiceImpl();
     setField(service, "actionDao", dao);
+    setField(service, "authorization", new ActionAuthorization(authorization, null));
     setField(service, "functionDao", functions);
     return service;
   }

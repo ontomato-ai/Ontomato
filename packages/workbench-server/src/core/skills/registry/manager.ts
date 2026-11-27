@@ -1,45 +1,22 @@
 import path from "node:path";
-import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
-import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
-import type { AssistantCredentials } from "../../../utils/assistant-credentials";
-import {
-  runtimeSkillKey,
-  standardSkillFrontmatterSchema,
-  type RuntimeSkillRef,
-  type StandardSkillFrontmatter,
-} from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { domainSkillsRoot, publicSkillsRoot } from "../../../content/layout";
 import { SkillScanner } from "../discovery/scanner";
-import { InvalidSkillPackageError } from "../manifest";
-import { parseSkillPackage, readSkillPackage } from "../package";
-import {
-  isProtectedSkillName, protectedSourceSkillRef, registeredSkillProviders, SkillSourceRecordError, type SkillSourceFailure,
-  type ProtectedSkillOffering, type SkillOffering, type SkillPackage, type SkillPackageContext, type RegisteredSkillProvider,
-} from "../providers";
-import type { SkillEntry, SkillMeta, SkillSource } from "../types";
+import { readSkillPackage } from "../package";
+import type { SkillEntry, SkillMeta } from "../types";
 
-function refLabel(ref: RuntimeSkillRef) {
-  return ref.namespace.kind === "provider" ? `${ref.namespace.provider}/${ref.name}` : `${ref.namespace.domainId}/${ref.name}`;
-}
-export function skillSourceLabel(source: SkillSource) {
-  if (source.kind === "public") return "the public skill packages";
-  if (source.kind === "domain") return "the domain skill packages";
-  return `provider "${source.providerName}" (${source.providerId})`;
-}
-/** Keep the provider failure and its cause, adding which source failed and at what. */
-function providerFailure(provider: RegisteredSkillProvider, action: string, error: unknown, includeDetail: boolean) {
-  const detail = includeDetail ? `: ${error instanceof Error ? error.message : String(error)}` : "";
-  return Object.assign(new Error(`Skill provider "${provider.name}" (${provider.id}) failed to ${action}${detail}`,
-    { cause: error }), { code: "SKILL_SOURCE_UNAVAILABLE", status: 502 });
+
+export function skillSourceLabel(source: SkillEntry["source"]): string {
+  if (source.kind === "public") return `public skill ${source.path}`;
+  if (source.kind === "domain") return `domain skill ${source.path}`;
+  return "generated platform skill";
 }
 
 export class SkillRegistryManager {
   private skills: SkillEntry[] = [];
   private names = new Set<string>();
-  readonly failedManifests = new Map<string, SkillCatalogDiagnostics["items"][number]>();
-  constructor(private readonly root: string, private readonly publicScanner: SkillScanner,
-    private readonly domainId: string, private readonly providers: readonly RegisteredSkillProvider[],
-    private readonly reader: AssistantCredentials, private readonly userId?: string) {}
+  readonly failedManifests = new Map<string, never>();
+  constructor(private readonly root: string, private readonly publicScanner: SkillScanner, private readonly domainId: string) {}
 
   private fileEntry(meta: SkillMeta, source: { kind: "public" | "domain"; path: string }): SkillEntry {
     const skill: RuntimeSkillRef = source.kind === "public"
@@ -48,123 +25,23 @@ export class SkillRegistryManager {
     return { skill, manifest: meta.manifest, source, provide: () => readSkillPackage(source.path, skill) };
   }
 
-  private async listProvider(provider: RegisteredSkillProvider, reportSourceFailure: (failure: SkillSourceFailure) => void) {
-    try { return await provider.list({ domainId: this.domainId, ...(this.userId !== undefined && { userId: this.userId }), reader: this.reader, reportSourceFailure }); }
-    catch (error) { throw providerFailure(provider, "list skills", error, false); }
-  }
-
-  private async providerEntry(provider: RegisteredSkillProvider, skill: RuntimeSkillRef,
-    readManifest: () => StandardSkillFrontmatter | Promise<StandardSkillFrontmatter>,
-    provide: (context?: SkillPackageContext) => Promise<SkillPackage>,
-    protectedOffering?: ProtectedSkillOffering,
-  ): Promise<SkillEntry> {
-    let supplied: StandardSkillFrontmatter;
-    let displayTitle: string | undefined;
-    try {
-      supplied = await readManifest();
-      displayTitle = await protectedOffering?.readDisplayTitle?.();
-    }
-    catch (error) {
-      if (protectedOffering) {
-        if (error instanceof SkillSourceRecordError) throw error;
-        throw providerFailure(provider, `read the manifest for ${refLabel(skill)}`, error, false);
-      }
-      throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) returned an invalid `
-        + `manifest for ${refLabel(skill)}: ${String(error)}`);
-    }
-    const parsed = standardSkillFrontmatterSchema.safeParse(supplied);
-    if (!parsed.success || parsed.data.name !== skill.name) {
-      if (protectedOffering && protectedOffering.resourceIds.includes(protectedOffering.sourceKey))
-        throw new SkillSourceRecordError({ resourceId: protectedOffering.sourceKey,
-          field: parsed.success ? "name" : "manifest", reason: "invalid_definition" });
-      if (parsed.success) throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) returned a mismatched manifest `
-        + `for ${refLabel(skill)}`);
-      if (protectedOffering) throw providerFailure(provider, `read the manifest for ${refLabel(skill)}`, parsed.error, false);
-      throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) returned an invalid `
-        + `manifest for ${refLabel(skill)}: ${String(parsed.error)}`);
-    }
-    const manifest = parsed.data;
-    const key = runtimeSkillKey(skill);
-    const source: SkillSource = { kind: "provider", providerId: provider.id, providerName: provider.name };
-    return { skill, manifest, source, ...(displayTitle === undefined ? {} : { displayTitle }), provide: async (context) => {
-      let pkg: SkillPackage;
-      try { pkg = await provide(context); }
-      catch (error) { throw providerFailure(provider, `supply ${refLabel(skill)}`, error, !protectedOffering); }
-      if (runtimeSkillKey(pkg.skill) !== key)
-        throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) supplied `
-          + `a different skill for ${refLabel(skill)}`);
-      try { return parseSkillPackage(pkg.files, pkg.skill); }
-      catch (error) { throw providerFailure(provider, `supply ${refLabel(skill)}`, error, !protectedOffering); }
-    } };
-  }
-
-  async initialize(admit?: AdmitSkills) {
+  async initialize(additionalEntries: readonly SkillEntry[] = []) {
     const entries = [
+      ...additionalEntries,
       ...(await this.publicScanner.scan()).map((meta) => this.fileEntry(meta, { kind: "public", path: meta.path })),
       ...(await new SkillScanner(this.root).scan()).map((meta) => this.fileEntry(meta, { kind: "domain", path: meta.path })),
     ];
-    const byName = new Map<string, Pick<SkillEntry, "skill" | "source">>();
-    const reserveName = (skill: RuntimeSkillRef, source: SkillSource, protectedSource: boolean) => {
-      if (!protectedSource && isProtectedSkillName(skill.name))
-        throw new InvalidSkillPackageError("A skill source uses a reserved name");
-      const existing = byName.get(skill.name);
-      if (existing)
-        throw new InvalidSkillPackageError(protectedSource ? "Protected skill identities conflict"
-          : `Skill name "${skill.name}" (${refLabel(skill)}) from ${skillSourceLabel(source)} conflicts with `
-            + `${skillSourceLabel(existing.source)} (${refLabel(existing.skill)}); names are unique across all manageable sources`);
-      byName.set(skill.name, { skill, source });
-    };
-    for (const { skill, source } of entries) reserveName(skill, source, false);
-    const publicOfferings: { provider: RegisteredSkillProvider; offering: SkillOffering }[] = [];
-    const protectedOfferings: { provider: RegisteredSkillProvider; offering: ProtectedSkillOffering; skill: RuntimeSkillRef }[] = [];
-    const failures: ListedSourceFailure[] = [];
-    for (const provider of this.providers) {
-      const source = { kind: "provider" as const, providerId: provider.id, providerName: provider.name };
-      const offerings = await this.listProvider(provider, failure => {
-        const skill = protectedSourceSkillRef(provider.id, this.domainId, failure);
-        reserveName(skill, source, true);
-        failures.push({ ...failure, providerId: provider.id, skill });
-      });
-      for (const offering of offerings) {
-        if ("kind" in offering) {
-          const skill = protectedSourceSkillRef(provider.id, this.domainId, offering);
-          reserveName(skill, source, true);
-          protectedOfferings.push({ provider, offering, skill });
-        } else {
-          const { skill } = offering;
-          if (skill.namespace.kind === "domain" && skill.namespace.domainId !== this.domainId)
-            throw new InvalidSkillPackageError(`Skill provider "${provider.name}" (${provider.id}) offered ${refLabel(skill)} `
-              + `while reading domain "${this.domainId}"`);
-          reserveName(skill, source, false);
-          publicOfferings.push({ provider, offering });
-        }
-      }
-    }
-    const visibility = await admit?.(protectedOfferings.map(({ provider, offering, skill }) => ({
-      providerId: provider.id, sourceKey: offering.sourceKey, skill,
-      resourceIds: offering.resourceIds, entrances: offering.entrances,
-    })), failures);
-    this.names = new Set(byName.keys());
-    this.skills = entries.filter(entry => visibility?.public(entry.skill) ?? true);
-    for (const { provider, offering } of publicOfferings) {
-      if (visibility?.public(offering.skill) ?? true)
-        this.skills.push(await this.providerEntry(provider, offering.skill, () => offering.manifest, offering.provide.bind(offering)));
-    }
-    for (const { provider, offering, skill } of protectedOfferings) {
-      if (!visibility?.protected(skill)) continue;
-      try {
-        this.skills.push(await this.providerEntry(provider, skill, () => offering.readManifest(skill),
-          context => offering.provide(skill, { ...context, admittedEntrances: visibility.admittedEntrances?.(skill) }), offering));
-      } catch (error) {
-        if (!(error instanceof SkillSourceRecordError)) throw error;
-        this.failedManifests.set(runtimeSkillKey(skill), { skill, ...error.detail });
-      }
-    }
+    this.names = new Set(entries.map(entry => entry.skill.name));
+    const keys = new Set<string>();
+    this.skills = entries.filter(entry => {
+      const key = runtimeSkillKey(entry.skill);
+      if (keys.has(key)) return false;
+      keys.add(key);
+      return true;
+    });
   }
 
-  getSkills() {
-    return this.skills;
-  }
+  getSkills() { return this.skills; }
   hasRegisteredName(id: string) { return this.names.has(id); }
   getSkillById(id: string) { return this.skills.find((entry) => entry.skill.name === id) ?? null; }
   getSkillByRef(ref: RuntimeSkillRef) {
@@ -172,17 +49,6 @@ export class SkillRegistryManager {
     return this.skills.find((entry) => runtimeSkillKey(entry.skill) === key) ?? null;
   }
 }
-
-export type ListedProtectedSkill = Pick<ProtectedSkillOffering, "sourceKey" | "resourceIds" | "entrances"> & {
-  providerId: string;
-  skill: RuntimeSkillRef;
-};
-export type ListedSourceFailure = SkillSourceFailure & { providerId: string; skill: RuntimeSkillRef };
-type AdmitSkills = (sources: readonly ListedProtectedSkill[], failures: readonly ListedSourceFailure[]) => Promise<{
-  public(skill: RuntimeSkillRef): boolean;
-  protected(skill: RuntimeSkillRef): boolean;
-  admittedEntrances?(skill: RuntimeSkillRef): readonly PageSkillEntrance[] | undefined;
-}>;
 
 export class DomainSkillRegistryManager {
   private readonly publicScanner: SkillScanner;
@@ -199,10 +65,9 @@ export class DomainSkillRegistryManager {
       .map(skill => skill.id).filter(id => requested.has(id));
   }
   async publicSkills() { return this.publicScanner.scan(); }
-  async forDomain(domainId: string, admit: AdmitSkills | undefined, reader: AssistantCredentials, userId?: string) {
-    const root = this.getDomainSkillsRoot(domainId);
-    const registry = new SkillRegistryManager(root, this.publicScanner, domainId, registeredSkillProviders(), reader, userId);
-    await registry.initialize(admit);
+  async forDomain(domainId: string, additionalEntries: readonly SkillEntry[] = []) {
+    const registry = new SkillRegistryManager(this.getDomainSkillsRoot(domainId), this.publicScanner, domainId);
+    await registry.initialize(additionalEntries);
     return registry;
   }
 }

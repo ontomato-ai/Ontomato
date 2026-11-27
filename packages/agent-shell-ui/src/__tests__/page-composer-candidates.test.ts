@@ -1,7 +1,7 @@
 import { createApp, h, ref, type App, type Ref, shallowRef } from "vue";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import { assistantAgentsQuerySchema, type PageSkillContext } from "@ontomato/contracts/page-skills";
+import { assistantAgentsQuerySchema, type PageSkillContext } from "@ontomato/contracts/page-context";
 import { createAgentHostClient } from "../host";
 import type { ShellLabels } from "../types";
 import { pageCounterKey, type PageCounter } from "../page-counter";
@@ -36,25 +36,13 @@ const labels = {
 } as Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable" | "collapseComposer" | "expandComposer">;
 
 const agent = (id: string, name: string): AgentHostAgent => ({ id, name, description: "", icon: null, enabled: true });
-const dashboardSkill: PageSkillContext = { mode: "public", locator: { pageKey: "dashboard", applicationId: "dashboards", entryKey: "dashboards-main" } };
-const homeMemberSkill: PageSkillContext = {
-  mode: "member",
-  locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-  member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
-};
-const drawerMemberSkill: PageSkillContext = {
-  mode: "member",
-  locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-  member: {
-    source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } },
-    memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-order-detail" },
-  },
-};
-const unavailableMemberSkill: PageSkillContext = {
-  mode: "member",
-  locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
-  member: null,
-};
+const pageContext = (applicationId: string, entryKey: string, pageKey: string, memberPath: PageSkillContext["memberPath"] = []): PageSkillContext => ({
+  applicationId, entryKey, pageKey, useId: entryKey, panelId: `panel-${entryKey}`,
+  path: `/applications/${applicationId}/${entryKey}`, memberPath,
+});
+const dashboardSkill = pageContext("dashboards", "dashboards-main", "dashboard");
+const homeMemberSkill = pageContext("home", "home", "home");
+const drawerMemberSkill = pageContext("home", "home", "home", [{ member: "detail", itemKey: { className: "Order", primaryKey: "ord-1" } }]);
 
 const roots: HTMLElement[] = [];
 const apps: App[] = [];
@@ -171,28 +159,15 @@ it("shows the service's own error when the candidates could not be read at all",
   expect(drawn.errors).toEqual(["Failed to fetch"]);
 });
 
-it("offers no candidates and sends no request when a member context has member: null", async () => {
-  const drawn = draw({ pageSkill: unavailableMemberSkill });
-  await new Promise((resolve) => setTimeout(resolve));
-
-  expect(drawn.pageAgents).not.toHaveBeenCalled();
-  expect(drawn.agents).not.toHaveBeenCalled();
-  expect(drawn.errors).toEqual([]);
-  expect(drawn.root.querySelector(".page-ask")).toBeNull();
-});
-
-it("re-queries candidates when the displayed member changes and clears previous candidates on switch", async () => {
+it("re-queries candidates when the displayed member path changes and clears previous candidates on switch", async () => {
   const skillRef = shallowRef<PageSkillContext | undefined>(homeMemberSkill);
   const drawn = draw({
     pageSkill: skillRef,
     pageAgents: async (skill) => {
-      if (skill.mode === "member" && skill.member?.ref.name === "pvt-home-panel") {
+      if (skill.memberPath.length === 0) {
         return { agents: [agent("home-agent", "Home")], defaultAgentId: "home-agent" };
       }
-      if (skill.mode === "member" && skill.member?.ref.name === "pvt-order-detail") {
-        return { agents: [agent("order-agent", "Order")], defaultAgentId: "order-agent" };
-      }
-      return { agents: [] };
+      return { agents: [agent("order-agent", "Order")], defaultAgentId: "order-agent" };
     },
   });
   await new Promise((resolve) => setTimeout(resolve));
@@ -206,15 +181,14 @@ it("re-queries candidates when the displayed member changes and clears previous 
   expect(drawn.pageAgents).toHaveBeenLastCalledWith(drawerMemberSkill);
   expect(drawn.shown().agentId).toBe("order-agent");
 
-  // Switching to member: null clears the previous member's candidates without sending a request.
-  const callsBeforeNull = drawn.pageAgents.mock.calls.length;
-  skillRef.value = unavailableMemberSkill;
+  // Switching back to the root placement re-queries and replaces the drawer's candidates.
+  skillRef.value = homeMemberSkill;
   await new Promise((resolve) => setTimeout(resolve));
-  expect(drawn.pageAgents).toHaveBeenCalledTimes(callsBeforeNull);
-  expect(drawn.root.querySelector(".page-ask")).toBeNull();
+  expect(drawn.pageAgents).toHaveBeenLastCalledWith(homeMemberSkill);
+  expect(drawn.shown().agentId).toBe("home-agent");
 });
 
-it("encodes public and member queries through the real host client and skips network calls for member: null", async () => {
+it("encodes page entrance queries through the real host client", async () => {
   const requestedUrls: string[] = [];
   const request = vi.fn(async (path: string) => {
     requestedUrls.push(path);
@@ -236,16 +210,11 @@ it("encodes public and member queries through the real host client and skips net
   await host.listPageAgents(drawerMemberSkill);
   expect(requestedUrls).toHaveLength(2);
   const memberParams = Object.fromEntries(new URL(requestedUrls[1]!, "http://host.test").searchParams);
-  // The member goes as the snapshot gave it, in one parameter, beside the entrance.
   expect(assistantAgentsQuerySchema.parse(memberParams)).toEqual({
     pageKey: "home",
     applicationId: "home",
     entryKey: "home",
-    member: drawerMemberSkill.mode === "member" ? drawerMemberSkill.member : null,
   });
-
-  const empty = await host.listPageAgents(unavailableMemberSkill);
-  expect(empty).toEqual({ agents: [] });
   expect(requestedUrls).toHaveLength(2);
 });
 
@@ -351,7 +320,7 @@ it("drops an entry that waited when the page's candidates could not be read", as
 });
 
 it("serves entries only while it is drawn, and withdraws when the page goes", async () => {
-  const none = draw({ pageSkill: unavailableMemberSkill });
+  const none = draw({ withoutSkill: true });
   await settle();
   expect(none.served).toHaveLength(0);
 

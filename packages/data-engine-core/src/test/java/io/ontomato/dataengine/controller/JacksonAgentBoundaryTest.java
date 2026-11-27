@@ -100,7 +100,7 @@ class JacksonAgentBoundaryTest {
     var state = mock(VectorRebuildState.class);
     when(state.getStatus()).thenReturn(VectorRebuildState.Status.PENDING);
     var gate = spy(new VectorRetrievalGate());
-    doReturn(state).when(gate).stateOf("domain-a", config);
+    doReturn(state).when(gate).effectiveState("domain-a");
     var message = "向量尚未就绪，请在模型配置中开始或继续重建。";
     var messages = mock(LangService.class);
     when(messages.get("en", "Vector.rebuildRequired")).thenReturn("Vector search is paused.");

@@ -85,6 +85,11 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
    */
   navigate(address: string): Promise<void>;
   /**
+   * Leaves the current detail panel by stepping back one browser history entry when an in-platform previous page
+   * exists, otherwise navigating to `fallback`. Defaults to `navigate(fallback)` when omitted.
+   */
+  navigateBack?(fallback: string): Promise<void>;
+  /**
    * Runs the panel a member places from the panel's state (see the mount's options): `memberPath` is that member's
    * segment with the selection, relative to this instance; `run` is how the placed panel reports to this one.
    */
@@ -191,6 +196,8 @@ export interface DirectPanelInstance extends PanelInstance {
   expandPageComposer(entry: PageComposerRequest, click?: MouseEvent): void | Promise<void>;
   /** Opens one of the platform's addresses, or says on the page why it cannot (see the options). */
   navigate(address: string): Promise<void>;
+  /** Leaves the current detail panel using browser history when an in-platform previous page exists, else `fallback`. */
+  navigateBack(fallback: string): Promise<void>;
   /** The member's projection, read once for this instance: its fixed one, or the one the panel's state chose. */
   projectionOf(member: string): Promise<DirectProjection>;
   /** The member's projection and resolved Vue component, cached once per member and reused across all rows. */
@@ -354,7 +361,7 @@ export type PanelMemberReadRequest =
   | (Omit<Extract<ProductPanelReadRequest, { operations: true }>, "source"> & { dataName?: never });
 
 /** The platform's read entry for a panel's members, as the reader: the host fills in which panel it is. */
-export type PanelReadPort = (request: PanelMemberReadRequest) => Promise<ProductPanelReadResponse>;
+export type PanelReadPort = (request: PanelMemberReadRequest, independent?: true) => Promise<ProductPanelReadResponse>;
 
 /**
  * One named datum of a member, read through the platform's read entry: unread while it waits for its object or a
@@ -382,10 +389,13 @@ export async function readMemberDatum(
   // A read the platform answered with a failure (unavailable, refused before the owner) is this datum's failure, with the
   // platform's reason; one it never answered (the request reached nothing) is unreachable. The member shows either where
   // its data would be.
-  const result: MemberDataState = await read({
+  const declaration = directReadDeclaration(projection, data);
+  const request: PanelMemberReadRequest = {
     memberPath, dataName: name, inputs: authored,
     ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
-  }).catch((reason: unknown) => {
+  };
+  const pending = declaration?.result === "metricOutput" ? read(request, true) : read(request);
+  const result: MemberDataState = await pending.catch((reason: unknown) => {
     const code = reason && typeof reason === "object" && typeof (reason as { code?: unknown }).code === "string"
       ? (reason as { code: string }).code
       : reason && typeof reason === "object" && (reason as { status?: unknown }).status === 409
@@ -401,7 +411,6 @@ export async function readMemberDatum(
   });
   if (result.status !== "ready") return result;
   // The host's answer is checked against the result the owner registered for this read.
-  const declaration = directReadDeclaration(projection, data);
   if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
   return {
     status: "ready",
@@ -487,11 +496,17 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   };
   const notify: NonNullable<PanelInstanceOptions["notify"]> =
     options.notify ?? (({ kind, text }) => {
+      // Mount toasts on the page region container (the overlay root's parent) rather than the per-panel overlay root
+      // so a toast emitted right before navigating to another panel in the same area (e.g. create -> detail, delete ->
+      // list) stays visible instead of being hidden or removed when the source panel leaves.
+      const appendTo = options.overlayRoot?.isConnected
+        ? options.overlayRoot.parentElement ?? options.overlayRoot
+        : undefined;
       ElMessage({
         type: kind,
         message: text,
         grouping: true,
-        ...(options.overlayRoot?.isConnected ? { appendTo: options.overlayRoot } : {}),
+        ...(appendTo ? { appendTo } : {}),
       });
     });
   const instance = createPanelInstance(direct, {
@@ -612,6 +627,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       ...(direct.members[member]!.theme ? { theme: direct.members[member]!.theme } : {}),
       ...(options.frameState ? { frameState: options.frameState } : {}),
       ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
+      ...(options.navigateBack ? { navigateBack: (fallback: string) => options.navigateBack!(fallback) } : {}),
       ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
       ...(options.currentUser ? { currentUser: options.currentUser } : {}),
     };
@@ -714,6 +730,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       await options.expandPageComposer(entry);
     },
     navigate: options.navigate,
+    navigateBack: (fallback: string) => (options.navigateBack ? options.navigateBack(fallback) : options.navigate(fallback)),
     projectionOf(member: string) {
       let found = projections.get(member);
       if (!found) {
@@ -1186,6 +1203,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async (entry, click) => instance.expandPageComposer(entry, click),
     navigate: (address) => instance.navigate(address),
+    navigateBack: (fallback) => instance.navigateBack(fallback),
     notify: (message) => instance.notify(message),
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),

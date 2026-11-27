@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
   panelFormDescriptionSchema,
@@ -27,7 +28,7 @@ import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import type { PanelWriteServerOperation } from "../product-panels/server-operations";
 import {
   attributeViewSchema,
@@ -93,11 +94,39 @@ function objectTypeOption(view: ObjectTypeView): PanelOption {
   };
 }
 
+function resolveObjectTypeOptions(views: readonly ObjectTypeView[], values: readonly unknown[], locale?: string): PanelOptionList {
+  const options = new Map(views.map(view => [view.className, objectTypeOption(view)]));
+  return { options: values.map(value => {
+    const className = String(value);
+    return options.get(className) ?? {
+      primaryKey: className, value: className, label: className,
+      unavailable: { reason: tForLocale(locale, "panels.ontologyModel.objectTypeUnavailable") },
+    };
+  }) };
+}
+
+export function withModelingPath(record: PanelRecord, focus: "object" | "relation", id: string): PanelRecord {
+  return {
+    ...record,
+    outputs: { modelingPath: panelAddress("/ontology/visual-modeling", focus === "relation"
+      ? { selectedEdge: id, back: "playground" }
+      : { selectedNode: id, back: "playground" }) },
+  };
+}
+
+function objectTypeLabel(view: ObjectTypeView) {
+  return view.showName || view.className;
+}
+
+export function presentObjectTypeLabel(payload: unknown): string {
+  return objectTypeLabel(objectTypeViewSchema.parse(payload));
+}
+
 function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"> {
   const { status, name, showName, count } = view.primaryKey;
   return {
     primaryKey: view.className,
-    label: view.showName || view.className,
+    label: objectTypeLabel(view),
     fields: {
       className: view.className,
       showName: view.showName,
@@ -181,6 +210,55 @@ function relationshipRecord(view: RelationshipView): Omit<PanelRecord, "fieldLab
   };
 }
 
+/** Labels the fields a record has; derived summary fields have no owner label and stay unlabelled. */
+function labelled(record: Omit<PanelRecord, "fieldLabels">, labels: Record<string, string>): PanelRecord {
+  const fieldLabels = Object.fromEntries(Object.entries(labels).filter(([key]) => key in record.fields));
+  // Reference and display-label fields share the owner's labels for the corresponding class fields.
+  if ("ownerObject" in record.fields && labels.className) fieldLabels.ownerObject = labels.className;
+  if ("classNameLabel" in record.fields && labels.className) fieldLabels.classNameLabel = labels.className;
+  if ("fromObject" in record.fields && labels.fromclass) fieldLabels.fromObject = labels.fromclass;
+  if ("toObject" in record.fields && labels.toclass) fieldLabels.toObject = labels.toclass;
+  if ("fromclassLabel" in record.fields && labels.fromclass) fieldLabels.fromclassLabel = labels.fromclass;
+  if ("toclassLabel" in record.fields && labels.toclass) fieldLabels.toclassLabel = labels.toclass;
+  return { ...record, fieldLabels };
+}
+
+const modelBatchLabels = z.object({ fieldLabels: z.record(z.string()) });
+
+function renderModelRecords<V>(
+  name: "list" | "record", value: unknown, viewSchema: z.ZodType<V>, record: (view: V) => Omit<PanelRecord, "fieldLabels">,
+) {
+  if (name === "list") {
+    const { views, fieldLabels } = modelBatchLabels.extend({ views: z.array(viewSchema) }).parse(value);
+    return views.map(view => labelled(record(view), fieldLabels));
+  }
+  const { view, fieldLabels } = modelBatchLabels.extend({ view: z.unknown() }).parse(value);
+  return labelled(record(viewSchema.parse(view)), fieldLabels);
+}
+
+/** Turn the model owner's batch payload into the same panel record as its ordinary read. */
+export function renderModelRead(type: string, name: string, value: unknown, params: Record<string, unknown>, locale?: string) {
+  if (type === OBJECT_TYPE && (name === "options" || name === "resolve")) {
+    const views = z.array(objectTypeViewSchema).parse(value);
+    return name === "options"
+      ? { options: views.map(objectTypeOption) }
+      : resolveObjectTypeOptions(views, params.values as readonly unknown[], locale);
+  }
+  if (name === "form" || name === "createForm" || name === "inlineForm") {
+    const form = panelFormDescriptionSchema.partial({ errors: true }).parse(value);
+    return { ...form, errors: form.errors ?? [] };
+  }
+  if (name !== "list" && name !== "record") return value;
+  if (type === OBJECT_TYPE) return renderModelRecords(name, value, objectTypeViewSchema, objectTypeRecord);
+  if (type === RELATIONSHIP) return renderModelRecords(name, value, relationshipViewSchema, relationshipRecord);
+  if (type === ATTRIBUTE) {
+    const { classLabels } = z.object({ classLabels: z.record(z.string()) }).parse(value);
+    const labels = new Map(Object.entries(classLabels));
+    return renderModelRecords(name, value, attributeViewSchema, view => attributeRecord(view, labels));
+  }
+  throw new Error(`Unsupported ontology model type: ${type}`);
+}
+
 /** One model type's owner reads: its list, its single record, and the record mapping. */
 interface ModelTypeReader<V> {
   readonly formPath: string;
@@ -233,19 +311,6 @@ export function createOntologyModelReadAdapter(
   /** Reads the owner's field labels in the viewer's language for this call, under the same permission as the lists. */
   async function labelsOf(type: keyof FieldLabels) {
     return (await ownerGet("ontology-model-field-labels", fieldLabelsSchema, "/ontology/model/field-labels"))[type];
-  }
-
-  /** Labels the fields a record has; derived summary fields have no owner label and stay unlabelled. */
-  function labelled(record: Omit<PanelRecord, "fieldLabels">, labels: Record<string, string>): PanelRecord {
-    const fieldLabels = Object.fromEntries(Object.entries(labels).filter(([key]) => key in record.fields));
-    // Reference and display-label fields share the owner's labels for the corresponding class fields.
-    if ("ownerObject" in record.fields && labels.className) fieldLabels.ownerObject = labels.className;
-    if ("classNameLabel" in record.fields && labels.className) fieldLabels.classNameLabel = labels.className;
-    if ("fromObject" in record.fields && labels.fromclass) fieldLabels.fromObject = labels.fromclass;
-    if ("toObject" in record.fields && labels.toclass) fieldLabels.toObject = labels.toclass;
-    if ("fromclassLabel" in record.fields && labels.fromclass) fieldLabels.fromclassLabel = labels.fromclass;
-    if ("toclassLabel" in record.fields && labels.toclass) fieldLabels.toclassLabel = labels.toclass;
-    return { ...record, fieldLabels };
   }
 
   function refusedFields(error: unknown) {
@@ -414,14 +479,7 @@ export function createOntologyModelReadAdapter(
   }
 
   async function resolveObjectTypes(values: readonly unknown[]): Promise<PanelOptionList> {
-    const options = new Map((await objectTypeReader.views()).map(view => [view.className, objectTypeOption(view)]));
-    return { options: values.map(value => {
-      const className = String(value);
-      return options.get(className) ?? {
-        primaryKey: className, value: className, label: className,
-        unavailable: { reason: tForLocale(viewer.locale, "panels.ontologyModel.objectTypeUnavailable") },
-      };
-    }) };
+    return resolveObjectTypeOptions(await objectTypeReader.views(), values, viewer.locale);
   }
 
   return {

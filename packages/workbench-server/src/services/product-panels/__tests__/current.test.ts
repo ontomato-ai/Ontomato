@@ -6,14 +6,17 @@ import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { productPanelNestedReadResponseSchema, type ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import { productPanelInputSchema, registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
 import type { EntryDependency } from "@ontomato/contracts/entry-dependencies";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
-import { METRIC_VIEW, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { METRIC_VIEW, PRODUCT_PROJECTION, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { PoolClient } from "pg";
 import { objectDecisions } from "../../../__tests__/fixtures/agent-object-decisions";
 import type { ObjectDecisionRequest } from "../../product-governance/authorization";
-const mocks = vi.hoisted(() => ({ query: vi.fn(), decide: vi.fn(), publish: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
+const mocks = vi.hoisted(() => ({
+  query: vi.fn(), backendGet: vi.fn(), decide: vi.fn(), publish: vi.fn(), notify: vi.fn(), edits: [] as string[],
+}));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
 vi.mock("../../../infrastructure/postgres-transaction", () => ({ transaction: (action: (client: { query: typeof mocks.query }) => unknown) => action({ query: mocks.query }) }));
 vi.mock("../../../config/environment", async original => {
@@ -22,6 +25,7 @@ vi.mock("../../../config/environment", async original => {
 });
 vi.mock("../../../utils/backend-client", async original => ({
   ...await original<typeof import("../../../utils/backend-client")>(),
+  backendGet: mocks.backendGet,
   backendPost: async (endpoint: string, _url: string, body: { requests: ObjectDecisionRequest[] }) => {
     if (endpoint === "object-authorization-decide-batch")
       return { text: JSON.stringify(objectDecisions(body, mocks.decide)) };
@@ -39,6 +43,7 @@ import { readCurrentPanel, readCurrentProjection, readCurrentProjectionRecords, 
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
 import { entryDependencyCompiler } from "../entry-dependency-compiler";
 import { readBoundEntryDependencies, saveBoundEntryDependencies } from "../entry-dependency-store";
+import { readNestedPanel } from "../member-path";
 
 const owner = { domainId: "domain", userId: "author" }, credentials = { token: "caller", locale: "en" };
 let rows: Map<string, CurrentProductRow>;
@@ -79,7 +84,7 @@ beforeEach(() => {
       const [id, domainId] = args as [string, string];
       return { rows: agentDomains.get(id) === domainId ? [{ id }] : [] };
     }
-    if (sql.startsWith("SELECT panel_id,dependencies FROM product_panel_entry_dependencies")) {
+    if (sql.startsWith("SELECT panel_id,dependencies")) {
       const [reference] = JSON.parse(String(args[1])) as Pick<EntryDependency, "objectType" | "objectKey">[];
       return { rows: [...dependencies].filter(([, list]) =>
         list.some(item => item.objectType === reference.objectType && item.objectKey === reference.objectKey),
@@ -205,6 +210,21 @@ it("recompiles the upper closure without inheriting a child default through a pe
   expect(metricDependencies("parent")).toEqual([{ objectType: "METRIC", objectKey: "projection-fixed", verb: "VIEW" }]);
 });
 
+it("does not publish a grant change when a projection adds a skill library read", async () => {
+  await seedProjection();
+  const { revision, ...input } = panel();
+  await saveCurrentPanel(owner, credentials, "p", input, revision);
+  const original = dependencies.get("p");
+  const queued = () => mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO product_publication_outbox")).length;
+  const count = queued();
+  await saveCurrentProjection(owner, credentials, "x", registerProductProjectionRequestSchema.parse({
+    ...projection(), revision: 1,
+    data: { record: { source: { object: { literal: { className: SKILL, primaryKey: "stored-skill" } } }, read: "record", params: {} } },
+  }));
+  expect(dependencies.get("p")).toEqual(original);
+  expect(queued()).toBe(count);
+});
+
 it("publishes a bound entry change even when the projection leaves the unbound closure unchanged", async () => {
   const metric = (primaryKey: string) => ({ className: METRIC_VIEW, primaryKey });
   const type = { kind: "object", objectType: METRIC_VIEW } as const;
@@ -235,12 +255,12 @@ it("publishes a bound entry change even when the projection leaves the unbound c
   const publications = mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO product_publication_outbox"));
   const after = boundDependencies.get(entryId)!.dependencies;
   expect(dependencies.get(panelId)).toBe(unbound);
-  expect(before).toContainEqual({ objectType: "METRIC", objectKey: "entry-metric", verb: "VIEW" });
+  expect(before.dependencies).toContainEqual({ objectType: "METRIC", objectKey: "entry-metric", verb: "VIEW" });
   expect(after.filter(({ objectType }) => objectType === "METRIC")).toEqual([
     { objectType: "METRIC", objectKey: "panel-default", verb: "VIEW" },
   ]);
   expect(JSON.parse(String(publications.at(-1)![1][1]))).toMatchObject({
-    panels: [], boundPanels: [{ entryId, panelId, inputs, before, after }],
+    panels: [], boundPanels: [{ entryId, panelId, inputs, before: before.dependencies, after }],
   });
 });
 
@@ -495,6 +515,45 @@ it("batches grant checks, database reads, and edit-grant checks in readCurrentPr
   expect(results.get("foreign")).toMatchObject({ ok: false, error: expect.objectContaining({ status: 404 }) });
 });
 
+
+it.each(["registered", "frame"] as const)("bundles fixed projections for a %s nested render with per-member access results", async kind => {
+  await seedProjection();
+  await saveCurrentProjection(owner, credentials, "denied", projection());
+  const { revision, ...definition } = panel();
+  const date = new Date();
+  const row = { domainId: owner.domainId, ownerId: owner.userId, revision: revision + 1, createdAt: date, updatedAt: date };
+  rows.set("panel:root", {
+    ...row, id: "root", definition: { ...definition, manifest: { state: {}, members: { drawer: { target: { panelId: "child" } } } } },
+  });
+  rows.set("panel:child", {
+    ...row, id: "child", definition: { ...definition, manifest: { state: {}, members: {
+      visible: { target: { projectionId: "x" } },
+      forbidden: { target: { projectionId: "denied" } },
+      missing: { target: { projectionId: "missing" } },
+    } } },
+  });
+  mocks.backendGet.mockResolvedValue({ text: JSON.stringify({ success: true, data: {
+    applicationId: "app", framePanelId: "root", use: { id: "use", pageKey: "use", panelId: "root", path: "/app/use" },
+  } }) });
+  const deniedIds = new Set(["denied"]);
+  mocks.decide.mockImplementation((request: ObjectDecisionRequest) =>
+    "target" in request && request.verb === "USE" && !deniedIds.has(request.target.id));
+  const request: ProductPanelNestedReadRequest = {
+    source: { kind, applicationId: "app", useId: "use" }, memberPath: [{ member: "drawer" }],
+  };
+
+  const response = productPanelNestedReadResponseSchema.parse(await readNestedPanel(owner, credentials, request, true));
+  expect(response.panel.id).toBe("child");
+  expect(response.projections).toMatchObject({
+    x: { status: "ready", projection: { id: "x", editable: false } },
+    denied: { status: "unavailable", httpStatus: 403 },
+    missing: { status: "unavailable", httpStatus: 404 },
+  });
+  expect(await readNestedPanel(owner, credentials, request)).not.toHaveProperty("projections");
+
+  deniedIds.add("child");
+  await expect(readNestedPanel(owner, credentials, request, true)).rejects.toMatchObject({ status: 403, code: "OBJECT_FORBIDDEN" });
+});
 
 it("reuses the current panel definition while checking the caller's grants and the stored revision on each read", async () => {
   await seedProjection();

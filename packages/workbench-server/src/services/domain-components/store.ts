@@ -1,6 +1,6 @@
 import { domainComponentRecordSchema, domainComponentSummarySchema } from "@ontomato/contracts/domain-components";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { currentDefinitionAccess } from "../product-panels/access";
+import { currentDefinitionAccess, type DefinitionVisibilityRange } from "../product-panels/access";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { currentProductColumns, currentProductRecord, type CurrentProductRow } from "../../infrastructure/product-current";
@@ -43,6 +43,26 @@ export async function countVisibleDomainComponents(domainId: string, credentials
     [domainId, ids],
   );
   return count.total;
+}
+
+const domainComponentUseFilter = "domain_id=$1 AND ($2::boolean OR id=ANY($3::text[]) OR owner_id=$4)";
+
+export async function countDomainComponentsInRange(domainId: string, { all, objectIds, authorId }: DefinitionVisibilityRange) {
+  const { rows: [count] } = await getPostgresPool().query<{ total: number }>(
+    `SELECT COUNT(*)::int AS total FROM ${t("domain_components")}
+     WHERE ${domainComponentUseFilter}`,
+    [domainId, all, objectIds, authorId],
+  );
+  return count.total;
+}
+
+export async function listDomainComponentsInRange(domainId: string, { all, objectIds, authorId }: DefinitionVisibilityRange) {
+  const { rows } = await getPostgresPool().query<CurrentProductRow>(
+    `SELECT ${currentProductColumns} FROM ${t("domain_components")}
+     WHERE ${domainComponentUseFilter} ORDER BY definition->>'name',id`,
+    [domainId, all, objectIds, authorId],
+  );
+  return rows.map(row => domainComponentSummarySchema.strip().parse(domainComponentRecord(row, false)));
 }
 
 export async function listVisibleDomainComponents(domainId: string, credentials: AssistantCredentials, readEdits = true) {

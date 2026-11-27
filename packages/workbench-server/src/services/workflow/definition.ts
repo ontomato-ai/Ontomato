@@ -96,8 +96,8 @@ export function requireWorkflow(workflow: Workflow | null | undefined, locale?: 
   return workflow;
 }
 
-export const canDeactivateWorkflow = (workflow: Workflow) => workflow.status === "ACTIVE";
-export const canActivateWorkflow = (workflow: Workflow) => !canDeactivateWorkflow(workflow) || Boolean(workflow.hasDraft);
+export const canDeactivateWorkflow = (workflow: Pick<Workflow, "status">) => workflow.status === "ACTIVE";
+export const canActivateWorkflow = (workflow: Pick<Workflow, "status" | "hasDraft">) => !canDeactivateWorkflow(workflow) || Boolean(workflow.hasDraft);
 
 export function stepInvocation(step: WorkflowStep) {
   return step.actionType === "execute" ? "fixed" : step.invocationMode ?? "manual";

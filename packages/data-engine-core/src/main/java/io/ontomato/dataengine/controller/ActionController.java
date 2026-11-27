@@ -18,6 +18,7 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -44,6 +46,7 @@ import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionForm;
+import io.ontomato.dataengine.service.ActionPreconditionService.CallerScopeDenied;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.ActionTrialService;
 import io.ontomato.dataengine.service.ActionTrialStore;
@@ -55,9 +58,18 @@ import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
 import io.ontomato.dataengine.service.BusinessConfigService;
+import io.ontomato.dataengine.service.CapabilityGrantLookup.Admission;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.WorkflowStep;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelRead;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.i18n.LocaleContextHolder;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import io.ontomato.dataengine.service.ExecutionTarget;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -308,31 +320,22 @@ public class ActionController {
 			User user = SystemUtils.getCurUser();
 			String id = param.getString("id");
 			if ("delete-availability".equals(param.getString("purpose"))) {
-				Action action = actionService.queryById(id);
-                if (action != null && user.getDomainId().equals(action.getDomainId()))
-                    authorization.requireEdit(authorization.subject(user), action);
-                var reason = actionService.systemDeletionRefusal(id, user.getDomainId(), lang);
+				var reason = actionService.deleteRefusal(id, lang, authorization.subject(user));
 				return JSONObject.of("success", true, "data", JSONObject.of("reason", reason));
 			}
-			Action action = actionService.queryById(id);
+			Action action = ownedAction(id, user.getDomainId());
 			ret.put("success", true);
-			if (action == null || !user.getDomainId().equals(action.getDomainId())) {
+			if (action == null) {
 				ret.put("data", null);
 			} else {
 				if ("execute".equals(param.getString("purpose"))) {
-                    var target = buildTests.resolve(request);
-                    if (!target.testing() && !Action.STATUS_PUBLISHED.equals(action.getStatus()))
-                        throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", langService.get(lang, "Action.notPublished"));
-                    var subject = authorization.subject(user);
-                    authorization.requireExecution(subject, action,
-                            new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone(), target);
+                    admitExecutionDefinition(action, lang, () -> authorization.subject(user), buildTests.resolve(request));
                     return JSONObject.of("success", true, "data", executionDefinition(action));
                 }
                 var subject = authorization.subject(user);
-                if ("publication-review".equals(param.getString("purpose"))) authorization.requireEdit(subject, action);
-                else authorization.requireDefinition(subject, action);
-                ObjectNode display = withDisplay(action, subjectNames(user.getDomainId(), List.of(action)), lang);
-				if ("publication-review".equals(param.getString("purpose"))) {
+                boolean publicationReview = "publication-review".equals(param.getString("purpose"));
+                ObjectNode display = readDefinition(action, user.getDomainId(), lang, subject, publicationReview);
+				if (publicationReview) {
 					display.set("sandboxTrialLabel", display.get("trialStatusLabel"));
 					if (action.getCodeSegments() == null || action.getCodeSegments().isEmpty())
 						display.put("explanationMissingLabel", langService.get(lang, "Action.explanationMissing"));
@@ -350,6 +353,205 @@ public class ActionController {
 		return ret;
 	}
 	
+	@Bean
+	WorkbenchPanelRead actionPanelCount() {
+		return new WorkbenchPanelRead("platform:Action", "count", (subject, parameters) ->
+				Map.of("rows", List.of(), "total", actionService.count(null, null, null,
+						subject.identity().domainId(), visibleActions(subject, false))));
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelList() {
+		return new WorkbenchPanelRead("platform:Action", "list", (subject, parameters) ->
+				readDefinitions(subject, null, null, LocaleContextHolder.getLocale().toLanguageTag()));
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelExecutionCatalog() {
+		return new WorkbenchPanelRead("platform:Action", "executionCatalog", (subject, parameters) -> {
+			if (!(parameters.get("ids") instanceof List<?> ids) || ids.isEmpty()
+					|| ids.stream().anyMatch(id -> !(id instanceof String key) || key.isBlank()))
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected nonempty Action IDs");
+			var candidates = actionService.queryPublishedByIds(subject.identity().domainId(),
+					ids.stream().map(String.class::cast).toList());
+			return executionCatalog(subject, candidates);
+		});
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelSandboxCapability() {
+		return new WorkbenchPanelRead("platform:Action", "sandboxCapability", (subject, parameters) ->
+				sandboxPermissions.read(subject.identity().domainId()));
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelRecord() {
+		return actionDefinitionPanelRead("record");
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelTrialSummary() {
+		return actionDefinitionPanelRead("trialSummary");
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelDerivedSummary() {
+		return actionDefinitionPanelRead("derivedSummary");
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelDerivedEffects() {
+		return actionDefinitionPanelRead("derivedEffects");
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelDerivedParameters() {
+		return actionDefinitionPanelRead("derivedParameters");
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelDerivedConditions() {
+		return actionDefinitionPanelRead("derivedConditions");
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelAnnotatedExplanation() {
+		return actionDefinitionPanelRead("annotatedExplanation");
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelForm() {
+		return WorkbenchPanelRead.form("platform:Action", false, actionService::definitionForm);
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelCreateForm() {
+		return WorkbenchPanelRead.form("platform:Action", true, actionService::definitionForm);
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelDeleteRefusal() {
+		return new WorkbenchPanelRead("platform:Action", "deleteRefusal", (subject, parameters) ->
+				JSONObject.of("reason", actionService.deleteRefusal((String) parameters.get("primaryKey"),
+						LocaleContextHolder.getLocale().toLanguageTag(), subject)));
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelExecutionDefinition() {
+		return new WorkbenchPanelRead("platform:Action", "executionDefinition",
+				(subject, parameters) -> panelExecutionDefinition(subject, parameters, ExecutionTarget.LIVE, false));
+	}
+
+	@Bean
+	WorkbenchPanelRead actionPanelExecutionDefinitions() {
+		return WorkbenchPanelRead.callerScopedMetadata("platform:Action", "executionDefinitions",
+				(subject, parameters, scope) -> {
+					if (!(parameters.get("actions") instanceof List<?> actions))
+						throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected action descriptions");
+					var results = new ArrayList<JSONObject>(actions.size());
+					for (Object item : actions) {
+						if (!(item instanceof Map<?, ?> description))
+							throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected an action description");
+						results.add(panelExecutionDescription(subject, description, scope));
+					}
+					return results;
+				});
+	}
+
+	private JSONObject panelExecutionDescription(SubjectContext subject, Map<?, ?> description, ExecutionTarget scope) {
+		try {
+			return panelExecutionDefinition(subject, description, scope, true);
+		} catch (ActionAuthorization.Denied refusal) {
+			return JSONObject.of("status", "forbidden", "code", refusal.code(), "error", refusal.getMessage());
+		} catch (OwnerRefusal refusal) {
+			return JSONObject.of("status", "error", "code", refusal.code(), "error", refusal.getMessage());
+		} catch (ResponseStatusException refusal) {
+			if (refusal.getStatusCode().value() != 403) throw refusal;
+			return JSONObject.of("status", "forbidden", "error", refusal.getReason());
+		}
+	}
+
+	private JSONObject panelExecutionDefinition(SubjectContext subject, Map<?, ?> parameters, ExecutionTarget scope, boolean item) {
+		if (!(parameters.get("primaryKey") instanceof String id) || id.isBlank())
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected an action id");
+		String lang = LocaleContextHolder.getLocale().toLanguageTag();
+		Action action = ownedAction(id, subject.identity().domainId());
+		if (action == null) throw new OwnerRefusal("ACTION_NOT_FOUND", "The action does not exist");
+		var admission = admitExecutionDefinition(action, lang, () -> subject, scope);
+		var object = parameters.get("object");
+		var target = action.getTarget();
+		var bound = new JSONObject();
+		var readOnly = List.<String>of();
+		if (target == null) {
+			if (object != null)
+				throw new OwnerRefusal("ACTION_NOT_OBJECT_ACTION", "This action does not act on an object");
+		} else {
+			if (object == null)
+				throw new OwnerRefusal("ACTION_TARGET_REQUIRED", "This action requires a target object");
+			if (!(object instanceof Map<?, ?> selected) || !(selected.get("className") instanceof String className)
+					|| className.isBlank() || !(selected.get("primaryKey") instanceof String key) || key.isBlank())
+				throw new OwnerRefusal("ACTION_TARGET_INVALID", "Expected an object class name and primary key");
+			if (!target.className().equals(className))
+				throw new OwnerRefusal("ACTION_TARGET_MISMATCH", "This action acts on another object type");
+			bound.put(target.keyParameter(), key);
+			readOnly = List.of(target.keyParameter());
+		}
+		try {
+			actionService.requireExecutionForm(action, bound, readOnly, lang, subject, admission, scope);
+		} catch (CallerScopeDenied refusal) {
+			if (!item) throw refusal;
+			// The definition and binding were admitted. Only send the fields used to render the disabled button.
+			var parametersForDisplay = action.getFunction().getParameters().stream()
+					.map(parameter -> JSONObject.of("name", parameter.getName(), "type", parameter.getType(),
+							"description", parameter.getDescription())).toList();
+			var payload = JSONObject.of("id", action.getId(), "name", action.getName(), "target", target,
+					"function", JSONObject.of("parameters", parametersForDisplay));
+			return JSONObject.of("status", "forbidden", "code", refusal.code(), "error", refusal.getMessage(), "payload", payload);
+		}
+		var definition = executionDefinition(action);
+		return item ? JSONObject.of("status", "ready", "payload", definition) : definition;
+	}
+
+	private Admission admitExecutionDefinition(Action action, String lang, Supplier<SubjectContext> subject, ExecutionTarget target) {
+		if (!target.testing() && !Action.STATUS_PUBLISHED.equals(action.getStatus()))
+			throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", langService.get(lang, "Action.notPublished"));
+		return authorization.requireExecution(subject.get(), action, new Standalone(), target);
+	}
+
+	private WorkbenchPanelRead actionDefinitionPanelRead(String name) {
+		return new WorkbenchPanelRead("platform:Action", name, (subject, parameters) -> {
+			String domain = subject.identity().domainId();
+			Action action = ownedAction((String) parameters.get("primaryKey"), domain);
+			return action == null ? null
+					: readDefinition(action, domain, LocaleContextHolder.getLocale().toLanguageTag(), subject, false);
+		});
+	}
+
+	private Action ownedAction(String id, String domain) {
+		Action action = actionService.queryById(id);
+		return action != null && domain.equals(action.getDomainId()) ? action : null;
+	}
+
+	private ObjectNode readDefinition(Action action, String domain, String lang, SubjectContext subject,
+			boolean publicationReview) {
+		if (publicationReview) authorization.requireEdit(subject, action);
+		else authorization.requireDefinition(subject, action);
+		return withDisplay(action, subjectNames(domain, List.of(action)), lang);
+	}
+
+	private ArrayNode readDefinitions(SubjectContext subject, String status, String className, String lang) {
+		return withDisplay(actionService.listVisibleDefinitions(subject, status, className), subject.identity().domainId(), lang);
+	}
+
+	private Predicate<Action> visibleActions(SubjectContext subject, boolean execution) {
+		return execution ? action -> authorization.standalone(subject, action, ExecutionTarget.LIVE).admitted()
+				: action -> authorization.allowsDefinition(subject, action);
+	}
+
+	private List<JSONObject> executionCatalog(SubjectContext subject, List<Action> candidates) {
+		return candidates.stream().filter(visibleActions(subject, true)).map(ActionController::executionDefinition).toList();
+	}
+
 	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
 	@PostMapping("/action/queryList")
     @ResponseBody
@@ -362,17 +564,15 @@ public class ActionController {
 			String className = param.getString("className");
             var subject = authorization.subject(user);
             boolean execution = "execute".equals(param.getString("purpose"));
-            java.util.function.Predicate<Action> visible = execution
-                    ? action -> authorization.standalone(subject, action, ExecutionTarget.LIVE).admitted()
-                    : action -> authorization.allowsDefinition(subject, action);
             String selectedStatus = execution ? Action.STATUS_PUBLISHED : status;
             ret.put("success", true);
             if (param.getBooleanValue("countOnly")) {
-                ret.put("data", JSONObject.of("total", actionService.count(selectedStatus, null, className, user.getDomainId(), visible)));
+                ret.put("data", JSONObject.of("total", actionService.count(selectedStatus, null, className, user.getDomainId(),
+                        visibleActions(subject, execution))));
+            } else if (execution) {
+                ret.put("data", executionCatalog(subject, actionService.queryList(selectedStatus, null, className, user.getDomainId())));
             } else {
-                var actions = actionService.queryList(selectedStatus, null, className, user.getDomainId()).stream().filter(visible).toList();
-                if (execution) ret.put("data", actions.stream().map(ActionController::executionDefinition).toList());
-                else ret.put("data", withDisplay(actions, user.getDomainId(), lang));
+                ret.put("data", readDefinitions(subject, status, className, lang));
             }
 		} catch (Exception e) {
             if (e instanceof ActionAuthorization.Denied denied) throw denied;
@@ -408,8 +608,8 @@ public class ActionController {
 	public JSONObject definitionForm(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
 		JSONObject ret = new JSONObject();
 		try {
-			User user = SystemUtils.getCurUser();
-			ret.put("data", actionService.definitionForm(param, lang, user));
+			var subject = authorization.subject(SystemUtils.getCurUser());
+			ret.put("data", actionService.definitionForm(param, lang, subject));
 			ret.put("success", true);
 		} catch (Exception e) {
             if (e instanceof ActionAuthorization.Denied denied) throw denied;

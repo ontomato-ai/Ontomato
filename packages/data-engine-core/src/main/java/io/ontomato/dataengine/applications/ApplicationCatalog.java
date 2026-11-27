@@ -16,8 +16,8 @@ import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.*;
-import io.ontomato.dataengine.service.ProductGrantService;
-import io.ontomato.dataengine.service.ProductPrincipalLookup;
+import io.ontomato.dataengine.service.IdentityPrincipalDirectory;
+import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.DefinitionState;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.OwnerFacts;
@@ -26,10 +26,14 @@ import io.ontomato.dataengine.service.authorization.AuthorizationTypes.ObjectTar
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
+import io.ontomato.dataengine.panelreads.OntologyNeighborScope;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -42,8 +46,10 @@ public class ApplicationCatalog {
     public static final String DEFAULT_FRAME_PANEL_ID = "builtin-product-platform-frame";
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
     public record EntryMenu(Map<String, String> names, List<Group> groups, List<ApplicationPanelUse> panelUses, boolean singleEntry) {}
+    public record SkillNamespace(String kind, String provider, String domainId) {}
+    public record SkillRef(SkillNamespace namespace, String name) {}
     public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
-                           List<PageSkills.Skill> skills) {}
+                           List<SkillRef> skills) {}
     private record PanelSettings(String framePanelId, JsonNode theme, Delivery delivery) {
         JSONObject json() {
             var result = new JSONObject();
@@ -55,10 +61,8 @@ public class ApplicationCatalog {
     }
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Declaration(Map<String,String> names, Map<String,String> descriptions, String icon,
-                              List<Group> groups, List<PageSkills.Declaration> pageSkills,
-                              List<ApplicationPanelUse> panelUses) {
+                              List<Group> groups, List<ApplicationPanelUse> panelUses) {
         public Declaration {
-            pageSkills = pageSkills == null ? List.of() : pageSkills;
             panelUses = panelUses == null ? List.of() : panelUses;
         }
     }
@@ -132,10 +136,10 @@ public class ApplicationCatalog {
     private final AuthorizationService authorization;
     private final JSONObject upstreams;
     private final PanelResources panels;
-    private final ProductPrincipalLookup principals;
+    private final IdentityPrincipalDirectory principals;
     public ApplicationCatalog(JdbcTemplate db, TransactionTemplate transactions, ApplicationAccess access,
             @Value("${ONTOMATO_APP_UPSTREAMS:{}}") String upstreams, PanelResources panels,
-            ProductPrincipalLookup principals, AuthorizationService authorization) {
+            IdentityPrincipalDirectory principals, AuthorizationService authorization) {
         this.db = db; this.transactions = transactions; this.access = access;
         this.upstreams = JSON.parseObject(upstreams);
         this.panels = panels; this.principals = principals; this.authorization = authorization;
@@ -145,80 +149,30 @@ public class ApplicationCatalog {
     }
 
     List<JSONObject> loadApplications(boolean includeUpdatedAt) {
-        return db.query("SELECT * FROM sys_application WHERE kind IS NOT NULL ORDER BY CASE rail WHEN 'top' THEN 0 WHEN 'apps' THEN 1 ELSE 2 END,sort,id",
-            (row, index) -> {
-                var app = JSONObject.of("id", row.getString("id"), "domainId", row.getString("domain_id"),
-                    "ownerService", row.getString("owner_service"), "ownerUserId", row.getString("owner_user_id"),
-                    "coauthorIds", JSON.parseArray(row.getString("coauthor_ids"), String.class),
-                    "kind", row.getString("kind"), "names", JSON.parseObject(row.getString("names")),
-                    "descriptions", JSON.parseObject(row.getString("descriptions")), "icon", row.getString("icon"),
-                    "rail", row.getString("rail"), "category", row.getString("category"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
-                    "scheduleAdapter", row.getString("schedule_adapter"),
-                    "releaseId", row.getString("release_id"), "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Declaration.class),
-                    "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
-                    "groups", JSON.parseArray(row.getString("groups"), Group.class),
-                    "panelSettings", JSON.parseObject(row.getString("panel_settings")),
-                    "allowStandalone", row.getObject("allow_standalone") instanceof Boolean flag ? flag : true);
-                var updated = row.getObject("updated_at", OffsetDateTime.class);
-                if (updated != null) app.put("updatedAt", updated.toInstant());
-                return app;
-            });
-    }
-    public PageSkills.Projection pageSkills(User user) {
-        return pageSkills(user, null, null);
+        return db.query(APPLICATION_ROWS + APPLICATION_ORDER, applicationRow());
     }
 
-    public PageSkills.Projection pageSkills(User user, PageSkills.Entrance entrance, String panelId) {
-        var subject = new ApplicationSubject(user);
-        var apps = applicationsInDomain(user.getDomainId());
-        var pageKeys = new BuiltinPageKeys(apps);
-        var mappings = new ArrayList<PageSkills.Mapping>();
-        var admitted = new ArrayList<PageSkills.Entrance>();
-        var registered = new LinkedHashSet<PageSkills.Skill>();
-        for (var app : apps) {
-            var applicationId = app.getString("id");
-            var declarations = app.getList("pageSkills", PageSkills.Declaration.class);
-            declarations.forEach(mapping -> registered.add(mapping.skill()));
-            if (entrance != null && !applicationId.equals(entrance.applicationId())) continue;
-            var byEntry = new HashMap<String, PageSkills.Declaration>();
-            declarations.forEach(mapping -> byEntry.put(mapping.entryKey(), mapping));
-            for (var entry : actualEntries(app, pageKeys)) {
-                var locator = PanelSkills.entrance(applicationId, entry);
-                if (entrance != null && !entrance.equals(locator)) continue;
-                if (panelId != null && !panelId.equals(entry.panelId())) continue;
-                var declaration = byEntry.get(entry.id());
-                boolean panel = isPanelSkillApplication(app) && entry.panelEntry();
-                if ((!panel && declaration == null) || user.getDomainId() == null
-                        || !subject.decision(applicationId, entry.id()).allowed()) continue;
-                admitted.add(locator);
-                var defaults = new ArrayList<PageSkills.Default>();
-                if (declaration != null && declaration.defaults() != null) defaults.addAll(declaration.defaults());
-                if (entry.defaultAgent() != null)
-                    defaults.add(new PageSkills.Default(entry.pageKey(), entry.defaultAgent()));
-                mappings.add(new PageSkills.Mapping(applicationId, entry.id(), entry.pageKey(),
-                    declaration == null ? null : declaration.skill(), defaults.isEmpty() ? null : List.copyOf(defaults)));
-            }
-        }
-        return new PageSkills.Projection(List.copyOf(mappings), List.copyOf(registered), List.copyOf(admitted));
-    }
+    private static final String APPLICATION_ROWS = "SELECT * FROM sys_application WHERE kind IS NOT NULL";
+    private static final String APPLICATION_ORDER = " ORDER BY CASE rail WHEN 'top' THEN 0 WHEN 'apps' THEN 1 ELSE 2 END,sort,id";
 
-    public List<PanelSkills.Use> panelSkillSources(String domainId) {
-        return panelSkillSources(domainId, null, null);
-    }
-
-    public List<PanelSkills.Use> panelSkillSources(String domainId, String applicationId, String useId) {
-        var apps = applicationsInDomain(domainId);
-        var pageKeys = new BuiltinPageKeys(apps);
-        return apps.stream().filter(ApplicationCatalog::isPanelSkillApplication)
-            .filter(app -> applicationId == null || applicationId.equals(app.getString("id")))
-            .flatMap(app -> {
-                var applicationNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
-                return pageKeys.activeUses(app).stream()
-                    .filter(ApplicationPanelUse::panelEntry)
-                    .filter(use -> useId == null || useId.equals(use.id()))
-                    .map(use -> PanelSkills.source(app.getString("id"), use, applicationNames));
-            })
-            .toList();
+    private static RowMapper<JSONObject> applicationRow() {
+        return (row, index) -> {
+            var app = JSONObject.of("id", row.getString("id"), "domainId", row.getString("domain_id"),
+                "ownerService", row.getString("owner_service"), "ownerUserId", row.getString("owner_user_id"),
+                "coauthorIds", JSON.parseArray(row.getString("coauthor_ids"), String.class),
+                "kind", row.getString("kind"), "names", JSON.parseObject(row.getString("names")),
+                "descriptions", JSON.parseObject(row.getString("descriptions")), "icon", row.getString("icon"),
+                "rail", row.getString("rail"), "category", row.getString("category"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
+                "scheduleAdapter", row.getString("schedule_adapter"),
+                "releaseId", row.getString("release_id"),
+                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
+                "groups", JSON.parseArray(row.getString("groups"), Group.class),
+                "panelSettings", JSON.parseObject(row.getString("panel_settings")),
+                "allowStandalone", row.getObject("allow_standalone") instanceof Boolean flag ? flag : true);
+            var updated = row.getObject("updated_at", OffsetDateTime.class);
+            if (updated != null) app.put("updatedAt", updated.toInstant());
+            return app;
+        };
     }
 
     private static boolean isPanelSkillApplication(JSONObject app) {
@@ -249,7 +203,11 @@ public class ApplicationCatalog {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Application not found"));
     }
     public boolean inDomain(JSONObject app, User user) {
-        return app.getString("domainId") == null || Objects.equals(app.getString("domainId"), user.getDomainId());
+        return inDomainId(app, user.getDomainId());
+    }
+
+    private static boolean inDomainId(JSONObject app, String domainId) {
+        return app.getString("domainId") == null || Objects.equals(app.getString("domainId"), domainId);
     }
     public record VisibleEntry(String id, String applicationId, Map<String, String> names, String pageKey) {
         public VisibleEntry {
@@ -258,21 +216,124 @@ public class ApplicationCatalog {
     }
 
     public List<VisibleEntry> visibleEntries(User user) {
-        var subject = new ApplicationSubject(user);
-        return entriesInDomain(user.getDomainId()).stream().flatMap(application -> {
-            var app = application.application();
+        return visibleEntries(new ApplicationSubject(user));
+    }
+
+    public List<VisibleEntry> visibleEntries(SubjectContext subject) {
+        return visibleEntries(catalogueSubject(subject));
+    }
+
+    public List<VisibleEntry> visibleEntries(SubjectContext subject, Set<String> applicationIds) {
+        var caller = catalogueSubject(subject);
+        return visibleEntries(caller, applicationsInDomain(caller.actor.domainId(), applicationIds), applicationIds::contains);
+    }
+
+    private List<JSONObject> applicationsInDomain(String domainId, Set<String> applicationIds) {
+        // Built-in page-key reservations also apply when their applications are outside the selection.
+        return db.query(APPLICATION_ROWS + " AND (domain_id IS NULL OR (domain_id = ? AND id = ANY (?)))" + APPLICATION_ORDER,
+                applicationRow(), domainId, new SqlArrayValue("varchar", applicationIds.toArray()));
+    }
+
+    private List<VisibleEntry> visibleEntries(ApplicationSubject subject) {
+        return visibleEntries(subject, applicationsInDomain(subject.actor.domainId()), id -> true);
+    }
+
+    private List<VisibleEntry> visibleEntries(ApplicationSubject subject, List<JSONObject> apps, Predicate<String> selected) {
+        var pageKeys = new BuiltinPageKeys(apps);
+        return apps.stream().filter(app -> selected.test(app.getString("id"))).flatMap(app -> {
             var appId = app.getString("id");
+            var entries = actualEntries(app, pageKeys);
             boolean maintain = subject.canEdit(app);
-            return application.entries().stream().filter(entry -> maintain || subject.decision(appId, entry.id()).allowed())
-                    .map(entry -> new VisibleEntry(ApplicationEntryEvents.entryId(appId, entry.id()),
-                            appId, entry.names(), entry.pageKey()));
+            return entries.stream().filter(entry -> maintain || subject.decision(appId, entry.id()).allowed())
+                    .map(entry -> visibleEntry(appId, entry));
         }).toList();
     }
 
-    public List<JSONObject> visible(User user) {
-        var apps = applicationsInDomain(user.getDomainId());
+    private static VisibleEntry visibleEntry(String appId, ApplicationPanelUse entry) {
+        return new VisibleEntry(ApplicationEntryEvents.entryId(appId, entry.id()), appId, entry.names(), entry.pageKey());
+    }
+
+    public record ProductGraphCandidate(String id, boolean canMaintain, JSONObject references, List<VisibleEntry> maintainableEntries) {}
+
+    public List<ProductGraphCandidate> productGraphCandidates(SubjectContext subject, Set<String> candidatePanels) {
+        if (candidatePanels.isEmpty()) return List.of();
+        var caller = catalogueSubject(subject);
+        var apps = applicationsInDomain(caller.actor.domainId());
         var pageKeys = new BuiltinPageKeys(apps);
-        var subject = new ApplicationSubject(user);
+        var candidates = new ArrayList<ProductGraphCandidate>();
+        for (var app : apps.stream().sorted(Comparator.comparing(row -> row.getString("id"))).toList()) {
+            boolean maintain = caller.canEdit(app);
+            if (!maintain && !canEnter(app, caller, pageKeys)) continue;
+            var uses = catalogueEntries(app, caller, maintain, pageKeys).stream().filter(ApplicationPanelUse::panelEntry)
+                .filter(use -> candidatePanels.contains(use.panelId())).toList();
+            var panelIds = uses.stream().map(ApplicationPanelUse::panelId).distinct().toList();
+            var references = new JSONObject();
+            putCatalogueFramePanel(references, app, maintain);
+            if (references.containsKey("framePanelId") && !candidatePanels.contains(references.getString("framePanelId")))
+                references.remove("framePanelId");
+            if (panelIds.isEmpty() && !references.containsKey("framePanelId")) continue;
+
+            var id = app.getString("id");
+            references.put("id", id);
+            references.put("names", app.getJSONObject("names"));
+            references.put("canMaintain", maintain);
+            references.put("panelIds", panelIds);
+            references.put("defaultAgentIds", uses.stream().map(ApplicationPanelUse::defaultAgent)
+                .filter(agent -> agent != null && "id".equals(agent.kind())).map(DefaultAgentTarget::id).distinct().toList());
+            var entries = maintain ? actualEntries(app, pageKeys).stream().map(entry -> visibleEntry(id, entry)).toList()
+                : List.<VisibleEntry>of();
+            candidates.add(new ProductGraphCandidate(id, maintain, references, entries));
+        }
+        return candidates;
+    }
+
+    public List<JSONObject> visible(User user) {
+        return visible(new ApplicationSubject(user));
+    }
+
+    List<JSONObject> visible(SubjectContext subject) {
+        return visible(catalogueSubject(subject));
+    }
+
+    List<JSONObject> panelNeighborFacts(SubjectContext context, OntologyNeighborScope scope, boolean includeLinks) {
+        var subject = catalogueSubject(context);
+        var apps = scope.outgoing() ? applicationsInDomain(subject.actor.domainId(), Set.of(scope.centerId()))
+                : applicationsInDomain(subject.actor.domainId());
+        var pageKeys = new BuiltinPageKeys(apps);
+        var rows = new ArrayList<JSONObject>();
+        for (var app : apps) {
+            var id = app.getString("id");
+            if (scope.outgoing() && !scope.centerId().equals(id)) continue;
+            if (!scope.outgoing() && pageKeys.activeUses(app).stream()
+                    .noneMatch(use -> scope.centerId().equals(use.panelId()))) continue;
+            var admitted = admittedEntries(app, subject, pageKeys);
+            if (admitted.isEmpty()) continue;
+            List<String> panels = includeLinks && hasPanelUseRegistration(app) ? admitted.stream().filter(ApplicationPanelUse::panelEntry)
+                .map(ApplicationPanelUse::panelId).filter(Objects::nonNull)
+                .filter(panelId -> scope.outgoing() || scope.centerId().equals(panelId)).distinct().toList() : List.of();
+            if (scope.outgoing() || !panels.isEmpty())
+                rows.add(neighborApplication(app, panels));
+        }
+        return rows;
+    }
+
+    public List<JSONObject> ontologyApplicationNames(SubjectContext context, Set<String> ids) {
+        if (ids.isEmpty()) return List.of();
+        var subject = catalogueSubject(context);
+        var apps = applicationsInDomain(subject.actor.domainId(), ids);
+        var pageKeys = new BuiltinPageKeys(apps);
+        return apps.stream().filter(app -> ids.contains(app.getString("id")) && canEnter(app, subject, pageKeys))
+                .map(app -> neighborApplication(app, List.of())).toList();
+    }
+
+    private static JSONObject neighborApplication(JSONObject app, List<String> panels) {
+        return JSONObject.of("id", app.getString("id"), "names", app.getJSONObject("names"),
+                "kind", app.getString("kind"), "panelIds", panels);
+    }
+
+    private List<JSONObject> visible(ApplicationSubject subject) {
+        var apps = applicationsInDomain(subject.actor.domainId());
+        var pageKeys = new BuiltinPageKeys(apps);
         var visible = new ArrayList<JSONObject>();
         for (var app : apps) {
             var admitted = admittedEntries(app, subject, pageKeys);
@@ -283,11 +344,60 @@ public class ApplicationCatalog {
     private record CatalogueKey(String id, String name, Instant updatedAt) {}
     private record CatalogueRow(JSONObject app, CatalogueKey key) {}
 
+    private static final Comparator<CatalogueKey> UPDATED_CATALOGUE_ORDER =
+        Comparator.comparing(CatalogueKey::updatedAt).reversed().thenComparing(CatalogueKey::id);
+
+    private static CatalogueKey catalogueKey(JSONObject app, String name) {
+        return new CatalogueKey(app.getString("id"), name,
+            app.get("updatedAt") instanceof Instant ts ? ts : Instant.EPOCH);
+    }
+
+    List<JSONObject> builderProjects(SubjectContext subject, String search) {
+        var caller = catalogueSubject(subject);
+        var apps = loadApplications(true).stream().filter(app -> inDomainId(app, caller.actor.domainId())).toList();
+        var pageKeys = new BuiltinPageKeys(apps);
+        if (apps.stream().filter(app -> "app-builder".equals(app.getString("id")))
+                .noneMatch(app -> !admittedEntries(app, caller, pageKeys).isEmpty()))
+            throw denied();
+
+        var keyword = search.strip().toLowerCase(Locale.ROOT);
+        return apps.stream().filter(app -> matchesCatalogue(app, keyword))
+            .map(app -> new CatalogueRow(app, catalogueKey(app, null)))
+            .sorted(Comparator.comparing(CatalogueRow::key, UPDATED_CATALOGUE_ORDER))
+            .filter(row -> caller.canEdit(row.app()))
+            // The original rail reads at most twenty pages of one hundred maintainable entries.
+            .limit(2_000)
+            .map(CatalogueRow::app)
+            .filter(app -> canEditEntries(app, true))
+            .map(app -> {
+                var project = builderMetadata(app).fluentPut("id", app.getString("id")).fluentPut("canEditEntries", true);
+                if (app.get("updatedAt") instanceof Instant ts) project.put("updatedAt", ts.toString());
+                return project;
+            }).toList();
+    }
+
     public JSONObject catalogue(User user, String search, String scope, String cursor, int size, String sort, Locale locale) {
         return catalogue(user, search, scope, cursor, null, size, sort, locale);
     }
 
     public JSONObject catalogue(User user, String search, String scope, String cursor, Integer page, int size, String sort, Locale locale) {
+        return catalogue(new ApplicationSubject(user), search, scope, cursor, page, size, sort, locale);
+    }
+
+    public JSONObject catalogue(SubjectContext subject, String search, String scope, String cursor, Integer page,
+            int size, String sort, Locale locale) {
+        return catalogue(catalogueSubject(subject), search, scope, cursor, page, size, sort, locale);
+    }
+
+    private ApplicationSubject catalogueSubject(SubjectContext subject) {
+        // OSS application records belong to Java's admin; Workbench placements use system.
+        var identity = new VerifiedIdentity(subject.identity().domainId(), subject.javaUserId(), subject.identity().limit());
+        return new ApplicationSubject(new SubjectContext(identity, subject.roles(), subject.policyRefsByRole(),
+            subject.objectPolicyIds(), subject.managementPolicyIds(), subject.liveDataPermission(), subject.javaUserId()));
+    }
+
+    private JSONObject catalogue(ApplicationSubject subject, String search, String scope, String cursor, Integer page,
+            int size, String sort, Locale locale) {
         if (!List.of("visible", "maintainable", "mine", "shared").contains(scope))
             throw bad("Catalogue scope must be visible, maintainable, mine or shared");
         if (size < 1 || size > 100) throw bad("Catalogue size must be between 1 and 100");
@@ -303,29 +413,26 @@ public class ApplicationCatalog {
                 collator.setDecomposition(Collator.CANONICAL_DECOMPOSITION);
                 yield Comparator.comparing(CatalogueKey::name, collator).thenComparing(byId);
             }
-            case "updated" -> Comparator.comparing(CatalogueKey::updatedAt).reversed().thenComparing(byId);
+            case "updated" -> UPDATED_CATALOGUE_ORDER;
             default -> throw bad("Catalogue sort must be id, name or updated");
         };
         var cursorType = "name".equals(sort) ? "name-" + locale.toLanguageTag() : sort;
         var after = cursor == null ? null : parseCatalogueCursor(cursor, sort, cursorType);
         var keyword = search.strip().toLowerCase(Locale.ROOT);
         var rows = new ArrayList<JSONObject>();
-        var apps = loadApplications(true).stream()
-            .filter(app -> app.getString("domainId") == null || inDomain(app, user)).toList();
+        var apps = loadApplications(true).stream().filter(app -> inDomainId(app, subject.actor.domainId())).toList();
         var pageKeys = new BuiltinPageKeys(apps);
-        var subject = new ApplicationSubject(user);
         var ordered = apps.stream().filter(app -> matchesCatalogue(app, keyword))
-            .map(app -> new CatalogueRow(app, new CatalogueKey(app.getString("id"),
-                "name".equals(sort) ? catalogueName(app, locale) : null,
-                app.get("updatedAt") instanceof Instant ts ? ts : Instant.EPOCH)))
+            .map(app -> new CatalogueRow(app, catalogueKey(app, "name".equals(sort) ? catalogueName(app, locale) : null)))
             .sorted(Comparator.comparing(CatalogueRow::key, order)).toList();
         var matched = new ArrayList<CatalogueRow>();
         var maintainFlags = new ArrayList<Boolean>();
+        String ownerId = subject.actor.userId();
         for (var row : ordered) {
             var app = row.app();
             boolean maintain = subject.canEdit(app);
             if (!maintain && !canEnter(app, subject, pageKeys)) continue;
-            boolean isMine = app.getString("domainId") != null && Objects.equals(app.getString("ownerUserId"), user.getId());
+            boolean isMine = app.getString("domainId") != null && Objects.equals(app.getString("ownerUserId"), ownerId);
             if ("maintainable".equals(scope) && !maintain) continue;
             if ("mine".equals(scope) && !isMine) continue;
             if ("shared".equals(scope) && isMine) continue;
@@ -337,7 +444,7 @@ public class ApplicationCatalog {
             .map(r -> r.app().getString("ownerUserId"))
             .filter(id -> id != null && !id.isBlank())
             .distinct().toList();
-        var ownerNames = principals.principalNames(user.getDomainId(), ownerIds);
+        var ownerNames = principals.principalNames(subject.actor.domainId(), ownerIds);
         CatalogueKey last = null;
         if (page != null && after == null) {
             int start = (page - 1) * size;
@@ -367,26 +474,32 @@ public class ApplicationCatalog {
     }
 
     public JSONObject catalogueCount(User user) {
-        return countApplications(user, true);
+        return countApplications(new ApplicationSubject(user), true);
+    }
+
+    public JSONObject catalogueCount(SubjectContext subject) {
+        return countApplications(catalogueSubject(subject), true);
     }
 
     public JSONObject navigationCount(User user) {
-        return countApplications(user, false);
+        return countApplications(new ApplicationSubject(user), false);
     }
 
-    private JSONObject countApplications(User user, boolean includeMaintainable) {
+    JSONObject navigationCount(SubjectContext subject) {
+        return countApplications(catalogueSubject(subject), false);
+    }
+
+    private JSONObject countApplications(ApplicationSubject subject, boolean includeMaintainable) {
         var apps = db.query("""
-            SELECT id, domain_id, owner_user_id, coauthor_ids, entry, page_skills, panel_uses
+            SELECT id, domain_id, owner_user_id, coauthor_ids, entry, panel_uses
             FROM sys_application WHERE kind IS NOT NULL AND (domain_id IS NULL OR domain_id=?)
             """, (row, index) -> JSONObject.of(
                 "id", row.getString("id"), "domainId", row.getString("domain_id"),
                 "ownerUserId", row.getString("owner_user_id"),
                 "coauthorIds", JSON.parseArray(row.getString("coauthor_ids"), String.class),
                 "entry", JSON.parseObject(row.getString("entry")),
-                "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Declaration.class),
-                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class)), user.getDomainId());
+                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class)), subject.actor.domainId());
         var pageKeys = new BuiltinPageKeys(apps);
-        var subject = new ApplicationSubject(user);
         var ids = apps.stream()
             .filter(app -> (includeMaintainable && subject.canEdit(app)) || canEnter(app, subject, pageKeys))
             .map(app -> app.getString("id")).toArray(String[]::new);
@@ -445,39 +558,112 @@ public class ApplicationCatalog {
     }
 
     public JSONObject catalogueRecord(String id, User user, Locale locale) {
+        return catalogueDetail(id, new ApplicationSubject(user), locale, CatalogueView.RECORD);
+    }
+
+    JSONObject cataloguePanelRecord(String id, SubjectContext subject, Locale locale) {
+        return catalogueDetail(id, catalogueSubject(subject), locale, CatalogueView.PANEL_RECORD);
+    }
+
+    JSONObject catalogueDeleteAvailability(String id, SubjectContext subject, Locale locale) {
+        return catalogueDetail(id, catalogueSubject(subject), locale, CatalogueView.DELETE_AVAILABILITY);
+    }
+
+    JSONObject cataloguePanelEntries(String id, SubjectContext subject, Locale locale, boolean rows) {
+        return catalogueDetail(id, catalogueSubject(subject), locale, rows ? CatalogueView.ENTRY_ROWS : CatalogueView.ENTRIES);
+    }
+
+    JSONObject builderProjectMetadata(String id, SubjectContext subject, Locale locale) {
+        return catalogueDetail(id, catalogueSubject(subject), locale, CatalogueView.BUILDER_METADATA);
+    }
+
+    private static JSONObject builderMetadata(JSONObject app) {
+        return JSONObject.of("names", app.getJSONObject("names"), "descriptions", app.getJSONObject("descriptions"),
+            "icon", app.getString("icon"));
+    }
+
+    JSONObject catalogueUsedPanels(String id, SubjectContext subject, Locale locale) {
+        return catalogueDetail(id, catalogueSubject(subject), locale, CatalogueView.USED_PANELS);
+    }
+
+    JSONObject catalogueReferenceGraph(String id, SubjectContext subject, Locale locale) {
+        return catalogueDetail(id, catalogueSubject(subject), locale, CatalogueView.REFERENCE_GRAPH);
+    }
+
+    private enum CatalogueView { RECORD, PANEL_RECORD, DELETE_AVAILABILITY, ENTRIES, ENTRY_ROWS, USED_PANELS, REFERENCE_GRAPH, BUILDER_METADATA }
+
+    private JSONObject catalogueDetail(String id, ApplicationSubject subject, Locale locale, CatalogueView view) {
+        boolean entriesOnly = view == CatalogueView.ENTRIES || view == CatalogueView.ENTRY_ROWS;
         var apps = all();
         var app = apps.stream().filter(a -> id.equals(a.getString("id"))).findFirst()
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, ApplicationCatalogueForm.notFoundMessage(locale)));
-        var subject = new ApplicationSubject(user);
+            .orElseThrow(() -> catalogueNotFound(locale, view));
         boolean maintain = subject.canEdit(app);
         var pageKeys = new BuiltinPageKeys(apps);
         if (!maintain && !canEnter(app, subject, pageKeys))
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, ApplicationCatalogueForm.notFoundMessage(locale));
+            throw catalogueNotFound(locale, view);
+        if (view == CatalogueView.DELETE_AVAILABILITY) return JSONObject.of("canMaintain", maintain);
+        if (view == CatalogueView.BUILDER_METADATA) {
+            if (!canEditEntries(app, maintain))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Application cannot be edited in App Builder");
+            return builderMetadata(app);
+        }
         var uses = catalogueEntries(app, subject, maintain, pageKeys);
-        var ownerId = app.getString("ownerUserId");
-        var ownerNames = ownerId != null && !ownerId.isBlank()
-            ? principals.principalNames(user.getDomainId(), List.of(ownerId))
-            : Map.<String, String>of();
-        var result = catalogueSummary(app, maintain, uses.size(), ownerNames);
+        if (view == CatalogueView.USED_PANELS || view == CatalogueView.REFERENCE_GRAPH) {
+            var panelIds = uses.stream().filter(ApplicationPanelUse::panelEntry).map(ApplicationPanelUse::panelId).distinct().toList();
+            var facts = JSONObject.of("panelIds", panelIds);
+            if (view == CatalogueView.REFERENCE_GRAPH) {
+                facts.put("id", id);
+                facts.put("names", app.get("names"));
+                putCatalogueFramePanel(facts, app, maintain);
+            }
+            return facts;
+        }
+        var groups = app.getList("groups", Group.class);
+        if (!maintain) {
+            var usedGroups = new HashSet<>(uses.stream().map(ApplicationPanelUse::groupKey).toList());
+            groups = groups.stream().filter(group -> usedGroups.contains(group.key())).toList();
+        }
+        if (view == CatalogueView.ENTRY_ROWS)
+            return JSONObject.of("panelUses", uses, "groups", groups, "canEditEntries", canEditEntries(app, maintain));
+
+        JSONObject result;
+        if (entriesOnly) {
+            result = JSONObject.of("applicationId", id);
+        } else {
+            var ownerId = app.getString("ownerUserId");
+            var ownerNames = ownerId != null && !ownerId.isBlank()
+                ? principals.principalNames(subject.actor.domainId(), List.of(ownerId))
+                : Map.<String, String>of();
+            result = catalogueSummary(app, maintain, uses.size(), ownerNames);
+        }
         result.put("entry", maintain ? publicEntry(app) : publicEntry(app, admittedEntries(app, subject, pageKeys)));
         result.put("panelUses", uses);
-        var groups = app.getList("groups", Group.class);
-        if (maintain) {
-            result.put("groups", groups);
-            result.putAll(app.getJSONObject("panelSettings"));
-        } else {
-            var usedGroups = new HashSet<>(uses.stream().map(ApplicationPanelUse::groupKey).toList());
-            result.put("groups", groups.stream().filter(group -> usedGroups.contains(group.key())).toList());
-            var settings = app.getJSONObject("panelSettings");
-            if (settings != null && settings.containsKey("framePanelId")) {
-                var framePanelId = settings.getString("framePanelId");
-                if (panelManaged(app) || BuiltinProductIds.isValid(framePanelId)) result.put("framePanelId", framePanelId);
-            }
-            if (settings != null && settings.containsKey("theme") && settings.get("theme") != null) {
+        result.put("groups", groups);
+        var settings = app.getJSONObject("panelSettings");
+        if (maintain && !entriesOnly) {
+            result.putAll(settings);
+        } else if (settings != null) {
+            putCatalogueFramePanel(result, app, maintain);
+            if (settings.containsKey("theme") && (maintain || settings.get("theme") != null)) {
                 result.put("theme", settings.get("theme"));
             }
         }
         return result;
+    }
+
+    private static void putCatalogueFramePanel(JSONObject result, JSONObject app, boolean maintain) {
+        var settings = app.getJSONObject("panelSettings");
+        if (settings != null && settings.containsKey("framePanelId")) {
+            var framePanelId = settings.getString("framePanelId");
+            if (maintain || panelManaged(app) || BuiltinProductIds.isValid(framePanelId)) result.put("framePanelId", framePanelId);
+        }
+    }
+
+    private static RuntimeException catalogueNotFound(Locale locale, CatalogueView view) {
+        var message = ApplicationCatalogueForm.notFoundMessage(locale);
+        if (view == CatalogueView.RECORD) return new ResponseStatusException(HttpStatus.NOT_FOUND, message);
+        // Delete descriptions need to distinguish the catalogue's masked 404 from other owner failures.
+        return new OwnerRefusal(view == CatalogueView.DELETE_AVAILABILITY ? "APPLICATION_NOT_FOUND" : null, message);
     }
 
     private List<ApplicationPanelUse> catalogueEntries(JSONObject app, ApplicationSubject subject, boolean maintain, BuiltinPageKeys pageKeys) {
@@ -485,12 +671,16 @@ public class ApplicationCatalog {
         return isPanelSkillApplication(app) ? admittedEntries(app, subject, pageKeys) : List.of();
     }
 
+    private static boolean canEditEntries(JSONObject app, boolean maintain) {
+        return maintain && panelManaged(app);
+    }
+
     private JSONObject catalogueSummary(JSONObject app, boolean maintain, int entryCount, Map<String, String> ownerNames) {
         var id = app.getString("id");
         boolean builtin = app.getString("domainId") == null;
         var summary = JSONObject.of("id", id, "names", app.getJSONObject("names"), "descriptions", app.getJSONObject("descriptions"),
             "icon", app.getString("icon"), "source", builtin ? "builtin" : "domain", "canMaintain", maintain,
-            "canEditEntries", maintain && panelManaged(app), "entryCount", entryCount,
+            "canEditEntries", canEditEntries(app, maintain), "entryCount", entryCount,
             "allowStandalone", allowsStandalone(app));
         if (app.get("updatedAt") instanceof Instant ts) summary.put("updatedAt", ts.toString());
         var ownerId = app.getString("ownerUserId");
@@ -513,16 +703,23 @@ public class ApplicationCatalog {
     }
 
     public JSONObject catalogueForm(ApplicationController.CatalogueFormRequest request, User user, Locale locale) {
+        return catalogueForm(request, new ApplicationSubject(user), locale);
+    }
+
+    JSONObject catalogueForm(ApplicationController.CatalogueFormRequest request, SubjectContext subject, Locale locale) {
+        return catalogueForm(request, catalogueSubject(subject), locale);
+    }
+
+    private JSONObject catalogueForm(ApplicationController.CatalogueFormRequest request, ApplicationSubject subject, Locale locale) {
         var form = new ApplicationCatalogueForm(locale);
         var target = request.target();
         if (target == null || request.section() == null) throw bad("A catalogue form section and target are required");
         if ("create".equals(request.section())) {
-            if (user.getDomainId() == null) throw bad("A domain application draft is required");
+            if (subject.actor.domainId() == null) throw bad("A domain application draft is required");
             if ("object".equals(target.kind()) && "platform:Application".equals(target.objectType())) {
                 validateId(target.primaryKey());
                 var apps = all();
                 var source = require(apps, target.primaryKey());
-                var subject = new ApplicationSubject(user);
                 boolean maintain = subject.canEdit(source);
                 var pageKeys = new BuiltinPageKeys(apps);
                 if (!maintain && !canEnter(source, subject, pageKeys))
@@ -533,14 +730,14 @@ public class ApplicationCatalog {
                 var values = request.values() != null
                     ? request.values()
                     : buildCopyDraft(source, newId, subject, maintain, pageKeys);
-                return form.create(newId, values, key -> pageKeys.conflict(key, user.getDomainId(), newId));
+                return form.create(newId, values, key -> pageKeys.conflict(key, subject.actor.domainId(), newId));
             }
             if (!"draft".equals(target.kind())) throw bad("A domain application draft is required");
             var id = target.id() == null ? "app-" + UUID.randomUUID() : target.id();
             validateId(id);
             if (!id.startsWith("app-")) throw bad("A domain application requires an app- ID");
             var pageKeys = new BuiltinPageKeys(all());
-            return form.create(id, request.values(), key -> pageKeys.conflict(key, user.getDomainId(), id));
+            return form.create(id, request.values(), key -> pageKeys.conflict(key, subject.actor.domainId(), id));
         }
 
         if (!"object".equals(target.kind()) || !"platform:Application".equals(target.objectType()))
@@ -548,20 +745,20 @@ public class ApplicationCatalog {
         validateId(target.primaryKey());
         var apps = all();
         var app = require(apps, target.primaryKey());
-        requireDomainMaintainer(app, user);
+        subject.requireEdit(app);
         return switch (request.section()) {
             case "identity" -> form.identity(app, request.values());
             case "entries" -> {
                 if (!panelManaged(app)) throw bad("Only panel applications can edit their entry table");
                 var pageKeys = new BuiltinPageKeys(apps);
                 yield form.entries(app, request.values(),
-                    key -> pageKeys.conflict(key, user.getDomainId(), app.getString("id")));
+                    key -> pageKeys.conflict(key, subject.actor.domainId(), app.getString("id")));
             }
             case "entry" -> {
                 if (!panelManaged(app)) throw bad("Only panel applications can edit their entry table");
                 var pageKeys = new BuiltinPageKeys(apps);
                 yield form.entry(app, request.entryId(), request.values(),
-                    key -> pageKeys.conflict(key, user.getDomainId(), app.getString("id")));
+                    key -> pageKeys.conflict(key, subject.actor.domainId(), app.getString("id")));
             }
             default -> throw bad("Unknown application catalogue form section");
         };
@@ -682,13 +879,12 @@ public class ApplicationCatalog {
     }
 
     private final class ApplicationSubject {
-        private final User user;
-        private final CredentialLimit limit;
+        private final VerifiedIdentity actor;
         private final Map<String, Decision> decisions = new HashMap<>();
         private SubjectContext context;
 
         private ApplicationSubject(User user) {
-            this.user = user;
+            CredentialLimit limit;
             if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
                 var request = attributes.getRequest();
                 if (request.getAttribute(QueryGrantService.ATTRIBUTE) != null) {
@@ -702,16 +898,22 @@ public class ApplicationCatalog {
             } else {
                 limit = CredentialLimit.UNRESTRICTED;
             }
+            this.actor = new VerifiedIdentity(user.getDomainId(), user.getId(), limit);
+        }
+
+        private ApplicationSubject(SubjectContext context) {
+            this.actor = context.identity();
+            this.context = context;
         }
 
         private SubjectContext context() {
             if (context == null)
-                context = authorization.resolveSubject(new VerifiedIdentity(user.getDomainId(), user.getId(), limit));
+                context = authorization.resolveSubject(actor);
             return context;
         }
 
         private boolean canEdit(JSONObject app) {
-            if (app.getString("domainId") == null || !inDomain(app, user)) return false;
+            if (app.getString("domainId") == null || !inDomainId(app, actor.domainId())) return false;
             var facts = new OwnerFacts(app.getString("ownerUserId"), DefinitionState.PUBLISHED,
                 app.getList("coauthorIds", String.class));
             return authorization.decide(context(), new ObjectAccess(applicationTarget(app), Verb.EDIT, facts)).allowed();
@@ -725,7 +927,7 @@ public class ApplicationCatalog {
             var subject = context();
             var targetKey = ApplicationEntryEvents.entryId(applicationId, entryKey);
             return decisions.computeIfAbsent(targetKey, key ->
-                authorization.decide(subject, new Entry(new ObjectTarget(user.getDomainId(), Kind.ENTRY, key))));
+                authorization.decide(subject, new Entry(new ObjectTarget(actor.domainId(), Kind.ENTRY, key))));
         }
 
         private void require(String applicationId, String entryKey) {
@@ -750,11 +952,7 @@ public class ApplicationCatalog {
         if (!uses.isEmpty() && (home == null || uses.stream().anyMatch(use -> use.id().equals(entryKey)
                 || use.path().equals(home)))) return uses;
         var pageKey = entry.getString("pageKey");
-        if (pageKey == null) {
-            pageKey = app.getList("pageSkills", PageSkills.Declaration.class).stream()
-                .filter(item -> entryKey.equals(item.entryKey())).findFirst()
-                .map(PageSkills.Declaration::pageKey).orElse(entryKey);
-        }
+        if (pageKey == null) pageKey = entryKey;
         var nativeEntry = new ApplicationPanelUse(entryKey, pageKey, null, home == null ? entry.getString("path") : home,
             null, null, null, null, null, null, ApplicationPanelUse.NATIVE_KIND);
         var entries = new ArrayList<>(uses);
@@ -763,7 +961,7 @@ public class ApplicationCatalog {
     }
 
     private Stream<ApplicationPanelUse> enterableEntries(JSONObject app, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
-        if (subject.user.getDomainId() == null || !inDomain(app, subject.user)) return Stream.empty();
+        if (subject.actor.domainId() == null || !inDomainId(app, subject.actor.domainId())) return Stream.empty();
         var id = app.getString("id");
         return actualEntries(app, pageKeys).stream().filter(entry -> subject.decision(id, entry.id()).allowed());
     }
@@ -782,8 +980,15 @@ public class ApplicationCatalog {
     }
 
     public List<JSONObject> scheduleTargets(User user) {
-        var apps = applicationsInDomain(user.getDomainId());
-        var subject = new ApplicationSubject(user);
+        return scheduleTargets(new ApplicationSubject(user));
+    }
+
+    List<JSONObject> scheduleTargets(SubjectContext subject) {
+        return scheduleTargets(catalogueSubject(subject));
+    }
+
+    private List<JSONObject> scheduleTargets(ApplicationSubject subject) {
+        var apps = applicationsInDomain(subject.actor.domainId());
         var pageKeys = new BuiltinPageKeys(apps);
         return apps.stream().filter(app -> app.getString("scheduleAdapter") != null).map(app -> {
             var row = new JSONObject(app);
@@ -866,7 +1071,6 @@ public class ApplicationCatalog {
         var settings = app.getJSONObject("panelSettings");
         result.remove("panelSettings");
         result.remove("panelUses");
-        result.remove("pageSkills");
         String resolvedFrame = null;
         if (settings != null && settings.containsKey("framePanelId")) {
             var framePanelId = settings.getString("framePanelId");
@@ -924,7 +1128,7 @@ public class ApplicationCatalog {
                 var mergedUses = new ArrayList<>(raw.panelUses());
                 mergedUses.addAll(access.builtinEntries(d.id()));
                 var declaration = new Declaration(raw.names(), raw.descriptions(), raw.icon(), raw.groups(),
-                    raw.pageSkills(), ApplicationPanelUse.canonical(mergedUses, true));
+                    ApplicationPanelUse.canonical(mergedUses, true));
                 if (!List.of("native","link").contains(d.kind()) || !List.of("top","apps","bottom").contains(d.rail())
                     || d.category() == null || !List.of("business","build","admin").contains(d.category()))
                     throw bad("Invalid built-in application");
@@ -947,7 +1151,7 @@ public class ApplicationCatalog {
                         && (!(entryKey instanceof String key) || !validEntryKey(key)))
                     throw bad("A native or link entry requires a valid entry.entryKey");
                 validateUseGroups(declaration.panelUses(), declaration.groups());
-                validateMappings(d.id(), null, d.entry(), declaration.pageSkills(), declaration.panelUses());
+                validateMappings(d.id(), null, d.entry(), declaration.panelUses());
                 var panelSettings = d.framePanelId() != null ? JSONObject.of("framePanelId", d.framePanelId()) : new JSONObject();
                 save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.scheduleAdapter(), null, declaration, panelSettings, d.allowsStandalone());
                 access.declare(require(d.id()), declaration, old.isEmpty());
@@ -971,7 +1175,7 @@ public class ApplicationCatalog {
     }
     private JSONObject userApplication(String id, Declaration declaration, User user) {
         validateId(id); validate(declaration);
-        if (!declaration.pageSkills().isEmpty() || !declaration.panelUses().isEmpty()) throw bad("Use the panel application registration for panel relations");
+        if (!declaration.panelUses().isEmpty()) throw bad("Use the panel application registration for panel relations");
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
         return transactions.execute(tx -> {
             lockCatalog();
@@ -1009,13 +1213,13 @@ public class ApplicationCatalog {
     private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
                       JSONObject entry, String adapter, String releaseId, Declaration d, JSONObject panelSettings, boolean allowStandalone) {
         db.update("""
-            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,panel_settings,allow_standalone,updated_at)
-            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,?,now()) ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,schedule_adapter,release_id,groups,entry_path,panel_uses,panel_settings,allow_standalone,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?,now()) ON CONFLICT(id) DO UPDATE SET
             names=excluded.names,descriptions=excluded.descriptions,icon=excluded.icon,rail=excluded.rail,category=excluded.category,sort=excluded.sort,
             entry=excluded.entry,schedule_adapter=excluded.schedule_adapter,
-            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,panel_settings=excluded.panel_settings,allow_standalone=excluded.allow_standalone,updated_at=now()
+            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,panel_uses=excluded.panel_uses,panel_settings=excluded.panel_settings,allow_standalone=excluded.allow_standalone,updated_at=now()
             """, id,domain,service,owner,kind,JSON.toJSONString(d.names()),JSON.toJSONString(d.descriptions()),d.icon(),rail,category,sort,
-            entry.toJSONString(),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),panelSettings.toJSONString(),allowStandalone);
+            entry.toJSONString(),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),panelSettings.toJSONString(),allowStandalone);
     }
     public static void validateId(String id) {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
@@ -1027,7 +1231,6 @@ public class ApplicationCatalog {
         for (var group : d.groups()) {
             if (group.key() == null || !validLocalizedNames(group.names()) || !groups.add(group.key())) throw bad("Invalid application group");
         }
-        PageSkills.validate(d.pageSkills());
     }
 
     public static boolean panelManaged(JSONObject app) {
@@ -1040,18 +1243,11 @@ public class ApplicationCatalog {
                 if (!panelPages.add(use.pageKey())) throw bad("Panel use page keys must be unique in the domain");
     }
 
-    private void validateMappings(String id, String domain, JSONObject entry, List<PageSkills.Declaration> pageSkills, List<ApplicationPanelUse> panelUses) {
+    private void validateMappings(String id, String domain, JSONObject entry, List<ApplicationPanelUse> panelUses) {
         var apps = new ArrayList<>(all().stream().filter(app -> !id.equals(app.getString("id"))).toList());
         apps.add(JSONObject.of("id", id, "domainId", domain, "kind", domain == null ? "native" : "product", "entry", entry,
-            "pageSkills", pageSkills, "panelUses", panelUses));
+            "panelUses", panelUses));
         var pageKeys = new BuiltinPageKeys(apps);
-        var entries = actualEntries(apps.getLast(), pageKeys);
-        for (var mapping : pageSkills) {
-            var use = entries.stream().filter(item -> mapping.entryKey().equals(item.id()) && mapping.pageKey().equals(item.pageKey()))
-                .findFirst().orElseThrow(() -> bad("Page skill must identify an actual application entry"));
-            if (use.defaultAgent() != null && mapping.defaults() != null && !mapping.defaults().isEmpty())
-                throw bad("An entry may declare only one page skill default");
-        }
         if (domain != null) {
             for (var use : panelUses) {
                 var conflict = pageKeys.conflict(use.pageKey(), domain, id);
@@ -1101,13 +1297,13 @@ public class ApplicationCatalog {
     }
 
     public List<ApplicationEntryEvents.EntryRoots> affectedEntryRoots(String domainId, Set<String> panelIds) {
-        var applications = applicationsInDomain(domainId);
+        var applications = domainId == null ? all() : applicationsInDomain(domainId);
         var pageKeys = new BuiltinPageKeys(applications);
         return applications.stream()
             .filter(ApplicationCatalog::hasPanelUseRegistration)
-            .flatMap(app -> ApplicationEntryEvents.roots(app, pageKeys.activeUses(app)).entrySet().stream())
-            .filter(entry -> entry.getValue().panelIds().stream().anyMatch(panelIds::contains))
-            .map(entry -> new ApplicationEntryEvents.EntryRoots(entry.getKey(), entry.getValue()))
+            .flatMap(app -> ApplicationEntryEvents.roots(app, pageKeys.activeUses(app)).entrySet().stream()
+                .filter(entry -> entry.getValue().panelIds().stream().anyMatch(panelIds::contains))
+                .map(entry -> new ApplicationEntryEvents.EntryRoots(entry.getKey(), entry.getValue(), app.getString("domainId"))))
             .toList();
     }
 
@@ -1153,16 +1349,6 @@ public class ApplicationCatalog {
         new ApplicationSubject(user).requireEdit(app);
     }
 
-    public void requireLegacyGrantChange(String id, User user) {
-        applicationsInDomain(user.getDomainId()).stream()
-            .filter(app -> id.equals(app.getString("id")) && app.getString("domainId") != null)
-            .findFirst().ifPresent(app -> {
-                requireDomainMaintainer(app, user);
-                if (panelManaged(app)) throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Manage panel application access through its entry policies.");
-            });
-    }
-
     public boolean legacyMaintenance(String id, User user) {
         var app = require(id);
         requireDomainMaintainer(app, user);
@@ -1182,14 +1368,23 @@ public class ApplicationCatalog {
     }
 
     public JSONObject resolveEntry(String path, User user) {
+        return resolveEntryByPath(path, new ApplicationSubject(user), false);
+    }
+
+    public JSONObject openPanelEntry(String path, String applicationId, String useId, SubjectContext context) {
+        var subject = new ApplicationSubject(context);
+        return path != null ? resolveEntryByPath(path, subject, true)
+            : resolveEntryById(applicationId, useId, subject, true);
+    }
+
+    private JSONObject resolveEntryByPath(String path, ApplicationSubject subject, boolean opening) {
         var canonical = ApplicationPanelUse.canonicalPath(path);
-        var apps = applicationsInDomain(user.getDomainId());
+        var apps = applicationsInDomain(subject.actor.domainId());
         var pageKeys = new BuiltinPageKeys(apps);
-        var subject = new ApplicationSubject(user);
         for (var app : apps) {
             var declared = actualEntries(app, pageKeys).stream()
                 .filter(use -> canonical.equals(pathWithoutQuery(use.path()))).findFirst();
-            if (declared.isPresent()) return resolveDeclaredEntry(app, declared.get(), subject, pageKeys);
+            if (declared.isPresent()) return resolveDeclaredEntry(app, declared.get(), subject, pageKeys, opening);
         }
         for (var app : apps) {
             if (!hasPanelUseRegistration(app) || !canonical.equals(app.getJSONObject("entry").getString("path"))) continue;
@@ -1197,7 +1392,7 @@ public class ApplicationCatalog {
             if (allowed.isEmpty()) throw denied();
             var home = publicEntry(app, allowed).getString("entryKey");
             var use = allowed.stream().filter(entry -> entry.id().equals(home)).findFirst().orElseThrow();
-            return entryResolution(app, use, allowed, pageKeys);
+            return entryResolution(app, use, allowed, pageKeys, opening);
         }
         throw entryNotFound();
     }
@@ -1209,22 +1404,37 @@ public class ApplicationCatalog {
     }
 
     public JSONObject resolveEntry(String applicationId, String useId, User user) {
-        var apps = all();
+        return resolveEntryById(applicationId, useId, new ApplicationSubject(user), false);
+    }
+
+    private JSONObject resolveEntryById(String applicationId, String useId, ApplicationSubject subject, boolean opening) {
+        var apps = opening ? applicationsInDomain(subject.actor.domainId()) : all();
         var app = require(apps, applicationId);
-        if (!inDomain(app, user)) throw denied();
+        if (!inDomainId(app, subject.actor.domainId())) throw denied();
         var pageKeys = new BuiltinPageKeys(apps);
         var use = actualEntries(app, pageKeys).stream().filter(entry -> useId.equals(entry.id()))
             .findFirst().orElseThrow(ApplicationCatalog::entryNotFound);
-        return resolveDeclaredEntry(app, use, new ApplicationSubject(user), pageKeys);
+        return resolveDeclaredEntry(app, use, subject, pageKeys, opening);
     }
 
     /** Registration facts for the authenticated workbench. The object owner separately checks use. */
     public JSONObject registeredEntry(String applicationId, String useId, User user) {
-        var apps = applicationsInDomain(user.getDomainId());
-        var app = apps.stream().filter(item -> applicationId.equals(item.getString("id"))).findFirst()
-            .orElseThrow(ApplicationCatalog::entryNotFound);
-        var use = declaredPanelEntry(app, useId, new BuiltinPageKeys(apps));
-        return JSONObject.of("applicationId", applicationId, "use", use, "framePanelId", entryFramePanelId(app));
+        var entry = panelReadRegistrations(user.getDomainId()).apply(applicationId, useId);
+        return JSONObject.of("applicationId", entry.applicationId(), "use", entry.use(), "framePanelId", entry.framePanelId());
+    }
+
+    public record PanelReadRegistration(String applicationId, ApplicationPanelUse use, String framePanelId) {}
+
+    /** A request-local view of registrations, without admitting any entry or definition. */
+    public BiFunction<String, String, PanelReadRegistration> panelReadRegistrations(String domainId) {
+        var apps = applicationsInDomain(domainId);
+        var pageKeys = new BuiltinPageKeys(apps);
+        return (applicationId, useId) -> {
+            var app = apps.stream().filter(item -> applicationId.equals(item.getString("id"))).findFirst()
+                .orElseThrow(ApplicationCatalog::entryNotFound);
+            var use = declaredPanelEntry(app, useId, pageKeys);
+            return new PanelReadRegistration(applicationId, use, entryFramePanelId(app));
+        };
     }
 
     private static ApplicationPanelUse declaredPanelEntry(JSONObject app, String useId, BuiltinPageKeys pageKeys) {
@@ -1233,10 +1443,11 @@ public class ApplicationCatalog {
             .findFirst().orElseThrow(ApplicationCatalog::entryNotFound);
     }
 
-    private JSONObject resolveDeclaredEntry(JSONObject app, ApplicationPanelUse use, ApplicationSubject subject, BuiltinPageKeys pageKeys) {
-        if (subject.user.getDomainId() == null) throw denied();
+    private JSONObject resolveDeclaredEntry(JSONObject app, ApplicationPanelUse use, ApplicationSubject subject,
+                                             BuiltinPageKeys pageKeys, boolean opening) {
+        if (subject.actor.domainId() == null) throw denied();
         subject.require(app.getString("id"), use.id());
-        return entryResolution(app, use, admittedEntries(app, subject, pageKeys), pageKeys);
+        return entryResolution(app, use, admittedEntries(app, subject, pageKeys), pageKeys, opening);
     }
 
     private static boolean singleEntry(JSONObject app, BuiltinPageKeys pageKeys) {
@@ -1244,7 +1455,7 @@ public class ApplicationCatalog {
     }
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed,
-                                             BuiltinPageKeys pageKeys) {
+                                             BuiltinPageKeys pageKeys, boolean opening) {
         var named = allowed.stream().filter(entry -> entry.names() != null).toList();
         var menuUses = allowed.stream().filter(entry -> entry.names() != null || entry.frameConversationEntry()).toList();
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
@@ -1253,6 +1464,7 @@ public class ApplicationCatalog {
         var appNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
         var result = JSONObject.of("applicationId", app.getString("id"), "use", use, "framePanelId", entryFramePanelId(app),
             "menu", new EntryMenu(appNames, groups, menuUses, singleEntry(app, pageKeys)));
+        if (opening) result.put("allowStandalone", allowsStandalone(app));
         var settings = app.getJSONObject("panelSettings");
         if (panelManaged(app) && settings != null && settings.containsKey("theme"))
             result.put("theme", settings.getJSONObject("theme"));
@@ -1334,7 +1546,7 @@ public class ApplicationCatalog {
             throw bad("Panel entry and uses must be in the assigned application space: " + root);
         var supplied = body.declaration();
         if (existing.isEmpty() && (supplied == null || body.initialOpenEntryIds() == null)) throw bad("New applications require metadata and initialOpenEntryIds");
-        if (supplied != null && (!supplied.pageSkills().isEmpty() || !supplied.panelUses().isEmpty())) throw bad("Supply panelUses only once");
+        if (supplied != null && !supplied.panelUses().isEmpty()) throw bad("Supply panelUses only once");
         if (supplied != null) validate(supplied);
         var settings = new PanelSettings(body.framePanelId(), body.theme(), body.delivery());
         validatePanelSettings(settings);
@@ -1356,18 +1568,18 @@ public class ApplicationCatalog {
             if (uses.stream().anyMatch(use -> use.groupKey() != null))
                 validateUseGroups(uses, supplied == null ? old.getList("groups", Group.class) : supplied.groups());
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
-            validateMappings(id, user.getDomainId(), entry, List.of(), uses);
+            validateMappings(id, user.getDomainId(), entry, uses);
             panels.requireUsableRegistration(user.getDomainId(), settings.framePanelId(), withChangedIcons(old, uses), settings.delivery(), settings.theme(),
                 supplied == null ? null : changedIcon(old, supplied.icon()), locale);
             boolean allowStandalone = body.allowStandalone() != null ? body.allowStandalone() : (old == null || allowsStandalone(old));
             JSONObject stored;
             if (old != null && supplied == null) {
-                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,panel_uses=?::jsonb,panel_settings=?::jsonb,allow_standalone=?,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
+                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,panel_uses=?::jsonb,panel_settings=?::jsonb,allow_standalone=?,updated_at=now() WHERE id=?",
                     entry.toJSONString(), entryPath, JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue),
                     settings.json().toJSONString(), allowStandalone, id);
                 stored = require(id);
             } else {
-                var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), List.of(), uses);
+                var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), uses);
                 save(id, user.getDomainId(), "workbench", old == null ? user.getId() : old.getString("ownerUserId"),
                     "product", old == null ? "apps" : old.getString("rail"), old == null ? "business" : old.getString("category"),
                     old == null ? 100 : old.getIntValue("sort"), entry, null, null, declaration, settings.json(), allowStandalone);

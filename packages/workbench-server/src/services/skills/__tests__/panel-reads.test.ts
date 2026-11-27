@@ -2,11 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
-import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillKey, runtimeSkillRefSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { panelOptionListSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
 import { installContentLayout } from "../../../content/layout";
-import { registerSkillProvider } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
@@ -27,12 +26,18 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-reads-"));
 const publicSkillsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-public-"));
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot });
 const { createSkillReadAdapter } = await import("../panel-reads");
+const { countAssistantSkills } = await import("../../assistant/skills");
 
 const domain = "skill-reads-domain";
 const owner = { domainId: domain, userId: "reader" };
 const credentials = { token: "initiator-token", locale: "en" };
 const governance: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" };
 const domainSkill: RuntimeSkillRef = { namespace: { kind: "domain", domainId: domain }, name: "domain-helper" };
+const systemOnlySkillNames = ["ontomato-app-builder", "ops-diagnosis", "ontomato-analyst", "data-retrieval"];
+const skillName = (value: unknown) => {
+  const parsed = runtimeSkillRefSchema.safeParse(value);
+  return parsed.success ? parsed.data.name : undefined;
+};
 
 async function installDomainSkill(name: string, description: string) {
   const skillRoot = path.join(root, "data", "domain-skills", domain, name);
@@ -55,9 +60,6 @@ beforeEach(() => {
       const { requests } = JSON.parse(String(init.body));
       return Response.json({ decisions: requests.map(() => ({ allowed: true })) });
     }
-    if (url.endsWith("/platform/page-skills")) {
-      return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
-    }
     throw new Error(`Unexpected upstream: ${url}`);
   }));
 });
@@ -79,6 +81,11 @@ it("answers the reader's visible catalogue as panel options in the owner's order
     description: "Review business knowledge with traceable evidence",
   });
   expect(catalogue.options.map(({ label }) => label)).toContain("Analysis report");
+  for (const name of systemOnlySkillNames) {
+    const restricted = catalogue.options.find(option => skillName(option.value) === name);
+    expect(restricted?.unavailable).toEqual({ reason: "This skill is not available to you." });
+  }
+  expect(catalogue.options.find(option => skillName(option.value) === "ontomato-page-operator")?.unavailable).toBeUndefined();
   const helper = catalogue.options.find(option => option.primaryKey === runtimeSkillKey(domainSkill));
   expect(helper).toEqual({
     primaryKey: runtimeSkillKey(domainSkill),
@@ -156,47 +163,40 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
     path.join(publicSkillDir, "SKILL.md"),
     "---\nname: builtin-guide\ndescription: Builtin guide skill\n---\nGuide body\n",
   );
-  registerSkillProvider({
-    id: "provider-ext",
-    name: "External Studio",
-    async list(context) {
-      return [
-        {
-          skill: { namespace: { kind: "domain", domainId: context.domainId }, name: "ext-provider-skill" },
-          manifest: { name: "ext-provider-skill", description: "Provided from external studio" },
-          async provide() {
-            return {
-              skill: { namespace: { kind: "domain" as const, domainId: context.domainId }, name: "ext-provider-skill" },
-              files: [
-                { path: "SKILL.md", content: "---\nname: ext-provider-skill\ndescription: Provided from external studio\n---\nExternal body\n" },
-              ],
-            };
-          },
-        },
-      ];
-    },
-  });
-
   const adapter = createSkillReadAdapter(owner, credentials);
 
   const page1 = panelRecordQuerySchema.parse(await adapter.query({ size: 2 }));
-  expect(page1.total).toBe(4);
+  expect(page1.total).toBe(13);
   expect(page1.nextCursor).toBe("2");
   expect(page1.rows).toHaveLength(2);
 
   const page2 = panelRecordQuerySchema.parse(await adapter.query({ cursor: "2", size: 2 }));
-  expect(page2.total).toBe(4);
-  expect(page2.nextCursor).toBeUndefined();
+  expect(page2.total).toBe(13);
+  expect(page2.nextCursor).toBe("4");
   expect(page2.rows).toHaveLength(2);
 
   const all = panelRecordQuerySchema.parse(await adapter.query({}));
+  expect(await adapter.count()).toEqual({ rows: [], total: all.rows.length });
+  expect(all.total).toBe(all.rows.length);
+  expect((await adapter.options()).options).toHaveLength(all.rows.length);
+  expect(await countAssistantSkills(domain, credentials)).toBe(all.total!);
   expect(all.rows.map(row => row.primaryKey)).toEqual([
+    "knowledge-governance",
+    "assistant-report",
+    "application-design",
+    "ontomato-agent-builder",
+    "ontomato-page-operator",
+    "ontomato-analyst-assistant",
+    "ontomato-app-builder",
+    "ops-diagnosis",
+    "ontomato-analyst",
+    "data-retrieval",
     "builtin-guide",
     "alpha-helper",
     "domain-helper",
-    "ext-provider-skill",
   ]);
-  expect(all.rows[0]).toEqual({
+  const publicRow = all.rows.find(row => row.primaryKey === "builtin-guide")!;
+  expect(publicRow).toEqual({
     primaryKey: "builtin-guide",
     label: "builtin-guide",
     subtitle: "Builtin guide skill",
@@ -207,15 +207,13 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
       writeRestriction: "Built-in skills come with the product and cannot be deleted",
     },
   });
-  expect(all.rows[3]).toEqual({
-    primaryKey: "ext-provider-skill",
-    label: "ext-provider-skill",
-    subtitle: "Provided from external studio",
-    fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
+  expect(all.rows.find(row => row.primaryKey === "knowledge-governance")).toMatchObject({
+    label: "Knowledge governance",
+    subtitle: "Review business knowledge with traceable evidence",
     fields: {
-      description: "Provided from external studio",
-      source: "External Studio",
-      writeRestriction: "Provided by External Studio and cannot be deleted here",
+      description: "Review business knowledge with traceable evidence",
+      source: "Platform",
+      writeRestriction: "Built-in skills come with the product and cannot be deleted",
     },
   });
   expect(all.rows.find(row => row.primaryKey === "alpha-helper")).toEqual({
@@ -230,9 +228,9 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
     },
   });
 
-  const searched = panelRecordQuerySchema.parse(await adapter.query({ search: "External" }));
+  const searched = panelRecordQuerySchema.parse(await adapter.query({ search: "Alpha" }));
   expect(searched).toEqual({
-    rows: [all.rows[3]],
+    rows: [all.rows.find(row => row.primaryKey === "alpha-helper")],
     total: 1,
   });
 });
@@ -280,6 +278,37 @@ it("reads one skill record, its package files with path keys, and one file's con
   });
 
   await expect(adapter.file("file-skill", { path: "scripts/none.mjs" })).rejects.toMatchObject({
+    status: 404,
+    code: "SKILL_FILE_NOT_FOUND",
+  });
+});
+
+it("shows built-in skill explanations, reads file-backed instructions, and lists no files for generated skills", async () => {
+  const adapter = createSkillReadAdapter(owner, credentials);
+
+  const operator = panelRecordSchema.parse(await adapter.record("ontomato-page-operator"));
+  expect(operator).toMatchObject({
+    label: "Operate pages",
+    fields: {
+      description: "Discover applications and pages, read page data, fill forms, and invoke declared page operations.",
+      source: "Platform",
+    },
+  });
+  const operatorFiles = panelRecordListSchema.parse(await adapter.files("ontomato-page-operator"));
+  expect(operatorFiles.some(file => file.primaryKey === "SKILL.md")).toBe(true);
+  const instructions = panelRecordSchema.parse(await adapter.file("ontomato-page-operator", { path: "SKILL.md" }));
+  expect(instructions.fields.content).toContain("Discover applications and pages");
+
+  const governanceRecord = panelRecordSchema.parse(await adapter.record("knowledge-governance"));
+  expect(governanceRecord).toMatchObject({
+    label: "Knowledge governance",
+    fields: {
+      description: "Review business knowledge with traceable evidence",
+      source: "Platform",
+    },
+  });
+  expect(panelRecordListSchema.parse(await adapter.files("knowledge-governance"))).toEqual([]);
+  await expect(adapter.file("knowledge-governance", { path: "SKILL.md" })).rejects.toMatchObject({
     status: 404,
     code: "SKILL_FILE_NOT_FOUND",
   });

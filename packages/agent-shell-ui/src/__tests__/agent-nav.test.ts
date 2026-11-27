@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import type { AgentHostClient } from "../host";
 import type { AgentHostSession } from "@ontomato/contracts/agent-host";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import { useAgentNav } from "../useAgentNav";
 
 const remembered = "11111111-1111-4111-8111-111111111111";
@@ -136,7 +136,7 @@ describe("promoting a conversation", () => {
 });
 
 describe("reading the agents for a page", () => {
-  const dashboard: PageSkillContext = { mode: "public", locator: { pageKey: "dashboard", applicationId: "dashboards", entryKey: "dashboards-main" } };
+  const dashboard: PageSkillContext = { applicationId: "dashboards", entryKey: "dashboards-main", pageKey: "dashboard", useId: "dashboards-main", panelId: "panel-dashboard", path: "/dashboards", memberPath: [] };
 
   it("is failed when the page's candidates cannot be read, and ready once a read returns them", async () => {
     const listPageAgents = vi.fn()

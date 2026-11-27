@@ -51,7 +51,8 @@ import preferencesRouter from "../api/routes/preferences";
 import personalWorkspaceRouter from "../api/routes/personal-workspace";
 import { objectDetailsRouter } from "../api/routes/object-details";
 import {businessDefinitionsRouter,definitionTriggersRouter} from "../api/routes/business-definitions";
-import { createChartProjectionsRouter, productPanelsRouter, productProjectionsRouter, productPanelsInternalRouter, panelOperationsRouter } from "../api/routes/product-panels";
+import { createChartProjectionsRouter, productPanelOpeningRouter, productPanelsRouter, productProjectionsRouter, productPanelsInternalRouter, panelOperationsRouter } from "../api/routes/product-panels";
+import { createProductPanelReadRouter } from "../api/routes/product-panel-data";
 import { dashboardChartSources } from "../services/dashboard/chart-sources";
 import { installDashboardChartProjectionReferences } from "../services/dashboard/projection-references";
 import { createChartProjectionService, deleteChartProjectionsForDashboards, findChartProjectionsForCards } from "../services/product-panels/chart-sources";
@@ -205,6 +206,8 @@ export function createWorkbenchApp(): Express {
   app.use("/internal/product-panels", productPanelsInternalRouter);
   app.use("/internal/agent-channel", agentChannelRouter);
   app.post("/internal/schedule-applications/:appId/runs/status", scheduleExecutionStatus);
+  app.use("/api/product-panels", productPanelOpeningRouter);
+  app.use("/api", createProductPanelReadRouter(identity.authenticate));
   app.use("/api", identity.authenticate);
   app.use("/api", (req, _res, next) => {
     const r = req as AuthenticatedRequest;

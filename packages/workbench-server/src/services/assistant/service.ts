@@ -3,7 +3,7 @@ import { authorizeBuilderProject, ensureMaterializedWorkspace } from "../app-bui
 import { requireAgent } from "./authorization";
 import { closeGovernanceWindow } from "./governance";
 import { closeAuthoringRun } from "./authoring";
-import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
+import { pageSkillContextSchema } from "@ontomato/contracts/page-context";
 import { agentHostSendResultSchema, type AgentHostCreateSession, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { ChannelProcessClient } from "../agent-host/process";

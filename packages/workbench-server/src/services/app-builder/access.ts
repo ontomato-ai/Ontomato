@@ -29,8 +29,12 @@ export async function assertAppBuilderAccess(credentials: AssistantCredentials) 
       error instanceof Error ? error.message : String(error),
     );
   }
-  if (!applications.some((application) => application.id === "app-builder")) {
+  requireAppBuilderNavigation(applications);
+  return applications;
+}
+
+export function requireAppBuilderNavigation(applications: readonly { id: string }[]) {
+  if (!applications.some(application => application.id === "app-builder")) {
     throw new HttpError(403, "Application access denied", "FORBIDDEN");
   }
-  return applications;
 }

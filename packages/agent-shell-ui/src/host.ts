@@ -26,7 +26,7 @@ import {
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { PresentationReceipt } from "@ontomato/contracts/agent-presentation";
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { agentTasksFrameSchema, type AgentTasksFrame } from "@ontomato/contracts/agent-tasks";
 
@@ -290,11 +290,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return options.agents ? options.agents(agents) : agents;
     },
     async listPageAgents(page) {
-      if (page.mode === "public")
-        return assistantAgentListSchema.parse(await json(`/agents?${query({ ...page.locator })}`));
-      if (page.member === null) return { agents: [] };
-      // The member as the page's snapshot gave it, in one parameter; the server checks it again before it narrows.
-      const params = { ...page.locator, member: JSON.stringify(page.member) };
+      const params = { applicationId: page.applicationId, entryKey: page.entryKey, pageKey: page.pageKey };
       return assistantAgentListSchema.parse(await json(`/agents?${query(params)}`));
     },
     listSessions(agentId, cursor) {

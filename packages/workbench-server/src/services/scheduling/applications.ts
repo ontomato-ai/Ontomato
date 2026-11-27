@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
+import type { PlatformScheduleFormRequest, PlatformTask } from "@ontomato/contracts/platform-schedules";
 import type { ScheduledApplicationsStatus } from "@ontomato/platform-schedules/panel-reads";
 import { config } from "../../config/application";
 import { resolveLocale } from "../../i18n";
@@ -9,7 +9,7 @@ import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { assistantScheduleApplication } from "../assistant/scheduling";
 import { operationsScheduleApplication } from "../ops-diagnosis/scheduling";
-import type { ScheduleApplication, ScheduleContext } from "./application";
+import type { ScheduleApplication, ScheduleContext, ScheduleTargetLabelAccess } from "./application";
 
 // The workbench installs the scheduling declarations owned by its applications.
 const declarations: readonly ScheduleApplication[] = [assistantScheduleApplication, operationsScheduleApplication];
@@ -21,10 +21,24 @@ export function scheduleApplication(id: string): ScheduleApplication {
   return application;
 }
 
+export const triggerApplicationDirectorySchema = z.array(applicationCatalogSchema.element.extend({ entryAvailable: z.boolean() }));
 const directoryResponse = z.object({
   success: z.literal(true),
-  data: z.array(applicationCatalogSchema.element.extend({ entryAvailable: z.boolean() })),
+  data: triggerApplicationDirectorySchema,
 });
+
+export function readTriggerApplicationForm(
+  app: z.infer<typeof triggerApplicationDirectorySchema.element>, input: PlatformScheduleFormRequest,
+  context: ScheduleContext, access: ScheduleTargetLabelAccess,
+) {
+  const provider = scheduleApplication(app.id);
+  // The Java agent adapter only adds the execution quota and delegates its form here.
+  if (app.scheduleAdapter !== `workbench:${provider.id}` &&
+      !(provider === assistantScheduleApplication && app.scheduleAdapter === `java:${provider.id}`)) {
+    throw new HttpError(502, "The scheduled application's form owner is unavailable in this batch", "DEPENDENCY_UNAVAILABLE");
+  }
+  return provider.form(input, context, access);
+}
 
 async function applicationRefusal(application: ScheduleApplication, context: ScheduleContext): Promise<string | null> {
   try {
@@ -44,6 +58,13 @@ export async function readTriggerApplications(context: ScheduleContext, signal?:
       headers: buildBackendHeaders(token, undefined, locale, apiKey, headers), signal,
     });
   const { data } = directoryResponse.parse(JSON.parse(response.text));
+  return presentTriggerApplications(data, context);
+}
+
+export async function presentTriggerApplications(
+  data: z.infer<typeof triggerApplicationDirectorySchema>, context: ScheduleContext, access?: ScheduleTargetLabelAccess,
+): Promise<ScheduledApplicationsStatus> {
+  const { locale } = context.credentials;
   const missingIds: string[] = [];
   const providers = data.flatMap(entry => {
     const provider = applications.get(entry.id);
@@ -53,7 +74,10 @@ export async function readTriggerApplications(context: ScheduleContext, signal?:
   });
   const named = await Promise.all(providers.map(async ({ entry, provider }) => {
     const unavailableReason = entry.entryAvailable
-      ? await applicationRefusal(provider, context)
+      ? access
+        ? provider === operationsScheduleApplication && !access.inspection.allowed && !access.caseSets.allowed
+          ? access.caseSets.reason! : null
+        : await applicationRefusal(provider, context)
       : locale?.startsWith("zh") ? "没有应用入口权限" : "Application entry permission is required";
     return {
       id: entry.id,
@@ -69,7 +93,7 @@ export async function readTriggerApplications(context: ScheduleContext, signal?:
 }
 
 export async function describeTriggerTargets(
-  tasks: readonly PlatformTask[], directory: ScheduledApplicationsStatus, context: ScheduleContext,
+  tasks: readonly PlatformTask[], directory: ScheduledApplicationsStatus, context: ScheduleContext, access?: ScheduleTargetLabelAccess,
 ): Promise<PlatformTask[]> {
   const groups = new Map<string, { task: Extract<PlatformTask, { targetKind: "application" }>; index: number }[]>();
   const resolved = [...tasks];
@@ -83,7 +107,7 @@ export async function describeTriggerTargets(
     const group = groups.get(app.id);
     if (!group) return;
     const descriptions = app.available
-      ? await scheduleApplication(app.id).describeTargets(group.map(({ task }) => task.content), context)
+      ? await scheduleApplication(app.id).describeTargets(group.map(({ task }) => task.content), context, access)
       : undefined;
     for (const [i, { task, index }] of group.entries()) {
       const display = descriptions?.[i];

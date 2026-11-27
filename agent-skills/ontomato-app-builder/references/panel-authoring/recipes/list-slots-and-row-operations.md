@@ -8,7 +8,8 @@ the list without replacing the whole table.
   (`kind: "local"`, `id`, optional `to`). Items accept `labelKey` or `label`, `tone`
   (`"default" | "primary" | "success" | "warning" | "danger"`), `icon`, `iconOnly`, `when`
   and `disabledWhen`. Conditions match owner fields against `equals`, `notEquals`, `in`, `notIn` or `truthy`.
-  Operation items also accept `hideWhenUnavailable`. The action column accepts `labelKey` or `label`,
+  Operation items also accept `hideWhenUnavailable`; otherwise unavailable actions stay disabled and show the owner's
+  reason in a hover/focus tooltip (both inline and in the overflow menu). The action column accepts `labelKey` or `label`,
   `maxVisible` (overflow after two by default), `fixed: "right" | false`, `align`, `width` and `minWidth`.
 - **Rowless slots & events:** `ObjectList` never passes raw `row` objects to panel slots or events.
   - `#cell-<columnKey>` and `#cell` receive `{ ref, index, column, value, displayText, tone, operations, runOperation }`

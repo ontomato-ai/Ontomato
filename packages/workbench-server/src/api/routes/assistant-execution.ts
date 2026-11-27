@@ -1,12 +1,12 @@
 import { isLivePresentationEligibleRun } from "../../services/agent-host/presentation";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
-import { requirePanelSkillForRun } from "../../services/product-panels/operations";
 import {
   directPanelMemberPathSchema, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema, productPanelReadRequestSchema,
   type DirectPanelMemberPath, type ProductPanelReadSource,
 } from "@ontomato/contracts/panel-host";
-import { readProductPanelData } from "../../services/product-panels/data-reads";
+import { readAssistantPanelMember } from "../../services/assistant/registered-panel-read";
 import { readNestedPanel, resolvePanelMemberPath } from "../../services/product-panels/member-path";
+import { requirePanelUseEntry } from "../../services/product-panels/application-use";
 import { readCurrentPanelRecord } from "../../services/product-panels/current";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { isAssistantBuildTestOperation } from "../build-test-access";
@@ -23,6 +23,8 @@ import { environment } from "../../config/environment";
 import { buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import {assistantRetrievalOperationSchema} from "@ontomato/contracts/assistant-retrieval";
+import { pageCatalogRequestSchema, pageDescriptionRequestSchema, pageSearchRequestSchema } from "@ontomato/contracts/page-context";
+import { readPageCatalog, readPageDescription, searchPages } from "../../services/product-panels/page-discovery";
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
 import { credentialsForRun, ownedRun, runForOwner } from "../../services/assistant/execution";
 import { sessionBuildTestWorkspace, WorkspaceBuildTests } from "../../services/app-builder/build-tests";
@@ -43,16 +45,17 @@ const initiatorPanelReads = [AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 async function panelReader(req: Request, runId: string, source: ProductPanelReadSource, memberPath: DirectPanelMemberPath) {
   if (source.kind === "candidate" || source.kind === "app-candidate")
-    throw new HttpError(400, "A page skill reads a registered application entry", "INVALID_REQUEST");
+    throw new HttpError(400, "A page operation reads a registered application entry", "INVALID_REQUEST");
   const { owner, credentials } = context(req);
   const run = await runForOwner(owner, runId);
   if (!run.channel || run.status !== "running")
     throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
   if (run.channel.authority.executionKind === "build-test"
       && !isLivePresentationEligibleRun({ host: "workbench", owner, runId, sessionId: run.sessionId, channel: run.channel }))
-    throw new HttpError(422, "Page skill reads do not support test data", "BUILD_TEST_UNSUPPORTED");
-  const { use } = await requirePanelSkillForRun(owner, credentials, run,
-    source.kind === "frame" ? { ...source, root: "frame" } : source);
+    throw new HttpError(422, "Page operation reads do not support test data", "BUILD_TEST_UNSUPPORTED");
+  if (source.kind === "frame")
+    throw new HttpError(403, "The application frame is not a page operation target", "PANEL_FRAME_SKILL_REQUIRED");
+  const { use } = await requirePanelUseEntry(credentials, source, owner);
   const executor = await credentialsForRun(owner, runId, credentials, run.sessionId);
   if (executor.executionUserId !== null) {
     // The execution account may read owner data only through a placement the initiator could actually open.
@@ -61,14 +64,39 @@ async function panelReader(req: Request, runId: string, source: ProductPanelRead
   }
   const reader = { ...owner, userId: executor.executionUserId ?? owner.userId };
   const userName = executor.executionUserId === null ? (req as AuthenticatedRequest).userName : undefined;
-  return { reader, credentials: executor.credentials, userName };
+  return { reader, credentials: executor.credentials, retrievalScopeId: executor.retrievalScopeId, userName };
 }
+
+async function pageDiscoveryOwner(req: Request, runId: string) {
+  const { owner, credentials } = context(req);
+  const run = await runForOwner(owner, runId);
+  if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+  return { owner, credentials };
+}
+
+assistantExecutionRouter.post("/:runId/panels/catalog", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const { owner, credentials } = await pageDiscoveryOwner(req, runId);
+  res.json(await readPageCatalog(owner, credentials, pageCatalogRequestSchema.parse(req.body ?? {})));
+}));
+
+assistantExecutionRouter.post("/:runId/panels/search", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const { owner, credentials } = await pageDiscoveryOwner(req, runId);
+  res.json(await searchPages(owner, credentials, pageSearchRequestSchema.parse(req.body)));
+}));
+
+assistantExecutionRouter.post("/:runId/panels/description", wrap(async (req, res) => {
+  const runId = callbackRun(req, res.locals.runtimeCallback);
+  const { owner, credentials } = await pageDiscoveryOwner(req, runId);
+  res.json(await readPageDescription(owner, credentials, pageDescriptionRequestSchema.parse(req.body)));
+}));
 
 assistantExecutionRouter.post("/:runId/panels/read", wrap(async (req, res) => {
   const runId = callbackRun(req, res.locals.runtimeCallback);
   const input = productPanelReadRequestSchema.parse(req.body);
-  const { reader, credentials, userName } = await panelReader(req, runId, input.source, input.memberPath);
-  res.json(await readProductPanelData(reader, credentials, input, userName));
+  const { reader, credentials, retrievalScopeId, userName } = await panelReader(req, runId, input.source, input.memberPath);
+  res.json(await readAssistantPanelMember({ owner: reader, credentials }, input, userName, retrievalScopeId ?? undefined));
 }));
 
 const assistantNestedPanelReadRequestSchema = productPanelNestedReadRequestSchema.extend({

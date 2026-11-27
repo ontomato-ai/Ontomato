@@ -22,8 +22,9 @@ import {
   isBuiltinProductId,
   isNativeApplicationEntry,
   type ApplicationEntryMenu,
-  type ApplicationEntryResolution,
+  type ApplicationOpenResponse,
   type CurrentApplicationEntry,
+  type ProductPanelResponse,
 } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import {
@@ -43,6 +44,7 @@ import {
   type FrameState,
   type PanelFrameRegistration,
 } from "./application-frame-context";
+import { routeEntryPath, routeOpenedEntry } from "./panel-entries";
 
 export interface ApplicationFrameSpec {
   applicationId: string;
@@ -64,11 +66,17 @@ export interface ApplicationFrameSpec {
  */
 const props = withDefaults(defineProps<{
   frame?: ApplicationFrameSpec | null;
+  openedEntry?: ApplicationOpenResponse | null;
   blocked?: boolean;
 }>(), {
   frame: null,
+  openedEntry: null,
   blocked: false,
 });
+
+const emit = defineEmits<{
+  "opened-entry": [path: string, entry: ApplicationOpenResponse];
+}>();
 
 const route = useRoute();
 const router = useRouter();
@@ -128,6 +136,10 @@ interface EffectiveFrame {
   singleEntry?: boolean;
 }
 
+const routeOpened = computed<ApplicationOpenResponse | null>(() =>
+  props.openedEntry ?? routeOpenedEntry(route, routeEntryPath(route)),
+);
+
 const effectiveFrame = computed<EffectiveFrame | null>(() => {
   if (props.blocked) return null;
   const hostFrame = props.frame;
@@ -149,16 +161,32 @@ const effectiveFrame = computed<EffectiveFrame | null>(() => {
 
   if (panel?.framePanelId) {
     const app = catalog.applicationById(panel.applicationId);
-    const title = app
-      ? (localizedApplicationText(app.names, language.value.locale) ?? app.id)
-      : panel.applicationId;
+    const title = localizedApplicationText(panel.menu?.names ?? app?.names, language.value.locale)
+      ?? panel.applicationId;
+    const singleEntry = panel.menu?.singleEntry ?? app?.singleEntry;
     return {
       applicationId: panel.applicationId,
       framePanelId: panel.framePanelId,
       title,
       hostGroups: null,
-      activePageId: route.path,
-      ...(app?.singleEntry !== undefined ? { singleEntry: app.singleEntry } : {}),
+      activePageId: routeEntryPath(route),
+      ...(singleEntry !== undefined ? { singleEntry } : {}),
+    };
+  }
+
+  const opened = !panel?.resolved ? routeOpened.value : null;
+  if (opened?.framePanelId) {
+    const app = catalog.applicationById(opened.applicationId);
+    const title = localizedApplicationText(opened.menu.names ?? app?.names, language.value.locale)
+      ?? opened.applicationId;
+    const singleEntry = opened.menu.singleEntry ?? app?.singleEntry;
+    return {
+      applicationId: opened.applicationId,
+      framePanelId: opened.framePanelId,
+      title,
+      hostGroups: null,
+      activePageId: routeEntryPath(route),
+      ...(singleEntry !== undefined ? { singleEntry } : {}),
     };
   }
 
@@ -175,10 +203,19 @@ const catalogApp = computed(() =>
     : null,
 );
 
+const matchingOpenedEntry = computed<ApplicationOpenResponse | null>(() => {
+  const applicationId = effectiveFrame.value?.applicationId;
+  if (!applicationId) return null;
+  const panelOpened = matchingPanelEntry.value?.openedEntry;
+  if (panelOpened?.applicationId === applicationId) return panelOpened;
+  const opened = routeOpened.value;
+  return opened?.applicationId === applicationId ? opened : null;
+});
+
 watch(
   () => effectiveFrame.value?.applicationId ?? null,
   (applicationId) => {
-    if (!applicationId) return;
+    if (!applicationId || matchingPanelEntry.value || matchingOpenedEntry.value) return;
     const app = catalog.applicationById(applicationId);
     if (app && app.panelUses === undefined) {
       void catalog.ensureApplication(applicationId).catch(() => undefined);
@@ -187,13 +224,33 @@ watch(
   { immediate: true },
 );
 
-type EntryUse = Exclude<ApplicationEntryResolution["use"], { kind: "native" }>;
+type EntryUse = Exclude<ApplicationOpenResponse["use"], { kind: "native" }>;
 const anchorUse = computed<EntryUse | null>(() => {
   const panelUse = catalogApp.value?.panelUses?.find(
     (entry): entry is EntryUse => !isNativeApplicationEntry(entry),
   );
   const matching = matchingPanelEntry.value?.use;
-  return panelUse ?? (matching && !isNativeApplicationEntry(matching) ? matching : null);
+  const opened = matchingOpenedEntry.value;
+  const openedUse = opened && !isNativeApplicationEntry(opened.use)
+    ? opened.use
+    : opened?.menu.panelUses.find((entry): entry is EntryUse => !isNativeApplicationEntry(entry)) ?? null;
+  return panelUse
+    ?? (matching && !isNativeApplicationEntry(matching) ? matching : null)
+    ?? openedUse;
+});
+
+/**
+ * Whether the application is known to have registered panel entries or known to be native-only. Until one of those
+ * answers arrives, the frame has no safe port to choose: a native port guessed early would keep the same cache key after
+ * the registered entry appears.
+ */
+const frameEntryDecisionResolved = computed(() => {
+  if (anchorUse.value) return true;
+  const panel = matchingPanelEntry.value;
+  if (panel && !panel.resolved) return false;
+  if (catalogApp.value?.panelUses !== undefined) return true;
+  if (panel?.resolved) return true;
+  return matchingOpenedEntry.value !== null;
 });
 
 function refreshFrame(change: PanelObjectChange) {
@@ -225,6 +282,35 @@ const display = usePanelConversationDisplay({
 const frameComposer = ref<{ key: string; declared: boolean } | null>(null);
 const composerClaims = ref(0);
 
+let pendingOpen: { applicationId: string; promise: Promise<ApplicationOpenResponse | null> } | null = null;
+
+async function readInitialFrame(
+  applicationId: string,
+  framePanelId: string,
+): Promise<ProductPanelResponse | null> {
+  const match = (entry: ApplicationOpenResponse | null | undefined) =>
+    entry?.applicationId === applicationId && entry.frame?.panel.id === framePanelId
+      ? entry.frame
+      : null;
+
+  const immediate = match(matchingPanelEntry.value?.openedEntry) ?? match(routeOpened.value);
+  if (immediate) return immediate;
+
+  // Yield one microtask so a child PanelApplicationRoute mounted in the same flush registers its in-flight opening.
+  await Promise.resolve();
+
+  const afterFlush = match(matchingPanelEntry.value?.openedEntry) ?? match(routeOpened.value);
+  if (afterFlush) return afterFlush;
+
+  const pending = pendingOpen;
+  if (pending && pending.applicationId === applicationId) {
+    const settled = await pending.promise;
+    return match(settled);
+  }
+
+  return null;
+}
+
 let cachedPort: { key: string; port: PanelHostPort } | null = null;
 const port = computed<PanelHostPort | null>(() => {
   const frame = effectiveFrame.value;
@@ -240,14 +326,16 @@ const port = computed<PanelHostPort | null>(() => {
     feed,
     onPanelLoaded: declared => { frameComposer.value = { key, declared }; },
   };
+  const initialFrame = () => readInitialFrame(frame.applicationId, frame.framePanelId);
   const use = anchorUse.value;
   if (use) {
-    const created = framePanelHost(frame.applicationId, use, frame.framePanelId, handleFrameObjectChange, router, chat);
+    const created = framePanelHost(frame.applicationId, use, frame.framePanelId, handleFrameObjectChange, router, chat, initialFrame);
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
+  if (!frameEntryDecisionResolved.value) return null;
   if (frame.hostGroups?.length || isBuiltinProductId(frame.framePanelId)) {
-    const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, router, chat);
+    const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, router, chat, initialFrame);
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
@@ -289,11 +377,13 @@ watch(frameKey, (nextKey, prevKey) => {
   if (nextKey !== prevKey) restoreSlot();
 }, { flush: "sync" });
 
-const activeFrameManifest = computed(() =>
-  frameKey.value && frameManifest.value?.key === frameKey.value
-    ? frameManifest.value.manifest
-    : undefined,
-);
+const activeFrameManifest = computed(() => {
+  if (!frameKey.value) return undefined;
+  if (frameManifest.value?.key === frameKey.value) return frameManifest.value.manifest;
+  const frame = matchingOpenedEntry.value?.frame;
+  if (frame && frame.panel.id === effectiveFrame.value?.framePanelId) return frame.panel.manifest;
+  return undefined;
+});
 
 const frameState = computed((): FrameState => {
   if (!effectiveFrame.value) return {};
@@ -362,6 +452,7 @@ watch([() => route.fullPath, frameKey], () => {
 
 const entryMenu = computed<ApplicationEntryMenu>(() => {
   if (matchingPanelEntry.value?.menu) return matchingPanelEntry.value.menu;
+  if (matchingOpenedEntry.value?.menu) return matchingOpenedEntry.value.menu;
   const app = catalogApp.value;
   const frame = effectiveFrame.value;
   const panelUses = app?.panelUses ?? [];
@@ -387,6 +478,16 @@ const currentEntryValue = computed<CurrentApplicationEntry>(() => {
       useId: panel.use.id,
       pageKey: panel.use.pageKey,
       ...("panelId" in panel.use ? { panelId: panel.use.panelId, kind: "panel" } : { kind: panel.use.kind }),
+      path: frame?.activePageId ?? route.path,
+    };
+  }
+  const opened = matchingOpenedEntry.value;
+  if (opened) {
+    return {
+      applicationId: opened.applicationId,
+      useId: opened.use.id,
+      pageKey: opened.use.pageKey,
+      ...("panelId" in opened.use ? { panelId: opened.use.panelId, kind: "panel" } : { kind: opened.use.kind }),
       path: frame?.activePageId ?? route.path,
     };
   }
@@ -453,6 +554,16 @@ provide(applicationFrameHostKey, {
     return () => {
       if (panelEntryRef.value === registration) panelEntryRef.value = null;
     };
+  },
+  beginOpen(applicationId, promise) {
+    const record = { applicationId, promise };
+    pendingOpen = record;
+    return () => {
+      if (pendingOpen === record) pendingOpen = null;
+    };
+  },
+  reportOpenedEntry(path, entry) {
+    emit("opened-entry", path, entry);
   },
 });
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef, useAttrs, watch, type Component } from "vue";
+import { computed, getCurrentInstance, inject, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef, useAttrs, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
@@ -10,7 +10,7 @@ import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance, t
 import { localDraftStoreKey } from "./local-drafts";
 import { memberComponentId } from "./projection-element";
 import { declaredComponentProps, placementListeners } from "./projection-attrs";
-import { panelMemberKey, type PanelMemberContext } from "./member";
+import { panelMemberHostHiddenKey, panelMemberHostVisibilityKey, panelMemberKey, type PanelMemberContext } from "./member";
 import { hasDeclaredComponentAncestor, useFormFieldSlot, useListRowSlot } from "./slot-context";
 import { useDataStateLabels } from "../base/data-state-labels";
 
@@ -129,6 +129,10 @@ provide(panelContextKey, directPanelContext(props.instance));
 if (props.instance.localDrafts) provide(localDraftStoreKey, props.instance.localDrafts);
 provide(projectionKey, { slot: props.member, get projection() { return loaded.value!.slot.projection; }, get inputs() { return loaded.value!.member.inputs.value; } });
 provide(panelMemberKey, () => loaded.value!.member);
+const setHostHidden = inject(panelMemberHostHiddenKey, null);
+if (setHostHidden) {
+  provide(panelMemberHostVisibilityKey, { owner: getCurrentInstance()!, setHidden: setHostHidden });
+}
 /**
  * What the component takes as its own props: its fixed configuration, the values that follow the page (those of this
  * placement and its declared inputs), and the panel's listeners. Any undeclared value is filtered out so it does not fall

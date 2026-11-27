@@ -30,8 +30,6 @@ const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   resolve: vi.fn(),
   pages: vi.fn(),
-  resolveMember: vi.fn(),
-  loadedMember: vi.fn(),
   restore: vi.fn(),
   sessionActor: vi.fn(),
   notify: vi.fn(),
@@ -90,8 +88,6 @@ vi.mock("../../assistant/store", () => ({ assistantStore: { turn: async () => ({
 vi.mock("../../assistant/execution-setting", () => ({ resolveAgentExecution: mocks.resolve }));
 vi.mock("../../assistant/skills", () => ({
   readAssistantSkillView: mocks.pages,
-  resolvePageSkillSource: mocks.resolveMember,
-  loadedPageSkillVersion: mocks.loadedMember,
 }));
 vi.mock("../../../utils/backend-client", async importOriginal => ({
   ...await importOriginal<typeof import("../../../utils/backend-client")>(),
@@ -144,7 +140,7 @@ import {
   dispatchHumanPanelOperation, prepareHumanPanelOperation,
   readPanelOperation,
 } from "../operations";
-import { readProductPanelData } from "../data-reads";
+import { readScopedPanelData } from "../data-reads";
 
 configureI18n({
   defaultLocale: "en",
@@ -297,10 +293,7 @@ beforeEach(() => {
     }
     throw new HttpError(404, `Unexpected backend GET: ${url}`, "NOT_FOUND");
   });
-  mocks.pages.mockResolvedValue({ resolveSource: mocks.resolveMember });
-  mocks.resolveMember.mockResolvedValue(skill);
-  mocks.loadedMember.mockImplementation((ref: unknown, loaded: RuntimeRun["resolvedSkills"]) =>
-    loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
+  mocks.pages.mockResolvedValue({});
   mocks.restore.mockResolvedValue({ owner });
   mocks.session.mockImplementation(async () => ({ messages: humanAnswer ? [{ message: humanAnswer }] : [] }));
   mocks.request.mockImplementation(async (path: string, _method: string, body?: { source?: unknown }, questionId?: string) => {
@@ -445,7 +438,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readProductPanelData(owner, credentials, {
+    const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "tasks" }],
       dataName: "rows",
@@ -502,7 +495,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     });
     vi.stubGlobal("fetch", availabilityRpc);
 
-    const res = await readProductPanelData(owner, credentials, {
+    const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "members" }], dataName: "rows", inputs: {},
     });
@@ -821,7 +814,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    await expect(readProductPanelData(owner, credentials, {
+    await expect(readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "tasks" }],
       operations: true,
@@ -998,7 +991,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readProductPanelData(owner, credentials, {
+    const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "panels" }],
       dataName: "rows",
@@ -1108,7 +1101,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       },
     }));
 
-    const res = await readProductPanelData(owner, credentials, {
+    const res = await readScopedPanelData(owner, credentials, {
       source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "items" }],
       dataName: "rows",

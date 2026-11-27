@@ -3,6 +3,9 @@ package io.ontomato.dataengine.service.agent;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -101,15 +104,21 @@ public class OntologyAgentAccess {
     if(context.callerId()==null)return context;
     var row=executionCaller(context.access(),context.callerId());
     if(!row.getString("user_id").equals(context.access().user().getId()))service(request);
-    var scoped=scopedQuery(context.access(),row,context.access().classNames()).withExecution(row.getJSONObject("input").getString("executionUserId"),row.getString("user_id"));
+    var scoped=scopedQuery(context.access(),row,false).withExecution(row.getJSONObject("input").getString("executionUserId"),row.getString("user_id"));
     return new Context(OntologyAgentStore.owner(row),scoped,context.token(),context.apiKey(),context.language(),
         scoped.expiresAt(),context.callerId(),row.getJSONObject("input").getString("executionUserId"));
   }
 
   private JSONObject executionCaller(QueryAccessService.Access access, String callerId) {
     var row = store.serviceCaller(AgentJson.id(callerId), access.user().getDomainId());
-    String executor = row.getJSONObject("input").getString("executionUserId");
-    if (!access.user().getId().equals(executor == null ? row.getString("user_id") : executor))
+    if (!(row.get("input") instanceof JSONObject input)
+        || !(row.get("user_id") instanceof String initiator) || initiator.isBlank())
+      throw invalidCallerScope();
+    var storedExecutor = input.get("executionUserId");
+    if (storedExecutor != null && (!(storedExecutor instanceof String executorId) || executorId.isBlank()))
+      throw invalidCallerScope();
+    String executor = (String) storedExecutor;
+    if (!access.user().getId().equals(executor == null ? initiator : executor))
       throw new AgentHttpException(403, "FORBIDDEN", "Caller belongs to another execution user");
     return row;
   }
@@ -117,15 +126,31 @@ public class OntologyAgentAccess {
   /** Reuses the existing caller scope for assistant metadata and direct query commands. */
   public QueryAccessService.Access scopedQuery(QueryAccessService.Access access, String callerId) {
     var caller = executionCaller(access,callerId);
-    return scopedQuery(access,caller,caller.getJSONObject("input").getList("classNames", String.class));
+    return scopedQuery(access,caller,true);
   }
-  private QueryAccessService.Access scopedQuery(QueryAccessService.Access access,JSONObject caller,java.util.List<String> classes) {
-    if (caller.getBooleanValue("closed")) throw new AgentHttpException(409, "RETRIEVAL_RUN_CLOSED", "Caller is closed");
-    long deadline=java.time.Instant.parse(caller.getString("deadline")).toEpochMilli();
+  private QueryAccessService.Access scopedQuery(QueryAccessService.Access access, JSONObject caller, boolean useStoredClasses) {
+    if (!(caller.get("closed") instanceof Boolean closed) || !(caller.get("deadline") instanceof String expires))
+      throw invalidCallerScope();
+    if (closed) throw new AgentHttpException(409, "RETRIEVAL_RUN_CLOSED", "Caller is closed");
+    long deadline;
+    try {
+      deadline = Instant.parse(expires).toEpochMilli();
+    } catch (DateTimeParseException | ArithmeticException invalidDeadline) {
+      throw invalidCallerScope();
+    }
     if(deadline<=System.currentTimeMillis())throw new AgentHttpException(403,"CALLER_EXPIRED","Caller has expired");
+    // Access normalizes null to an empty list. Only an explicit stored list may represent no extra restriction.
+    if (!(caller.getJSONObject("input").get("classNames") instanceof List<?> storedClasses)
+        || storedClasses.stream().anyMatch(value -> !(value instanceof String name) || name.isBlank()))
+      throw invalidCallerScope();
+    var classes = useStoredClasses ? storedClasses.stream().map(String.class::cast).toList() : access.classNames();
     return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(),
         access.expiresAt()==null?deadline:Math.min(access.expiresAt(),deadline), classes, access.target(),
         caller.getJSONObject("input").getString("executionUserId"), access.initiatorUserId()==null?access.user().getId():access.initiatorUserId());
+  }
+
+  private static AgentHttpException invalidCallerScope() {
+    return new AgentHttpException(403, "FORBIDDEN", "The stored caller scope is invalid");
   }
 
   public String exploration(

@@ -10,7 +10,7 @@ import {applicationCatalogSchema,applicationRootPath,isPanelApplication} from '@
 import {localizedApplicationText} from '@ontomato/contracts/application-metadata';
 import {defaultPersonalWorkspace,personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
-import type {ProductOwner} from '../product-governance/grants';
+import type {ProductOwner} from '../product-governance/service-authentication';
 async function preferences(owner:ProductOwner){
   const result=await getPostgresPool().query(`SELECT overlay.preferences FROM ${t('product_home')} home JOIN ${t('product_user_overlays')} overlay ON overlay.domain_id=home.domain_id AND overlay.principal_id=home.user_id AND overlay.page_id=home.asset_id WHERE home.domain_id=$1 AND home.user_id=$2`,[owner.domainId,owner.userId]);
   return result.rows[0]?personalWorkspaceSchema.parse(result.rows[0].preferences):defaultPersonalWorkspace();

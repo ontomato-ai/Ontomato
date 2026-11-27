@@ -10,7 +10,7 @@ import { assertManagement } from "../../identity/management";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { PanelReadServerOperation } from "../product-panels/server-operations";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { countFeedback, listFeedback } from "./feedback-store";
 import { exportFeedback, feedbackExportTimeZone } from "./feedback-export";
 
@@ -72,8 +72,8 @@ function feedbackRow(record: FeedbackRecord, fieldLabels: Record<string, string>
   };
 }
 
-export function createFeedbackReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
-  const t = (key: string) => tForLocale(viewer.locale, key);
+function feedbackReads(owner: ProductOwner, locale: string | undefined, requireAccess: () => Promise<void> | void) {
+  const t = (key: string) => tForLocale(locale, key);
   const fieldLabels = () => ({
     sourceType: t("api.feedback.filters.sourceType"),
     rating: t("api.feedback.filters.rating"),
@@ -88,7 +88,6 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
     relatedId: t("api.feedbackExport.columns.relatedId"),
     updatedAt: t("api.feedbackExport.columns.updatedAt"),
   });
-  const requireAccess = () => assertManagement(workbenchManagement.feedbackRead, owner, viewer);
 
   return {
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
@@ -105,7 +104,7 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
         rating: rating && rating !== "all" ? rating : undefined,
         limit: effectiveSize,
         offset,
-        locale: viewer.locale,
+        locale,
       });
       const labels = fieldLabels();
       return {
@@ -141,13 +140,24 @@ export function createFeedbackReadAdapter(owner: ProductOwner, viewer: Assistant
         domainId: owner.domainId,
         feedbackId: primaryKey,
         all: true,
-        locale: viewer.locale,
+        locale,
       });
       const found = page.records[0];
       if (!found) throw new HttpError(404, "Feedback record not found", "NOT_FOUND");
       return feedbackRow(found, fieldLabels());
     },
   };
+}
+
+export function createFeedbackReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  return feedbackReads(owner, viewer.locale, () => assertManagement(workbenchManagement.feedbackRead, owner, viewer));
+}
+
+export function createRegisteredFeedbackReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
+  return feedbackReads(owner, locale, () => {
+    if (javaFacts !== workbenchManagement.feedbackRead.id)
+      throw new HttpError(502, "Invalid feedback read approval", "PANEL_READ_OWNER_RESPONSE_INVALID");
+  });
 }
 
 const exportInputSchema = queryInputSchema.pick({ search: true, sourceType: true, rating: true })

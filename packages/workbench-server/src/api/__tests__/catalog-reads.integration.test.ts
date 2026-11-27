@@ -1,3 +1,5 @@
+import { catalogueOwnerRead } from "../../__tests__/fixtures/workbench-panel-read-facts";
+import { mountWorkbenchPanelReadsOwner } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -12,14 +14,13 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
-import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
-import { HttpError } from "../../utils/errors";
 import { installContentLayout } from "../../content/layout";
 import { config } from "../../config/application";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../../services/product-panels/catalog-reads";
@@ -38,18 +39,6 @@ vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
-vi.mock("../../services/product-governance/grants", async original => ({
-  ...await original<typeof import("../../services/product-governance/grants")>(),
-  grantedProductIds: async (verb: "use" | "edit") => verb === "use" ? state.use : state.edit,
-  productGrantAllowed: async (id: string, verb: "use" | "edit") => (verb === "use" ? state.use : state.edit).includes(id),
-  productManagementAccess: async (target: { id: string; kind: string }, ownerFacts: { ownerId: string | null }) =>
-    productGrantCheck({ target, ownerFacts }, "viewer", (id, verb) => (verb === "use" ? state.use : state.edit).includes(id)),
-  requireProductGrant: async (id: string, verb: "use" | "edit") => {
-    if (!(verb === "use" ? state.use : state.edit).includes(id))
-      throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
-  },
-}));
-
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
   requireDomainId: () => "domain",
@@ -152,10 +141,12 @@ beforeAll(async () => {
   const { productPanelsRouter, panelOperationsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
-  mountEntryDependencyOwner(app, { prefix: "/java", token: "governance", entries: domain => domain === owner.domainId
+  mountEntryDependencyOwner(app, { prefix: "/java", token: "governance", entries: domain => domain === null || domain === owner.domainId
     ? entryValues.panelUses.map(use => ({
       entryId: `${applicationId}/${use.id}`,
-      roots: { panelIds: [...new Set([use.panelId, entryValues.framePanelId])], agentIds: [] },
+      domainId: owner.domainId,
+      roots: { panelIds: [...new Set([use.panelId, entryValues.framePanelId])], agentIds: [],
+        contentPanelId: use.panelId, framePanelId: entryValues.framePanelId },
     })) : [] });
   mockApplicationEntry(app, "/java/platform/applications", (req, res) => {
     expect([viewer.token, "executor"]).toContain(req.header("tk"));
@@ -212,9 +203,11 @@ beforeAll(async () => {
     const identity = req.body.section === "identity";
     expect(req.header("tk")).toBe(draft ? viewer.token : "executor");
     expect(req.body.target.kind).toBe(draft ? "draft" : "object");
-    formReads.push(req.body);
+    const current = draft ? initialCreateValues : identity ? identityValues : entryValues;
+    const values = req.body.mergeCurrentValues ? { ...current, ...req.body.values } : req.body.values;
+    formReads.push({ ...req.body, ...(values !== undefined && { values }) });
     res.json({ success: true, data: {
-      fields: [], values: req.body.values ?? (draft ? initialCreateValues : identity ? identityValues : entryValues), errors: [],
+      fields: [], values: values ?? current, errors: [],
       save: { method: "PUT",
         path: `/platform/applications/${draft ? draftId : applicationId}/${identity ? "identity" : "panel-uses"}${draft ? "?create=true" : ""}`,
         bodySchema: {} },
@@ -231,10 +224,14 @@ beforeAll(async () => {
     writes.push({ path: req.originalUrl, actor: req.header("tk"), body: req.body });
     res.json({ success: true });
   });
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     Object.assign(req, owner, { token: req.header("tk") ?? viewer.token });
     next();
-  });
+  };
+  mountWorkbenchPanelReadsOwner(app, { prefix: "/java", token: "governance", viewer: () => owner, read: catalogueOwnerRead });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api", panelOperationsRouter);
   server = app.listen(0, "127.0.0.1");
@@ -569,7 +566,7 @@ it("checks partial application drafts against Java's current identity and entry 
   ];
   for (const { section, values, expected } of cases) {
     const checked = await readCatalogue("appForm", { application, section, values }, "executor");
-    expect(formReads.at(-1)).toMatchObject({ section, values: expected });
+    expect(formReads.at(-1)).toMatchObject({ section, mergeCurrentValues: true, values: expected });
     expect(checked).toMatchObject({ values: expected, errors: [] });
   }
   expect(writes).toHaveLength(writesBefore);

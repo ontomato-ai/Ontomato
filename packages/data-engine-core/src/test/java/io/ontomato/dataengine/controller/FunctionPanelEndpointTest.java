@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -53,7 +54,7 @@ class FunctionPanelEndpointTest {
 
   @Test
   void theListCarriesTheOperationLabelAndKeepsTheFunctionFields() throws Exception {
-    when(functionService.listVisible(isNull(), isNull(), any(User.class))).thenReturn(List.of(
+    when(functionService.listVisible(isNull(), isNull(), any(SubjectContext.class))).thenReturn(List.of(
         function("f1", "Revenue query", Function.OPERATION_READ),
         function("f2", "Write order", Function.OPERATION_WRITE),
         function("f3", "Product source", Function.OPERATION_PRODUCT)));
@@ -180,7 +181,7 @@ class FunctionPanelEndpointTest {
     assertEquals("FUNCTION_NOT_FOUND", perform("/function/deleteRefusal", """
         {"id":"f9"}""").getString("code"));
 
-    when(functionService.form(any(), eq("en"), eq("domain")))
+    when(functionService.form(any(), eq("en"), any(SubjectContext.class)))
         .thenThrow(new OwnerRefusal("FUNCTION_NOT_FOUND", "Function not found"));
     JSONObject form = perform("/function/form", """
         {"target":{"kind":"object","objectType":"platform:Function","primaryKey":"missing"},"changedField":null}""");
@@ -192,7 +193,7 @@ class FunctionPanelEndpointTest {
 
   @Test
   void aDraftsFieldErrorsAreASuccessfulFormRead() throws Exception {
-    when(functionService.form(any(), eq("en"), eq("domain"))).thenReturn(JSONObject.of(
+    when(functionService.form(any(), eq("en"), any(SubjectContext.class))).thenReturn(JSONObject.of(
         "fields", new JSONArray(), "values", JSONObject.of("name", ""),
         "errors", List.of(FormFields.error("/queryPackage", "required", "queryPackage is required")),
         "save", JSONObject.of("path", "/function/save")));

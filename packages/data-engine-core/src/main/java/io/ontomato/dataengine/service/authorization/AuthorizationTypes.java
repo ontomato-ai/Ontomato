@@ -28,6 +28,16 @@ public final class AuthorizationTypes {
     public record PolicyRef(String roleId, String policyId, PolicyKind kind) {}
 
     public record ObjectGrant(String policyId, ObjectTarget target, Verb verb, GrantScope scope) {}
+
+    /** What one policy brings to a subject, with the roles that carry the policy. */
+    public record PolicyAttribution(String policyId, List<String> roleIds, Set<String> managementOperations,
+                                    List<ObjectGrant> objectGrants) {}
+
+    /**
+     * Every policy that reaches a subject, kept apart so a page can say where each right comes from. An administrator
+     * holds every management operation through the role rather than through a policy, which {@code administrator} reports.
+     */
+    public record SubjectAttribution(boolean administrator, List<PolicyAttribution> policies) {}
     public record AgentPolicyGrant(String policyId, String name, Verb level) {}
 
     public record ObjectGrantView(String policyId, String name, Verb verb) {}
@@ -37,6 +47,7 @@ public final class AuthorizationTypes {
 
     public record RoleSource(String grantId, String grantType, String sourceId, String orgId, String roleId) {}
 
+    /** Role facts for the resolved subject, including its domain administration status. */
     public record RoleResolution(
             Set<String> effectiveRoleIds,
             Set<String> directRoleIds,
@@ -44,6 +55,7 @@ public final class AuthorizationTypes {
             Set<String> membershipRoots,
             Map<String, Set<String>> grantRootsByRole,
             boolean administrator) {
+
         public Set<String> rootsForRole(String roleId) {
             var roots = new java.util.LinkedHashSet<>(grantRootsByRole.getOrDefault(roleId, Set.of()));
             if (directRoleIds.contains(roleId)) roots.addAll(membershipRoots);

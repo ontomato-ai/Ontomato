@@ -426,9 +426,18 @@ public class MetricViewServiceImpl implements MetricViewService {
 
   @Override
   public String systemDeletionRefusal(String id, String domainId, String lang) {
+    return systemDeletionRefusal(id, domainId, lang, () -> definitions.current());
+  }
+
+  @Override
+  public String systemDeletionRefusal(String id, String lang, SubjectContext subject) {
+    return systemDeletionRefusal(id, subject.identity().domainId(), lang, () -> subject);
+  }
+
+  private String systemDeletionRefusal(String id, String domainId, String lang, java.util.function.Supplier<SubjectContext> subject) {
     MetricView metric = queryById(id, domainId);
     if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
-    definitions.require(definitions.current(), access(metric, Verb.EDIT));
+    definitions.require(subject.get(), access(metric, Verb.EDIT));
     OwnerRefusal refusal = systemDeletionRefusal(metric, lang);
     return refusal == null ? null : refusal.getMessage();
   }
@@ -518,15 +527,16 @@ public class MetricViewServiceImpl implements MetricViewService {
   }
 
   @Override
-  public long count(String status, String functionId, String className, String origin, String domainId) {
+  public long count(String status, String functionId, String className, String origin, SubjectContext subject) {
+    var domainId = subject.identity().domainId();
     Objects.requireNonNull(domainId, "Current domain is required");
-    var subject = definitions.current();
     return metricViewDao.countCandidates(status, functionId, className, origin, domainId).stream()
         .filter(metric -> definitions.canRead(subject, access(metric, Verb.USE))).count();
   }
 
   @Override
-  public JSONObject form(JSONObject request, String lang, String domainId) {
+  public JSONObject form(JSONObject request, String lang, SubjectContext subject) {
+    String domainId = subject.identity().domainId();
     JSONObject target = request.getJSONObject("target");
     if (target == null) throw new IllegalArgumentException("target is required");
     String kind = target.getString("kind");
@@ -540,10 +550,10 @@ public class MetricViewServiceImpl implements MetricViewService {
         throw new IllegalArgumentException("target.primaryKey: expected a metric id");
       metric = queryById(primaryKey, domainId);
       if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
-      definitions.requireRead(definitions.current(), access(metric, Verb.USE));
+      definitions.requireRead(subject, access(metric, Verb.USE));
       existing = true;
     } else if ("draft".equals(kind)) {
-      definitions.require(definitions.current(), new Create(Kind.METRIC));
+      definitions.require(subject, new Create(Kind.METRIC));
       metric = MetricViewForm.defaults().to(MetricView.class);
       metric.setDomainId(domainId);
       metric.getFunction().setDomainId(domainId);

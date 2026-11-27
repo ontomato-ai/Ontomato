@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import type { AffectedEntryRoot } from "@ontomato/contracts/entry-dependencies";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringInlineMemberSchema, panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { panelModuleImports } from "@ontomato/contracts/panel-module";
@@ -21,7 +22,7 @@ import { validateBuiltinProductReferences } from "./references";
 import { platformTypeEntries } from "./type-table";
 import { declaredProjectionAgents, entryDependencyCompiler } from "./entry-dependency-compiler";
 import { compileRegisteredPanelRoots, installBuiltinPanelDependencies, saveBoundEntryDependencies } from "./entry-dependency-store";
-import { readAffectedEntryRoots } from "./entry-dependency-publication";
+import { deliverPendingEntryDependencyPublications, readAffectedEntryRoots } from "./entry-dependency-publication";
 
 const workspaceIdentity = z.object({
   panels: z.array(z.object({
@@ -159,18 +160,29 @@ export async function installRegisteredPanelDependencies() {
        FROM (SELECT domain_id FROM ${panels} UNION SELECT domain_id FROM ${details}) AS domains
        ORDER BY domain_id`, [BUILTIN_PRODUCT_ID_PREFIX],
     );
-    for (const { domain_id, panel_ids, detail_panel_ids } of rows) {
-      await lockProducts(client, { domainId: domain_id });
-      const knownPanels = [...panel_ids, ...builtin.rows.map(({ id }) => id)];
-      const entries = knownPanels.length ? await readAffectedEntryRoots(domain_id, knownPanels) : [];
-      const roots = new Set([...detail_panel_ids, ...entries.flatMap(({ roots }) => roots.panelIds)]);
-      await compileRegisteredPanelRoots(client, domain_id, roots);
-      const compile = entryDependencyCompiler(client, domain_id);
-      for (const { entryId, roots: { boundPanelRoot } } of entries) {
+    const knownPanels = [...new Set([...builtin.rows.map(({ id }) => id), ...rows.flatMap(row => row.panel_ids)])];
+    const entries = knownPanels.length ? await readAffectedEntryRoots(null, knownPanels) : [];
+    const scopes = new Map<string, AffectedEntryRoot[]>(rows.map(row => [row.domain_id, []]));
+    for (const entry of entries) {
+      const scope = entry.domainId ?? "";
+      const group = scopes.get(scope) ?? [];
+      group.push(entry);
+      scopes.set(scope, group);
+    }
+    const detailPanels = new Map(rows.map(row => [row.domain_id, row.detail_panel_ids]));
+    for (const [scope, registeredRoots] of [...scopes].sort(([a], [b]) => a.localeCompare(b))) {
+      const domainId = scope || null;
+      await lockProducts(client, { domainId: scope });
+      const roots = new Set([...(detailPanels.get(scope) ?? []), ...registeredRoots.flatMap(({ roots }) => roots.panelIds)]);
+      if (domainId !== null) await compileRegisteredPanelRoots(client, domainId, roots);
+      const compile = entryDependencyCompiler(client, domainId);
+      for (const { entryId, roots: { boundPanelRoot } } of registeredRoots) {
         if (boundPanelRoot)
-          await saveBoundEntryDependencies(client, domain_id, entryId, boundPanelRoot,
+          await saveBoundEntryDependencies(client, scope, entryId, boundPanelRoot,
             await compile(boundPanelRoot.panelId, boundPanelRoot.inputs));
       }
+
     }
   });
+  await deliverPendingEntryDependencyPublications();
 }

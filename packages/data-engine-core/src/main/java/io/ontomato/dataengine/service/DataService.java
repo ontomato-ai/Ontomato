@@ -7,7 +7,7 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 public interface DataService {
 	
-	public JSONObject queryInstanceGraph(String operation, JSONObject request, UserDataPermission permission, String domainId);
+	public JSONObject queryInstanceGraph(String operation, JSONObject request, UserDataPermission permission, String domainId, ExecutionTarget target);
 	
 	public JSONObject queryInfoByNode(JSONObject node, String lang, UserDataPermission permission, String domainId);
 

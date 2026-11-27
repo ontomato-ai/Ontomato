@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service;
 
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.subject;
+
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -29,6 +32,8 @@ class ActionFormTest {
   private final FunctionDao functionDao = mock(FunctionDao.class);
   private final AdminService adminService = mock(AdminService.class);
   private final LangService langService = mock(LangService.class);
+
+  private final SubjectContext actor = subject("domain-a", "author");
 
   @BeforeEach
   void setup() {
@@ -124,7 +129,7 @@ class ActionFormTest {
     request.put("values", values);
     request.put("changedField", "/function/parameters");
 
-    JSONObject form = service.definitionForm(request, "en", new QueryAccessService.GrantUser("author", "domain-a"));
+    JSONObject form = service.definitionForm(request, "en", actor);
 
     assertSame(values, form.getJSONObject("values"));
     JSONArray keyOptions = field(field(form, "/target").getJSONObject("control").getJSONArray("fields"), "/keyParameter")
@@ -166,7 +171,7 @@ class ActionFormTest {
     JSONObject request = JSONObject.of("target", JSONObject.of("kind", "draft"));
     request.put("values", values);
     request.put("changedField", null);
-    JSONObject form = service.definitionForm(request, "en", new QueryAccessService.GrantUser("author", "domain-a"));
+    JSONObject form = service.definitionForm(request, "en", actor);
     return (List<ObjectNode>) form.get("errors");
   }
 
@@ -179,7 +184,7 @@ class ActionFormTest {
   }
 
   private JSONObject form(JSONObject request) {
-    return service.definitionForm(request, "en", new QueryAccessService.GrantUser("author", "domain-a"));
+    return service.definitionForm(request, "en", actor);
   }
 
   private JSONObject objectTarget(String id) {

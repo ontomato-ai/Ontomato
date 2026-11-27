@@ -42,7 +42,7 @@ const imported: PanelOperationOutcome = {
 };
 
 /** Mounts the control; with `exists`, the owner refuses the first import of the name. */
-function open(exists: boolean) {
+function open(exists: boolean, unavailable?: { reason: string }) {
   const uploads: File[] = [];
   const prepared: unknown[] = [];
   const preparations: PanelHumanOperationPreparation[] = [];
@@ -81,7 +81,10 @@ function open(exists: boolean) {
         ? { kind: "refusal", code: "SKILL_EXISTS", message: "A skill named alpha already exists.", details: { skillId: "alpha" } }
         : imported } }),
     readProjection: async () => importer,
-    read: async (request) => ({ status: "ready", value: (request.operations ? { import: importSkill } : null) as never }),
+    read: async (request) => ({
+      status: "ready",
+      value: (request.operations ? { import: unavailable ? { ...importSkill, unavailable } : importSkill } : null) as never,
+    }),
   });
   const element = document.createElement("div");
   document.body.append(element);
@@ -155,4 +158,34 @@ it("names a file of the wrong kind or size at once and sends nothing", async () 
   expect(uploads).toEqual([]);
   expect(prepared).toEqual([]);
   unmount();
+});
+
+it("shows an unavailable upload operation's reason in a hover/focus tooltip without rendering a second line", async () => {
+  const { element, uploads, prepared, unmount } = open(false, { reason: "Imports are disabled in read-only workspaces" });
+  try {
+    await vi.waitFor(() => expect(element.querySelector<HTMLElement>(".sdk-unavailable-trigger")).not.toBeNull());
+    expect(element.querySelector(".sdk-file-upload-hint")).toBeNull();
+    expect(element.textContent).not.toContain("Imports are disabled in read-only workspaces");
+
+    const trigger = element.querySelector<HTMLElement>(".sdk-unavailable-trigger")!;
+    expect(trigger.getAttribute("tabindex")).toBe("0");
+    expect(trigger.getAttribute("aria-label")).toBe("Import: Imports are disabled in read-only workspaces");
+
+    const button = element.querySelector<HTMLButtonElement>(".sdk-file-upload-trigger")!;
+    expect(button.disabled).toBe(true);
+
+    trigger.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+    await vi.waitFor(() => {
+      const popper = [...document.body.querySelectorAll<HTMLElement>(".el-popper")].find(
+        (node) => node.textContent?.includes("Imports are disabled in read-only workspaces") && node.style.display !== "none",
+      );
+      expect(popper).toBeDefined();
+    });
+    trigger.click();
+    button.click();
+    expect(uploads).toEqual([]);
+    expect(prepared).toEqual([]);
+  } finally {
+    unmount();
+  }
 });

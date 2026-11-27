@@ -1,12 +1,14 @@
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import type { PanelRecord } from "@ontomato/contracts/panel-projection";
+import { panelReadParameterSchemas, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { RECENT_VISIT } from "@ontomato/contracts/platform-object-types";
+import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { personalWorkspaceStore } from "../personal-workspace/store";
-import type { ProductOwner } from "../product-governance/grants";
-import { applicationCatalogueClient } from "./application-catalogue";
+import type { ProductOwner } from "../product-governance/service-authentication";
+import { APPLICATION_NAVIGATION_READ, applicationCatalogueClient, applicationNavigationFactsSchema } from "./application-catalogue";
 import { formatShortDateTime } from "./agent-session-panel";
+import type { PanelReadSelection } from "./panel-owner-reads";
 
 const recentText = (locale: string | undefined, key: string) => tForLocale(locale, `panels.recentVisit.${key}`);
 
@@ -23,7 +25,10 @@ function extractVisitContext(rawPath: string): string {
   return "";
 }
 
-export function createRecentVisitReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+export function createRecentVisitReadAdapter(
+  owner: ProductOwner, viewer: AssistantCredentials,
+  readApplications: () => Promise<CatalogApplication[]> = () => applicationCatalogueClient(viewer).navigation().catch(() => []),
+) {
   const language = resolveLocale(viewer.locale);
   const fieldLabels = {
     title: recentText(viewer.locale, "title"),
@@ -37,7 +42,7 @@ export function createRecentVisitReadAdapter(owner: ProductOwner, viewer: Assist
       const limit = Math.max(1, Math.min(20, params.limit ?? 8));
       const [visits, catalog] = await Promise.all([
         personalWorkspaceStore.recent(owner),
-        applicationCatalogueClient(viewer).navigation().catch(() => []),
+        readApplications(),
       ]);
       const appsById = new Map(catalog.map(app => [app.id, app]));
       const visible = catalog.length > 0
@@ -74,6 +79,20 @@ export function createRecentVisitReadAdapter(owner: ProductOwner, viewer: Assist
           },
         };
       });
+    },
+  };
+}
+
+export function prepareRecentVisitRead(
+  owner: ProductOwner, viewer: AssistantCredentials, selection: PanelReadSelection, params: Record<string, unknown>,
+) {
+  if (selection.typeId !== RECENT_VISIT || selection.method !== "list") return undefined;
+  const limit = panelReadParameterSchemas.limit.optional().parse(params.limit);
+  return {
+    call: APPLICATION_NAVIGATION_READ,
+    present(facts: unknown) {
+      const applications = applicationNavigationFactsSchema.parse(facts);
+      return createRecentVisitReadAdapter(owner, viewer, async () => applications).list({ limit });
     },
   };
 }

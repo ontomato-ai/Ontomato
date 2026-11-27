@@ -82,9 +82,7 @@ async function loadRetentionState(): Promise<RetentionControlFile> {
     return parsed;
   } catch (error) {
     if ((error as { code?: unknown }).code === "ENOENT") {
-      const state: RetentionControlFile = { version: 1, kept: [] };
-      await persistRetentionState(state);
-      return state;
+      return { version: 1, kept: [] };
     }
     throw error;
   }

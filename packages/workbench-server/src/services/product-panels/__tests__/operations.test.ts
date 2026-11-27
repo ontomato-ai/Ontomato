@@ -17,9 +17,9 @@ import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import { openPresentationView } from "../../agent-host/presentation";
-const mocks = vi.hoisted(() => ({createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
+const mocks = vi.hoisted(() => ({createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
+vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test",queryServiceToken:"fixture-service"})}}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
 vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({}),findAgent:async()=>undefined}}));
@@ -33,8 +33,6 @@ vi.mock("../../assistant/definitions", () => ({
 
 vi.mock("../../assistant/skills",()=>({
   readAssistantSkillView: mocks.pages,
-  resolvePageSkillSource: mocks.resolveMember,
-  loadedPageSkillVersion: mocks.loadedMember,
 }));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,backendPost:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
@@ -112,12 +110,9 @@ beforeEach(()=>{
      throw new HttpError(404, "Unknown use", "NOT_FOUND");
    return {text:JSON.stringify({success:true,data:{applicationId:"A",use,menu:{singleEntry:true,groups:[],panelUses:[]}}})};
  });
- mocks.pages.mockResolvedValue({ resolveSource: mocks.resolveMember });
+ mocks.pages.mockResolvedValue({});
  mocks.assertPermission.mockResolvedValue(undefined);
  mocks.projectDefinition.mockImplementation(definition => definition);
- mocks.resolveMember.mockResolvedValue(skill);
- mocks.loadedMember.mockImplementation((ref, loaded: RuntimeRun["resolvedSkills"]) =>
-   loaded.find(entry => JSON.stringify(entry.skill) === JSON.stringify(ref)) ?? null);
  mocks.panel.mockResolvedValue({
    id: "P", manifest: {
      state: { task: { type: { kind: "object", objectType: "platform:Trigger" } } },
@@ -853,20 +848,6 @@ it("runs a registered read using the reader and preview context without creating
   expect(intents.size).toBe(0);
 });
 
-it("resolves the actual panel-use member and refuses a run that only loaded a sibling", async () => {
-  mocks.resolveMember.mockResolvedValue({ ...skill, name: "other-panel-skill" });
-  await expect(prepareLiveAction(action())).rejects.toMatchObject({ code: "FORBIDDEN" });
-  expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials, owner.userId);
-  expect(mocks.resolveMember).toHaveBeenCalledWith(
-    expect.objectContaining({ resolveSource: mocks.resolveMember }),
-    { applicationId: "A", entryKey: use.id, pageKey: use.pageKey },
-    { kind: "application-use", applicationId: "A", useId: "tasks" }, [], { id: use.panelId },
-  );
-  expect(mocks.loadedMember).toHaveBeenCalledWith(
-    { ...skill, name: "other-panel-skill" }, current.resolvedSkills,
-  );
-  expect(ownerWrites()).toHaveLength(0);
-});
 
 it.each([false, true])("handles an Action-backed form with another tab saving first = %s", async (humanSavesFirst) => {
  const order = { kind: "object" as const, objectType: "Order", primaryKey: "o1" };
@@ -967,6 +948,55 @@ it.each([false, true])("handles an Action-backed form with another tab saving fi
  const outcome = await dispatchHumanPanelOperation(owner, credentials, intentId);
  expect(outcome).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
  expect(JSON.stringify([outcome, intents.get(intentId)])).not.toContain(token);
+});
+
+
+it("uses the owner form's display labels in the confirmation input summary", async () => {
+  const originalBackend = mocks.backend.getMockImplementation()!;
+  mocks.panel.mockResolvedValue({
+    id: "P", manifest: { state: {}, members: { form: { target: { projectionId: "form" } } } },
+  });
+  mocks.projection.mockResolvedValue({
+    id: "form", binding: { kind: "PlatformObjectType", id: "platform:ObjectType" }, inputs: {},
+  });
+  mockRegisteredOperation({
+    handlerRef: "platform:ObjectType.save", labelKey: "test.perform", binding: { kind: "PlatformObjectType", id: "platform:ObjectType" },
+    kind: "form.save", effect: "write", batch: false, targetType: "platform:ObjectType", create: true,
+    targetSchema: z.object({ kind: z.literal("draft") }).strict(),
+    inputSchema: z.object({ values: z.record(z.unknown()) }), resultSchema: z.object({}),
+    draftInput: input => input,
+    execute: async () => ({ kind: "success", data: {}, affected: { objects: [], objectTypes: ["platform:ObjectType"] } }),
+  });
+  const textField = (path: string, label: string, required: boolean) => ({
+    path, label, control: { kind: "text" }, valueSchema: { type: "string" }, required, readOnly: false,
+  });
+  mocks.backend.mockImplementation(async (...args) => {
+    const url = new URL(args[1]);
+    if (url.pathname === "/ontology/model/object-type/form") {
+      expect(args[2]).toMatchObject({ target: { kind: "draft" }, changedField: null });
+      return { text: JSON.stringify({
+        fields: [
+          textField("/className", "API name", true),
+          textField("/primaryKeyName", "Primary key name", true),
+          textField("/showName", "Display name", true),
+          textField("/classDesc", "Description", false),
+        ],
+        values: { className: "", primaryKeyName: "", showName: "", classDesc: "" },
+        save: { method: "POST", path: "/ontology/model/object-type/create", bodySchema: { type: "object" } },
+      }) };
+    }
+    return originalBackend(...args);
+  });
+
+  await prepareLiveAction({
+    intentId: uuid(98), applicationId: "A", useId: "tasks", operationId: "form.save",
+    call: { target: { kind: "draft" }, input: { values: {
+      className: "Order", primaryKeyName: "id", showName: "Order", classDesc: "Orders",
+    } } },
+  });
+  const { message } = mocks.request.mock.calls[0]![2] as { message: string };
+  expect(message).toContain("API name, Primary key name, Display name, Description");
+  expect(message).not.toContain("className, primaryKeyName, showName, classDesc");
 });
 
 it("admits a cross-member form.save write operation bound to another form member via operationDrafts", async () => {
@@ -1422,4 +1452,74 @@ it("asks the owner for availability of a targetless write operation", async () =
   }, {});
   expect(unavailable).toHaveBeenCalledWith(expect.anything(), null);
   expect(descriptors.create?.unavailable).toEqual(reason);
+});
+
+it("describes mixed scoped Action buttons in one owner item and displays caller scope refusals", async () => {
+  const handlerRef = "test.create";
+  const unavailable = vi.fn(async () => ({ reason: "Creation is closed" }));
+  mockRegisteredOperation({
+    handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
+    kind: "action", effect: "write", batch: false, unavailable,
+    targetSchema: z.null(), inputSchema: z.object({}), resultSchema: z.object({}),
+    execute: async () => ({ kind: "success" as const, data: {} }),
+  });
+  const panel = await mocks.panel();
+  const member = { target: { projectionId: "action-buttons" } };
+  panel.manifest.members.buttons = member;
+  const first = { className: "Order", primaryKey: "O1" };
+  const second = { className: "Order", primaryKey: "O2" };
+  const action = (id: string, object: typeof first) => ({
+    operation: { kind: "Action", id }, target: { literal: object },
+  });
+  mocks.projection.mockResolvedValue({
+    id: "action-buttons", inputs: {}, binding: { kind: "Action", id: "primary" }, operations: {
+      approve: action("primary", first),
+      create: { operation: { kind: "PlatformOperation", id: handlerRef } },
+      denied: action("secondary", second),
+      hidden: action("hidden", second),
+    },
+  });
+  const { projection } = await requireDirectPanelMember(owner, credentials, panel, "buttons");
+  const actor = { owner, credentials: { apiKey: "executor-key", locale: "en" } };
+  const retrievalScopeId = uuid(39);
+  const path = {
+    source: { kind: "registered" as const, applicationId: "A", useId: "tasks" },
+    registration: { panelId: "P", framePanelId: "F", inputs: undefined }, uses: [],
+  };
+  mocks.backend.mockImplementationOnce(async (_method, url, body, options) => {
+    expect(new URL(url).pathname).toBe("/internal/workbench-panel-reads");
+    expect(options.headers).toMatchObject({
+      "X-API-Key": "executor-key", "X-Ontomato-Retrieval-Caller-Id": retrievalScopeId,
+    });
+    expect(body.reads).toEqual([{ ...path, call: {
+      type: "platform:Action", name: "executionDefinitions", parameters: {
+        actions: [
+          { primaryKey: "primary", object: first }, { primaryKey: "secondary", object: second }, { primaryKey: "hidden", object: second },
+        ],
+      },
+    } }]);
+    expect(body.reads[0]).not.toHaveProperty("visibleKinds");
+    return { text: JSON.stringify({ viewer: owner, results: [{ status: "ready", payload: [
+      { status: "ready", payload: {
+        id: "primary", name: "Approve", codeHash: "hash", target: { className: "Order", keyParameter: "order_id" },
+        function: { parameters: [{ name: "order_id", type: "TYPE_STRING" }] },
+      } },
+      { status: "forbidden", code: "ACTION_TARGET_OUT_OF_SCOPE", error: "超出本轮数据范围", payload: {
+        id: "secondary", name: "Complete order", target: { className: "Order", keyParameter: "order_id" },
+        function: { parameters: [{ name: "order_id", type: "TYPE_STRING" }] },
+      } },
+      { status: "forbidden", code: "ACTION_TARGET_OUT_OF_SCOPE", error: "Outside action permission" },
+    ] }] }) };
+  });
+
+  const result = await readAdmittedProjectionOperations(actor, { panel, member, projection, slot: "buttons" }, {}, { path, retrievalScopeId });
+  expect(result).toMatchObject({
+    approve: { label: "Approve", handlerRef: "actions.execute" },
+    create: { unavailable: { reason: "Creation is closed" } },
+    denied: { label: "Complete order", handlerRef: "actions.execute", unavailable: { reason: "超出本轮数据范围" } },
+  });
+  expect(result.approve).not.toHaveProperty("unavailable");
+  expect(Object.keys(result)).toEqual(["approve", "create", "denied"]);
+  expect(unavailable).toHaveBeenCalledWith(expect.objectContaining({ executor: actor }), null);
+  expect(mocks.backend).toHaveBeenCalledTimes(1);
 });

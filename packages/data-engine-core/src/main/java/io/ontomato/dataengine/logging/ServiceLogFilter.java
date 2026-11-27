@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.logging;
 
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.panelreads.WorkbenchPanelReadsController;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.QueryGrantService;
 import jakarta.servlet.*;
@@ -48,7 +49,7 @@ public final class ServiceLogFilter extends OncePerRequestFilter implements WebM
         });
         return true;
       }
-    });
+    }).excludePathPatterns(WorkbenchPanelReadsController.PATH);
   }
   @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
     Map<String, String> previous = ServiceLogContext.capture();

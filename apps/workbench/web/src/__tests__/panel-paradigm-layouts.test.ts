@@ -466,10 +466,11 @@ describe("ObjectHeader", () => {
         kind: "action", handlerRef: EXPORT_SKILL, label: "Export", effect: "read",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
       },
-      // Explicitly designated via per-item tone: "danger".
+      // Explicitly designated via per-item tone: "danger", currently unavailable with an owner reason.
       archive: {
         kind: "action", handlerRef: "knowledge.archive", label: "Archive", effect: "write",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
+        unavailable: { reason: "Published entries cannot be archived" },
       },
     };
 
@@ -579,6 +580,25 @@ describe("ObjectHeader", () => {
     expect(menuItems.map((el) => el.dataset.operation)).toEqual(["export", "wipe", "archive"]);
     expect(menuItems.map((el) => el.dataset.danger)).toEqual([undefined, "true", "true"]);
     expect(document.querySelector(".sdk-object-header-more-menu .el-dropdown-menu__item--divided")).not.toBeNull();
+
+    // Unavailable overflow item renders no second line, stays disabled, and exposes its reason in a hover/focus tooltip.
+    const archiveItem = menuItems.find((el) => el.dataset.operation === "archive")!;
+    expect(archiveItem.classList.contains("is-disabled")).toBe(true);
+    expect(archiveItem.querySelector(".sdk-object-header-more-reason")).toBeNull();
+    expect(archiveItem.textContent?.trim()).toBe("Archive");
+    const archiveTrigger = archiveItem.querySelector<HTMLElement>(".sdk-unavailable-trigger")!;
+    expect(archiveTrigger.getAttribute("tabindex")).toBe("0");
+    expect(archiveTrigger.getAttribute("aria-label")).toBe("Archive: Published entries cannot be archived");
+    archiveTrigger.dispatchEvent(new FocusEvent("focus", { bubbles: false }));
+    await vi.waitFor(() => {
+      const popper = [...document.body.querySelectorAll<HTMLElement>(".el-popper")].find(
+        (node) => node.textContent?.includes("Published entries cannot be archived") && node.style.display !== "none",
+      );
+      expect(popper).toBeDefined();
+    });
+    archiveTrigger.dispatchEvent(new FocusEvent("blur", { bubbles: false }));
+    archiveItem.click();
+    expect(dispatched).toEqual([]);
 
     // Clicking Purge in More triggers the host confirmation dialog & single dispatch upon confirm.
     const wipeItem = menuItems.find((el) => el.dataset.operation === "wipe")!;

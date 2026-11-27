@@ -8,7 +8,15 @@ import PanelApplicationRoute from "./PanelApplicationRoute.vue";
 const props = defineProps<{ applicationId: string; panelPath: string }>();
 const { applicationById, ensureApplication } = useApplicationCatalog();
 const application = computed(() => applicationById(props.applicationId));
-watch(() => props.applicationId, id => void ensureApplication(id).catch(() => undefined), { immediate: true });
+watch(
+  [() => props.applicationId, () => props.panelPath],
+  ([id, panelPath]) => {
+    if (!panelPath && !applicationById(id)) {
+      void ensureApplication(id).catch(() => undefined);
+    }
+  },
+  { immediate: true },
+);
 
 </script>
 

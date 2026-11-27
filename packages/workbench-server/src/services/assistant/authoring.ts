@@ -8,7 +8,7 @@ import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import { restoreAgentCaller } from "../agent-host/caller";
 import { sessionBuildTestWorkspace, WorkspaceBuildTests } from "../app-builder/build-tests";
 import { authoringAdoptionResponseSchema, type AuthoringKind, type AuthoringHostRun, type AuthoringHistoricalRun, type authoringOperations } from "@ontomato/contracts/authoring";
-import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource } from "./skills";
+import { loadedSkillVersion } from "./skills";
 import { agentExecutionCredentials, ownedRun } from "./execution";
 import type { AssistantOwner } from "./store";
 
@@ -38,12 +38,6 @@ function java(path: string, domainId: string, body: unknown, credentials: Assist
   });
 }
 
-// Authoring follows the registered catalogue and detail uses.
-const authoringUses = {
-  action: ["ontology-actions", "ontology-action-detail"],
-  "metric-view": ["ontology-metric-views", "ontology-metric-view-detail"],
-} satisfies Record<AuthoringKind, readonly string[]>;
-
 async function authoringRun(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
@@ -58,24 +52,9 @@ async function authoringRun(
       (sessionId && run.sessionId !== sessionId) || !turn.admitted) {
     throw new HttpError(404, "Authoring run not found", "NOT_FOUND");
   }
-  if (!loadedPageSkillVersion(APP_BUILDER_SKILL, run.resolvedSkills)) {
+  if (!loadedSkillVersion(APP_BUILDER_SKILL, run.resolvedSkills)) {
     if (appBuilderOnly) throw new HttpError(403, "The App Builder skill is required", "FORBIDDEN");
-    const view = await readAssistantSkillView(owner.domainId, credentials, owner.userId);
-    let admitted = false;
-    for (const useId of authoringUses[kind]) {
-      const applicationId = "ontology";
-      const group = view.pageSkills.find(({ locator }) =>
-        locator.applicationId === applicationId && locator.entryKey === useId);
-      if (!group) continue;
-      const ref = await resolvePageSkillSource(view, group.locator, { kind: "application-use", applicationId, useId }, []);
-      if (ref && loadedPageSkillVersion(ref, run.resolvedSkills)) {
-        admitted = true;
-        break;
-      }
-    }
-    if (!admitted) {
-      throw new HttpError(403, "The required authoring skill is not loaded in this run", "FORBIDDEN");
-    }
+    throw new HttpError(403, "The App Builder skill is required", "FORBIDDEN");
   }
   return {
     run,

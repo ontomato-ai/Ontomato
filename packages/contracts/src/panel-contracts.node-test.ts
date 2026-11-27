@@ -25,7 +25,6 @@ import {
   appBridgeExpandPageComposerSchema, appBridgeRequestSchema, APP_BRIDGE_CHANNEL,
 } from "./app-bridge";
 import { defaultAgentSchema } from "./default-agent";
-import { pageSkillSchema } from "./page-skills";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { zodToJsonSchema } from "zod-to-json-schema";
@@ -63,6 +62,7 @@ import {
 } from "./platform-ontology";
 import {
   APPLICATION_PANEL_USE, DEFINITION, DELETE_PERMISSION_POLICY, GRANT_POLICY_ENTRIES, INSPECT_POLICY_ACCESS,
+  PREVIEW_POLICY_ENTRY_REVOKE, REVOKE_POLICY_ENTRIES,
   LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
   PERMISSION_POLICY, PREVIEW_POLICY_ENTRY_GRANT, PRODUCT_PROJECTION,
   RESOLVE_PENDING_POLICY_GRANT, ROLE, USER as ONTOLOGY_USER,
@@ -607,7 +607,7 @@ test("skill catalogues expose authorized diagnostics and panel reads carry only 
   const { assistantSkillCatalogSchema } = await import("./assistant-chat");
   const { panelOptionListSchema, panelRecordQuerySchema } = await import("./panel-projection");
   const diagnostic = {
-    skill: { namespace: { kind: "domain", domainId: "domain-a" }, name: "pvt-panel-skill" },
+    skill: { namespace: { kind: "domain", domainId: "domain-a" }, name: "domain-panel-helper" },
     resourceId: "knowledge-panel",
     reason: "record_missing",
   };
@@ -789,11 +789,12 @@ test("feedback, governance records and the skill library read through their owne
 test("permission policy describes and saves all grants through its owner form", () => {
   const policy = platformObjectTypes[PERMISSION_POLICY];
   assert.deepEqual(Object.keys(policy.reads ?? {}).sort(), [
-    "count", "createForm", "form", "options", "query", "record", "resolve",
+    "count", "createForm", "dataClassCandidates", "form", "objectGrantCandidates", "options", "query", "record", "resolve",
   ]);
   assert.deepEqual(policy.operations, [
     `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
-    PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES, LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY,
+    PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES, REVOKE_POLICY_ENTRIES, PREVIEW_POLICY_ENTRY_REVOKE,
+    LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY,
     RESOLVE_PENDING_POLICY_GRANT, INSPECT_POLICY_ACCESS,
   ]);
 });
@@ -1810,7 +1811,7 @@ test("panel record and snapshot reads do not accept entry skill context", () => 
   }
 });
 
-test("an opening carries the admitted entry and page skill separately from the panel record", async () => {
+test("an opening carries the admitted entry and current page placement separately from the panel record", async () => {
   const { applicationEntryResolutionSchema } = await import("./product-panels");
   const panel = {
     id: "agent-settings", domainId: "domain", ownerId: "owner", revision: 1,
@@ -1820,13 +1821,8 @@ test("an opening carries the admitted entry and page skill separately from the p
     manifest: { members: {}, state: {} },
   };
   const pageSkillContext = {
-    mode: "member",
-    locator: { applicationId: "ontology", entryKey: "ontology-agent-settings", pageKey: "agent-settings" },
-    member: {
-      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-agent-settings" },
-      memberPath: [],
-      ref: { namespace: { kind: "domain", domainId: "domain" }, name: "pvt-example" },
-    },
+    applicationId: "ontology", entryKey: "ontology-agent-settings", pageKey: "agent-settings",
+    useId: "ontology-agent-settings", panelId: panel.id, path: "/ontology/agents", memberPath: [],
   };
   const directPanel = {
     id: panel.id, domainId: panel.domainId, ownerId: panel.ownerId, revision: panel.revision,
@@ -1846,9 +1842,10 @@ test("an opening carries the admitted entry and page skill separately from the p
       path: "/ontology/agents" },
     menu: { singleEntry: true, panelUses: [], groups: [] } };
   assert.deepEqual(applicationEntryResolutionSchema.parse({ ...resolution, pageSkillContext }).pageSkillContext, pageSkillContext);
-  const unavailable = { ...pageSkillContext, entry: pageSkillContext.member.source, member: null };
-  assert.deepEqual(applicationEntryResolutionSchema.parse({ ...resolution, pageSkillContext: unavailable }).pageSkillContext, unavailable);
-  assert.equal(applicationEntryResolutionSchema.safeParse({ ...resolution, pageSkillContext: { ...pageSkillContext, member: {} } }).success, false);
+  assert.equal(applicationEntryResolutionSchema.safeParse({
+    ...resolution,
+    pageSkillContext: { ...pageSkillContext, skill: { namespace: { kind: "domain", domainId: "domain" }, name: "domain-example" } },
+  }).success, false);
 });
 
 test("panel definition snapshots do not carry entry skill context", () => {
@@ -1857,9 +1854,8 @@ test("panel definition snapshots do not carry entry skill context", () => {
     projections: [{ id: "definition-form", revision: 2 }],
   };
   const pageSkillContext = {
-    mode: "member",
-    locator: { applicationId: "agents", entryKey: "agents-agent-settings", pageKey: "agents-agent-settings" },
-    member: null,
+    applicationId: "agents", entryKey: "agents-agent-settings", pageKey: "agents-agent-settings",
+    useId: "agents-agent-settings", panelId: "agent-settings", path: "/agents/settings", memberPath: [],
   };
   assert.deepEqual(panelDefinitionSnapshotSchema.parse(snapshot), snapshot);
   assert.equal(panelDefinitionSnapshotSchema.safeParse({ ...snapshot, pageSkillContext }).success, false);
@@ -2662,7 +2658,6 @@ test("the four-layer topology points to declared kinds and distinguishes stored 
     assert.ok(platformRelationGroups.includes(relation.group), relation.id);
   }
   assert.equal(platformRelationKinds.find(relation => relation.id === "panel.contains-panel")?.derived, false);
-  assert.equal(platformRelationKinds.find(relation => relation.id === "panel.provides-skill")?.derived, true);
   assert.equal(platformRelationKinds.find(relation => relation.id === "role.owns-workflow-step")?.derived, true);
   assert.equal(platformObjectTypes[APPLICATION_PANEL_USE]?.layer, undefined);
   assert.equal(platformObjectTypes[ORG_MEMBERSHIP]?.layer, undefined);
@@ -2850,19 +2845,13 @@ test("a frame can prepare a human intent and only the host can dispatch it", () 
   assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(reply), reply);
 });
 
-test("application uses and page-skill defaults share the explicit agent target", () => {
+test("application uses declare the explicit agent target", () => {
   const use = { id: "governance", pageKey: "report", panelId: "reports", path: "/governance/reports" };
   const preset = { kind: "preset", agentKind: "knowledge-governance" };
   const concrete = { kind: "id", id: "saved-agent" };
   assert.deepEqual(applicationPanelUseSchema.parse({ ...use, defaultAgent: concrete }).defaultAgent, concrete);
+  assert.deepEqual(applicationPanelUseSchema.parse({ ...use, defaultAgent: preset }).defaultAgent, preset);
   assert.equal(applicationPanelUseSchema.safeParse({ ...use, defaultAgentId: "saved-agent" }).success, false);
-  const mapping = {
-    entryKey: use.id,
-    pageKey: use.pageKey,
-    skill: { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" },
-    defaults: [{ pageKey: use.pageKey, defaultAgent: preset }],
-  };
-  assert.deepEqual(pageSkillSchema.parse(mapping).defaults, mapping.defaults);
 });
 
 

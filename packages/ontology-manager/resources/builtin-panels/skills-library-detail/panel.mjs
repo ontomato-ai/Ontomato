@@ -10,7 +10,7 @@ const CATALOG_PATH = "/ontology/skills";
 
 await mountPanel({
   setup() {
-    const { instance, navigate, t } = usePanelContext();
+    const { instance, navigateBack, t } = usePanelContext();
     const selected = computed(() => instance.state.values.value.selected ?? null);
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
     const filePath = computed(() => {
@@ -58,14 +58,14 @@ await mountPanel({
     );
 
     function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     async function onRemoveDone(outcome) {
       if (outcome?.kind !== "success") return;
       instance.state.setState({ selected: null, filePath: null });
       await nextTick();
-      void navigate(CATALOG_PATH).catch(() => undefined);
+      void navigateBack(CATALOG_PATH);
     }
 
     function retry() {

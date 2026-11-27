@@ -1,3 +1,5 @@
+import { modelOwnerRead } from "../../__tests__/fixtures/workbench-panel-read-facts";
+import { mountWorkbenchPanelReadsOwner } from "../../__tests__/fixtures/workbench-panel-reads-owner";
 import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
@@ -119,7 +121,7 @@ beforeAll(async () => {
   });
   app.post("/authorization/objects/read-ranges", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
-    expect(["PANEL", "PROJECTION"]).toContain(req.body.kind);
+    expect(["PANEL", "PROJECTION", "COMPONENT"]).toContain(req.body.kind);
     const caller = req.get("tk");
     const { verbs } = req.body as { verbs: ("USE" | "EDIT")[] };
     res.json({ ranges: Object.fromEntries(verbs.map(verb => [verb, {
@@ -213,11 +215,15 @@ beforeAll(async () => {
         panelId: personalPanelId },
     } });
   });
-  app.use("/api", (req, _res, next) => {
+  const authenticate: express.RequestHandler = (req, _res, next) => {
     const userId = req.header("X-Test-User") ?? "author";
     Object.assign(req, { domainId: "test-domain", userId, token: userId, locale: "en" });
     next();
-  });
+  };
+  mountWorkbenchPanelReadsOwner(app, { token: "fixture-service", viewer: userId => ({ domainId: "test-domain", userId }), read: modelOwnerRead });
+  const { createProductPanelReadRouter } = await import("../routes/product-panel-data");
+  app.use("/api", createProductPanelReadRouter(authenticate));
+  app.use("/api", authenticate);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
@@ -269,7 +275,7 @@ afterAll(async () => {
 
 function request(method: string, resource: string, user: string, body?: object, headers?: Record<string, string>) {
   return fetch(`${state.base}/api/${resource}`, {
-    method, headers: { "Content-Type": "application/json", "X-Test-User": user, ...headers }, body: JSON.stringify(body),
+    method, headers: { "Content-Type": "application/json", "X-Test-User": user, ...(resource === "product-panels/read" && { tk: user }), ...headers }, body: JSON.stringify(body),
   });
 }
 

@@ -29,7 +29,7 @@ await navigate(panelAddress("/ontology/map", {
 | `list` | Repeated `<name>` parameters | `?tag=a&tag=b` |
 | Application frame `deepLink` field | `frame.<name>=<value>` | `?frame.term=2026-fall` |
 
-Shell-reserved query parameters (`standalone`, `from`, `navigationContext`)
+Shell-reserved query parameters (`standalone`, `from`)
 and `frame.*` parameters are preserved automatically by `panelAddress`; do not use them as panel state names. See
 [State in an address](../RUNTIME.md#state-in-an-address) and the
 [object reference shapes table](../RUNTIME.md#object-reference-shapes-quick-reference).

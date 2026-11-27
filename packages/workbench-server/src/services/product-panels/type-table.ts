@@ -9,7 +9,7 @@ import { createActionReadAdapter } from "../action/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
-import type { ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/service-authentication";
 import { registeredPanelOperation } from "./server-operations";
 import { allowsOperationDraft, boundProjectionOperations } from "./operation-bindings";
 
@@ -56,7 +56,7 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
     }
     const entry = objectTypes.get(className);
     if (entry) (entry.operations ??= []).push(declaration);
-    else objectTypes.set(className, { operations: [declaration] });
+    else objectTypes.set(className, { reads: undefined, operations: [declaration] });
   }
   const resultIds = new Set([...objectTypes.values()].flatMap(entry => Object.values(entry.reads ?? {}).map(read => read.result)));
   const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, cachedZodToJsonSchema(panelReadResultSchemas[id])]));

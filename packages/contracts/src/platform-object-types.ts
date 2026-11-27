@@ -78,6 +78,7 @@ export type PanelReadOutputType = {
   readonly type: "boolean" | "string" | "number";
 };
 
+
 export type PlatformReadDeclaration = PanelReadSignature & {
   source: "type" | "object";
   result: PanelReadResultId;
@@ -97,6 +98,7 @@ export interface PlatformObjectTypeDeclaration {
   labelKey?: string;
   /** Set for types that have a declared place in the four-layer ontology. */
   layer?: typeof platformOntologyLayers[number];
+  /** Locate facts required by this type when its instances are counted in the four-layer ontology. */
   /**
    * When this object type's primary key is composite `<encodeURIComponent(parentPrimaryKey)>/<encodeURIComponent(localKey)>`,
    * declares the owning parent object type so deep-link URLs can omit the redundant parent prefix whenever the manifest
@@ -197,9 +199,15 @@ export const READ_MEMBER_ACCESS_CONTEXT = "users.accessContext";
 export const INSPECT_MEMBER_ACCESS = "users.inspectAccess";
 export const GRANT_MEMBER_ACCESS = "users.grantAccess";
 export const DELETE_ROLE = "roles.delete";
+export const ADD_ROLE_MEMBERS = "roles.addMembers";
+export const REMOVE_ROLE_MEMBERS = "roles.removeMembers";
+export const ADD_ROLE_POLICIES = "roles.addPolicies";
+export const REMOVE_ROLE_POLICIES = "roles.removePolicies";
 export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
 export const PREVIEW_POLICY_ENTRY_GRANT = "permissionPolicies.previewEntryGrant";
 export const GRANT_POLICY_ENTRIES = "permissionPolicies.grantEntries";
+export const REVOKE_POLICY_ENTRIES = "permissionPolicies.revokeEntries";
+export const PREVIEW_POLICY_ENTRY_REVOKE = "permissionPolicies.previewEntryRevoke";
 export const LIST_PENDING_POLICY_GRANTS = "permissionPolicies.listPending";
 /** Pending grants across the domain, grouped by policy: the policy list page's header entry. */
 export const LIST_PENDING_POLICY_GRANTS_SUMMARY = "permissionPolicies.listPendingSummary";
@@ -214,6 +222,24 @@ export const DELETE_ORG_GRANT = "orgGrants.delete";
 const governancePageQuery = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
 } as const;
+const effectiveAccessCountOutputs = {
+  entryCount: { kind: "scalar", type: "number" },
+  systemInterfaceCount: { kind: "scalar", type: "number" },
+  productObjectCount: { kind: "scalar", type: "number" },
+  capabilityObjectCount: { kind: "scalar", type: "number" },
+  businessDataCount: { kind: "scalar", type: "number" },
+  workflowStepCount: { kind: "scalar", type: "number" },
+  totalCount: { kind: "scalar", type: "number" },
+} as const satisfies Readonly<Record<string, PanelReadOutputType>>;
+const effectiveAccessReads = {
+  effectiveAccess: {
+    source: "object", parameterMode: "fixed", params: { category: "keyword" }, result: "panelRecordList",
+  },
+  effectiveAccessCounts: {
+    source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+    outputs: effectiveAccessCountOutputs,
+  },
+} as const satisfies Readonly<Record<string, PlatformReadDeclaration>>;
 const referenceReads = {
   options: { source: "type", parameterMode: "fixed", params: {}, result: "panelOptionList" },
   resolve: { source: "type", parameterMode: "fixed", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
@@ -601,7 +627,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("skill", "capability"),
     childCollections: ["files"],
     reads: {
-      count: countRead,
+      count: { ...countRead },
       // `options` and `resolve` pick skills for an agent; `query` is the library catalogue, read-only provider packages included.
       options: {
         ...referenceReads.options, params: { agentTarget: "agentSkillTarget" }, requiredParams: ["agentTarget"],
@@ -610,11 +636,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         ...referenceReads.resolve, params: { agentTarget: "agentSkillTarget", values: "optionValues" },
         requiredParams: ["agentTarget", "values"],
       },
-      query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
+      query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" },
+        result: "panelRecordQuery" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       files: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       file: {
-        source: "object", parameterMode: "fixed", params: { path: "skillFilePath" }, requiredParams: ["path"], result: "panelRecord",
+        source: "object", parameterMode: "fixed", params: { path: "skillFilePath" }, requiredParams: ["path"],
+        result: "panelRecord",
       },
     },
     operations: [IMPORT_SKILL, DELETE_SKILL, EXPORT_SKILL],
@@ -648,6 +676,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...governancePageQuery,
       ...modelReads,
       effectivePermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      ...effectiveAccessReads,
       effectiveOrgShares: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       effectiveManagementOperations: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       effectiveSubjectDataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
@@ -671,11 +700,17 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
       ...modelReads,
+      ...effectiveAccessReads,
+      // The role's current assignments and the candidates not yet assigned to it.
+      members: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: USER },
+      policies: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
+      memberCandidates: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: USER },
+      policyCandidates: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
       // What this role brings to whoever holds it: the permission policies it uses, and the workflow steps it owns.
       contributionPolicies: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: PERMISSION_POLICY },
       contributionWorkflowSteps: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: WORKFLOW },
     },
-    operations: [`${ROLE}.save`, DELETE_ROLE],
+    operations: [`${ROLE}.save`, DELETE_ROLE, ADD_ROLE_MEMBERS, REMOVE_ROLE_MEMBERS, ADD_ROLE_POLICIES, REMOVE_ROLE_POLICIES],
   },
   [PERMISSION_POLICY]: {
     ...describeType("permissionPolicy", "governance"),
@@ -684,10 +719,21 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...referenceReads,
       ...governancePageQuery,
       ...modelReads,
+      objectGrantCandidates: {
+        source: "object", parameterMode: "fixed",
+        params: { field: "objectGrantField", values: "panelFormValues", keyword: "keyword" },
+        requiredParams: ["field"],
+        result: "panelOptionList",
+      },
+      dataClassCandidates: {
+        source: "object", parameterMode: "fixed",
+        params: { values: "panelFormValues", keyword: "keyword" },
+        result: "panelOptionList",
+      },
     },
     operations: [
       `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
-      PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES,
+      PREVIEW_POLICY_ENTRY_GRANT, GRANT_POLICY_ENTRIES, REVOKE_POLICY_ENTRIES, PREVIEW_POLICY_ENTRY_REVOKE,
       LIST_PENDING_POLICY_GRANTS, LIST_PENDING_POLICY_GRANTS_SUMMARY, RESOLVE_PENDING_POLICY_GRANT,
       INSPECT_POLICY_ACCESS,
     ],
@@ -1016,8 +1062,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("ontologyType"),
     reads: {
       count: countRead,
-      counts: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
-      countRows: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      counts: { ...metadataList.list, result: "panelGraphCounts" },
+      countRows: metadataList.list,
       start: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphStart" },
       neighbors: {
         source: "type", parameterMode: "fixed", params: {
@@ -1457,7 +1503,6 @@ export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] =
   relation("projection.binds-target", PRODUCT_PROJECTION, layeredTypes, "node-product-panels", "assembly", false, false),
   relation("panel.contains-projection", PRODUCT_PANEL, PRODUCT_PROJECTION, "node-product-panels", "assembly"),
   relation("panel.contains-panel", PRODUCT_PANEL, PRODUCT_PANEL, "node-product-panels", "assembly"),
-  relation("panel.provides-skill", PRODUCT_PANEL, SKILL, "node-product-panels", "assembly", true),
   relation("application.uses-panel", APPLICATION, PRODUCT_PANEL, "java-application-catalog", "assembly"),
   relation("agent.uses-skill", AGENT_DEFINITION, SKILL, "node-assistant", "dependency"),
   relation("agent.executes-as-user", AGENT_DEFINITION, USER, "node-assistant", "dependency"),

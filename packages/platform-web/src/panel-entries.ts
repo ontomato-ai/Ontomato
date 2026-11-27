@@ -1,22 +1,62 @@
-import type { NavigationGuard, RouteLocationNormalized, RouteRecordRaw, Router } from "vue-router";
+import type { NavigationGuard, RouteLocationNormalizedLoaded, RouteRecordRaw, Router } from "vue-router";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
-import { isPanelApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
-import { isNativeApplicationEntry, type ApplicationEntryResolution } from "@ontomato/contracts/product-panels";
+import { isPanelApplication } from "@ontomato/contracts/platform-identity";
+import { isNativeApplicationEntry, type ApplicationOpenResponse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { builtinApplicationForPath, firstVisiblePanelPath, useApplicationCatalog } from "./catalog";
-import { externalLinkTab } from "./external-link";
+import { useApplicationCatalog } from "./catalog";
 import { resolveApplicationEntry } from "./panel-host";
 import { startPage } from "./shell";
 
 declare module "vue-router" {
   interface RouteMeta {
-    /** Opening result from the initial standalone route match, consumed by the redirected panel route. */
-    openedPanelEntry?: ApplicationEntryResolution;
+    /** Opening result for this navigation, shared by the layout, outer frame, and panel route. */
+    openedPanelEntry?: ApplicationOpenResponse;
   }
+}
+
+/** Entry path a route belongs to: explicit entryPath, declared native page path, or the route's own path. */
+export function routeEntryPath(route: Pick<RouteLocationNormalizedLoaded, "path" | "meta">): string {
+  if (typeof route.meta.entryPath === "string") return route.meta.entryPath;
+  if (typeof route.meta.page === "string") return route.meta.page;
+  return route.path;
+}
+
+/** Returns the pre-opened entry carried on this navigation, optionally matched against `path`. */
+export function routeOpenedEntry(
+  route: Pick<RouteLocationNormalizedLoaded, "meta" | "redirectedFrom">,
+  path?: string,
+): ApplicationOpenResponse | null {
+  const entry = route.meta.openedPanelEntry ?? route.redirectedFrom?.meta.openedPanelEntry ?? null;
+  if (!entry) return null;
+  if (path !== undefined && panelUsePath(entry.use.path) !== panelUsePath(path)) return null;
+  return entry;
 }
 
 /** The paths one router has already opened an entry route for. */
 const servedEntries = new WeakMap<Router, Set<string>>();
+
+function addPanelEntryRoute(router: Router, applicationId: string, rawPath: string): void {
+  const path = panelUsePath(rawPath);
+  if (path === platformRoutes.home.path || path.startsWith("/applications/")) return;
+  const served = servedEntries.get(router) ?? new Set<string>();
+  servedEntries.set(router, served);
+  if (served.has(path)) return;
+  served.add(path);
+  router.addRoute(platformRoutes.layout.name, {
+    path,
+    meta: { ownHeader: true },
+    component: () => import("./pages/PanelApplicationRoute.vue"),
+    props: { applicationId },
+  });
+}
+
+/** Registers built-in panel routes directly from an authoritative opening response. */
+export function serveOpenedEntry(router: Router, resolved: ApplicationOpenResponse): void {
+  for (const entry of [resolved.use, ...resolved.menu.panelUses]) {
+    if (isNativeApplicationEntry(entry)) continue;
+    addPanelEntryRoute(router, resolved.applicationId, entry.path);
+  }
+}
 
 /**
  * Opens every entry the loaded catalog details now list that has no route yet. A page that asks to open another page's
@@ -25,77 +65,34 @@ const servedEntries = new WeakMap<Router, Set<string>>();
  */
 export function servePanelEntries(router: Router): void {
   const catalog = useApplicationCatalog();
-  const served = servedEntries.get(router) ?? new Set<string>();
-  servedEntries.set(router, served);
   for (const app of catalog.mergedApplications.value) {
     if (isPanelApplication(app)) continue;
     for (const use of app.panelUses ?? []) {
       if (isNativeApplicationEntry(use)) continue;
-      const path = panelUsePath(use.path);
-      if (path === platformRoutes.home.path) continue;
-      if (served.has(path)) continue;
-      served.add(path);
-      router.addRoute(platformRoutes.layout.name, {
-        path,
-        meta: { ownHeader: true },
-        component: () => import("./pages/PanelApplicationRoute.vue"),
-        props: { applicationId: app.id },
-      });
+      addPanelEntryRoute(router, app.id, use.path);
     }
   }
-}
-
-function isStandaloneRequest(to?: Pick<RouteLocationNormalized, "query">): boolean {
-  return to?.query?.standalone === "1" || externalLinkTab();
-}
-
-async function resolveBuiltInEntryOwner(
-  router: Router,
-  path: string,
-  options: { standalone?: boolean; opened?: (entry: ApplicationEntryResolution) => void } = {},
-): Promise<CatalogApplication | null> {
-  const catalog = useApplicationCatalog();
-  let owner = builtinApplicationForPath(path);
-  const hadOwner = owner !== null;
-  if (!owner) {
-    if (options.standalone) {
-      try {
-        const resolved = await resolveApplicationEntry({ path });
-        owner = await catalog.ensureApplication(resolved.applicationId);
-        options.opened?.(resolved);
-      } catch {
-        return null;
-      }
-      servePanelEntries(router);
-      return owner;
-    }
-    await catalog.ensureCatalog();
-    servePanelEntries(router);
-    owner = builtinApplicationForPath(path);
-  }
-  if (!owner) return null;
-  if (owner.panelUses === undefined) {
-    owner = await catalog.ensureApplication(owner.id).catch(() => owner);
-  } else if (hadOwner) {
-    owner = await catalog.refreshApplication(owner.id).catch(() => owner);
-  }
-  servePanelEntries(router);
-  return owner;
 }
 
 /**
- * Opens the entries for the requested address (or the catalog when no address is specified): a page can be asked for
- * before its owning application's entry table has been read, and an address that exists must not be called missing
- * because nobody had looked yet.
+ * Opens the entry for the requested address (or refreshes the catalog when no address is specified): a page can be
+ * asked for before its owning application's entry table has been read, and an address that exists must not be called
+ * missing because nobody had looked yet.
  */
-export async function readAndServePanelEntries(router: Router, address?: string): Promise<void> {
+export async function readAndServePanelEntries(router: Router, address?: string): Promise<ApplicationOpenResponse | null> {
   if (address) {
     const path = address.split("?")[0]!;
-    await resolveBuiltInEntryOwner(router, path, { standalone: externalLinkTab() });
-    return;
+    try {
+      const resolved = await resolveApplicationEntry({ path });
+      serveOpenedEntry(router, resolved);
+      return resolved;
+    } catch {
+      return null;
+    }
   }
   await useApplicationCatalog().refresh();
   servePanelEntries(router);
+  return null;
 }
 
 /**
@@ -107,12 +104,10 @@ export const unknownAddressRoute: RouteRecordRaw = { ...platformRoutes.unknown, 
 
 /*
  * A built-in application's panel entry at its own address (big main's ruling, 2026-11-21: one panel route serves every
- * declared entry, whatever its prefix). A native application declares its entries at its original addresses
- * (`/ontology/components`), which no route of the platform's names, so they reach the platform's last route. There the
- * owning application's entry table is loaded on demand — navigation summaries omit `panelUses`, and standalone links
- * resolve directly via `resolveApplicationEntry` without loading the full catalog — and the address opens that use
- * relation's panel through the same route a panel application's pages take. An address no entry serves for this reader
- * goes on to the edition's own guards; whatever is still unserved after them lands with `addressLandingGuard`.
+ * declared entry, whatever its prefix). Unknown addresses resolve directly through `resolveApplicationEntry`, which
+ * admits the reader and returns the entry, menu, standalone policy, and bundled frame/content definitions in one round
+ * trip without preloading the application catalog. An address no entry serves for this reader falls through to the
+ * edition's own guards and finally `addressLandingGuard`.
  */
 export function panelEntryGuard(router: Router): NavigationGuard {
   const unknown = (address: string) => router.resolve(address).name === platformRoutes.unknown.name;
@@ -120,19 +115,19 @@ export function panelEntryGuard(router: Router): NavigationGuard {
     if (to.name !== platformRoutes.unknown.name) return true;
     servePanelEntries(router);
     if (!unknown(to.fullPath)) return to.fullPath;
-    // A cold link, an unloaded built-in summary, or a newly granted entry loads its owning application on demand.
-    const owner = await resolveBuiltInEntryOwner(router, to.path, {
-      standalone: isStandaloneRequest(to),
-      opened: entry => { to.meta.openedPanelEntry = entry; },
-    });
-    if (!unknown(to.fullPath)) return to.fullPath;
-    // Entering a built-in application's root prefix (e.g. `/settings`, `/permissions`, `/ops`) lands on its first visible entry.
-    if (owner && to.path === owner.entry.path) {
-      const landing = owner.entry.home ?? firstVisiblePanelPath(owner);
-      if (landing && !unknown(landing)) {
-        return { path: landing, query: to.query, hash: to.hash };
-      }
+    let resolved: ApplicationOpenResponse;
+    try {
+      resolved = await resolveApplicationEntry({ path: to.path });
+    } catch {
+      return true;
     }
+    serveOpenedEntry(router, resolved);
+    to.meta.openedPanelEntry = resolved;
+    const landing = panelUsePath(resolved.use.path);
+    if (landing !== to.path && !unknown(landing)) {
+      return { path: landing, query: to.query, hash: to.hash };
+    }
+    if (!unknown(to.fullPath)) return to.fullPath;
     return true;
   };
 }

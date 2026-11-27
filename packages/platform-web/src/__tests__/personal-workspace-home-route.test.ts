@@ -37,9 +37,11 @@ vi.mock("../panel-host", async (importOriginal) => {
     resolveApplicationEntry: async () => ({
       applicationId: "home",
       use: homeUse,
+      allowStandalone: true,
+      frame: null,
+      content: null,
       menu: { singleEntry: true, groups: [], panelUses: [homeUse] },
     }),
-    readApplicationFrameManifest: vi.fn(),
     platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
     onPanelReadDenied: () => () => {},
   };
