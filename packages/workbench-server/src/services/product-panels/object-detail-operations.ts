@@ -26,8 +26,8 @@ const clearAvailability: PanelOperationAvailability<boolean, boolean> = {
     reads: [{ call: { type: OBJECT_TYPE, name: "detailPanel", parameters: {} } }],
     facts: ([result]) => z.boolean().parse(readyPayload(result!).payload),
   },
-  local: (targets, { owner }) => Promise.all(targets.map(async target =>
-    await findObjectDetailPanelId(owner.domainId, targetSchema.parse(target).primaryKey) !== null)),
+  local: (targets, { owner }, canConfigure) => Promise.all(targets.map(async target =>
+    canConfigure && await findObjectDetailPanelId(owner.domainId, targetSchema.parse(target).primaryKey) !== null)),
   refuse: ({ shared: canConfigure, facts: configured, locale }) => {
     if (!canConfigure) return { reason: objectDetailText(locale, "configureForbidden") };
     if (!configured) return { reason: objectDetailText(locale, "unconfigured") };

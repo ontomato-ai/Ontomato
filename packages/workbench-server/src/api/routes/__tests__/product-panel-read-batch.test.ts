@@ -408,28 +408,35 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
     ownerPaths.push(pathname);
     expect(headers.get("tk")).toBeNull();
     expect(headers.get("X-API-Key")).toBe(executorKey);
-    expect(headers.get(scopeHeader)).toBe(runId);
     expect(pathname).toBe("/internal/workbench-panel-reads");
+    const key = { name: "id", showName: "ID", type: "varchar", attrDesc: "", enable: true, businessKey: false, primaryKey: true };
+    const attributeFacts = {
+      views: [{ ...key, className: "org" }, { ...key, className: "org", name: "note", primaryKey: false }],
+      fieldLabels: {}, classLabels: { org: "Organization" },
+      relationshipFacts: relationshipError ? { error: relationshipError } : { views: [] },
+    };
+    // The rows' delete facts are the executor's own, read directly without the caller's scope.
+    if (body.reads[0].source.kind === "direct") {
+      expect(headers.get(scopeHeader)).toBeNull();
+      expect(body.reads).toEqual([{ source: { kind: "direct" },
+        call: { type: ATTRIBUTE, name: "list", parameters: { className: "org", includeDeleteFacts: true } } }]);
+      return { text: JSON.stringify({ viewer: body.viewer, results: [{ status: "ready", payload: attributeFacts }] }) };
+    }
+    expect(headers.get(scopeHeader)).toBe(runId);
     const name = cardRead === "form" ? "parameterForm" : cardRead === "metricSource" ? "describe" : "result";
     const parameters = name === "describe" ? { primaryKey: metricId }
       : { primaryKey: metricId, parameters: cardRead ? savedParameters : {} };
     const call = isRecord ? { type: "customer:ObjectType", name: "record", parameters: node }
       : isRelationship ? { type: "customer:Relationship", name: "neighbors", parameters: { relationshipId: "staff", node, limit: 50, offset: 0 } }
       : isModel ? { type: OBJECT_TYPE, name: "form", parameters: { primaryKey: "Order", changedField: null, values: modelValues } }
-      : isAttributeList ? { type: ATTRIBUTE, name: "list", parameters: { includeDeleteFacts: true } }
+      : isAttributeList ? { type: ATTRIBUTE, name: "list", parameters: {} }
       : { type: METRIC_VIEW, name, parameters };
     expect(body.reads.map(({ call }: { call: unknown }) => call)).toEqual([call]);
     expect(body.viewer).toEqual({ domainId: "domain-a", userId: "executor" });
     if (ownerRefused) return { text: JSON.stringify({ viewer: body.viewer, results: [
       { status: "forbidden", error: "Execution exceeds the caller class scope" },
     ] }) };
-    const key = { name: "id", showName: "ID", type: "varchar", attrDesc: "", enable: true, businessKey: false, primaryKey: true };
     const anchor = { attributes: [{ ...key, className: "org" }], answer: { success: true, data: { data: {} } } };
-    const attributeFacts = {
-      views: [{ ...key, className: "org" }, { ...key, className: "org", name: "note", primaryKey: false }],
-      fieldLabels: {}, classLabels: { org: "Organization" },
-      relationshipFacts: relationshipError ? { error: relationshipError } : { views: [] },
-    };
     const payload = isModel ? modelForm : isAttributeList ? attributeFacts : isRecord ? anchor : isRelationship ? {
       anchor,
       label: "Staff", typeLabels: {}, targetAttributes: { person: [{ ...key, className: "person" }] },
@@ -465,7 +472,7 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
   expect(mocks.get).toHaveBeenCalledWith("resolve-panel-entry", expect.stringContaining("/platform/applications/resolve-entry?"), expect.anything());
   expect(mocks.executor).toHaveBeenCalledWith({ userId: "reader", domainId: "domain-a" }, runId, expect.objectContaining({ token: "reader-token" }), sessionId);
   expect(placementChecks.splice(0)).toEqual(["reader-token", executorKey]);
-  expect(ownerPaths.splice(0)).toEqual(["/internal/workbench-panel-reads"]);
+  expect(ownerPaths.splice(0)).toEqual(Array(isAttributeList ? 2 : 1).fill("/internal/workbench-panel-reads"));
 
   if (isAttributeList) {
     for (const reason of ["Relationship read denied", "The owner read failed"]) {
@@ -475,7 +482,7 @@ it.each(["metric", "card result", "card form", "card metric source", "customer r
         [`${ATTRIBUTE}:["org","note"]`]: { delete: { available: false, unavailable: { reason } } },
       } } });
       expect(placementChecks.splice(0)).toEqual(["reader-token", executorKey]);
-      expect(ownerPaths.splice(0)).toEqual(["/internal/workbench-panel-reads"]);
+      expect(ownerPaths.splice(0)).toEqual(["/internal/workbench-panel-reads", "/internal/workbench-panel-reads"]);
     }
   }
 

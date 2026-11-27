@@ -78,10 +78,17 @@ export interface RegisteredDataReadRegistration {
   plan(context: RegisteredDataReadContext): RegisteredDataReadPlan | Promise<RegisteredDataReadPlan>;
 }
 
-/** A present function uses this already-shaped failure to choose the exact browser response for a non-ready read item. */
-export class RegisteredDataReadFailure extends Error {
+/**
+ * A present function uses this already-shaped failure to choose the exact browser response for a non-ready read item.
+ * Outside a panel read response it is the matching HTTP refusal.
+ */
+export class RegisteredDataReadFailure extends HttpError {
   constructor(readonly response: ProductPanelReadResponse) {
-    super("message" in response ? response.message : response.status);
+    super(
+      response.status === "forbidden" ? 403 : response.status === "empty" ? 404 : 422,
+      response.status === "forbidden" ? response.reason ?? response.status : response.status === "error" ? response.message : response.status,
+      response.status === "error" ? response.code : undefined,
+    );
   }
 }
 

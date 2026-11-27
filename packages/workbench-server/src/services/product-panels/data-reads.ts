@@ -28,6 +28,7 @@ import { resolvePinnedInputs } from "./input-wiring";
 import type { ScopedActionDescriptions } from "./direct-operations";
 import { PanelReadBatchCache, registeredPanelRootId, requireRegisteredPanelRoot, resolvePanelMemberPath, type PanelUseCollector } from "./member-path";
 import { unwrapReadDirective } from "./read-directive";
+import { RegisteredDataReadFailure } from "./registered-data-read";
 import type { PanelOperationActor } from "./server-operations";
 import { readSelectedPanelOwner, type PanelReadSelection } from "./panel-owner-reads";
 import { currentDefinition } from "./access";
@@ -320,13 +321,25 @@ export async function readPanelMemberOperationDescriptions(
 
 /** The record type a list's rows fall back to when a row names none: the read's declared row type, else its source's. */
 export function rowFallbackClassName(projection: ProductProjection, dataName: string, declaration: PlatformReadDeclaration) {
-  const datum = projection.data[dataName];
   if (declaration.rowType) return declaration.rowType;
+  const datum = projection.data[dataName];
   if (!datum) return undefined;
   if ("type" in datum.source) return datum.source.type.id;
   if ("literal" in datum.source.object) return datum.source.object.literal.className;
   const input = projection.inputs[datum.source.object.input];
   return input?.kind === "object" ? input.objectType : undefined;
+}
+
+async function readMemberRowOperations(
+  actor: PanelOperationActor, { projection }: PanelReadPlacement, dataName: string, inputs: ReadInputs,
+  rows: readonly PanelRecord[], declaration: PlatformReadDeclaration,
+) {
+  const [{ readDirectRowOperations }, { boundProjectionOperations }] = await Promise.all([
+    import("./operation-availability"), import("./operation-bindings"),
+  ]);
+  return readDirectRowOperations(
+    { owner: actor.owner, credentials: actor.credentials, locale: actor.credentials.locale },
+    boundProjectionOperations(projection), inputs, rows, rowFallbackClassName(projection, dataName, declaration));
 }
 
 export async function presentPanelMemberRead(
@@ -338,12 +351,9 @@ export async function presentPanelMemberRead(
   const { declaration, value, rereadAfterMs } = outcome;
   const rows = declaration.result === "panelRecordList" ? value as PanelRecord[]
     : declaration.result === "panelRecordQuery" ? (value as PanelRecordQuery).rows : undefined;
-  const [{ readDirectRowOperations }, { boundProjectionOperations }] = await Promise.all([
-    import("./operation-availability"), import("./operation-bindings"),
-  ]);
-  const rowOperations = rows && await readDirectRowOperations(
-    { owner: actor.owner, credentials: actor.credentials, locale: actor.credentials.locale },
-    boundProjectionOperations(projection), inputs, rows, rowFallbackClassName(projection, dataName, declaration));
+  const rowOperations = rows && Object.keys(projection.operations ?? {}).length > 0
+    ? await readMemberRowOperations(actor, placement, dataName, inputs, rows, declaration)
+    : undefined;
   return {
     status: "ready",
     value,
@@ -353,6 +363,7 @@ export async function presentPanelMemberRead(
 }
 
 export function panelMemberReadRefusal(error: unknown): ProductPanelReadResponse | undefined {
+  if (error instanceof RegisteredDataReadFailure) return error.response;
   if (error instanceof HttpError && error.status === 403) {
     return { status: "forbidden", reason: error.message || tApp("foundation.error.unauthorized") };
   }

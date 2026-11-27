@@ -636,7 +636,7 @@ export function applicationDeleteRefusal(canMaintain: boolean | undefined, local
 
 const applicationDeleteAvailabilitySchema = z.object({ canMaintain: z.boolean() });
 
-/** An application deletes for whoever maintains it; one the catalogue no longer has cannot be judged. */
+/** An application deletes for whoever maintains it; one the catalogue no longer has is refused as undecided. */
 const applicationDeletion: PanelOperationAvailability<undefined, boolean | undefined> = {
   read: targets => ({
     reads: targets.map(target => ({ call: { type: APPLICATION, name: "deleteAvailability", parameters: { primaryKey: target!.primaryKey } } })),

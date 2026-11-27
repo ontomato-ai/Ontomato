@@ -3,12 +3,19 @@ import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 import { productProjectionSchema } from "@ontomato/contracts/product-panels";
 import { beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { HttpError } from "../../../utils/errors";
 
 const applicationRecord = vi.hoisted(() => vi.fn());
 const applicationCreate = vi.hoisted(() => vi.fn());
 const applicationForm = vi.hoisted(() => vi.fn());
 const applicationSaveEntries = vi.hoisted(() => vi.fn());
+const javaReads = vi.hoisted(() => ({ answer: (() => ({})) as () => object, items: [] as unknown[] }));
+vi.mock("../java-panel-reads", async importOriginal => ({
+  ...await importOriginal<typeof import("../java-panel-reads")>(),
+  readViaJava: async (viewer: unknown, reads: unknown[]) => {
+    javaReads.items.push(reads);
+    return { viewer, results: reads.map(() => javaReads.answer()) };
+  },
+}));
 vi.mock("../application-catalogue", async importOriginal => {
   const actual = await importOriginal<typeof import("../application-catalogue")>();
   return {
@@ -209,11 +216,12 @@ it("includes object-variant fields and nested array-row variant fields in fieldP
 });
 
 it.each([
-  ["forbidden", new HttpError(403, "Forbidden", "FORBIDDEN")],
-  ["not found", new HttpError(404, "Not found", "NOT_FOUND")],
-  ["network error", new Error("ECONNREFUSED")],
-])("marks applications.delete unavailable when reading the application fails (%s) without breaking sibling operations", async (_kind, error) => {
-  applicationRecord.mockRejectedValue(error);
+  ["not found", { status: "error", code: "APPLICATION_NOT_FOUND", error: "Not found" }, undefined],
+  ["forbidden", { status: "forbidden", error: "Forbidden" }, { status: "forbidden", reason: "Forbidden" }],
+  ["owner error", { status: "error", code: "PANEL_READ_FAILED", error: "ECONNREFUSED" },
+    { status: "error", code: "PANEL_READ_FAILED", message: "ECONNREFUSED" }],
+] as const)("refuses applications.delete for a missing application and fails on an owner refusal (%s)", async (_kind, result, failure) => {
+  javaReads.answer = () => result;
   const { readAdmittedProjectionOperations } = await import("../direct-operations");
   const owner = { domainId: "domain", userId: "reader" };
   const projection = productProjectionSchema.parse({
@@ -247,14 +255,19 @@ it.each([
     },
   };
 
-  const admitted = await readAdmittedProjectionOperations(
+  const admitted = readAdmittedProjectionOperations(
     { owner, credentials: { locale: "en" } },
     placement,
     { app: { className: APPLICATION, primaryKey: "app-1" } },
   );
-  expect(admitted.delete?.unavailable).toEqual({ reason: en["panels.productCatalog.application.availabilityUnavailable"] });
-  expect(admitted.addEntry).toBeDefined();
-  expect(admitted.addEntry?.unavailable).toBeUndefined();
+  if (failure) {
+    await expect(admitted).rejects.toMatchObject({ response: failure });
+    return;
+  }
+  const described = await admitted;
+  expect(described.delete?.unavailable).toEqual({ reason: en["panels.productCatalog.application.availabilityUnavailable"] });
+  expect(described.addEntry).toBeDefined();
+  expect(described.addEntry?.unavailable).toBeUndefined();
 });
 
 it("marks applications.delete unavailable for read-only applications and available when maintainable", async () => {
@@ -295,11 +308,14 @@ it("marks applications.delete unavailable for read-only applications and availab
     { app: { className: APPLICATION, primaryKey: "app-1" } },
   );
 
-  applicationRecord.mockResolvedValueOnce({ id: "app-1", canMaintain: false });
+  javaReads.answer = () => ({ status: "ready", payload: { canMaintain: false } });
   expect((await readOps()).delete?.unavailable).toEqual({ reason: en["panels.productCatalog.application.readOnly"] });
 
-  applicationRecord.mockResolvedValueOnce({ id: "app-1", canMaintain: true });
+  javaReads.answer = () => ({ status: "ready", payload: { canMaintain: true } });
   expect((await readOps()).delete?.unavailable).toBeUndefined();
+  // The facts are read as the person, without a placement.
+  expect(javaReads.items.at(-1)).toEqual([{ source: { kind: "direct" },
+    call: { type: APPLICATION, name: "deleteAvailability", parameters: { primaryKey: "app-1" } } }]);
 });
 
 it("preserves existing entry icons when saving entries from a form that does not submit icon", async () => {

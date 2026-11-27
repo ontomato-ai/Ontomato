@@ -36,7 +36,9 @@ import {
   builderRollbackBlock,
   prepareBuilderProjectFacts,
   readBuilderProjectDetail,
+  readBuilderProjectDrift,
   readBuilderProjectStatus,
+  readBuilderSourceReleases,
   createDraftProject,
   deleteApplicationBuilderDraft,
   getBuilderProject,
@@ -137,6 +139,15 @@ const projectStatus = {
 const projectDetail = {
   live: true, read: (ctx: AuthorizedProjectContext, domainId: string, locale?: string) => readBuilderProjectDetail(domainId, ctx, locale),
 };
+/** What a rollback is judged on: the workspace, the live application's drift and the current release. */
+const projectReleaseState = {
+  live: true,
+  read: async (ctx: AuthorizedProjectContext, domainId: string, locale?: string) => ({
+    busy: (await readBuilderProjectStatus(ctx, locale)).busy,
+    drift: readBuilderProjectDrift(ctx, locale),
+    currentReleaseId: ctx.published && ctx.project ? (await readBuilderSourceReleases(domainId, ctx))[0]?.id ?? null : null,
+  }),
+};
 
 /** Builder project facts per application: the catalogue read each project's context needs (none for the reader's own draft). */
 function builderProjectRead<Project, Facts>(
@@ -184,8 +195,8 @@ const publishAvailability: PanelOperationAvailability<undefined, BuilderProjectD
   refuse: ({ facts, locale }) => blocked(builderPublishBlock(facts), locale),
 };
 
-const rollbackAvailability: PanelOperationAvailability<undefined, BuilderProjectDetail> = {
-  read: builderProjectRead(projectDetail, detail => detail),
+const rollbackAvailability: PanelOperationAvailability<undefined, Parameters<typeof builderRollbackBlock>[0]> = {
+  read: builderProjectRead(projectReleaseState, state => state),
   refuse: ({ facts, params, locale }) => blocked(builderRollbackBlock(facts, params.releaseId), locale),
 };
 
