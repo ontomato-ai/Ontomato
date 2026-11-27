@@ -45,7 +45,11 @@ export async function publishSkill(root: string, skill: RuntimeSkillRef, domainI
 export async function publishOntologySkill(domainId: string, name: string): Promise<RuntimeSkillVersion> {
   const url = getApiConfig().baseUrl!.replace(/\/$/, "") + "/platform/ontology-skills/package";
   const response = await backendPost("ontology-skill-package", url, { name }, {
-    headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken, "X-Domain-Id": domainId },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken,
+      "X-Domain-Id": domainId,
+    },
     retries: 1,
   });
   return runtimeSkillVersionSchema.parse(JSON.parse(response.text));
