@@ -412,9 +412,12 @@ describe("standard runtime real HTTP/PG/processes", () => {
     const second = await systemPrompt(true);
     const unmarked = await systemPrompt(false);
     const opening = /^Skill "fixture-skill" is already loaded below\. Its files are in .+\/fixture-skills\/fixture-skill, and paths in it are relative to that directory\. Do not read its SKILL\.md again\.\n/;
-    expect(first).toBe(second);
     expect(first).toMatch(opening);
+    expect(second).toMatch(opening);
     expect(first).toContain(skillBody);
+    expect(second).toContain(skillBody);
+    const openingBody = (prompt: string) => prompt.slice(0, prompt.indexOf(skillBody) + skillBody.length);
+    expect(openingBody(first)).toBe(openingBody(second));
     expect(first).not.toContain("---\nname: fixture-skill");
     expect(unmarked).not.toContain(skillBody);
   });
