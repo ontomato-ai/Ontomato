@@ -83,6 +83,7 @@ it("exports the filtered records as a BOM CSV attachment with the admin page's c
     keyword: "refund",
     all: true,
     locale: "en",
+    viewer: expect.objectContaining({ locale: "en" }),
   });
   expect(response.headers.get("content-type")).toContain("text/csv");
   expect(response.headers.get("content-disposition")).toMatch(
@@ -117,6 +118,7 @@ it("keeps the list's admission and sends no filter it was not given", async () =
     keyword: undefined,
     all: true,
     locale: "en",
+    viewer: expect.objectContaining({ locale: "en" }),
   });
   expect(new TextDecoder().decode(new Uint8Array(await response.arrayBuffer()))).toBe(
     '"Last updated","Source","Rating","User","Turn key","Question","Answer","Comment"',
