@@ -1443,6 +1443,7 @@ export const en = {
   "panels.ops.fields.source": "Source",
   "panels.ops.fields.code": "Code",
   "panels.ops.fields.message": "Message",
+  "panels.ops.evidence.correlationUnavailable": "Correlation is unavailable; the supplied log queries cover this run ID only.",
   "panels.ops.fields.caseSet": "Case set",
   "panels.ops.fields.startedAt": "Started at",
   "panels.ops.fields.summary": "Summary",

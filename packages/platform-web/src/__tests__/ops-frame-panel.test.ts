@@ -311,6 +311,45 @@ describe("builtin-product-ops-frame", () => {
     }
   });
 
+  it("reserves the measured height of the expanded floating composer", async () => {
+    const observers: Array<{ callback: ResizeObserverCallback; element?: Element }> = [];
+    class MockResizeObserver {
+      element?: Element;
+      constructor(readonly callback: ResizeObserverCallback) {
+        observers.push(this);
+      }
+      observe(element: Element) { this.element = element; }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    const mounted = await mountOpsFrame({
+      initialEntry: {
+        applicationId: "operations",
+        useId: "ops-test",
+        pageKey: "ops-test",
+        kind: "native",
+        path: "/ops/test",
+      },
+    });
+    try {
+      const pane = mounted.host.querySelector<HTMLElement>("[data-ops-chat-pane]")!;
+      const body = mounted.host.querySelector<HTMLElement>(".ops-feature-body")!;
+      Object.defineProperty(pane, "offsetHeight", { configurable: true, value: 137 });
+      expect(observers[0]?.element).toBe(pane);
+      observers[0]!.callback([], {} as ResizeObserver);
+      await nextTick();
+      expect(body.style.getPropertyValue("--ops-floating-dock")).toBe("137px");
+
+      mounted.host.querySelector<HTMLButtonElement>("[data-ops-fold-composer]")!.click();
+      await nextTick();
+      expect(body.style.getPropertyValue("--ops-floating-dock")).toBe("");
+    } finally {
+      mounted.unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("hides chat, new chat, and recent sessions for a user-feedback-only reader", async () => {
     const mounted = await mountOpsFrame({
       granted: ["user-feedback"],

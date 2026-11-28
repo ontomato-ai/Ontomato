@@ -224,7 +224,7 @@ export const assistantStore = {
   async listUserSessions(
     owner: AssistantOwner,
     options: { search?: string; limit?: number; agentKind?: string; agentId?: string } = {},
-  ): Promise<Array<{ sessionId: string; agentId: string; agentName: string; title: string; updatedAt: string }>> {
+  ): Promise<Array<{ sessionId: string; agentId: string; agentKind: string; agentName: string; title: string; updatedAt: string }>> {
     const limit = Math.max(1, Math.min(50, options.limit ?? 20));
     const search = options.search?.trim();
     const params: unknown[] = [owner.domainId, owner.userId];
@@ -250,11 +250,12 @@ export const assistantStore = {
     const result = await db().query<{
       sessionId: string;
       agentId: string;
+      agentKind: string | null;
       agentName: string | null;
       title: string;
       updatedAt: Date;
     }>(
-      `SELECT s.id AS "sessionId", s.agent_id AS "agentId", a.name AS "agentName", s.title, s.updated_at AS "updatedAt"
+      `SELECT s.id AS "sessionId", s.agent_id AS "agentId", a.kind AS "agentKind", a.name AS "agentName", s.title, s.updated_at AS "updatedAt"
        FROM ${table("assistant_sessions")} s
        LEFT JOIN ${table("assistant_agents")} a ON a.id = s.agent_id AND a.domain_id = s.domain_id
        WHERE ${where.join(" AND ")}
@@ -265,6 +266,7 @@ export const assistantStore = {
     return result.rows.map(row => ({
       sessionId: row.sessionId,
       agentId: row.agentId,
+      agentKind: row.agentKind ?? "",
       agentName: row.agentName ?? "",
       title: row.title,
       updatedAt: row.updatedAt.toISOString(),

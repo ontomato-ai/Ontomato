@@ -72,6 +72,7 @@ it("reads one record with its turn key and labels under the list's admission", a
     feedbackId,
     all: true,
     locale: "en",
+    viewer: expect.objectContaining({ locale: "en" }),
   });
   const body = await response.json();
   expect(body.success).toBe(true);

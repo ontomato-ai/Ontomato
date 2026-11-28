@@ -150,6 +150,31 @@ await mountPanel({
     });
     const isFloating = computed(() => layoutMode.value === "full");
     const composerFolded = ref(false);
+    const chatPaneRef = ref(null);
+    const floatingDockSpace = ref(0);
+    let floatingDockObserver;
+
+    function measureFloatingDock() {
+      const element = chatPaneRef.value;
+      floatingDockSpace.value = element && isFloating.value && !composerFolded.value
+        ? Math.ceil(element.offsetHeight)
+        : 0;
+    }
+
+    watch([chatPaneRef, isFloating, composerFolded], ([element]) => {
+      floatingDockObserver?.disconnect();
+      floatingDockObserver = undefined;
+      if (element && isFloating.value && !composerFolded.value) {
+        floatingDockObserver = new ResizeObserver(measureFloatingDock);
+        floatingDockObserver.observe(element);
+      }
+      measureFloatingDock();
+    }, { flush: "post" });
+    onBeforeUnmount(() => floatingDockObserver?.disconnect());
+
+    const floatingDockStyle = computed(() => floatingDockSpace.value > 0
+      ? { "--ops-floating-dock": `${floatingDockSpace.value}px` }
+      : undefined);
 
     // Sync active session with recentSessions ObjectList highlight:
     // highlight only when viewing pure conversation on that session, so clicking any session
@@ -362,6 +387,8 @@ await mountPanel({
       layoutMode,
       isFloating,
       composerFolded,
+      chatPaneRef,
+      floatingDockStyle,
       canShowMoreSessions,
       showMoreSessions,
       startNewChat,
