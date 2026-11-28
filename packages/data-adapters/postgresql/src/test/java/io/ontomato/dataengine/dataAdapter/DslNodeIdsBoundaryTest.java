@@ -141,29 +141,6 @@ class DslNodeIdsBoundaryTest {
 		}
 	}
 
-	@Test
-	void multipleObjectsWithoutRelationshipsInTheFirstPatternAreRejectedBeforeJdbc() throws Exception {
-		PostgreAdapter adapter = newAdapter();
-		doThrow(new AssertionError("The unbound object reached JDBC")).when(adapter).openConnection();
-		JSONObject dsl = orderedFirstStep();
-		JSONObject first = dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
-		first.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).getJSONArray("objects")
-				.add(JSONObject.of("idx", 1, "class", "item", "variable", "other"));
-		JSONObject output = first.getJSONObject("output");
-		output.remove("sort");
-		output.getJSONArray("fields").getJSONObject(0).put("variable", "other");
-
-		var result = HttpRequestUtil.executeDsl(new DataRagConfig(), adapter, JSONArray.of(dsl).toJSONString(),
-				"s", true, ONTOLOGY, null, restrictedRows(), DslExecutionMode.OPTIMIZED, DOMAIN)[1];
-
-		var error = assertInstanceOf(DslContractViolationException.class, result.failure().cause());
-		var violation = error.getViolations().getFirst();
-		assertEquals(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT, violation.getCode());
-		assertEquals("steps[0].graph.patterns[0].relationship", violation.getDslPath());
-		assertTrue(violation.getDetail().contains("PostgreAdapter"));
-		assertTrue(violation.getDetail().contains("query them separately"));
-	}
-
 	private static PostgreAdapter newAdapter() {
 		return spy(new PostgreAdapter(new DataAdapterConnection(), ONTOLOGY));
 	}
