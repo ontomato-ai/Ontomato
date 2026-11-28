@@ -561,6 +561,7 @@ function usage() {
   classes
   schema <class> [<class> ...]
   relationships <class> [<class> ...]
+  dsl-reference <class> [<class> ...]
   distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
   execute-dsl <json|@file>
   metric-view context
@@ -666,7 +667,7 @@ async function main() {
     printData(await requestJson(api, "POST", backendPath, { classNames }));
     return;
   }
-  if (cmd === "distinct-values" || cmd === "execute-dsl")
+  if (cmd === "dsl-reference" || cmd === "distinct-values" || cmd === "execute-dsl")
     return ontologyQueryCommand(api,argv,()=>headers(api));
   if (cmd === "agent")
     return agentChannelCommand(api,argv.slice(1),()=>headers(api));

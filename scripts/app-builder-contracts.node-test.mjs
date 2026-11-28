@@ -31,6 +31,35 @@ import { promisify } from "node:util";
 import { ontologyQueryCommand } from "../agent-skills/ontomato-analyst/client.mjs";
 import { panelRegistrationClient } from "../agent-skills/ontomato-app-builder/scripts/panel-registration.mjs";
 
+test("app-builder reads the DSL reference for the requested classes", async () => {
+  let received;
+  const reference = { syntaxMarkdown: "DSL syntax for the selected classes", exampleMarkdown: "A DSL example" };
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    received = [request.method, request.url, request.headers["x-api-key"], JSON.parse(body)];
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify(reference));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { stdout } = await promisify(execFile)(process.execPath, [
+      "agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "dsl-reference", "/person", "/department",
+    ], {
+      env: {
+        ...process.env,
+        ONTOMATO_ONTOLOGY_URL: `http://127.0.0.1:${server.address().port}/api/data-query`,
+        ONTOMATO_API_KEY: "test-only",
+      },
+    });
+    assert.deepEqual(received, ["POST", "/api/data-query/ontology/query/dsl-reference", "test-only",
+      { classNames: ["/person", "/department"] }]);
+    assert.deepEqual(JSON.parse(stdout), reference);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test("deletes a panel by ID without loading its obsolete definition", async () => {
   const received = [];
   const server = createServer((request, response) => {
