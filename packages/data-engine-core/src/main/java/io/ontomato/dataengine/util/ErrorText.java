@@ -13,7 +13,6 @@ import java.util.regex.Pattern;
 public final class ErrorText {
   private ErrorText() {}
 
-  private static final Pattern HINT = Pattern.compile("(?im)^\\h*Hint:.*(?:\\R(?!\\h*[A-Za-z][A-Za-z ]*:).*)*");
   private static final Pattern PYTHON_FRAME = Pattern.compile(
       "(?m)^\\h*File \"(?:[^\"\\r\\n]*[/\\\\])?program\\.py\", line ([0-9]+)(?:, in [^\\r\\n]*)?\\h*\\r?$");
   private static final Pattern PYTHON_EXCEPTION = Pattern.compile("(?m)^([^\\s:]+)(?::[^\\r\\n]*)?\\r?$");
@@ -40,7 +39,7 @@ public final class ErrorText {
       if (current instanceof DslContractViolationException) return current.getMessage();
       if (current instanceof SQLException sql && sql.getSQLState() != null) {
         if (sql.getSQLState().startsWith("42") && sql.getMessage() != null)
-          return HINT.matcher(sql.getMessage()).replaceAll("").strip();
+          return sql.getMessage().strip();
         if (sql.getSQLState().startsWith("22")) return "Data type conversion failed; the value is hidden";
         return "Query execution failed";
       }

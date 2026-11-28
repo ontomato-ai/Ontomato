@@ -5,15 +5,18 @@ import com.alibaba.fastjson2.schema.JSONSchema;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /** A closed query source bundle. DSL provenance is derived; Python computation is declared. */
 public final class QueryPackage {
   private QueryPackage() {}
+  private static final JSONObject SCHEMA_JSON;
   private static final JSONSchema SHAPE;
   static {
     try (var in = QueryPackage.class.getResourceAsStream("/ontology-contracts/query-package.schema.json")) {
       if (in == null) throw new IllegalStateException("Missing query package schema");
-      SHAPE = JSONSchema.of(JSON.parseObject(in.readAllBytes()));
+      SCHEMA_JSON = JSON.parseObject(in.readAllBytes());
+      SHAPE = JSONSchema.of(SCHEMA_JSON);
     } catch (Exception e) { throw new ExceptionInInitializerError(e); }
   }
 
@@ -23,7 +26,7 @@ public final class QueryPackage {
 
   public static JSONObject validate(JSONObject value) {
     var result = SHAPE.validate(value);
-    if (!result.isSuccess()) throw new IllegalArgumentException("Invalid query package: " + result.getMessage());
+    if (!result.isSuccess()) throw new IllegalArgumentException("Invalid query package: " + schemaError(value, result.getMessage()));
     var manifest = value.getJSONObject("manifest");
     var files = files(value);
     var expected = new HashSet<String>();
@@ -218,8 +221,16 @@ public final class QueryPackage {
   }
 
   public static void labels(JSONObject graph, JSONObject labels) {
-    if (labels == null || !new HashSet<>(QuerySourceAnalysis.outputKeys(graph)).equals(labels.keySet()))
-      throw new IllegalArgumentException("Column labels must match package outputs");
+    Set<String> outputs = new LinkedHashSet<>(QuerySourceAnalysis.outputKeys(graph));
+    Set<String> declared = labels == null ? Set.of() : labels.keySet();
+    if (!outputs.equals(declared)) {
+      Set<String> missing = new LinkedHashSet<>(outputs);
+      missing.removeAll(declared);
+      Set<String> extra = new LinkedHashSet<>(declared);
+      extra.removeAll(outputs);
+      throw new IllegalArgumentException("Column labels must match package outputs; missing labels for "
+          + missing + "; extra labels for " + extra);
+    }
     for (Object item : graph.getJSONArray("nodes")) {
       var node = (JSONObject) item;
       if ("output".equals(node.getString("kind"))) {
@@ -264,6 +275,112 @@ public final class QueryPackage {
     function.setCode(null);
     function.setParameters(null);
   }
+
+  private static String schemaError(JSONObject value, String fallback) {
+    SchemaFailure failure = inspectSchema(SCHEMA_JSON, value, "");
+    if (failure.messages.isEmpty()) return fallback;
+    return String.join("; ", failure.messages.stream().distinct().limit(8).toList());
+  }
+
+  private static final class SchemaFailure {
+    int score;
+    final List<String> messages = new ArrayList<>();
+    void add(int weight, String path, String detail) {
+      score += weight;
+      messages.add((path.isEmpty() ? "package" : path) + ": " + detail);
+    }
+    void addAll(SchemaFailure nested) {
+      score += nested.score;
+      messages.addAll(nested.messages);
+    }
+    boolean success() { return messages.isEmpty(); }
+  }
+
+  private static SchemaFailure inspectSchema(JSONObject schema, Object value, String path) {
+    SchemaFailure failure = new SchemaFailure();
+    JSONArray anyOf = schema.getJSONArray("anyOf");
+    if (anyOf != null) {
+      SchemaFailure best = null;
+      for (int i = 0; i < anyOf.size(); i++) {
+        SchemaFailure branch = inspectSchema(anyOf.getJSONObject(i), value, path);
+        if (branch.success()) return branch;
+        if (best == null || branch.score < best.score) best = branch;
+        else if (branch.score == best.score) {
+          best.score += branch.score;
+          for (String message : branch.messages) if (!best.messages.contains(message)) best.messages.add(message);
+        }
+      }
+      return best == null ? failure : best;
+    }
+    Object type = schema.get("type");
+    if (type != null && !typeMatches(type, value)) {
+      failure.add(10, path, "expected " + typeName(type) + " but got " + valueType(value));
+      return failure;
+    }
+    if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value))
+      failure.add(4, path, "expected `" + schema.get("const") + "` but got `" + value + "`");
+    JSONArray enumeration = schema.getJSONArray("enum");
+    if (enumeration != null && !enumeration.contains(value))
+      failure.add(4, path, "expected one of " + enumeration + " but got `" + value + "`");
+    if (value instanceof String text) {
+      Integer minLength = schema.getInteger("minLength");
+      if (minLength != null && text.length() < minLength) failure.add(2, path, "must not be empty");
+      String pattern = schema.getString("pattern");
+      if (pattern != null && !Pattern.compile(pattern).matcher(text).find()) failure.add(2, path, "must match /" + pattern + "/");
+    }
+    if (value instanceof Map<?, ?> object) {
+      JSONObject properties = schema.getJSONObject("properties");
+      Set<String> allowed = properties == null ? Set.of() : properties.keySet();
+      for (Object required : Objects.requireNonNullElse(schema.getJSONArray("required"), new JSONArray()))
+        if (!object.containsKey(required)) failure.add(2, path, "missing required key `" + required + "`");
+      if (properties != null) for (String key : properties.keySet())
+        if (object.containsKey(key)) failure.addAll(inspectSchema(properties.getJSONObject(key), object.get(key), child(path, key)));
+      Object additional = schema.get("additionalProperties");
+      if (Boolean.FALSE.equals(additional)) {
+        for (Object key : object.keySet()) if (!allowed.contains(key))
+          failure.add(1, child(path, key.toString()), "unexpected key; allowed keys here are `" + String.join("`, `", allowed) + "`");
+      } else if (additional instanceof JSONObject additionalSchema) {
+        for (Object key : object.keySet()) if (!allowed.contains(key))
+          failure.addAll(inspectSchema(additionalSchema, object.get(key), child(path, key.toString())));
+      }
+    }
+    if (value instanceof List<?> array) {
+      Integer minItems = schema.getInteger("minItems");
+      if (minItems != null && array.size() < minItems) failure.add(2, path, "requires at least " + minItems + " item");
+      JSONObject items = schema.getJSONObject("items");
+      if (items != null) for (int i = 0; i < array.size(); i++)
+        failure.addAll(inspectSchema(items, array.get(i), path + "[" + i + "]"));
+    }
+    return failure;
+  }
+
+  private static String child(String path, String key) { return path.isEmpty() ? key : path + "." + key; }
+
+  private static boolean typeMatches(Object type, Object value) {
+    if (type instanceof JSONArray types) return types.stream().anyMatch(one -> typeMatches(one, value));
+    return switch ((String) type) {
+      case "object" -> value instanceof Map<?, ?>;
+      case "array" -> value instanceof List<?>;
+      case "string" -> value instanceof String;
+      case "number", "integer" -> value instanceof Number;
+      case "boolean" -> value instanceof Boolean;
+      case "null" -> value == null;
+      default -> true;
+    };
+  }
+
+  private static String typeName(Object type) { return type instanceof JSONArray types ? types.toJSONString() : "`" + type + "`"; }
+
+  private static String valueType(Object value) {
+    if (value == null) return "null";
+    if (value instanceof Map<?, ?>) return "an object";
+    if (value instanceof List<?>) return "an array";
+    if (value instanceof String) return "a string";
+    if (value instanceof Number) return "a number";
+    if (value instanceof Boolean) return "a boolean";
+    return value.getClass().getSimpleName();
+  }
+
 
   public static String launcher(JSONObject value) {
     return "# ontomato-python:2\nimport query_runtime\nimport runpy, sys\nsys.path.insert(0, 'package')\nrunpy.run_path("

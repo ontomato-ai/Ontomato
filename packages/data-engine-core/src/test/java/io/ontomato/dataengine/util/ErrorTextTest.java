@@ -8,10 +8,10 @@ import org.junit.jupiter.api.Test;
 
 class ErrorTextTest {
   @Test
-  void sqlState42DisclosesDriverMessageWithoutHintOrWrapper() {
+  void sqlState42DisclosesTheDriverMessageWithItsHint() {
     var failure = new RuntimeException("wrapper contains confidential values", new SQLException(
         "ERROR: column t.hj_dj does not exist\n  Hint: Perhaps you meant secret_salary.\n    continuation\n  Position: 12", "42703"));
-    assertEquals("ERROR: column t.hj_dj does not exist\n\n  Position: 12", ErrorText.queryError(failure));
+    assertEquals("ERROR: column t.hj_dj does not exist\n  Hint: Perhaps you meant secret_salary.\n    continuation\n  Position: 12", ErrorText.queryError(failure));
   }
 
   @Test

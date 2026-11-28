@@ -20,7 +20,9 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -86,6 +88,122 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		return JSON.toJSONString(answers, Feature.WriteMapNullValue);
 	}
 
+	private static final String TWO_STEP_SHAPE = "PostgreSQL renders exactly two steps as one chain: "
+			+ "step 1 writes one temporary table with `to_user: false` and `save_table`, and step 2 reads "
+			+ "that same temporary table through one object in one pattern and returns the final output with "
+			+ "`to_user: true`. Split independent reads or multiple results into separate DSL queries or a query package.";
+
+	private static final Set<String> AGGREGATE_FUNCTIONS = Set.of("AVG", "COUNT", "MIN", "MAX", "SUM");
+
+	private static void requireSupportedTwoStepShape(JSONArray steps) {
+		if (steps.size() > 2) {
+			throw unsupportedStep("answer.steps[2]", "step 3 cannot be rendered. " + TWO_STEP_SHAPE);
+		}
+		JSONObject firstOutput = steps.getJSONObject(0).getJSONObject("output");
+		JSONObject secondOutput = steps.getJSONObject(1).getJSONObject("output");
+		if (firstOutput == null || !Boolean.FALSE.equals(firstOutput.getBoolean("to_user"))) {
+			throw unsupportedStep("answer.steps[0].output.to_user",
+					"step 1 must not return a separate output in a chained query. " + TWO_STEP_SHAPE);
+		}
+		String temporaryTable = firstOutput.getString("save_table");
+		if (temporaryTable == null || temporaryTable.isBlank()) {
+			throw unsupportedStep("answer.steps[0].output.save_table",
+					"step 1 must declare the temporary table consumed by step 2. " + TWO_STEP_SHAPE);
+		}
+		if (secondOutput == null || !Boolean.TRUE.equals(secondOutput.getBoolean("to_user"))) {
+			throw unsupportedStep("answer.steps[1].output.to_user",
+					"step 2 must be the single final output. " + TWO_STEP_SHAPE);
+		}
+		JSONArray patterns = steps.getJSONObject(1).getJSONObject("graph").getJSONArray("patterns");
+		if (patterns == null || patterns.size() != 1) {
+			throw unsupportedStep("answer.steps[1].graph.patterns",
+					"step 2 must have exactly one pattern. " + TWO_STEP_SHAPE);
+		}
+		JSONObject pattern = patterns.getJSONObject(0);
+		JSONArray objects = pattern.getJSONArray("objects");
+		if (objects == null || objects.size() != 1) {
+			throw unsupportedStep("answer.steps[1].graph.patterns[0].objects",
+					"step 2 must read exactly one temporary table object. " + TWO_STEP_SHAPE);
+		}
+		JSONArray relationships = pattern.getJSONArray("relationship");
+		if (relationships != null && !relationships.isEmpty()) {
+			throw unsupportedStep("answer.steps[1].graph.patterns[0].relationship",
+					"step 2 cannot join another object. " + TWO_STEP_SHAPE);
+		}
+		JSONObject object = objects.getJSONObject(0);
+		String className = object.getString("class");
+		if (!temporaryTable.equals(className)) {
+			throw unsupportedStep("answer.steps[1].graph.patterns[0].objects[0].class",
+					"step 2 reads `" + className + "`, but its only supported input is the temporary table `"
+							+ temporaryTable + "` written by step 1. " + TWO_STEP_SHAPE);
+		}
+	}
+
+	private static DslContractViolationException unsupportedStep(String path, String detail) {
+		return new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT, path, detail);
+	}
+
+	private static DslContractViolationException invalidStep(String path, String detail) {
+		return new DslContractViolationException(DslContractViolationException.Code.INVALID_GRAMMAR, path, detail);
+	}
+
+	private static Set<String> outputAliases(JSONObject step) {
+		Set<String> aliases = new LinkedHashSet<>();
+		JSONArray fields = step.getJSONObject("output").getJSONArray("fields");
+		for (int i = 0; i < fields.size(); i++) {
+			aliases.add(fields.getJSONObject(i).getString("as"));
+		}
+		return aliases;
+	}
+
+	private static final class OrderContext {
+		final Map<String, Set<String>> variableFields = new HashMap<>();
+		final Set<String> outputAliases = new LinkedHashSet<>();
+		final Set<String> grouped = new HashSet<>();
+		boolean aggregate;
+		boolean temporary;
+	}
+
+	private static OrderContext orderContext(JSONObject step, String tmpClassAs,
+			Map<String, Map<String, String>> classAttrTypeMap, Set<String> temporaryFields) {
+		OrderContext context = new OrderContext();
+		context.temporary = tmpClassAs != null;
+		JSONArray patterns = step.getJSONObject("graph").getJSONArray("patterns");
+		JSONArray objects = patterns.getJSONObject(0).getJSONArray("objects");
+		for (int i = 0; i < objects.size(); i++) {
+			JSONObject object = objects.getJSONObject(i);
+			String variable = object.getString("variable");
+			if (context.temporary) {
+				context.variableFields.put(variable, temporaryFields);
+			} else {
+				Map<String, String> attributes = classAttrTypeMap.get(object.getString("class"));
+				context.variableFields.put(variable, attributes == null ? Set.of() : attributes.keySet());
+			}
+		}
+		JSONObject output = step.getJSONObject("output");
+		JSONArray fields = output.getJSONArray("fields");
+		boolean groupedOutput = false;
+		for (int i = 0; i < fields.size(); i++) {
+			JSONObject field = fields.getJSONObject(i);
+			context.outputAliases.add(field.getString("as"));
+			String function = field.getString("function");
+			if (function != null && AGGREGATE_FUNCTIONS.contains(function.trim().toUpperCase(Locale.ROOT))) {
+				context.aggregate = true;
+			}
+		}
+		JSONObject groupBy = output.getJSONObject("group_by");
+		if (groupBy != null && groupBy.getJSONArray("fields") != null) {
+			JSONArray groups = groupBy.getJSONArray("fields");
+			groupedOutput = !groups.isEmpty();
+			for (int i = 0; i < groups.size(); i++) {
+				JSONObject group = groups.getJSONObject(i);
+				context.grouped.add(group.getString("variable") + "\u0000" + group.getString("field"));
+			}
+		}
+		context.aggregate = context.aggregate || groupedOutput;
+		return context;
+	}
+
 	private String toSql(JSONObject dsl, Map<String, Object> jsonRule, DslRowLimit.Tracker rowLimit) throws Exception {
 		try {
 			@SuppressWarnings("unchecked")
@@ -111,6 +229,9 @@ public class PostgreAdapter extends SandboxDataAdapter {
 
 			JSONArray steps = dsl.getJSONObject("answer").getJSONArray("steps");
 			JSONObject firstStep = steps.getJSONObject(0);
+			if (steps.size() > 1) {
+				requireSupportedTwoStepShape(steps);
+			}
 
 			JSONArray objects = firstStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
 					.getJSONArray("objects");
@@ -498,11 +619,18 @@ public class PostgreAdapter extends SandboxDataAdapter {
 					+ ("".equals(subSelectWhere) ? "" : "where\n    " + subSelectWhere);
 
 			if (steps.size() == 1) {
+				OrderContext orderContext = orderContext(firstStep, null, classAttrTypeMap, null);
 				subSelectSql = appendGroupByHaving(firstStep, subSelectSql, null);
-				subSelectSql = appendOrderBy(firstStep, subSelectSql, null);
+				subSelectSql = appendOrderBy(firstStep, subSelectSql, orderContext, "answer.steps[0]");
 				subSelectSql = appendLimit(firstStep, subSelectSql, rowLimit);
 				return subSelectSql;
 			} else {
+				OrderContext firstOrderContext = orderContext(firstStep, null, classAttrTypeMap, null);
+				Set<String> temporaryFields = outputAliases(firstStep);
+				subSelectSql = appendGroupByHaving(firstStep, subSelectSql, null);
+				subSelectSql = appendOrderBy(firstStep, subSelectSql, firstOrderContext, "answer.steps[0]");
+				subSelectSql = appendIntermediateLimit(firstStep, subSelectSql);
+
 				JSONObject secondStep = steps.getJSONObject(1);
 				String tmpClassAs = secondStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
 						.getJSONArray("objects").getJSONObject(0).getString("variable");
@@ -537,9 +665,14 @@ public class PostgreAdapter extends SandboxDataAdapter {
 						+ "from (\n"
 						+ subSelectSql + "\n"
 						+ ") as " + quoteIdentifier(tmpClassAs);
+				String temporaryWhere = temporaryWhere(secondStep, tmpClassAs, temporaryFields);
+				if (!temporaryWhere.isEmpty()) {
+					sql += "\nwhere\n    " + temporaryWhere;
+				}
 
+				OrderContext secondOrderContext = orderContext(secondStep, tmpClassAs, null, temporaryFields);
 				sql = appendGroupByHaving(secondStep, sql, tmpClassAs);
-				sql = appendOrderBy(secondStep, sql, tmpClassAs);
+				sql = appendOrderBy(secondStep, sql, secondOrderContext, "answer.steps[1]");
 				sql = appendLimit(secondStep, sql, rowLimit);
 				return sql;
 			}
@@ -588,7 +721,7 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		return sql;
 	}
 
-	private String appendOrderBy(JSONObject step, String sql, String tmpClassAs) {
+	private String appendOrderBy(JSONObject step, String sql, OrderContext context, String stepPath) {
 		if (step.getJSONObject("output").getJSONObject("sort") == null) {
 			return sql;
 		}
@@ -597,12 +730,190 @@ public class PostgreAdapter extends SandboxDataAdapter {
 			sql += "\norder by\n    ";
 			for (int i = 0; i < orderBy.getJSONArray("fields").size(); i++) {
 				JSONObject order = orderBy.getJSONArray("fields").getJSONObject(i);
-				sql += quoteIdentifier(order.getString("field")) + " "
-						+ ("desc".equals(order.getString("order")) ? "desc" : "")
+				String path = stepPath + ".output.sort.fields[" + i + "]";
+				sql += orderReference(order, context, path)
+						+ ("desc".equals(order.getString("order")) ? " desc" : "")
 						+ (i == orderBy.getJSONArray("fields").size() - 1 ? "" : ",");
 			}
 		}
 		return sql;
+	}
+
+	private static String orderReference(JSONObject order, OrderContext context, String path) {
+		String variable = order.getString("variable");
+		String field = order.getString("field");
+		if (field == null || field.isBlank()) {
+			throw invalidStep(path + ".field", "a sort field requires a nonblank `field`");
+		}
+		boolean hasVariable = variable != null && !variable.isBlank();
+		if (!hasVariable) {
+			if (context.outputAliases.contains(field)) {
+				return quoteIdentifier(field);
+			}
+			throw invalidStep(path + ".field", "sort field `" + field
+					+ "` is not an output alias; write `variable` and `field` for a source attribute, or omit `variable` only for an output or calculation alias");
+		}
+		Set<String> sourceFields = context.variableFields.get(variable);
+		if (sourceFields == null) {
+			throw invalidStep(path + ".variable", "unknown sort variable `" + variable + "`");
+		}
+		if (sourceFields.contains(field)) {
+			if (context.aggregate && !context.grouped.contains(variable + "\u0000" + field)) {
+				throw invalidStep(path, "`" + variable + "." + field
+						+ "` is a detail field in an aggregated query; group by it or sort by the output alias of an aggregate or grouped field such as `"
+						+ String.join("`, `", context.outputAliases) + "`");
+			}
+			return columnReference(variable, context.temporary ? quoteIdentifier(field) : physicalIdentifier(field));
+		}
+		if (context.outputAliases.contains(field)) {
+			return quoteIdentifier(field);
+		}
+		throw invalidStep(path + ".field", "`" + field + "` is neither an attribute of `" + variable
+				+ "` nor an output alias; use `variable` and `field` for a source attribute, or omit `variable` and use one of the output aliases `"
+				+ String.join("`, `", context.outputAliases) + "`");
+	}
+
+	private String temporaryWhere(JSONObject step, String tmpClassAs, Set<String> temporaryFields) {
+		JSONObject object = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
+				.getJSONArray("objects").getJSONObject(0);
+		JSONObject conditions = object.getJSONObject("conditions");
+		if (conditions == null) {
+			return "";
+		}
+		String path = "answer.steps[1].graph.patterns[0].objects[0].conditions";
+		for (String key : conditions.keySet()) {
+			if (!Set.of("properties", "timeseries", "text", "vector").contains(key)) {
+				throw invalidStep(path + "." + key,
+						"`conditions` only takes `properties`, `timeseries`, `text` or `vector`; put field filters under `conditions.properties`");
+			}
+		}
+		for (String key : List.of("timeseries", "text", "vector")) {
+			if (conditions.getJSONObject(key) != null) {
+				throw unsupportedStep(path + "." + key,
+						"PostgreSQL temporary-table conditions support only `conditions.properties`; move this filter into the first step or render it as a property condition");
+			}
+		}
+		JSONObject properties = conditions.getJSONObject("properties");
+		if (properties == null) {
+			return "";
+		}
+		return temporaryCondition(properties, tmpClassAs, temporaryFields, path + ".properties");
+	}
+
+	private static String temporaryCondition(JSONObject condition, String tmpClassAs, Set<String> temporaryFields,
+			String path) {
+		if (condition == null) {
+			throw invalidStep(path, "a temporary-table condition must be an object");
+		}
+		JSONArray and = condition.getJSONArray("and");
+		if (and != null) {
+			return temporaryLogic(and, " and ", tmpClassAs, temporaryFields, path);
+		}
+		JSONArray or = condition.getJSONArray("or");
+		if (or != null) {
+			return temporaryLogic(or, " or ", tmpClassAs, temporaryFields, path);
+		}
+		JSONArray not = condition.getJSONArray("not");
+		if (not != null) {
+			return "(not (" + temporaryCondition(DslGrammarValidator.negated(condition), tmpClassAs, temporaryFields, path) + "))";
+		}
+		String field = condition.getString("field");
+		if (field == null || field.isBlank()) {
+			throw invalidStep(path, "a field condition requires `field`, `operator` and `value`, or a logic list under `and`, `or` or `not`");
+		}
+		if (!temporaryFields.contains(field)) {
+			throw invalidStep(path + ".field", "unknown temporary-table field `" + field + "`; available fields are `"
+					+ String.join("`, `", temporaryFields) + "`");
+		}
+		String operator = condition.getString("operator");
+		String column = columnReference(tmpClassAs, quoteIdentifier(field));
+		if ("=".equals(operator) || "!=".equals(operator) || ">".equals(operator) || ">=".equals(operator)
+				|| "<=".equals(operator) || "<".equals(operator)) {
+			return column + " " + operator + " " + sqlLiteral(condition.get("value"), path + ".value");
+		}
+		if ("like".equals(operator) || "not like".equals(operator)) {
+			return temporaryLike(condition, column, operator, path);
+		}
+		if ("between".equals(operator)) {
+			JSONArray value = condition.getJSONArray("value");
+			if (value == null || value.size() != 2) {
+				throw invalidStep(path + ".value", "`between` requires a two-element array");
+			}
+			return "(" + column + " >= " + sqlLiteral(value.get(0), path + ".value") + " and " + column + " <= "
+					+ sqlLiteral(value.get(1), path + ".value") + ")";
+		}
+		if ("in".equals(operator)) {
+			JSONArray value = condition.getJSONArray("value");
+			if (value == null || value.isEmpty()) {
+				throw invalidStep(path + ".value", "`in` requires a nonempty array");
+			}
+			List<String> values = new ArrayList<>();
+			for (int i = 0; i < value.size(); i++) {
+				values.add(sqlLiteral(value.get(i), path + ".value"));
+			}
+			return column + " in (" + String.join(",", values) + ")";
+		}
+		if ("is".equals(operator) || "is not".equals(operator)) {
+			if (condition.get("value") != null) {
+				throw invalidStep(path + ".value", "`" + operator + "` only tests null and requires `value: null`");
+			}
+			return column + " " + operator + " null";
+		}
+		throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_OPERATOR_FOR_TYPE,
+				path + ".operator", "operator '" + operator + "' on temporary-table field '" + field
+						+ "' is not supported by PostgreAdapter");
+	}
+
+	private static String temporaryLogic(JSONArray children, String joiner, String tmpClassAs, Set<String> temporaryFields,
+			String path) {
+		if (children.isEmpty()) {
+			throw invalidStep(path, "a logic condition requires a nonempty `and`, `or` or `not` list");
+		}
+		List<String> rendered = new ArrayList<>();
+		for (int i = 0; i < children.size(); i++) {
+			rendered.add(temporaryCondition(children.getJSONObject(i), tmpClassAs, temporaryFields, path));
+		}
+		return "(" + String.join(joiner, rendered) + ")";
+	}
+
+	private static String temporaryLike(JSONObject condition, String column, String operator, String path) {
+		if (!(condition.get("value") instanceof String text)) {
+			throw invalidStep(path + ".value", "`" + operator + "` requires a text value");
+		}
+		if (LikePattern.escaped(condition)) {
+			String pattern = LikePattern.of(condition, true).sql("").replace("'", "''");
+			return column + " " + operator + " '" + pattern + "' escape '!'";
+		}
+		String value = text.replace("'", "''").trim();
+		if (!value.startsWith("%") && !value.endsWith("%")) {
+			value = "%" + value + "%";
+		}
+		return column + " " + operator + " '" + value + "'";
+	}
+
+	private static String sqlLiteral(Object value, String path) {
+		if (value == null) {
+			return "null";
+		}
+		if (value instanceof Number || value instanceof Boolean) {
+			return value.toString();
+		}
+		if (value instanceof String text) {
+			return "'" + text.replace("'", "''") + "'";
+		}
+		throw invalidStep(path, "temporary-table condition values must be strings, numbers, booleans or null");
+	}
+
+	private String appendIntermediateLimit(JSONObject step, String sql) {
+		JSONObject limit = step.getJSONObject("output").getJSONObject("limit");
+		if (limit == null) {
+			return sql;
+		}
+		Integer offset = limit.getInteger("offset");
+		if (offset == null) {
+			offset = 0;
+		}
+		return sql + "\nlimit " + limit.getInteger("count") + " offset " + offset;
 	}
 
 	private String appendLimit(JSONObject step, String sql, DslRowLimit.Tracker rowLimit) {
