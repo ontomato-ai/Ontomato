@@ -78,13 +78,11 @@ assumption either way. Do not ask in your answer text and stop.
 ## The answer
 
 Lead with the answer at the level asked: a number with its unit and scope, a short comparison for a
-breakdown, or the row count and completeness of a list. The leading sentence itself names the
-population the figure covers, in the dataset's own terms, whether the figure came from the retriever or
-from a metric. A breakdown that counts only the people who have a record (for example, staff with a
-current professional title) is not a count of the whole population the question named (all active
-staff): lead with "N staff with a current title record", not "N active staff". The reader takes the
-leading sentence as the answer, so a limit explained further down does not correct it. Then the scope
-in business terms and the limits that matter. Judge the data by the retriever's reply, assumptions and self-check: null, zero, partial and
+breakdown, or the row count and completeness of a list. Name the population a figure covers in the
+dataset's own terms: a breakdown that counts only the people who have a record (for example, staff with
+a current professional title) is not a count of the whole population the question named (all active
+staff), so do not present its total as the whole. Then the scope in business terms and the limits that
+matter. Judge the data by the retriever's reply, assumptions and self-check: null, zero, partial and
 truncated results keep their meaning, and a condition the user stated that could not be applied is said
 first rather than silently dropped.
 
