@@ -2,8 +2,9 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { renameSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import type { RuntimeAgentDefinition } from "@ontomato/contracts/agent-runtime";
+import type { RuntimeAgentDefinition, RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
+import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type { HarnessOpenRequest, HarnessPlugin, HarnessSession } from "./adapters/contract";
 import { HarnessRegistry } from "./adapters/registry";
 import { RuntimeError } from "./errors";
@@ -50,7 +51,7 @@ interface LiveSession {
   idle?: ReturnType<typeof setTimeout>;
 }
 
-const idleMs = 60 * 60 * 1000;
+const idleMs = 10 * 60 * 1000;
 const key = (scope: Scope, id: string) => canonical([scope.hostId, scope.domainId, id]);
 const bashEnvironmentFile = "ontomato-bash-env";
 const activeRunFile = "ontomato-run-id";
@@ -212,15 +213,29 @@ export class SessionEngines {
     return entry.runId;
   }
 
-  idle(scope: Scope, id: string) {
+  async settled(scope: Scope, run: Pick<RuntimeRun, "sessionId" | "channel">, hasQueuedRun: boolean) {
+    const { sessionId: id, channel } = run;
     const entry = this.live.get(key(scope, id));
     if (!entry) return;
+    if (!channel || !isDirectUserRun(channel, id)) {
+      // Delegated results release through the delivery notification, after the parent can read the result.
+      if (!channel?.requestedBy && !hasQueuedRun) await this.release(scope, id).catch(this.onCloseError);
+      return;
+    }
     const timer = setTimeout(() => {
       void this.locked(scope, id, async () => {
         if (entry.idle === timer) await this.release(scope, id);
       }).catch(this.onCloseError);
     }, idleMs);
     entry.idle = timer.unref();
+  }
+
+  delivered(scope: Scope, id: string, runId: string, hasQueuedRun: () => Promise<boolean>) {
+    return this.locked(scope, id, async () => {
+      if (!this.live.has(key(scope, id))) return;
+      const { activeRunId, latestRunId } = await this.store.session(scope, id);
+      if (!activeRunId && latestRunId === runId && !(await hasQueuedRun())) await this.release(scope, id);
+    }).catch(this.onCloseError);
   }
 
   async release(scope: Scope, id: string) {

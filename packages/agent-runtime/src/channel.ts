@@ -527,6 +527,7 @@ export class AgentChannel {
         role: "notification", kind: "agent-result", source: { session: intent.session, runId },
         outcome: delivery.status, content: `Task ${runId} ${delivery.status}${reason}. Read its result with the agent tool's read.`, timestamp: Date.now(),
       }, { resultRecipientRunId: parent.runId });
+      this.runtime.delegatedRunDelivered(scope, intent.session.sessionId, runId);
     }
     if (delivery.settled) this.release(intent);
   }

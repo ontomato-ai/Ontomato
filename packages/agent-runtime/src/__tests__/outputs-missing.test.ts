@@ -204,7 +204,7 @@ it("completes the run with a final reply when the model deletes workspace/output
       beginRun: () => {},
       endRun: () => {},
       release: async () => {},
-      idle: () => {},
+      settled: async () => {},
     },
   });
 

@@ -838,11 +838,11 @@ export class AgentRuntime {
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
       await this.store.finish(scope, run.id, reason, failure, workspaceCommit, () => this.allocateSeq(active));
-      this.sessionEngines.idle(scope, run.sessionId);
       // The lifecycle notice follows the finish commit, independently of subsequent intent preparation.
       this.publishSessionRun(scope, { type: "run_stopped", sessionId: run.sessionId, runId: run.id });
       const stopped = (await this.store.run(scope, run.id)).run;
       next = await this.channel.nextLocked(scope, stopped);
+      await this.sessionEngines.settled(scope, stopped, next !== undefined);
       for (const envelope of await this.store.events(scope, run.id))
         if (envelope.cursor.seq > before) this.publish(active, envelope);
     });
@@ -850,6 +850,12 @@ export class AgentRuntime {
     // The stop is committed: wake everyone waiting for it.
     for (const wake of this.waiters.get(key(scope, run.id)) ?? []) wake();
   }
+
+  delegatedRunDelivered(scope: Scope, sessionId: string, runId: string) {
+    void this.sessionEngines.delivered(scope, sessionId, runId, async () =>
+      (await this.channel.facts.waiting(scope, sessionId)) !== null);
+  }
+
   private async collect(active: Active, toolCallId: string | null) {
     if (!active.workspace) return [];
     const workspace = active.workspace;

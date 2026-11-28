@@ -182,9 +182,23 @@ describe("PI 1.4.0 RPC plugin", () => {
     const gatewayBaseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const id = randomUUID();
     const scope = { hostId: "host", domainId: "domain" };
+    const agent = { providerId: "fixture", agentId: "assistant" };
+    const actor = { domainId: scope.domainId, id: "user" };
+    const session = { providerId: agent.providerId, sessionId: id };
+    const parent = { session: { ...session, sessionId: "parent" }, runId: "parent-run" };
+    const channel = {
+      agent, actor, authority: { classNames: [], executionKind: "live" as const },
+      requestedBy: null, root: { session, runId: "run" }, userRecipient: { session, actor },
+    };
+    const human = { sessionId: id, channel };
+    const background = {
+      sessionId: id, channel: { ...channel, root: parent, userRecipient: { session: parent.session, actor } },
+    };
+    const delegated = { ...background, channel: { ...background.channel, requestedBy: parent } };
+    let activeRunId: string | null = null;
     const refs: string[] = [];
     const store = {
-      session: async () => ({ workspaceId: null }),
+      session: async () => ({ workspaceId: null, latestRunId: "run", activeRunId }),
       sessionEngine: async () => ({ engineRef: refs.at(-1) ?? null }),
       saveEngineRef: async (_scope: unknown, _id: string, ref: string) => { refs.push(ref); },
     } as unknown as RuntimeStore;
@@ -232,12 +246,14 @@ describe("PI 1.4.0 RPC plugin", () => {
       expect(first.consumed).toEqual(["first"]);
 
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-      owner.idle(scope, id);
+      await owner.settled(scope, human, false);
       owner.admitted(scope, id);
-      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
       expect(owner.needsOpen(scope, id)).toBe(false);
-      owner.idle(scope, id);
-      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      await owner.settled(scope, human, false);
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000 - 1);
+      expect(owner.needsOpen(scope, id)).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
       vi.useRealTimers();
       await released.promise;
 
@@ -245,6 +261,23 @@ describe("PI 1.4.0 RPC plugin", () => {
       expect(resumed.handle.engineRef).toBe(opened.handle.engineRef);
       expect(await turn(resumed.handle, host(), input("second", "Use earlier context"))).toMatchObject({ stopReason: "stop" });
       expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Keep this context");
+
+      await owner.settled(scope, background, true);
+      expect(owner.needsOpen(scope, id)).toBe(false);
+      await owner.settled(scope, background, false);
+      expect(owner.needsOpen(scope, id)).toBe(true);
+
+      await owner.open(scope, id, options);
+      await owner.settled(scope, delegated, false);
+      expect(owner.needsOpen(scope, id)).toBe(false);
+      await owner.delivered(scope, id, "older-run", async () => false);
+      await owner.delivered(scope, id, "run", async () => true);
+      activeRunId = "follow-up";
+      await owner.delivered(scope, id, "run", async () => false);
+      expect(owner.needsOpen(scope, id)).toBe(false);
+      activeRunId = null;
+      await owner.delivered(scope, id, "run", async () => false);
+      expect(owner.needsOpen(scope, id)).toBe(true);
     } finally {
       vi.useRealTimers();
       await owner.close();

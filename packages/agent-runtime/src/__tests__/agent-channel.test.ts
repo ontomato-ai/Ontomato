@@ -28,6 +28,7 @@ function channel() {
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
     publishSessionRun: vi.fn(),
+    delegatedRunDelivered: vi.fn(),
     inputInFlight: vi.fn(() => []),
     linkAgentFiles: vi.fn(async () => [{ id: inputId, name: "delivered.dataset.json", path: `outputs/agents/${inputId}/${inputId}-delivered.dataset.json` }]),
   } as unknown as AgentRuntime;
@@ -444,13 +445,21 @@ it("wakes the idle delegating execution on its original chain after a later run 
   expect(deliveredNotification?.outcome).toBe("completed");
 });
 
-it("maps delivered files before sending the status-only result signal", async () => {
+it("maps files before the completion signal and keeps the result readable after handing off engine release", async () => {
   const { runtime, channel: port } = channel();
   const child = { ...delegatedChild(), status: "completed" as const };
   const parent = { ...child, id: runId, session: source.session, channel: context };
   vi.mocked(port.facts.intent).mockImplementation(async (_scope, id) => id === child.id ? child : parent);
-  vi.spyOn(port, "callback").mockResolvedValue({ status: "completed", settled: true, process: { mode: "none" }, results: [], files: [{ id: inputId, name: "delivered.dataset.json", mediaType: "application/json", href: "/file" }] });
-  const deliver = vi.spyOn(port, "deliver").mockResolvedValue({ messageId: inputId, taskId: null, sessionRef: source.session });
+  vi.spyOn(port.facts, "task").mockResolvedValue({ scope, intent: child });
+  const result = { status: "completed", settled: true, process: { mode: "none" }, results: [], files: [{ id: inputId, name: "delivered.dataset.json", mediaType: "application/json", href: "/file" }] };
+  vi.spyOn(port, "callback").mockResolvedValueOnce({ ...result, settled: false }).mockResolvedValue(result);
+  const deliver = vi.spyOn(port, "deliver").mockImplementation(async () => {
+    expect(runtime.delegatedRunDelivered).not.toHaveBeenCalled();
+    return { messageId: inputId, taskId: null, sessionRef: source.session };
+  });
+
+  await port.changed(scope, child.id, "delivery");
+  expect(runtime.delegatedRunDelivered).not.toHaveBeenCalled();
 
   await port.changed(scope, child.id, "delivery");
 
@@ -461,6 +470,12 @@ it("maps delivered files before sending the status-only result signal", async ()
   expect(message).toMatchObject({ outcome: "completed", content: `Task ${child.id} completed. Read its result with the agent tool's read.` });
   expect(message).not.toHaveProperty("files");
   expect(runtime.store.finalReply).not.toHaveBeenCalled();
+  expect(runtime.delegatedRunDelivered).toHaveBeenCalledWith(scope, child.session.sessionId, child.id);
+
+  await expect(port.execute(scope, run, { op: "read", taskId: child.id })).resolves.toMatchObject({
+    content: "Saved final reply",
+    files: [{ id: inputId, name: "delivered.dataset.json", path: `outputs/agents/${inputId}/${inputId}-delivered.dataset.json` }],
+  });
 });
 
 it("message reads expose conversation progress without transferring the child's system prompt", async () => {
