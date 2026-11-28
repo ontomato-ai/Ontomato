@@ -254,7 +254,7 @@ class QueryPackageContractTest {
             "outputs", JSONArray.of(JSONObject.of("key", "total", "from", "total")))),
         "files", JSONArray.of(
             JSONObject.of("path", "queries/main.json", "content", query),
-            JSONObject.of("path", "calculate.py", "content", "# ontomato-python:2\nprint('{}')\n")));
+            JSONObject.of("path", "calculate.py", "content", "# ontomato-python:2\nimport json\nfrom query_runtime import execute_dsl_file\nrows = execute_dsl_file('queries/main.json')\nvalues = [row['salary'] for row in rows]\nprint(json.dumps({'answer': [{'total': sum(values)}]}))\n")));
     var accepted = QueryPackage.accept(pkg);
     assertEquals("rows", accepted.getJSONObject("manifest").getJSONObject("computation")
         .getJSONArray("operations").getJSONObject(1).getJSONArray("inputs").getJSONObject(0).getString("operation"));
