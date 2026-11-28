@@ -15,6 +15,7 @@ import { loadRunMeta, loadCaseResults } from "../../platform/diagnosis/autotest/
 import type { AgentHostOwner } from "../agent-host/types";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { diagnosisSession, diagnosisService } from "./service";
+import { tForLocale } from "../../i18n";
 
 export interface EvidenceCaller extends AgentHostOwner, AssistantCredentials {}
 /** Only fixed owner routes call this helper. No service credential or caller-supplied URL. */
@@ -63,7 +64,7 @@ export async function resolveDiagnosisEvidence(target: DiagnosisTarget, caller: 
     const to = new Date(Date.parse(snapshot.run.finishedAt ?? result.resolvedAt) + 5000).toISOString();
     for (const service of ["workbench", "ontology", "agent-runtime"] as const)
       result.logQueries.push({ service, query: { from, to, ...(correlationId ? { correlationId } : { runId: snapshot.run.id }), limit: 200 } });
-    if (!correlationId) result.gaps.push({ source: snapshot.run.id, code: "CORRELATION_UNAVAILABLE", message: "Correlation is unavailable; the supplied log queries cover this run ID only." });
+    if (!correlationId) result.gaps.push({ source: snapshot.run.id, code: "CORRELATION_UNAVAILABLE", message: tForLocale(caller.locale, "panels.ops.evidence.correlationUnavailable") });
   };
   add("workbench", publicSnapshot(root), root.run.correlationId);
   if (turn.retrieval_scope_id) try {

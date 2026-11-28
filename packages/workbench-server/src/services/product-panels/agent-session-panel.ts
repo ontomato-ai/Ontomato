@@ -8,6 +8,7 @@ import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { runOutcome } from "../../platform/agent-runtime/projection";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { assistantName } from "../assistant/labels";
 import { assistantStore } from "../assistant/store";
 import { favoriteTargetKey, isFavoriteTarget, readFavoriteKeySet } from "../platform-home/service";
 import type { ProductOwner } from "../product-governance/service-authentication";
@@ -127,7 +128,8 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
       const displayTitle = cleanSessionDisplayTitle(item.title, untitled);
       const favorited = favoriteKeys.has(favoriteTargetKey(AGENT_SESSION, item.id));
       const updatedAt = item.updated_at.toISOString();
-      const subtitle = [item.agentName, formatShortDateTime(updatedAt, language)].filter(Boolean).join(" · ");
+      const agentName = assistantName({ kind: item.agentKind ?? "", name: item.agentName ?? "" }, viewer.locale);
+      const subtitle = [agentName, formatShortDateTime(updatedAt, language)].filter(Boolean).join(" · ");
       const run = sessionRunFields(statusesById.get(item.id)!.latestRun, viewer.locale);
       return {
         className: AGENT_SESSION,
@@ -137,7 +139,7 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
         fields: {
           title: displayTitle,
           agentId: item.agent_id,
-          agentName: item.agentName ?? "",
+          agentName,
           ...(item.agentKind === null ? {} : { agentKind: item.agentKind }),
           origin: item.origin,
           ...(item.workspace_id === null ? {} : { workspaceId: item.workspace_id }),
