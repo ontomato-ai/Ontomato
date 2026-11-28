@@ -100,6 +100,22 @@ class PostgreAdapterSqlTest {
     assertTrue(error.getMessage().contains("p.id"), error.getMessage());
   }
 
+
+  @Test
+  void aggregateSortByAnUngroupedDetailOutputAliasIsRejectedAtTheSortItem() {
+    String aggregated = """
+        {"problem":"t","answer":{"steps":[{"graph":{"patterns":[{"objects":[{"idx":0,"variable":"p","class":"person"}]}]},
+        "output":{"to_user":true,"fields":[
+        {"as":"status","variable":"p","field":"status"},{"as":"person_detail","variable":"p","field":"id"},
+        {"as":"cnt","variable":"p","field":"id","function":"count"}],
+        "group_by":{"fields":[{"variable":"p","field":"status"}]},
+        "sort":{"fields":[{"field":"person_detail","order":"desc"}]}}}]}}
+        """;
+    DslContractViolationException error = assertThrows(DslContractViolationException.class, () -> sql(aggregated));
+    assertTrue(error.getMessage().contains("answer.steps[0].output.sort.fields[0]"), error.getMessage());
+    assertTrue(error.getMessage().contains("person_detail"), error.getMessage());
+  }
+
   private static final String Q5_CHAIN = """
       {"problem":"test","answer":{"steps":[
       {"graph":{"patterns":[{"objects":[{"idx":0,"variable":"p","class":"person","conditions":{"properties":{"operator":"logic","and":[

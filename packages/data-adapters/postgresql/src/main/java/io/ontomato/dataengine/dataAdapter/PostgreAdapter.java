@@ -211,6 +211,7 @@ public class PostgreAdapter extends SandboxDataAdapter {
 	private static final class OrderContext {
 		final Map<String, Set<String>> variableFields = new HashMap<>();
 		final Set<String> outputAliases = new LinkedHashSet<>();
+		final Map<String, String> detailAliases = new HashMap<>();
 		final Set<String> grouped = new HashSet<>();
 		boolean aggregate;
 		boolean temporary;
@@ -238,6 +239,9 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		for (int i = 0; i < fields.size(); i++) {
 			JSONObject field = fields.getJSONObject(i);
 			context.outputAliases.add(field.getString("as"));
+			if (field.getString("expr") == null && (field.getString("function") == null || field.getString("function").isBlank())) {
+				context.detailAliases.put(field.getString("as"), field.getString("variable") + "\u0000" + field.getString("field"));
+			}
 			String function = field.getString("function");
 			if (function != null && AGGREGATE_FUNCTIONS.contains(function.trim().toUpperCase(Locale.ROOT))) {
 				context.aggregate = true;
@@ -801,6 +805,7 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		boolean hasVariable = variable != null && !variable.isBlank();
 		if (!hasVariable) {
 			if (context.outputAliases.contains(field)) {
+				requireSortableAlias(field, context, path);
 				return quoteIdentifier(field);
 			}
 			throw invalidStep(path + ".field", "sort field `" + field
@@ -819,11 +824,21 @@ public class PostgreAdapter extends SandboxDataAdapter {
 			return columnReference(variable, context.temporary ? quoteIdentifier(field) : physicalIdentifier(field));
 		}
 		if (context.outputAliases.contains(field)) {
+			requireSortableAlias(field, context, path);
 			return quoteIdentifier(field);
 		}
 		throw invalidStep(path + ".field", "`" + field + "` is neither an attribute of `" + variable
 				+ "` nor an output alias; use `variable` and `field` for a source attribute, or omit `variable` and use one of the output aliases `"
 				+ String.join("`, `", context.outputAliases) + "`");
+	}
+
+
+	private static void requireSortableAlias(String alias, OrderContext context, String path) {
+		String source = context.detailAliases.get(alias);
+		if (context.aggregate && source != null && !context.grouped.contains(source)) {
+			throw invalidStep(path, "sort field `" + alias
+					+ "` is the output alias of an ungrouped detail field in an aggregated query; group by that field or sort by an aggregate output alias");
+		}
 	}
 
 	private String temporaryWhere(JSONObject step, String tmpClassAs, Set<String> temporaryFields) {
