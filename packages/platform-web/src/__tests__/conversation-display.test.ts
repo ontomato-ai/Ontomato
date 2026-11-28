@@ -95,7 +95,7 @@ const Frame = defineComponent({
       reports.asked += 1;
       return reports.leave;
     });
-    router.beforeEach((to) => unsaved.allows(to.path));
+    router.beforeEach((to) => unsaved.allows(to.path, to.fullPath));
     return () => h(BusinessWorkbench, { defaultLogo: "", defaultBrandName: "Ontomato" });
   },
 });
@@ -213,6 +213,21 @@ describe("a page's own reports", () => {
 });
 
 describe("leaving a page with unsaved changes", () => {
+  it("asks once to close a dirty panel and still guards navigation outside the display", async () => {
+    reports.dirty = true;
+    const wrapper = await workbench();
+    await openLink(wrapper, "/first");
+
+    await router.push({ query: { page: "/second" } });
+    expect(pageParameter()).toBe("/first");
+    expect(reports.asked).toBe(1);
+
+    reports.leave = true;
+    expect(await displayOf(wrapper).close()).toBe(true);
+    expect(pageParameter()).toBeUndefined();
+    expect(reports.asked).toBe(2);
+  });
+
   it("keeps the page and the address when the reader stays on a panel that reported them", async () => {
     reports.dirty = true;
     const wrapper = await workbench();

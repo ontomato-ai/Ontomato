@@ -561,6 +561,7 @@
     "messages": {
       "zh-CN": {
         "panel.name": "任务触发",
+        "workspace.title": "定时任务",
         "intro": "按计划运行动作、流程与应用任务，并查看每次运行记录",
         "newTask": "新建任务触发",
         "retry": "重试",
@@ -662,6 +663,7 @@
       },
       "en": {
         "panel.name": "Task triggers",
+        "workspace.title": "Scheduled tasks",
         "intro": "Schedule actions, workflows, and application tasks and review their execution history",
         "newTask": "New trigger",
         "retry": "Retry",
@@ -762,22 +764,40 @@
         "notice.credentialRefused": "Your background credential was not renewed ({reason}), so triggers paused on it stay paused. Open this page again after signing in with your account."
       },
       "zh-TW": {
-        "panel.name": "任務觸發"
+        "panel.name": "任務觸發",
+        "workspace.title": "排程任務",
+        "form.newScheduleTitle": "新增排程任務",
+        "form.editScheduleTitle": "編輯排程任務"
       },
       "ja": {
-        "panel.name": "タスクトリガー"
+        "panel.name": "タスクトリガー",
+        "workspace.title": "スケジュール済みタスク",
+        "form.newScheduleTitle": "スケジュール済みタスクを作成",
+        "form.editScheduleTitle": "スケジュール済みタスクを編集"
       },
       "ar": {
-        "panel.name": "مشغّلات المهام"
+        "panel.name": "مشغّلات المهام",
+        "workspace.title": "المهام المجدولة",
+        "form.newScheduleTitle": "مهمة مجدولة جديدة",
+        "form.editScheduleTitle": "تعديل المهمة المجدولة"
       },
       "fr": {
-        "panel.name": "Déclencheurs de tâches"
+        "panel.name": "Déclencheurs de tâches",
+        "workspace.title": "Tâches planifiées",
+        "form.newScheduleTitle": "Nouvelle tâche planifiée",
+        "form.editScheduleTitle": "Modifier la tâche planifiée"
       },
       "de": {
-        "panel.name": "Aufgabenauslöser"
+        "panel.name": "Aufgabenauslöser",
+        "workspace.title": "Geplante Aufgaben",
+        "form.newScheduleTitle": "Neue geplante Aufgabe",
+        "form.editScheduleTitle": "Geplante Aufgabe bearbeiten"
       },
       "it": {
-        "panel.name": "Trigger delle attività"
+        "panel.name": "Trigger delle attività",
+        "workspace.title": "Attività pianificate",
+        "form.newScheduleTitle": "Nuova attività pianificata",
+        "form.editScheduleTitle": "Modifica attività pianificata"
       }
     }
   }

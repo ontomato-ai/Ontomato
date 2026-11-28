@@ -836,6 +836,7 @@ export default {
     "noResponse": "No Response"
   },
   "assistant": {
+    "conversationHistory": "Conversation history",
     "agentUnavailable": "This agent is not available",
     "newConversation": "New chat",
     "agent": "Agent",
@@ -1230,9 +1231,12 @@ export default {
     "executionOptionsFailed": "Couldn't read who may execute this agent."
   },
   "scheduledTasks": {
-    "title": "Task triggers",
+    "title": "Scheduled tasks",
     "intro": "Each task gives an agent a prompt on a schedule. Every run starts a new conversation, marked in your conversation list.",
-    "newTask": "New task",
+    "newTask": "New scheduled task",
+    "instructionMissing": "This conversation has no instruction to reuse.",
+    "instructionTooLong": "The original instruction exceeds the {max}-character limit for a scheduled task.",
+    "prefillFailed": "The conversation could not be copied into the scheduled task.",
     "editTask": "Edit task",
     "create": "Create",
     "empty": "No scheduled tasks yet",
@@ -1242,7 +1246,7 @@ export default {
     "promptRequired": "Enter what the agent should do.",
     "agent": "Agent",
     "agentRequired": "Choose an agent.",
-    "unknownAgent": "Deleted agent",
+    "unavailableAgent": "Assigned agent unavailable",
     "frequency": "Frequency",
     "kind": {
       "interval": "At an interval",

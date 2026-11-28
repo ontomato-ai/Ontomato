@@ -1,6 +1,6 @@
 import type { RuntimeRunPresentation } from "@ontomato/contracts/agent-runtime";
 import type { AgentPendingQuestion } from "@ontomato/contracts/agent-channel";
-import type { AgentHostRunSnapshot, AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
+import type { AgentHostRunSnapshot, AgentHostSession, AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunDetail } from "@ontomato/contracts/agent-runtime-details";
 import type {
@@ -65,6 +65,7 @@ export interface RunView {
 
 export interface ConversationState {
   sessionId: string | null;
+  session: AgentHostSession | null;
   workspaceId: string | null;
   /**
    * The agent the conversation runs on, as the host reports it with the conversation; null until it is read. Opening a
@@ -79,7 +80,7 @@ export interface ConversationState {
 }
 
 export function emptyConversation(sessionId: string | null = null): ConversationState {
-  return { sessionId, workspaceId: null, agentId: null, messages: {}, runs: {}, arrivals: 0, pendingQuestions: [] };
+  return { sessionId, session: null, workspaceId: null, agentId: null, messages: {}, runs: {}, arrivals: 0, pendingQuestions: [] };
 }
 
 function upsertMessage(
@@ -184,6 +185,7 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
 /** Merge a bounded durable page without replacing newer live state during backward paging. */
 export function applyHistoryPage(state: ConversationState, page: AgentHostSessionHistory, older = false) {
   state.sessionId = page.session.id;
+  if (!older) state.session = page.session;
   state.workspaceId = page.session.workspaceId ?? null;
   // The conversation runs on the agent it was started with: the composer shows that one, whoever it was opened by.
   state.agentId = page.session.agentId;

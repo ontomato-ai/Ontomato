@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
-import { CalendarClock, Check, ExternalLink, MessageSquarePlus, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
+import { CalendarClock, Check, ExternalLink, MessageSquarePlus, SquarePen, Trash2, MoreHorizontal, Pencil, Settings, X } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellBottomEntry, ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { storedAgentAvatar } from "../avatar";
@@ -56,7 +56,7 @@ const props = withDefaults(defineProps<{
   agentPicker?: boolean;
   splitNavigation?: boolean;
   formatSessionDate?: (date: string) => string;
-  agentActions?: { createLabel: string; editLabel: string; create(): void; edit(): void };
+  agentSettings?: { label: string; open(): void };
   /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
   labels: ShellLabels;
 }>(), {
@@ -231,10 +231,10 @@ onBeforeUnmount(() => {
         </span>
       </button>
       </div>
-      <div v-if="agentActions" class="agent-add-wrap">
-        <button type="button" class="agent-add-btn" :title="agentActions.createLabel" @click="agentActions.create()">
-          <MessageSquarePlus :size="16" aria-hidden="true" />
-          <span>{{ agentActions.createLabel }}</span>
+      <div v-if="agentSettings" class="agent-add-wrap">
+        <button type="button" class="agent-add-btn" :aria-label="agentSettings.label" :title="agentSettings.label" @click="agentSettings.open()">
+          <Settings :size="16" aria-hidden="true" />
+          <span>{{ agentSettings.label }}</span>
         </button>
       </div>
     </template>
@@ -304,9 +304,6 @@ onBeforeUnmount(() => {
             <strong class="nav-label">{{ currentAgent.name }}</strong>
             <span v-if="currentAgent.description" class="agent-row-description" :title="currentAgent.description">{{ currentAgent.description }}</span>
           </div>
-          <button v-if="agentActions" type="button" class="mid-edit-btn" :aria-label="agentActions.editLabel" :title="agentActions.editLabel" @click="agentActions.edit()">
-            <Pencil :size="16" aria-hidden="true" />
-          </button>
         </div>
         <button type="button" class="nav-item primary btn-create" @click="emit('newConversation')">
           <MessageSquarePlus :size="16" aria-hidden="true" />

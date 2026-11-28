@@ -390,6 +390,12 @@ it.each([
       expect(document.querySelector(".el-drawer")).toBeNull();
       expect(element.querySelector(".schedules-toolbar")).toBeNull();
 
+      const heading = element.querySelector(".schedules-shell > .sdk-page-header");
+      expect(heading).not.toBeNull();
+      await router.push("/schedules?workspace=agent&app=agents&workspaceCompose=new");
+      await vi.waitFor(() => expect(element.querySelector('[data-form="create"]')).not.toBeNull());
+      expect(element.querySelector(".schedules-shell > .sdk-page-header")).toBe(heading);
+
       await router.push(`/schedules?workspace=agent&app=agents&selectedTask=${taskId}&workspaceCompose=edit`);
       await vi.waitFor(() => expect(element.querySelector('.schedules-inline-section [data-form="edit"]')).not.toBeNull());
       expect(document.querySelector(".el-dialog")).toBeNull();
