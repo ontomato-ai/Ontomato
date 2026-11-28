@@ -15,7 +15,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { runtimeRunSnapshotSchema } from "@ontomato/contracts/agent-runtime";
+import { runtimeRunSnapshotSchema, runtimeSessionSnapshotSchema } from "@ontomato/contracts/agent-runtime";
 import { runtimeSessionRunFrameSchema, type RuntimeSessionRunFrame } from "@ontomato/contracts/agent-runtime-events";
 import { codeExecutionSchema, codeLimitsSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
@@ -158,6 +158,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
   }
   async function settle(id: string) {
     const waited = await api(`/v1/runs/${id}/status?waitFor=stopped&timeoutMs=20000`);
+    if (waited.status !== 200) throw new Error(`Run status ${id} answered ${waited.status}: ${JSON.stringify(waited.body)}`);
     if (waited.body.run?.status !== "stopped") throw new Error("Did not stop: " + logs);
     return runtimeRunSnapshotSchema.parse((await api(`/v1/runs/${id}`)).body);
   }
@@ -892,7 +893,8 @@ ${logs}`);
     // session credential, so the call is late only once the run that received the notice has stopped.
     await waitFor("the parent to receive the child's result", () =>
       inputs.some((request) => JSON.stringify(request.messages).includes(`Task ${captured.body.taskId}`)));
-    await settle((await api(`/v1/sessions/${sessionId}`)).body.latestRunId);
+    const { session: parent } = runtimeSessionSnapshotSchema.parse((await api(`/v1/sessions/${sessionId}`)).body);
+    await settle(parent.latestRunId!);
     const late = await fetch(captured.url, {
       method: "POST",
       headers: {
