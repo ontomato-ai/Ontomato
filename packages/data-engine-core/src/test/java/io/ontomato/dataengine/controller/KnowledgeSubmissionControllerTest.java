@@ -13,6 +13,12 @@ import org.junit.jupiter.api.Test;
 
 class KnowledgeSubmissionControllerTest {
   @Test
+  void submissionEndpointOwnsAdmission() {
+    assertTrue(KnowledgeSubmissionController.class.isAnnotationPresent(
+        io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned.class));
+  }
+
+  @Test
   void submitUsesOrdinaryQueryAccessAndOnlyCreatesPendingKnowledge() {
     var authorization = mock(QueryAccessService.class);
     var pending = mock(PendingKnowledgeService.class);

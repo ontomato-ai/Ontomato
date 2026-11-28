@@ -4,7 +4,7 @@
    package ([query packages](query-package.md)) when a step cannot be done in the DSL. A DSL file is
    exactly the object ontology-query's `execute-dsl` accepts: the question and the steps written as `dsl-reference`
    shows, `{"problem": "How many active employees are there?", "answer": {"steps": [...]}}`.
-2. Write `work/delivery.json`:
+2. Write `work/delivery.json` with exactly these top-level fields:
 
 ```json
 {

@@ -30,7 +30,7 @@ What you deliver is a query logic package. It has one of two shapes, delivered t
   their parameter values. Read [query packages](references/query-package.md) for the manifest; paths
   inside a package are relative to the manifest's directory.
 
-`work/delivery.json` describes the table for the reader: see [delivery inputs](references/dataset.md).
+`work/delivery.json` has only `title`, `columnLabels`, `assumptions` and `selfCheck`: `columnLabels` maps every output key to its reader label, and `selfCheck` has the text fields `scope`, `filters`, `grain`, `denominator` and `nullGroups`. [Delivery inputs](references/dataset.md) gives the shape.
 
 - One table per delivery. A question that needs several tables gets several deliveries, each with its
   own `--out`; do not merge unrelated results with Python.
