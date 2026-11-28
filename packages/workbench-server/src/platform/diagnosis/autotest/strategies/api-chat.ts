@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
-import {
-  agentHostRunSnapshotSchema,
-} from "@ontomato/contracts/agent-host";
+import { agentChainStatusSchema } from "@ontomato/contracts/agent-channel";
+import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
 import { environment } from "../../../../config/environment";
 import { buildTurnKey } from "../../../../logging/log-context";
 import { answerText } from "../../../agent-runtime/runtime";
@@ -56,6 +55,7 @@ export async function executeApiChat(
       throw new Error(data.error?.message ?? `Assistant HTTP ${r.status}`);
     return data;
   }
+  const chainPath = `/sessions/${sessionId}/runs/${runId}/chain`;
   let admitted = false;
   try {
     const { agents } = assistantAgentListSchema.parse(await request("/agents"));
@@ -71,22 +71,23 @@ export async function executeApiChat(
     admitted = true;
     for (;;) {
       signal.throwIfAborted();
-      const s = agentHostRunSnapshotSchema.parse(
-        await request(`/sessions/${sessionId}/runs/${runId}`),
-      );
-      if (s.run.status === "stopped") {
-        const outcome = runOutcome(s.run);
+      const chain = agentChainStatusSchema.parse(await request(chainPath));
+      if (chain.settled) {
+        const final = agentHostRunSnapshotSchema.parse(
+          await request(`/sessions/${sessionId}/runs/${chain.latestRunId}`),
+        );
+        const outcome = runOutcome(final.run);
         return {
           turnKey: buildTurnKey(sessionId, 0),
-          durationMs: Date.now() - started,
+          durationMs: Date.parse(final.run.finishedAt!) - started,
           status:
             outcome === "completed"
               ? "success"
               : outcome === "cancelled"
                 ? "cancelled"
                 : "error",
-          finalAnswer: answerText(s),
-          error: s.run.errorMessage ?? undefined,
+          finalAnswer: answerText(final),
+          error: final.run.errorMessage ?? undefined,
         };
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -94,7 +95,7 @@ export async function executeApiChat(
   } catch (error) {
     if (signal.aborted && admitted)
       await request(
-        `/sessions/${sessionId}/runs/${runId}/cancel`,
+        `${chainPath}/cancel`,
         "POST",
         {},
         undefined,

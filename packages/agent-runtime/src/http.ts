@@ -460,6 +460,18 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     const credential = body.credential ?? runtime.channel.credential(source!.channel);
     res.status(202).json(await runtime.channel.request(ctx.scope, runtimeIdSchema.parse(req.params.sessionId), headers["idempotency-key"], channel, body.replyTo ? {role:"notification",kind:"agent-answer",source:{kind:"user"},content:body.input.content,timestamp:body.input.timestamp,replyTo:body.replyTo,selectedOption:body.selectedOption,respondent:channel.actor} : body.input, body.language, body.context as import("@ontomato/contracts/agent-channel").AgentRunIntent["context"], credential, source?.executionUserId, source ? undefined : body.presentationBinding));
   }));
+  app.get("/v1/channel/sessions/:sessionId/runs/:runId/chain", route(async (req, res) => {
+    const ctx = scope(req);
+    res.json(await runtime.channel.chainStatus(ctx.scope,
+      runtimeIdSchema.parse(req.params.sessionId), runtimeIdSchema.parse(req.params.runId)));
+  }));
+  app.post("/v1/channel/sessions/:sessionId/runs/:runId/chain/cancel", route(async (req, res) => {
+    const ctx = scope(req);
+    z.object({}).strict().parse(req.body);
+    await runtime.channel.cancelChain(ctx.scope,
+      runtimeIdSchema.parse(req.params.sessionId), runtimeIdSchema.parse(req.params.runId));
+    res.json({ accepted: true });
+  }));
   app.get("/v1/channel/sessions/:sessionId/tasks", route(async (req, res) => {
     res.json(await runtime.channel.tasks(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId)));
   }));

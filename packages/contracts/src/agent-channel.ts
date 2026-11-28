@@ -21,6 +21,7 @@ export type AgentCredential = z.infer<typeof agentCredentialSchema>;
 export const agentSteerPreparationSchema = z.object({ accepted: z.literal(true), context: z.string().optional() }).strict();
 export const agentProviderAcknowledgementSchema = z.object({ accepted: z.literal(true) }).strict();
 export const agentExecutionRefSchema = z.object({ session: agentSessionRefSchema, runId: id }).strict();
+export const agentChainStatusSchema = z.object({ settled: z.boolean(), latestRunId: id }).strict();
 export const agentMessageSourceSchema = z.union([agentExecutionRefSchema,z.object({ kind: z.enum(["external", "user"]) }).strict()]);
 export const agentQuestionOptionSchema = z.object({ label: key, description: z.string().optional(), isDefault: z.boolean().optional() }).strict();
 export const agentQuestionOptionsSchema = z.array(agentQuestionOptionSchema).min(1).refine(options => options.filter(option => option.isDefault).length === 1, "Exactly one option must be the default");

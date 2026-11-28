@@ -71,9 +71,9 @@ function presentationAdmission(activeRunId: string | null = null) {
     receipts.set(id, receipt);
     return receipt;
   });
-  vi.spyOn(port.facts, "pending").mockImplementation(async (_scope, _sessionId, _mode, runId) =>
+  vi.spyOn(port.facts, "pending").mockImplementation(async (_scope, sessionId, _mode, runId) =>
     [...receipts.values()]
-      .filter(row => row.runId === null && (!runId || !row.intentId || row.intentId === runId))
+      .filter(row => row.sessionId === sessionId && row.runId === null && (!runId || !row.intentId || row.intentId === runId))
       .sort((a, b) => a.messageSeq - b.messageSeq));
   vi.spyOn(port.facts, "reserve").mockImplementation(async (_scope, sessionId, id, inputId, channel, options) => {
     const intent: AgentRunIntent = {
@@ -91,7 +91,8 @@ function presentationAdmission(activeRunId: string | null = null) {
   const nextIntent = () => [...intents.values()].find(intent => intent.status === "starting");
   const tailIntent = () => [...intents.values()].filter(intent => intent.status === "starting").at(-1);
   vi.mocked(port.facts.waiting).mockImplementation(async () => tailIntent()?.id ?? null);
-  vi.mocked(port.facts.claimNext).mockImplementation(async () => nextIntent());
+  vi.mocked(port.facts.claimNext).mockImplementation(async (_scope, sessionId) =>
+    nextIntent()?.session.sessionId === sessionId ? nextIntent() : undefined);
   vi.spyOn(port.facts, "update").mockResolvedValue();
   vi.spyOn(port.facts, "closePending").mockResolvedValue();
   vi.spyOn(port.facts, "children").mockResolvedValue([]);
@@ -215,13 +216,12 @@ it.each(["delegated", "notification"] as const)("omits a supplied binding on %s 
   expect((starts.mock.calls[0]?.[5] as RuntimeStartRunRequest).presentationCallback).toBeUndefined();
 });
 
-it.each(["cancel", "stop"] as const)("drops a queued binding on %s before later preparation", async (action) => {
+it("drops a queued binding on model stop before later preparation", async () => {
   const queued = presentationAdmission(inputId);
   expect(await queued.submit()).toMatchObject({ delivery: { status: "starting" } });
   expect(queued.prepares).toHaveLength(0);
   const pending = queued.intents.get(runId)!;
-  if (action === "cancel") await queued.port.cancel(scope, pending);
-  else await queued.port.stopModel(scope, runId);
+  await queued.port.stopModel(scope, runId);
   await queued.port.prepare(pending);
   expect(queued.prepares).toHaveLength(1);
   expect(queued.prepares[0]).not.toHaveProperty("presentationBinding");
@@ -699,6 +699,114 @@ it("retains only the root credential until delegated business attachments finish
   await port.changed(scope,inputId,"delivery");expect(port.credential(context).token).toBe("initiating-token");
   read.mockResolvedValue({...projection,settled:true});
   await port.changed(scope,inputId,"quality");expect(()=>port.credential(context)).toThrow("please start again");
+});
+
+it.each(["idle", "sealing"] as const)("keeps the root credential across child delivery to a %s parent", async phase => {
+  const { runtime, port, intents, receipts, submit } = presentationAdmission();
+  await submit();
+  const root = intents.get(runId)!;
+  root.status = "running";
+  receipts.get(root.inputId)!.runId = root.id;
+
+  const child = delegatedChild();
+  const reserve = vi.mocked(port.facts.reserve);
+  const reserveInput = reserve.getMockImplementation()!;
+  reserve.mockImplementationOnce(async () => {
+    intents.set(child.id, child);
+    return child;
+  });
+  const directory = mockStartDirectory(port);
+  const prepare = vi.spyOn(port, "prepare").mockResolvedValue();
+  await port.execute(scope, run, { op: "start", agent: context.agent, message: "Inspect" });
+  directory.mockRestore();
+
+  const finishedRoot = { ...run, stopReason: "stop" as const, errorMessage: null };
+  const finishedChild = { ...finishedRoot, id: child.id, sessionId: child.session.sessionId, channel: child.channel };
+  vi.spyOn(port.facts, "delivered").mockResolvedValue(undefined);
+  let settled = false;
+  vi.spyOn(port, "callback").mockImplementation(async (intent, op) => op === "read"
+    ? { status: "completed", settled: intent.id !== child.id || settled, files: [], process: { mode: "none" }, results: [] }
+    : { accepted: true });
+  if (phase === "idle") {
+    const next = await port.nextLocked(scope, finishedRoot);
+    await port.stopped(scope, finishedRoot, next);
+  } else {
+    vi.mocked(runtime.store.session).mockResolvedValue({ activeRunId: runId } as Awaited<ReturnType<typeof runtime.store.session>>);
+  }
+
+  const nextChild = await port.nextLocked(scope, finishedChild);
+  await port.stopped(scope, finishedChild, nextChild);
+  expect(port.credential(context)).toEqual(initiatingCredential);
+  expect(prepare.mock.calls.some(([intent]) => intent.session.sessionId === sessionId)).toBe(false);
+
+  reserve.mockImplementationOnce(async (...args) => {
+    const [, , , inputId] = args;
+    expect(receipts.get(inputId)?.message).toMatchObject({ kind: "agent-result" });
+    expect(port.credential(context)).toEqual(initiatingCredential);
+    return reserveInput(...args);
+  });
+  settled = true;
+  await port.changed(scope, child.id, "delivery");
+
+  if (phase === "sealing") {
+    const next = await port.nextLocked(scope, finishedRoot);
+    expect(next?.channel.root).toEqual(source);
+    await port.stopped(scope, finishedRoot, next);
+  }
+  const [followup] = prepare.mock.calls.at(-1)!;
+  expect(followup.session).toEqual(source.session);
+  expect(followup.channel.root).toEqual(source);
+  expect(port.credential(followup.channel)).toEqual(initiatingCredential);
+  receipts.get(followup.inputId)!.runId = followup.id;
+  await port.stopped(scope, { ...finishedRoot, id: followup.id },
+    await port.nextLocked(scope, { ...finishedRoot, id: followup.id }));
+  expect(() => port.credential(context)).toThrow(expect.objectContaining({ code: "CALLER_CREDENTIAL_INVALID" }));
+});
+
+it("releases the credential when explicit cancellation removes a queued root before preparation", async () => {
+  const { runtime, port, intents, submit } = presentationAdmission();
+  await submit();
+  intents.get(runId)!.status = "running";
+  vi.mocked(runtime.store.session).mockResolvedValue({ activeRunId: runId } as Awaited<ReturnType<typeof runtime.store.session>>);
+
+  const queuedRoot = { ...humanChannel, root: { ...source, runId: inputId } };
+  await port.request(scope, sessionId, inputId, queuedRoot, userInput, "en", undefined, initiatingCredential);
+  expect(port.credential(queuedRoot)).toEqual(initiatingCredential);
+  await port.cancel(scope, intents.get(inputId)!);
+  expect(() => port.credential(queuedRoot)).toThrow(expect.objectContaining({ code: "CALLER_CREDENTIAL_INVALID" }));
+});
+
+it.each(["before", "after"] as const)("cancels a queued delegate %s the root stops", async order => {
+  const { runtime, port, intents, receipts, submit } = presentationAdmission();
+  await submit();
+  const root = intents.get(runId)!;
+  root.status = "running";
+  receipts.get(root.inputId)!.runId = root.id;
+
+  const oldChild = delegatedChild("completed");
+  intents.set(oldChild.id, oldChild);
+  vi.mocked(port.facts.binding).mockImplementation(async (_scope, id) => ({
+    agent: context.agent, actor: context.actor, parent: id === sessionId ? null : source,
+  }));
+  vi.mocked(runtime.store.session).mockImplementation(async (_scope, id) =>
+    ({ activeRunId: id === oldChild.session.sessionId ? oldChild.id : root.id }) as Awaited<ReturnType<typeof runtime.store.session>>);
+  runtime.store.run = vi.fn().mockResolvedValue({ run });
+  const sent = await port.execute(scope, run, { op: "send", session: oldChild.session, message: "Use the revised scope", steer: true }) as { taskId: string };
+  const queued = intents.get(sent.taskId)!;
+  expect(queued.status).toBe("starting");
+  vi.spyOn(port.facts, "latestInChain").mockResolvedValue(root.id);
+  vi.spyOn(port, "callback").mockImplementation(async (_intent, op) => op === "read"
+    ? { status: "completed", settled: true, files: [], process: { mode: "none" }, results: [] }
+    : { accepted: true });
+
+  const finishedRoot = { ...run, stopReason: "stop" as const, errorMessage: null };
+  const stopRoot = async () => port.stopped(scope, finishedRoot, await port.nextLocked(scope, finishedRoot));
+  const cancelQueued = async () => port.cancel(scope, queued);
+  const [first, second] = order === "before" ? [cancelQueued, stopRoot] : [stopRoot, cancelQueued];
+  await first();
+  await expect(port.chainStatus(scope, sessionId, runId)).resolves.toEqual({ settled: false, latestRunId: runId });
+  await second();
+  await expect(port.chainStatus(scope, sessionId, runId)).resolves.toEqual({ settled: true, latestRunId: runId });
 });
 
 it("turns an expired initiating credential into an explicit restart instruction",async()=>{

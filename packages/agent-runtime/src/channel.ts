@@ -82,6 +82,8 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 export interface ExternalAgentCaller { kind:"external";actor:AgentActorRef;authority:AgentRunContext["authority"];language:string;credential:AgentCredential }
 export interface AgentProvider { id: string; hostId: string; url: string; token: string }
 type Listener = () => void;
+type SealedCancellation = { scope: Scope; intent: AgentRunIntent; cancelHost: boolean; wasStarting: boolean };
+
 export class AgentChannel {
   readonly facts: ChannelStore;
   /** PI returns the same queued object; preserve its receipt identity in the event sink. */
@@ -113,6 +115,31 @@ export class AgentChannel {
     if (!chain) return;
     chain.executions.delete(intent.id);
     if (!chain.executions.size) this.chains.delete(key);
+  }
+  private async rootIntent(scope: Scope, sessionId: string, runId: string) {
+    const intent = await this.facts.intent(scope, runId);
+    if (intent.session.sessionId !== sessionId || !this.sameExecution(intent.channel.root, { session: intent.session, runId }))
+      throw new RuntimeError(404, "NOT_FOUND", "Root execution not found");
+    return intent;
+  }
+  async chainStatus(scope: Scope, sessionId: string, runId: string) {
+    const { channel } = await this.rootIntent(scope, sessionId, runId);
+    // Sample liveness before reading the latest intent: a drained chain cannot admit another continuation.
+    const settled = !this.chains.get(this.chainKey(channel))?.executions.size;
+    const latestRunId = await this.facts.latestInChain(scope, channel.root);
+    return { settled, latestRunId };
+  }
+  async cancelChain(scope: Scope, sessionId: string, runId: string) {
+    const { channel } = await this.rootIntent(scope, sessionId, runId);
+    const executions = this.chains.get(this.chainKey(channel))?.executions;
+    if (!executions) return;
+    const sealed: SealedCancellation[] = [];
+    for (const id of executions) {
+      const entry = (await this.facts.task(scope.domainId, id))!;
+      sealed.push(await this.runtime.locked(entry.scope, entry.intent.session.sessionId,
+        () => this.sealCancellation(entry.scope, entry.intent.id)));
+    }
+    await this.cancelSealed(sealed);
   }
   /** Drop in-memory credentials and bindings rooted at a deleted session. */
   releaseSession(scope: Scope, sessionId: string) {
@@ -728,25 +755,34 @@ export class AgentChannel {
     const failures=stopped.flatMap(result=>result.status==="rejected"?[result.reason]:[]);
     if(failures.length) throw new AggregateError(failures,"Delegated execution cancellation failed");
   }
+  private async sealCancellation(scope: Scope, id: string): Promise<SealedCancellation> {
+    const current = await this.facts.intent(scope, id);
+    this.takePresentationBinding(current);
+    const wasStarting = current.status === "starting";
+    const cancelHost = !wasStarting
+      && (current.status !== "cancelled" || current.cancelMode === "model")
+      && await this.facts.hasRun(scope, current.id);
+    current.cancelled = true;
+    current.cancelMode = undefined;
+    await this.facts.closePending(scope, current.session.sessionId, current.id);
+    if (wasStarting) current.status = "cancelled";
+    await this.facts.update(scope, current);
+    return { scope, intent: current, cancelHost, wasStarting };
+  }
   async cancel(scope: Scope, intent: AgentRunIntent) {
-    const descendants: Array<{ scope: Scope; intent: AgentRunIntent; cancelHost:boolean }> = [];
+    const descendants: SealedCancellation[] = [];
     const seal = async (scope: Scope, candidate: AgentRunIntent) => {
-      const children = await this.runtime.locked(scope,candidate.session.sessionId,async () => {
-        const current = await this.facts.intent(scope,candidate.id);
-        this.takePresentationBinding(current);
-        const cancelHost = current.status !== "starting"
-          && (current.status !== "cancelled" || current.cancelMode === "model")
-          && await this.facts.hasRun(scope, current.id);
-        current.cancelled = true;current.cancelMode=undefined;
-        await this.facts.closePending(scope,current.session.sessionId,current.id);
-        if (current.status === "starting") current.status = "cancelled";
-        await this.facts.update(scope,current);
-        descendants.push({ scope,intent: current,cancelHost });
-        return this.facts.children(scope.domainId,{ session: current.session,runId: current.id });
+      const children = await this.runtime.locked(scope, candidate.session.sessionId, async () => {
+        const entry = await this.sealCancellation(scope, candidate.id);
+        descendants.push(entry);
+        return this.facts.children(scope.domainId, { session: entry.intent.session, runId: entry.intent.id });
       });
-      for (const child of children) await seal(child.scope,child.intent);
+      for (const child of children) await seal(child.scope, child.intent);
     };
-    await seal(scope,intent);
+    await seal(scope, intent);
+    await this.cancelSealed(descendants);
+  }
+  private async cancelSealed(descendants: SealedCancellation[]) {
     const failures: unknown[] = [];
     for (const entry of descendants.reverse()) {
       try { if (entry.cancelHost) await this.callback(entry.intent, "cancel"); }
@@ -754,7 +790,10 @@ export class AgentChannel {
       try { if (entry.intent.status === "running") await this.runtime.cancel(entry.scope, entry.intent.id, true); }
       catch (error) { failures.push(error); }
     }
-    for (const entry of descendants) await this.announce(entry.intent);
+    for (const entry of descendants) {
+      if (entry.wasStarting) await this.notify(entry.scope, entry.intent.id);
+      else await this.announce(entry.intent);
+    }
     if (failures.length) throw new AggregateError(failures,"One or more agent hosts rejected cancellation settlement");
   }
   async process(scope: Scope, sessionId: string, taskId: string) {

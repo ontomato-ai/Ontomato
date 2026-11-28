@@ -1,3 +1,4 @@
+import { agentChainStatusSchema } from "@ontomato/contracts/agent-channel";
 import { panelFormRequestSchema } from "@ontomato/contracts/panel-projection";
 import { validateBody } from "../middleware/validate";
 import { asyncHandler, buildAttachmentContentDisposition } from "../utils/http";
@@ -69,6 +70,18 @@ router.get("/analysis-sessions", wrap(async (req, res) => {
   res.json(await assistantService.list(context(req).owner, { ...query, analysisOnly: true }));
 }));
 router.use(createAgentHostRouter(assistantService, true));
+router.get("/sessions/:sessionId/runs/:runId/chain", wrap(async (req, res) => {
+  const { owner } = context(req), sessionId = id(req, "sessionId"), runId = id(req, "runId");
+  await assistantService.ownRun(sessionId, runId, owner);
+  const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
+  res.json(agentChainStatusSchema.parse(await client.request(`/v1/channel/sessions/${sessionId}/runs/${runId}/chain`)));
+}));
+router.post("/sessions/:sessionId/runs/:runId/chain/cancel", wrap(async (req, res) => {
+  const { owner } = context(req), sessionId = id(req, "sessionId"), runId = id(req, "runId");
+  await assistantService.ownRun(sessionId, runId, owner);
+  const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
+  res.json(await client.request(`/v1/channel/sessions/${sessionId}/runs/${runId}/chain/cancel`, "POST", {}));
+}));
 router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const kind = authoringKindSchema.parse(req.params.kind);
