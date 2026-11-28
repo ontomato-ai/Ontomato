@@ -45,3 +45,34 @@ it("sorts by numeric values, filters columns, and hides pagination when rows fit
     wrapper.unmount();
   }
 });
+
+it("sizes columns from content within bounds and marks numeric columns right-aligned", async () => {
+  const table = jsonTable({
+    columns: [
+      { key: "short", label: "ID" },
+      { key: "long", label: "Description" },
+    ],
+    rows: [
+      { short: 3105, long: "A".repeat(200) },
+    ],
+  })!;
+  const wrapper = mount(TablePreview, {
+    props: { table, arrange: labels },
+    global: { plugins: [ElementPlus] },
+  });
+  try {
+    await flushPromises();
+    const cols = wrapper.findAll(".el-table__header colgroup col").map((col) => Number(col.attributes("width")));
+    expect(cols).toHaveLength(2);
+    expect(cols[0]).toBeGreaterThanOrEqual(112);
+    expect(cols[0]).toBeLessThan(200);
+    expect(cols[1]).toBe(320);
+
+    const headers = wrapper.findAll(".el-table__header th");
+    expect(headers[0]!.classes()).toContain("is-right");
+    expect(headers[0]!.classes()).toContain("table-preview-arranged");
+    expect(headers[1]!.classes()).not.toContain("is-right");
+  } finally {
+    wrapper.unmount();
+  }
+});

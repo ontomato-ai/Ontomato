@@ -23,9 +23,35 @@ const props = defineProps<{
   arrange?: TableArrangeLabels;
 }>();
 
-/** A column's least width; an arranged column adds room for its filter button and sort carets. */
-const MIN_WIDTH = 112;
-const ARRANGED_MIN_WIDTH = MIN_WIDTH + 36;
+/** Content-based column width bounds; arranged columns add room for filter and sort controls. */
+const WIDE_CHAR = /[\u2e80-\u9fff\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]/;
+const CELL_HORIZONTAL_PADDING = 32;
+const ARRANGE_CONTROLS_WIDTH = 46;
+const TEXT_WIDTH_BUFFER = 8;
+const HEADER_FONT_SIZE = 12;
+const BODY_FONT_SIZE = 14;
+const MIN_COLUMN_WIDTH = 72;
+const ARRANGED_MIN_COLUMN_WIDTH = 112;
+const MAX_COLUMN_WIDTH = 320;
+
+function estimateTextWidth(text: string, fontSize: number, limit: number): number {
+  let maxLine = 0;
+  let line = 0;
+  for (const ch of text) {
+    if (ch === "\n") {
+      if (line > maxLine) maxLine = line;
+      line = 0;
+      continue;
+    }
+    if (WIDE_CHAR.test(ch)) line += fontSize * 1.04;
+    else if (/[0-9]/.test(ch)) line += fontSize * 0.64;
+    else if (/[A-ZMW@#%&]/.test(ch)) line += fontSize * 0.72;
+    else if (/[il.,:;|!'" ]/.test(ch)) line += fontSize * 0.36;
+    else line += fontSize * 0.58;
+    if (line >= limit) return limit;
+  }
+  return Math.max(maxLine, line);
+}
 
 type Order = "ascending" | "descending";
 const sort = ref<{ column: number; order: Order } | null>(null);
@@ -84,6 +110,31 @@ const numeric = computed(() =>
   }),
 );
 
+/** Content-sized pixel widths so sparse tables pack from the left instead of stretching across the card. */
+const columnWidths = computed(() => {
+  const arranged = Boolean(props.arrange);
+  const minWidth = arranged ? ARRANGED_MIN_COLUMN_WIDTH : MIN_COLUMN_WIDTH;
+  const headerChrome = CELL_HORIZONTAL_PADDING + TEXT_WIDTH_BUFFER + (arranged ? ARRANGE_CONTROLS_WIDTH : 0);
+  const bodyChrome = CELL_HORIZONTAL_PADDING + TEXT_WIDTH_BUFFER;
+  const headerLimit = MAX_COLUMN_WIDTH - headerChrome;
+  const bodyLimit = MAX_COLUMN_WIDTH - bodyChrome;
+
+  return props.table.columns.map((column, index) => {
+    let width = Math.max(minWidth, Math.ceil(estimateTextWidth(column, HEADER_FONT_SIZE, headerLimit) + headerChrome));
+    if (width >= MAX_COLUMN_WIDTH) return MAX_COLUMN_WIDTH;
+    for (const row of props.table.rows) {
+      const cell = row[index];
+      if (!cell) continue;
+      const cellWidth = Math.ceil(estimateTextWidth(cell, BODY_FONT_SIZE, bodyLimit) + bodyChrome);
+      if (cellWidth > width) {
+        if (cellWidth >= MAX_COLUMN_WIDTH) return MAX_COLUMN_WIDTH;
+        width = cellWidth;
+      }
+    }
+    return width;
+  });
+});
+
 /** Each column's cells in every row, for its filter. */
 const columnCells = computed(() =>
   props.arrange ? props.table.columns.map((_, column) => props.table.rows.map((row) => row[column] ?? "")) : [],
@@ -122,7 +173,7 @@ const sourceIndex = (row: { source: number }) => String(row.source);
         :sortable="arrange ? 'custom' : false"
         :sort-orders="['ascending', 'descending', null]"
         :label-class-name="arrange ? 'table-preview-arranged' : undefined"
-        :min-width="arrange ? ARRANGED_MIN_WIDTH : MIN_WIDTH"
+        :width="columnWidths[index]"
       >
         <template v-if="arrange" #header>
           <span class="table-preview-heading" :title="column">{{ column }}</span>
@@ -167,11 +218,32 @@ const sourceIndex = (row: { source: number }) => String(row.source);
   font-variant-numeric: tabular-nums;
 }
 
+.table-preview :deep(.el-table__header-wrapper) {
+  background-color: var(--el-table-header-bg-color);
+  box-shadow: inset 0 -1px 0 var(--el-table-border-color);
+}
+
+.table-preview :deep(.el-table th.el-table__cell) {
+  padding: 5px 16px !important;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs, 12px);
+  font-weight: var(--font-medium, 500);
+}
+
+.table-preview :deep(.el-table td.el-table__cell) {
+  padding: 8px 16px !important;
+}
+
+.table-preview :deep(.el-table .cell) {
+  padding: 0;
+}
+
 .table-preview :deep(.el-table__body .cell) {
   white-space: pre-wrap;
 }
 
 .table-preview :deep(.el-table__header .cell) {
+  line-height: 22px;
   white-space: nowrap;
 }
 
@@ -180,11 +252,16 @@ const sourceIndex = (row: { source: number }) => String(row.source);
   display: flex;
   align-items: center;
   gap: 3px;
-  min-height: 36px;
+  min-height: 22px;
 }
 
 .table-preview :deep(th.table-preview-arranged.is-right > .cell) {
   justify-content: flex-end;
+}
+
+/* Right-aligned columns place filter and sort controls to the left so the heading shares the numbers' right edge. */
+.table-preview :deep(th.table-preview-arranged.is-right > .cell > .table-preview-heading) {
+  order: 1;
 }
 
 .table-preview :deep(th.table-preview-arranged > .cell > *:not(.table-preview-heading)) {

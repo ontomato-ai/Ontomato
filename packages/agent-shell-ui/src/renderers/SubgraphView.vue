@@ -373,7 +373,6 @@ function nodeSummaryAria(node: SubgraphClassNode) {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border-top: 1px solid var(--el-border-color-lighter);
   background: var(--el-bg-color);
 }
 
@@ -387,7 +386,7 @@ function nodeSummaryAria(node: SubgraphClassNode) {
 }
 
 .band-heading {
-  padding: 8px 14px 0;
+  padding: 8px var(--spacing-lg, 16px) 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs, 12px);
   font-weight: 500;
@@ -396,13 +395,12 @@ function nodeSummaryAria(node: SubgraphClassNode) {
 .band-scroll {
   width: 100%;
   min-width: 0;
-  max-height: 400px;
-  overflow: auto;
+  overflow-x: auto;
 }
 
 .band-stage {
   position: relative;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .band-svg {
@@ -746,9 +744,9 @@ function nodeSummaryAria(node: SubgraphClassNode) {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 9px 14px;
+  padding: 8px var(--spacing-lg, 16px) 10px;
   border-top: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color-lighter);
+  background: var(--el-bg-color);
   font-size: var(--text-xs, 12px);
   line-height: 1.5;
 }
@@ -790,10 +788,9 @@ function nodeSummaryAria(node: SubgraphClassNode) {
 }
 
 .op-kind {
-  padding: 0 5px;
+  padding: 1px 6px;
   border-radius: var(--radius-xs, 4px);
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
   color: var(--el-text-color-secondary);
   font-size: 11px;
 }

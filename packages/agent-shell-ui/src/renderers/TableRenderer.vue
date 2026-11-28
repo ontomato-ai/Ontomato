@@ -72,10 +72,10 @@ const lineage = computed(() => {
   const graph = parsed.value.graph;
   return graph?.queries.map((query) => ({ ...query, filters: graph.filters.filter((filter) => filter.queryId === query.id) })) ?? [];
 });
-/** The graph opens in place; the side panel has room for it, so it starts open there. */
-const lineageOpen = ref(props.presentation === "panel");
+/** The graph starts expanded in place so the lineage is visible by default; readers can collapse it. */
+const lineageOpen = ref(true);
 watch(() => props.artifact.id, () => {
-  lineageOpen.value = props.presentation === "panel";
+  lineageOpen.value = true;
 });
 </script>
 
@@ -112,7 +112,9 @@ watch(() => props.artifact.id, () => {
             <component :is="lineageOpen ? ChevronUp : ChevronDown" :size="14" aria-hidden="true" />
           </button>
         </div>
-        <SubgraphView v-if="lineageOpen" :graph="parsed.graph" />
+        <div v-if="lineageOpen" class="lineage-graph">
+          <SubgraphView :graph="parsed.graph" />
+        </div>
       </section>
     </template>
     <div v-else-if="parsed.raw !== null && parsed.raw.trim() === ''" class="state">{{ labels.emptyFile }}</div>
@@ -133,16 +135,34 @@ watch(() => props.artifact.id, () => {
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
 }
+.table-renderer :deep(.el-table__inner-wrapper::before) {
+  display: none;
+}
+.table-renderer :deep(.el-table__body tr:last-child td.el-table__cell) {
+  border-bottom: 0;
+}
+.table-renderer :deep(.table-preview-pager) {
+  border-top: 1px solid var(--el-border-color-lighter);
+}
 .lineage {
   border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
 }
 .lineage-bar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-sm);
-  padding: 6px var(--spacing-md);
-  background: var(--el-fill-color-lighter);
+  padding: 8px var(--spacing-lg, 16px);
+  background: transparent;
+}
+.inline .lineage-graph {
+  max-height: 260px;
+  overflow-y: auto;
+}
+.panel .lineage-graph {
+  max-height: 440px;
+  overflow-y: auto;
 }
 .lineage-summary {
   display: flex;
@@ -201,10 +221,10 @@ watch(() => props.artifact.id, () => {
   color: var(--el-text-color-primary);
 }
 .lineage-filter {
-  padding: 0 6px;
-  border: 1px solid var(--el-border-color-lighter);
+  padding: 1px 6px;
+  border: 0;
   border-radius: var(--radius-xs, 4px);
-  background: var(--el-bg-color);
+  background: var(--el-fill-color-light);
   color: var(--el-text-color-secondary);
 }
 .state {
