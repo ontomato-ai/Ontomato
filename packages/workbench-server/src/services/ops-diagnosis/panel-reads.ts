@@ -559,7 +559,7 @@ function autotestRunReads(owner: ProductOwner, locale: string | undefined, requi
 
       const records = runs.map<PanelRecord>(({ run, kept }) => {
         const active = run.status === "running" || run.status === "stopping";
-        const stats = summarizeRun(run, [], locale);
+        const stats = summarizeRun(run, loadCaseResults(run.runId), locale);
         return {
           className: AUTOTEST_RUN,
           primaryKey: run.runId,
@@ -815,9 +815,32 @@ export function createRegisteredAutotestCaseArtifactReadAdapter(owner: ProductOw
 }
 
 export const DEFAULT_DSL_QUERY_TEXT = `{
-  "problem": "",
   "answer": {
-    "steps": []
+    "steps": [
+      {
+        "graph": {
+          "patterns": [
+            {
+              "objects": [
+                {
+                  "variable": "object",
+                  "class": "/class"
+                }
+              ]
+            }
+          ]
+        },
+        "output": {
+          "fields": [
+            {
+              "variable": "object",
+              "field": "field",
+              "as": "field"
+            }
+          ]
+        }
+      }
+    ]
   }
 }`;
 

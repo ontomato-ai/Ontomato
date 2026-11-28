@@ -300,7 +300,7 @@ onBeforeUnmount(() => {
       <div class="panel-header">
         <Monitor class="panel-icon" />
         <span class="panel-title">{{ t("observe.frontendLogs") }}</span>
-        <span class="panel-subtitle">{{ appLogSource }}</span>
+        <span class="panel-subtitle">Node</span>
         <span style="flex: 1" />
         <span
           class="status-dot"
@@ -368,7 +368,7 @@ onBeforeUnmount(() => {
       <div class="panel-header">
         <Database class="panel-icon" />
         <span class="panel-title">{{ t("observe.backendLogs") }}</span>
-        <span class="panel-subtitle">Node API</span>
+        <span class="panel-subtitle">Java</span>
         <span style="flex: 1" />
         <span
           class="status-dot"
