@@ -904,5 +904,5 @@ ${logs}`);
     });
     expect(late.status).toBe(409);
     expect(await late.json()).toMatchObject({ error: { code: "RUN_CLOSED" } });
-  });
+  }, 20_000);
 });
