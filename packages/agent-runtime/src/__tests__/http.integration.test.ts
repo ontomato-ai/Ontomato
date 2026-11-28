@@ -895,6 +895,13 @@ ${logs}`);
       inputs.some((request) => JSON.stringify(request.messages).includes(`Task ${captured.body.taskId}`)));
     const { session: parent } = runtimeSessionSnapshotSchema.parse((await api(`/v1/sessions/${sessionId}`)).body);
     await settle(parent.latestRunId!);
+    await waitFor("the delegated chain to settle", async () => {
+      const chain = await api(`/v1/channel/sessions/${sessionId}/runs/${runId}/chain`);
+      expect(chain.status).toBe(200);
+      if (!chain.body.settled) return false;
+      expect(chain.body.latestRunId).toBe(parent.latestRunId);
+      return true;
+    });
     const late = await fetch(captured.url, {
       method: "POST",
       headers: {

@@ -150,6 +150,16 @@ export class ChannelStore {
     if (!intent) throw new RuntimeError(404, "NOT_FOUND", "Agent execution not found");
     return intent;
   }
+  async latestInChain(scope: Scope, root: AgentExecutionRef): Promise<string> {
+    const { rows } = await this.store.pool.query<{ key: string }>(`SELECT a.key
+      FROM ${this.store.table("admissions")} a
+      JOIN ${this.store.table("messages")} m
+        ON m.host_id=a.host_id AND m.domain_id=a.domain_id AND m.id=(a.intent->>'inputId')::uuid
+      WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3 AND NOT a.deleted
+        AND a.intent->'channel'->'root'=$4::jsonb
+      ORDER BY m.seq DESC LIMIT 1`, [...this.key(scope), root.session.sessionId, JSON.stringify(root)]);
+    return rows[0].key;
+  }
   async task(domainId: string, taskId: string): Promise<{ scope: Scope; intent: AgentRunIntent } | null> {
     const row = (await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND NOT deleted AND intent IS NOT NULL`,[domainId,taskId])).rows[0];
     return row ? { scope: { hostId: row.host_id,domainId },intent: agentRunIntentSchema.parse(row.intent) } : null;
