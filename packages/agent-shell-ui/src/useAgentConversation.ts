@@ -311,7 +311,6 @@ export function useAgentConversation(
         const input = context === undefined ? agentId : { agentId, context };
         createdSession = await (opensPreview() ? client.createSession(input, { preview: true }) : client.createSession(input));
       }
-      if (current !== token && port() !== client) return null;
       const targetSessionId = createdSession?.id ?? sentSessionId!;
       if (createdSession && current === token) {
         state.sessionId = createdSession.id;
