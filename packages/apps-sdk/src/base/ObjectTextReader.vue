@@ -297,7 +297,7 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
           <MarkdownView :content="markdownSections.body" />
         </div>
         <div v-else-if="renderMode === 'table' && tablePreview" class="sdk-object-text-reader-table">
-          <TablePreview :table="tablePreview" :page-size="50" />
+          <TablePreview :table="tablePreview" :page-size="50" wrap />
         </div>
         <div v-else-if="renderMode === 'diff' && diffPatch" class="sdk-object-text-reader-diff">
           <div v-if="diffPatch.files.length === 0" class="sdk-object-text-reader-diff-empty">

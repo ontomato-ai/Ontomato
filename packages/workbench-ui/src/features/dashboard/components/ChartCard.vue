@@ -407,7 +407,8 @@ onBeforeUnmount(() => {
 }
 
 /* A card is narrow: the data view's column names wrap instead of being cut off. */
-.chart-wrapper :deep(.table-preview .el-table__header .cell) {
+.chart-wrapper :deep(.table-preview th .table-preview-heading) {
+  max-width: none;
   white-space: normal;
   overflow-wrap: anywhere;
 }
