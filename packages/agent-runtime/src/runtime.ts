@@ -850,6 +850,12 @@ export class AgentRuntime {
     // The stop is committed: wake everyone waiting for it.
     for (const wake of this.waiters.get(key(scope, run.id)) ?? []) wake();
   }
+
+  delegatedRunDelivered(scope: Scope, sessionId: string, runId: string) {
+    void this.sessionEngines.delivered(scope, sessionId, runId, async () =>
+      (await this.channel.facts.waiting(scope, sessionId)) !== null);
+  }
+
   private async collect(active: Active, toolCallId: string | null) {
     if (!active.workspace) return [];
     const workspace = active.workspace;

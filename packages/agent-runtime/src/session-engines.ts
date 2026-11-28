@@ -50,7 +50,7 @@ interface LiveSession {
   idle?: ReturnType<typeof setTimeout>;
 }
 
-const idleMs = 60 * 60 * 1000;
+const idleMs = 10 * 60 * 1000;
 const key = (scope: Scope, id: string) => canonical([scope.hostId, scope.domainId, id]);
 const bashEnvironmentFile = "ontomato-bash-env";
 const activeRunFile = "ontomato-run-id";
@@ -221,6 +221,14 @@ export class SessionEngines {
       }).catch(this.onCloseError);
     }, idleMs);
     entry.idle = timer.unref();
+  }
+
+  delivered(scope: Scope, id: string, runId: string, hasQueuedRun: () => Promise<boolean>) {
+    return this.locked(scope, id, async () => {
+      if (!this.live.get(key(scope, id))?.idle) return;
+      const { latestRunId } = await this.store.session(scope, id);
+      if (latestRunId === runId && !(await hasQueuedRun())) await this.release(scope, id);
+    }).catch(this.onCloseError);
   }
 
   async release(scope: Scope, id: string) {
