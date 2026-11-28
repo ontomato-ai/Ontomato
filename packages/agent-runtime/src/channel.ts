@@ -123,11 +123,25 @@ export class AgentChannel {
     return intent;
   }
   async chainStatus(scope: Scope, sessionId: string, runId: string) {
-    const { channel } = await this.rootIntent(scope, sessionId, runId);
-    // Sample liveness before reading the latest intent: a drained chain cannot admit another continuation.
-    const settled = !this.chains.get(this.chainKey(channel))?.executions.size;
-    const latestRunId = await this.facts.latestInChain(scope, channel.root);
-    return { settled, latestRunId };
+    return this.runtime.locked(scope, sessionId, async () => {
+      const { channel } = await this.rootIntent(scope, sessionId, runId);
+      const root = channel.root.session;
+      const executions = this.chains.get(this.chainKey(channel))?.executions;
+      // The chain is settled when no live execution can still return a result to its root session.
+      // The session lock pairs a root turn's stop with admission of any successor.
+      let settled = true;
+      for (const id of executions ?? []) {
+        const { intent } = (await this.facts.task(scope.domainId, id))!;
+        const canReturn = this.sameSession(intent.session, root)
+          ? intent.status === "starting" || intent.status === "running"
+          : await this.accessible(intent, root, scope.domainId);
+        if (canReturn) {
+          settled = false;
+          break;
+        }
+      }
+      return { settled, latestRunId: await this.facts.latestInChain(scope, channel.root) };
+    });
   }
   async cancelChain(scope: Scope, sessionId: string, runId: string) {
     const { channel } = await this.rootIntent(scope, sessionId, runId);
@@ -606,8 +620,11 @@ export class AgentChannel {
     }
     return inputs.size ? { kind: "input" as const } : null;
   }
+  private sameSession(left: AgentSessionRef, right: AgentSessionRef) {
+    return left.providerId === right.providerId && left.sessionId === right.sessionId;
+  }
   private sameExecution(left: AgentExecutionRef, right: AgentExecutionRef) {
-    return left.runId === right.runId && left.session.providerId === right.session.providerId && left.session.sessionId === right.session.sessionId;
+    return left.runId === right.runId && this.sameSession(left.session, right.session);
   }
   private async waitForResult(scope: Scope, run: RuntimeRun, entry: { scope: Scope; intent: AgentRunIntent }, source: AgentExecutionRef, signal?: AbortSignal) {
     const parent = entry.intent.channel.requestedBy;
@@ -729,12 +746,11 @@ export class AgentChannel {
     return { taskId:intent.id,sessionRef:intent.session,...result,questions,messages,cursor: messages.at(-1)?.messageSeq ?? command.cursor ?? 0 };
   }
   private async accessible(intent: AgentRunIntent, source: AgentSessionRef, domainId: string) {
-    const sameSession = (ref: AgentSessionRef) => ref.providerId === source.providerId && ref.sessionId === source.sessionId;
-    if (sameSession(intent.session)) return true;
+    if (this.sameSession(intent.session, source)) return true;
     let current = intent;
     while (current.channel.requestedBy) {
       const parent = current.channel.requestedBy;
-      if (sameSession(parent.session)) return true;
+      if (this.sameSession(parent.session, source)) return true;
       current = await this.facts.intent(this.scope(parent.session,domainId),parent.runId);
     }
     return false;
