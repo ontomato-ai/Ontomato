@@ -1,26 +1,14 @@
 import type { Component } from "vue";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
-import { parseProductMarkdown } from "@ontomato/markdown";
+import { markdownLinks } from "@ontomato/foundation-ui/markdown";
 import type { ArtifactRendererOverride } from "./types";
 
 export function linkedArtifacts(markdown: string, matches: (path: string) => boolean) {
   const links = new Map<string, string>();
-  function visit(value: unknown) {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (!value || typeof value !== "object" || !("type" in value)) return;
-    if (value.type === "link" && "href" in value && typeof value.href === "string") {
-      const path = artifactPath(value.href);
-      if (path && matches(path)) {
-        const title = "text" in value && typeof value.text === "string" ? value.text.trim() : "";
-        links.set(path, title || fileName(path));
-      }
-    }
-    Object.values(value).forEach(visit);
+  for (const { href, text } of markdownLinks(markdown)) {
+    const path = artifactPath(href);
+    if (path && matches(path)) links.set(path, text || fileName(path));
   }
-  visit(parseProductMarkdown(markdown));
   return links;
 }
 
