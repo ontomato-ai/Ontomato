@@ -119,4 +119,33 @@ class DslGrammarValidatorTest {
 				() -> DslGrammarValidator.validate(dsl, java.util.List.of()));
 		org.junit.jupiter.api.Assertions.assertTrue(error.getMessage().contains("conditions.properties"), error.getMessage());
 	}
+
+	/** The 2026-11-28 regression's question 5: a party filter written on the temporary table was silently dropped. */
+	private static JSONObject twoStepDsl(String secondStepConditions) {
+		return JSON.parseObject("""
+				{"answer":{"steps":[
+				  {"graph":{"patterns":[{"objects":[{"variable":"p","class":"/Person",
+				    "conditions":{"properties":{"field":"status","operator":"=","value":"active"}}}]}]},
+				   "output":{"to_user":false,"save_table":"/t1","fields":[{"variable":"p","field":"id","as":"id"},
+				     {"variable":"p","field":"polity","as":"polity"}]}},
+				  {"graph":{"patterns":[{"objects":[{"variable":"t","class":"/t1"%s}]}]},
+				   "output":{"to_user":true,"fields":[{"variable":"t","field":"id","as":"headcount","function":"count"}]}}]}}"""
+				.formatted(secondStepConditions));
+	}
+
+	@Test
+	void aConditionOnATemporaryTableIsRejectedAtItsStep() {
+		DslContractViolationException e = assertThrows(DslContractViolationException.class, () -> DslGrammarValidator
+				.validate(twoStepDsl(",\"conditions\":{\"properties\":{\"field\":\"polity\",\"operator\":\"=\",\"value\":\"party member\"}}"),
+						List.of()));
+		assertEquals(DslContractViolationException.Code.INVALID_GRAMMAR, e.getViolations().get(0).getCode());
+		assertEquals("steps[1].patterns[0].objects[0].conditions", e.getViolations().get(0).getDslPath());
+		assertTrue(e.getMessage().contains("Filter the objects in steps[0]"), e.getMessage());
+	}
+
+	@Test
+	void aTemporaryTableWithoutConditionsPassesTheGate() {
+		assertDoesNotThrow(() -> DslGrammarValidator.validate(twoStepDsl(""), List.of()));
+		assertDoesNotThrow(() -> DslGrammarValidator.validate(twoStepDsl(",\"conditions\":{\"properties\":{}}"), List.of()));
+	}
 }
