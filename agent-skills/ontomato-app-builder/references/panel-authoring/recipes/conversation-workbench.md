@@ -127,6 +127,8 @@ A conversation workbench is normally four cooperating members plus application-s
 }
 ```
 
+Formal projections write the same target variants as objects: `{ "kind": "page-default" }`, `{ "kind": "id", "id": "…" }`, or `{ "kind": "preset", "agentKind": "…" }`. The `"page-default"` string is only the short inline member shorthand.
+
 `projections/<preview-projection-uuid>.json`:
 
 ```json
@@ -232,7 +234,7 @@ Read `sdk read docs/components/AgentChat.md` and `AgentArtifactPreview.md` befor
 - `#artifact-link`, `#artifact`, and `#artifact-actions` customize artifact cards and preview chrome. They receive the generic fallback component and props; render the fallback whenever the artifact is not the application's special case.
 - `customInput` is `(text: string) => boolean`; `#input` receives `{ inputId, text, queued, run, preparationFailed }`.
 - `artifactRenderers`, `inlineArtifactAlreadyShown`, and `continueConversation` are runtime component inputs, so pass them through `:values` at the placement (functions may live in `panel.mjs`), not in persisted JSON `config`.
-- `@run-complete` includes the completed `sessionId` and `runId`; when artifact registration was readable it also carries `artifacts`. The panel decides whether to open or select an artifact. The chat does not open one by rule.
+- `@run-complete` fires when a run observed by the currently open conversation reaches a stopped state. It is not a replay of completions missed while another session was open or before the panel loaded. It includes the completed `sessionId` and `runId`; when artifact registration was readable it also carries `artifacts`, and a read failure is reported separately through `error`. The panel decides whether to open or select an artifact. The chat does not open one by rule.
 - `header-actions` slot scope exposes the current session ID, agent ID, title, origin, whether an initial instruction exists, and the initial-instruction reader. Use those generic facts instead of parsing conversation items.
 
 ## Example: report-to-PPT card

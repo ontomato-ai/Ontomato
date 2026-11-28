@@ -55,7 +55,14 @@ export function currentSdkClient({ workbenchUrl, headers }) {
 }
 
 export async function installedPanelSdk(directory) {
-  const root = resolve(directory);
+  let root = resolve(directory);
+  try {
+    await readFile(resolve(root, "sdk.json"), "utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    const current = JSON.parse(await readFile(resolve(root, "current.json"), "utf8"));
+    root = resolve(root, current.version);
+  }
   const prefix = root.endsWith(sep) ? root : root + sep;
   const releaseFile = file => {
     const location = resolve(root, file);
