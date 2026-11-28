@@ -308,6 +308,11 @@ const triggerRowOutputs = {
 } as const;
 
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
+const agentSessionOutputs = {
+  openPath: { kind: "scalar", type: "string" },
+  favorited: { kind: "scalar", type: "boolean" },
+} as const;
+
 export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDeclaration>> = {
   [TRIGGER]: {
     ...describeType("trigger", "capability"),
@@ -1369,25 +1374,30 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [AGENT_SESSION]: {
     ...describeType("agentSession"),
     reads: {
+      tasks: {
+        source: "type",
+        parameterMode: "fixed",
+        params: {
+          search: "keyword", limit: "size", cursor: "cursor", agentId: "agentId",
+          agentIds: "agentIds", agentKinds: "agentKinds", origins: "sessionOrigins", workspaceId: "sessionWorkspace",
+        },
+        result: "panelRecordQuery",
+        rowType: AGENT_SESSION,
+        outputs: agentSessionOutputs,
+      },
       list: {
         source: "type",
         parameterMode: "fixed",
         params: { search: "keyword", limit: "size", agentKind: "agentKind", agentId: "agentId" },
         result: "panelRecordList",
-        outputs: {
-          openPath: { kind: "scalar", type: "string" },
-          favorited: { kind: "scalar", type: "boolean" },
-        },
+        outputs: agentSessionOutputs,
       },
       record: {
         source: "object",
         parameterMode: "fixed",
         params: {},
         result: "panelRecord",
-        outputs: {
-          openPath: { kind: "scalar", type: "string" },
-          favorited: { kind: "scalar", type: "boolean" },
-        },
+        outputs: agentSessionOutputs,
       },
     },
     operations: [RENAME_AGENT_SESSION, DELETE_AGENT_SESSION],

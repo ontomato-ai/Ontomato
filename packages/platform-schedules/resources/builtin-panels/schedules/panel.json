@@ -47,6 +47,15 @@
         "type": { "kind": "scalar", "type": "string" },
         "deepLink": true
       },
+      "initialValues": {
+        "type": { "kind": "json" }
+      },
+      "createdTask": {
+        "type": { "kind": "object", "objectType": "platform:Trigger" }
+      },
+      "createCancelled": {
+        "type": { "kind": "scalar", "type": "boolean" }
+      },
       "newTask": {
         "type": {
           "kind": "object",

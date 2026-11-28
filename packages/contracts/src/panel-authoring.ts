@@ -127,6 +127,12 @@ export const panelAuthoringInlineMemberSchema = z.object({
     }
     return;
   }
+  if (isOfficialComponent(member.component, "AgentArtifactPreview")) {
+    for (const field of ["type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "agent", "prefill", "prefillKey", "submit", "newSession"] as const) {
+      if (member[field] !== undefined) issue([field], "AgentArtifactPreview uses only its optional artifact state/inputs and config");
+    }
+    return;
+  }
   for (const field of ["agent", "prefill", "prefillKey", "submit", "newSession"] as const) {
     if (member[field] !== undefined) issue([field], field === "agent" ? "This field is only for ConversationEntry or AgentChat" : "This field is only for ConversationEntry");
   }

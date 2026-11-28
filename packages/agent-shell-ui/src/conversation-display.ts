@@ -22,6 +22,7 @@ import { presentationAppliesAddress } from "@ontomato/contracts/panel-host";
 import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import type { ApplicationOpenResponse } from "@ontomato/contracts/product-panels";
 import { fileName } from "./artifacts";
+import { nameArtifactInTrail, popArtifactTrail, pushArtifactTrail } from "./artifact-trail";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
 
 /**
@@ -643,18 +644,18 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     openArtifact: (open: OpenArtifact, parentKey?: string) =>
       inOrder(async () => {
         const current = shown.value.target;
-        if (parentKey && (current?.kind !== "artifact" || current.open.key !== parentKey)) return false;
-        if (parentKey === open.key) return true;
-        const next: DisplayTarget = { kind: "artifact", open };
-        if (!(await mayLeave(next))) return false;
-        if (page.value && !(await write(null, shown.value.view, "replace"))) return false;
-        const trail = parentKey && current?.kind === "artifact"
+        const currentTrail = current?.kind === "artifact"
           ? [...(shown.value.artifactParents ?? []), current.open]
           : [];
-        const ancestor = trail.findIndex((item) => item.key === open.key);
+        const nextTrail = pushArtifactTrail(currentTrail, open, parentKey);
+        if (!nextTrail) return false;
+        if (parentKey === open.key) return true;
+        const next: DisplayTarget = { kind: "artifact", open: nextTrail.at(-1)! };
+        if (!(await mayLeave(next))) return false;
+        if (page.value && !(await write(null, shown.value.view, "replace"))) return false;
         commit({
           target: next,
-          artifactParents: ancestor < 0 ? trail : trail.slice(0, ancestor),
+          artifactParents: nextTrail.slice(0, -1),
           view: shown.value.view,
           restorable: false,
         });
@@ -667,22 +668,25 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
      */
     nameArtifact: (key: string, title: string) => {
       const current = shown.value.target;
-      if (current?.kind !== "artifact" || current.open.key !== key) return;
-      if (current.open.title !== fileName(current.open.artifact.path) || title === current.open.title) return;
-      shown.value = { ...shown.value, target: { kind: "artifact", open: { ...current.open, title } } };
+      if (current?.kind !== "artifact") return;
+      const trail = [...(shown.value.artifactParents ?? []), current.open];
+      const next = nameArtifactInTrail(trail, key, title);
+      if (next === trail) return;
+      shown.value = { ...shown.value, target: { kind: "artifact", open: next.at(-1)! } };
     },
 
     /** Close the current file and restore the preview it was opened from. */
     closeArtifact: (key: string) =>
       inOrder(async () => {
         const current = shown.value.target;
-        if (current?.kind !== "artifact" || current.open.key !== key) return false;
-        const parents = shown.value.artifactParents ?? [];
-        const parent = parents.at(-1);
+        if (current?.kind !== "artifact") return false;
+        const nextTrail = popArtifactTrail([...(shown.value.artifactParents ?? []), current.open], key);
+        if (!nextTrail) return false;
+        const parent = nextTrail.at(-1);
         commit({
           ...shown.value,
           target: parent ? { kind: "artifact", open: parent } : null,
-          artifactParents: parents.slice(0, -1),
+          artifactParents: nextTrail.slice(0, -1),
         });
         return true;
       }),

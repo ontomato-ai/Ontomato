@@ -26,7 +26,7 @@ import {
 defineOptions({ name: "ProductAssetGraph" });
 
 /**
- * Platform-dedicated layered product asset reference graph (`panelUsable: false`).
+ * Layered product asset reference graph.
  *
  * Shared across Product Overview, Projection Detail, Panel Detail, and Application Detail. Accepts either a bound
  * `graph` datum (`panelRecord` or raw `{ nodes, edges }`) or a direct `graph` prop, lays out asset cards in fixed

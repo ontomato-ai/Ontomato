@@ -91,3 +91,25 @@ it("allocates no workspace when agent use is denied", async () => {
   expect(RuntimeClient.prototype.request).not.toHaveBeenCalled();
   expect(persisted).toBeUndefined();
 });
+
+it("binds session filters inside the owner's query before applying the page limit", async () => {
+  mocks.query.mockResolvedValue({ rows: [] });
+  const after = { updatedAt: "2026-11-25T00:00:00.000123Z", id: sessionId };
+  await assistantStore.listSessions(owner, {
+    agentIds: [agentId], agentKinds: ["regular", "custom"], origins: ["user", "scheduled"],
+    workspaceId: null, after, search: "%Plan", limit: 3,
+  });
+  const [sql, params] = mocks.query.mock.lastCall!;
+  expect(sql).toContain("s.domain_id=$1 AND s.owner_id=$2 AND s.origin=ANY($3::text[])");
+  expect(sql).toContain("s.agent_id=ANY($5::uuid[]) AND a.kind=ANY($6::text[])");
+  expect(sql).toContain("s.workspace_id IS NULL AND (s.updated_at,s.id)<($7::timestamptz,$8::uuid)");
+  expect(sql).toContain("ORDER BY s.updated_at DESC, s.id DESC");
+  expect(params).toEqual([owner.domainId, owner.userId, ["user", "scheduled"], "%\\%Plan%", [agentId], ["regular", "custom"], after.updatedAt, after.id, 3]);
+
+  await assistantStore.listSessions(owner, { agentId, workspaceId, limit: 3 });
+  const [unfilteredSql, unfilteredParams] = mocks.query.mock.lastCall!;
+  expect(unfilteredSql).not.toContain("s.origin");
+  expect(unfilteredSql).not.toContain("s.latest_run_id IS NOT NULL");
+  expect(unfilteredSql).toContain("s.agent_id=$3 AND s.workspace_id=$4");
+  expect(unfilteredParams).toEqual([owner.domainId, owner.userId, agentId, workspaceId, 3]);
+});

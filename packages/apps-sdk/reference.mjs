@@ -247,6 +247,13 @@ export function checkCatalogue(entries, declared, root, tsconfig) {
     }
   }
   const described = new Set(declared.map((component) => `${component.metadata.module}#${component.metadata.exportName}`));
+  for (const component of declared) {
+    if (component.metadata.panelUsable === false) {
+      throw new Error(
+        `Catalogue component '${component.metadata.componentId}' cannot declare panelUsable: false; remove host-only shell components from the public SDK instead`,
+      );
+    }
+  }
   for (const key of described) if (!exported.has(key)) throw new Error(`The catalogue declares ${key}, which this SDK version does not export`);
   for (const [key, component] of exported) {
     if (component && !described.has(key)) throw new Error(`${key} is a public component of this SDK version with no catalogue declaration`);
@@ -334,29 +341,6 @@ function firstSentence(text) {
 }
 
 /**
- * Component IDs registered as panel template/base components in `src/base-components.ts`.
- * Combined with declared projection `data`, this lets the SDK build derive `panelUsable` from runtime facts
- * instead of hand-maintaining a second list.
- */
-export function baseComponentIds(source) {
-  const parsed = ts.createSourceFile(source, readFileSync(source, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const ids = new Set();
-  const visit = (node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "baseComponents" &&
-      node.initializer && ts.isObjectLiteralExpression(node.initializer)) {
-      for (const prop of node.initializer.properties) {
-        if (ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop) || ts.isMethodDeclaration(prop)) {
-          ids.add(prop.name.getText(parsed).replace(/^["']|["']$/g, ""));
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(parsed);
-  return ids;
-}
-
-/**
  * Resolves a component's author-facing `config` prop entries strictly from its declared `metadata.configProps` list.
  * Each declared name must match the Vue prop's source name and appear at most once;
  * undeclared props (host-only inputs, platform-fixed styles, single-page knobs) are never emitted to author-facing docs.
@@ -399,11 +383,9 @@ export function resolveDeclaredConfig(metadata, declaredProps, { requireDeclarat
 
 /** Single component detail page (`docs/components/<ComponentId>.md`), keeping all data, config, slots and events. */
 export function componentPageMarkdown(version, component, typeDefinitions = new Map()) {
-  const placement = component.panelUsable === false
-    ? "Platform/host component (not placed directly in registered panels)."
-    : component.data !== undefined
-      ? "Panel placement: `<projection>` member in `manifest.members`."
-      : `Panel placement: template tag \`<${kebab(component.componentId)}>\` in \`panel.html\` (not a \`manifest.members\` projection).`;
+  const placement = component.data !== undefined
+    ? "Panel placement: `<projection>` member in `manifest.members`."
+    : `Panel placement: template tag \`<${kebab(component.componentId)}>\` in \`panel.html\` (not a \`manifest.members\` projection).`;
   const lines = [
     `# ${component.componentId}`,
     "",
@@ -505,14 +487,13 @@ export function themeTokensMarkdown(version, catalogue) {
 }
 
 /**
- * Layer-1 component overview (`docs/components.md`): lists only panel-usable components, grouped by purpose, one line
+ * Layer-1 component overview (`docs/components.md`): lists every official SDK component, grouped by purpose, one line
  * each (component name, placement mode, and the opening sentence of its declared `meaning`), pointing to per-component
  * single pages under `docs/components/<ComponentId>.md`.
  */
 export function catalogueMarkdown(version, catalogueOrComponents) {
   const isFull = !Array.isArray(catalogueOrComponents);
-  const components = (isFull ? catalogueOrComponents.components : catalogueOrComponents)
-    .filter((component) => component.panelUsable !== false);
+  const components = isFull ? catalogueOrComponents.components : catalogueOrComponents;
   const grouped = new Map();
   for (const component of components) {
     const key = component.group ?? "other";

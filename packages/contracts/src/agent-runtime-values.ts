@@ -50,6 +50,8 @@ export const runtimeRelativePathSchema = z
     "Expected a relative path without empty, dot or parent segments",
   );
 
+export const sessionOriginSchema = z.enum(["user", "scheduled", "delegated"]);
+
 export const runtimeRunStatusSchema = z.enum(["running", "stopped"]);
 export const runtimeStopReasonSchema = z.enum([
   "stop",

@@ -13,6 +13,7 @@ import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
   declaredCustomerFormSaveName,
+  panelFormInitialValuesSchema,
   panelFormObjectActiveFields,
   pruneInactivePanelFormVariants,
   type PanelFormDescription,
@@ -122,6 +123,8 @@ const props = withDefaults(defineProps<{
    * the field is not fixed.
    */
   fixedFields?: Record<string, { state: string; path?: string } | { literal: RuntimeJsonValue }>;
+  /** Editable defaults by field pointer, captured when the create form mounts. */
+  initialValues?: Readonly<Record<string, RuntimeJsonValue>> | null;
   /**
    * How top-level fields are arranged: `stacked` (default) draws each field's label above its control; `rows` draws
    * each top-level field as a settings row with its name and help on the left, its control and messages in the middle,
@@ -744,6 +747,8 @@ function restoreDraft(draft: PanelFormDraft) {
   agentFilledPaths.value = draft.agentFilledPaths;
 }
 
+const createDefaults = Object.entries(panelFormInitialValuesSchema.parse(props.initialValues ?? {}));
+
 async function describeBaseline(next: PanelFormTarget, reading: number) {
   let current = await forms.describe({ target: next, changedField: null });
   if (reading !== latestRead) return current;
@@ -752,8 +757,26 @@ async function describeBaseline(next: PanelFormTarget, reading: number) {
   const refresh = Object.entries(fixedValues.value).filter(([path, value]) =>
     !jsonValuesEqual(value, valueAt(current.values, path)) && activeFieldAt(current.fields, fixed, path)?.refreshOnChange,
   );
-  for (const [path] of refresh) {
-    current = await forms.describe({ target: next, values: fixValues(current.values), changedField: path });
+  const defaults = next.kind === "draft" ? createDefaults : [];
+  for (const [path, value, initial] of [
+    ...refresh.map(([path, value]) => [path, value, false] as const),
+    ...defaults.map(([path, value]) => [path, value, true] as const),
+  ]) {
+    let values = fixValues(current.values);
+    if (initial) {
+      const fields = fixDescription(current).fields;
+      const resolved = resolveActiveField(fields, values, path);
+      if (!resolved || resolved.readOnly || isFixed(path) || formSecretPaths(fields, values, { target: path }).length) {
+        throw new Error(`Initial value names a field that cannot be prefilled: ${path}`);
+      }
+      if (jsonValuesEqual(value, valueAt(values, path))) continue;
+      values = withValueAt(values, path, value);
+      if (!resolved.field.refreshOnChange) {
+        current = { ...current, values };
+        continue;
+      }
+    }
+    current = await forms.describe({ target: next, values, changedField: path });
     if (reading !== latestRead) break;
   }
   return current;

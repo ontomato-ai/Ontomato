@@ -26,7 +26,7 @@ import type {
 } from "./effective-permissions-types";
 
 /**
- * Governance-domain read-only effective permissions inspector (`panelUsable: false`).
+ * Governance-domain read-only effective permissions inspector.
  *
  * Shared across Organization Management ("View effective permissions" dialog) and Member Detail ("Effective
  * permissions" tab) without bloating the generic `ObjectSummary` component with permission-specific layouts.

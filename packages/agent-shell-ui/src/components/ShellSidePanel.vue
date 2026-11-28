@@ -11,7 +11,10 @@ import ArtifactView from "./ArtifactView.vue";
 import SlotOutlet from "./SlotOutlet.vue";
 
 /** Right-side outlet. Absent when nothing is open, so it never reserves width. */
-const props = defineProps<{ open: OpenArtifact; inline?: boolean; back?: boolean }>();
+const props = withDefaults(
+  defineProps<{ open: OpenArtifact; inline?: boolean; back?: boolean; showHeader?: boolean }>(),
+  { showHeader: true },
+);
 /** `loaded` passes on what the artifact's loader knows. */
 const emit = defineEmits<{ close: []; loaded: [load: DisplayLoad] }>();
 const root = ref<HTMLElement | null>(null);
@@ -34,7 +37,7 @@ async function download() {
 <template>
   <aside ref="root" class="side-panel" :class="{ resizing, inline }" :style="{ '--panel-width': `${width}px` }" @keydown.escape.stop="emit('close')">
     <div v-if="!inline" class="panel-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
-    <header class="panel-header">
+    <header v-if="showHeader" class="panel-header">
       <button v-if="back" type="button" class="panel-button" :title="shell.labels.value.backToFile" :aria-label="shell.labels.value.backToFile" @click="emit('close')">
         <ArrowLeft :size="17" />
       </button>

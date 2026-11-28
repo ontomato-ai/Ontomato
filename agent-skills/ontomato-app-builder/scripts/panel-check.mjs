@@ -249,6 +249,12 @@ async function workspaceDefinition(
     throw new Error(`${descriptorFile}: expected an object with a manifest`);
   }
   const { content = {}, manifest, ...descriptor } = document;
+  if (appSource) {
+    const inline = Object.entries(manifest?.members ?? {}).find(([, member]) => member?.component !== undefined);
+    if (inline) {
+      throw new Error(`Member ${inline[0]}: application source trees place owned projections in projections/<projectionId>.json and reference them with target.projectionId; inline member shorthand is only for built-in platform panels and legacy single-panel registration material`);
+    }
+  }
   const expanded = await expandInlineProjections(descriptorFile, manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent);
   if (content === null || typeof content !== "object" || Array.isArray(content) ||
       Object.keys(content).some(key => key !== "messages")) {
