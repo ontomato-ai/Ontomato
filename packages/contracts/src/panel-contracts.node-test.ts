@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
-import { DASHBOARD_CARD } from "./platform-object-types";
+import { AGENT_SESSION, DASHBOARD_CARD } from "./platform-object-types";
 import {
   ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, EXTERNAL_MCP_SERVICE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIAL_ACTION, TRIGGER, USER, WORKFLOW,
   RUN_NOW, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
@@ -349,6 +349,38 @@ test("reference pickers declare the named reads they use", async () => {
   }).success, false);
   const option = { primaryKey: "m1", value: { providerId: "models", id: "m1" }, label: "Model 1", unavailable: { reason: "Unavailable" } };
   assert.deepEqual(panelReadResultSchemas.panelOptionList.parse({ options: [option] }), { options: [option] });
+});
+
+test("session tasks accept declarative agent filters, multiple origins and a workspace selector", async () => {
+  const { registerDirectProjectionRequestSchema } = await import("./product-panels");
+  const { panelReadParameterSchemas, panelReadInputMatches } = await import("./panel-projection");
+  const input = { kind: "list", items: { kind: "scalar", type: "string" } } as const;
+  const projection = {
+    name: "Session tasks", description: "", visibility: "private", revision: 0, outputs: {}, config: {},
+    componentId: "@ontomato/sdk:ObjectList",
+    inputs: { agents: input },
+    data: { rows: {
+      source: { type: platformType(AGENT_SESSION) }, read: "tasks",
+      params: {
+        agentIds: { input: "agents" },
+        agentKinds: { literal: ["regular", "custom"] },
+        origins: { literal: ["user", "scheduled"] },
+        workspaceId: { literal: "none" },
+      },
+    } },
+  };
+  registerDirectProjectionRequestSchema.parse(projection);
+  const { origins: _origins, ...params } = projection.data.rows.params;
+  assert.equal(registerDirectProjectionRequestSchema.safeParse({
+    ...projection,
+    data: { rows: { ...projection.data.rows, params: { ...params, origin: { literal: "user" } } } },
+  }).success, false);
+  assert.equal(panelReadInputMatches("agentIds", input), true);
+  assert.equal(panelReadInputMatches("sessionOrigins", input), true);
+  assert.equal(panelReadParameterSchemas.agentIds.safeParse(["invalid-uuid"]).success, false);
+  assert.equal(panelReadParameterSchemas.agentKinds.safeParse("regular").success, false);
+  assert.equal(panelReadParameterSchemas.sessionOrigins.safeParse(["user", "unknown"]).success, false);
+  assert.equal(panelReadParameterSchemas.sessionWorkspace.safeParse("unknown").success, false);
 });
 
 test("fixed owner signatures and per-definition read parameters are distinct", async () => {

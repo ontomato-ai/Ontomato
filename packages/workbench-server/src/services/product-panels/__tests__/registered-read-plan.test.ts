@@ -78,7 +78,7 @@ vi.mock("../../platform-home/service", async original => ({
 }));
 vi.mock("../../assistant/store", async original => {
   const { assistantStore, ...exports } = await original<typeof import("../../assistant/store")>();
-  return { ...exports, assistantStore: { ...assistantStore, listUserSessions: mocks.sessions, session: mocks.session, agents: mocks.agents } };
+  return { ...exports, assistantStore: { ...assistantStore, listSessions: mocks.sessions, session: mocks.session, agents: mocks.agents } };
 });
 vi.mock("../../../platform/diagnosis/observe/agent/knowledge-store", async original => ({
   ...await original<typeof import("../../../platform/diagnosis/observe/agent/knowledge-store")>(),
@@ -1688,7 +1688,12 @@ it("reads favorites and sessions with compiled parameters and only contacts Runt
   });
   mocks.isFavorite.mockResolvedValue(true);
   mocks.favoriteKeys.mockResolvedValue(new Set([JSON.stringify([AGENT_SESSION, sessionId])]));
-  mocks.sessions.mockResolvedValueOnce([{ sessionId, agentId, agentName: "Planner", title: "Plan", updatedAt }]);
+  const workspaceId = "00000000-0000-4000-8000-000000000001";
+  const sessionRow = {
+    id: sessionId, agent_id: agentId, agentName: "Planner", agentKind: "regular", title: "Plan",
+    origin: "user", workspace_id: workspaceId, updated_at: new Date(updatedAt), created_at: new Date(updatedAt),
+  };
+  mocks.sessions.mockResolvedValueOnce([sessionRow]).mockResolvedValueOnce([{ ...sessionRow, origin: "scheduled" }]);
   mocks.session.mockResolvedValueOnce({ id: sessionId, agent_id: agentId, title: "Plan", updated_at: new Date(updatedAt) });
 
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "fixture-runtime-token");
@@ -1707,12 +1712,14 @@ it("reads favorites and sessions with compiled parameters and only contacts Runt
   });
   vi.stubGlobal("fetch", fetch);
 
-  const sessionParams = { search: "Plan", limit: 1, agentKind: "analysis", agentId };
+  const sessionParams = { search: "Plan", limit: 1, agentKind: "regular", agentId };
+  const taskParams = { agentIds: [agentId], agentKinds: ["regular"], origins: ["user", "scheduled"], workspaceId, limit: 1 };
   const cases = [
     { typeId: FAVORITE, method: "status", params: { object: { className: DASHBOARD, primaryKey: "followed" } }, result: "panelRecord" },
     { typeId: FAVORITE, method: "dashboardCardsStatus", params: {}, result: "panelRecord" },
     { typeId: FAVORITE, method: "status", params: {}, result: "panelRecord" },
     { typeId: AGENT_SESSION, method: "list", params: sessionParams, result: "panelRecordList" },
+    { typeId: AGENT_SESSION, method: "tasks", params: taskParams, result: "panelRecordQuery" },
     { typeId: AGENT_SESSION, method: "record", primaryKey: sessionId, params: {}, result: "panelRecord" },
   ];
   mocks.locate.mockResolvedValueOnce({ viewer, entries: [{ kind: "ready", entry }] });
@@ -1728,6 +1735,7 @@ it("reads favorites and sessions with compiled parameters and only contacts Runt
     { status: "ready", value: { outputs: { metricCount: 1, chartCount: 0, missingCount: 0 } } },
     { status: "error", code: "INVALID_REQUEST" },
     { status: "ready", value: [{ primaryKey: sessionId, fields: { running: true, favorite: true } }] },
+    { status: "ready", value: { rows: [{ primaryKey: sessionId, fields: { origin: "scheduled", workspaceId, running: true } }], hasMore: false } },
     { status: "ready", value: { primaryKey: sessionId, fields: { running: true, favorite: true } } },
   ]);
   for (const read of mocks.read.mock.lastCall![1]) {
@@ -1736,9 +1744,12 @@ it("reads favorites and sessions with compiled parameters and only contacts Runt
   }
   expect(mocks.favoriteState).toHaveBeenCalledWith(viewer);
   expect(mocks.isFavorite).toHaveBeenCalledWith(viewer, DASHBOARD, "followed");
-  expect(mocks.sessions).toHaveBeenCalledWith(viewer, sessionParams);
+  expect(mocks.sessions).toHaveBeenCalledWith(viewer, {
+    search: "Plan", limit: 1, agentKinds: ["regular"], agentId, origins: ["user"], hasRun: true,
+  });
+  expect(mocks.sessions).toHaveBeenCalledWith(viewer, { ...taskParams, limit: 2 });
   expect(mocks.session).toHaveBeenCalledWith(sessionId, viewer);
-  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenCalledTimes(3);
 });
 
 it("reads OpsKnowledge files only with the second batch item's management approval", async () => {
