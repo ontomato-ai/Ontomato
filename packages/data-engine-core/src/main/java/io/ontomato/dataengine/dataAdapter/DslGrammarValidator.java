@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.dataAdapter;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -135,6 +136,42 @@ public final class DslGrammarValidator {
 				checkTimeseriesFields(timeseries.getJSONObject("properties"), objectPath + ".conditions.timeseries",
 						object.getString("class"), classDef);
 			}
+			checkPatternConnectivity(objects.size(), indices, pattern.getJSONArray("relationship"),
+					"steps[" + s + "].graph.patterns[" + p + "].relationship");
+		}
+	}
+
+	private static void checkPatternConnectivity(int objectCount, Set<Integer> indices, JSONArray relationships,
+			String path) {
+		if (objectCount < 2) {
+			return;
+		}
+
+		Map<Integer, List<Integer>> neighbors = new HashMap<>();
+		if (relationships != null) {
+			for (int i = 0; i < relationships.size(); i++) {
+				JSONObject relationship = relationships.getJSONObject(i);
+				Integer from = relationship.getInteger("from");
+				Integer to = relationship.getInteger("to");
+				if (indices.contains(from) && indices.contains(to)) {
+					neighbors.computeIfAbsent(from, ignored -> new ArrayList<>()).add(to);
+					neighbors.computeIfAbsent(to, ignored -> new ArrayList<>()).add(from);
+				}
+			}
+		}
+
+		var pending = new ArrayDeque<Integer>();
+		var reached = new HashSet<Integer>();
+		indices.stream().findFirst().ifPresent(pending::add);
+		while (!pending.isEmpty()) {
+			Integer current = pending.removeFirst();
+			if (reached.add(current)) {
+				pending.addAll(neighbors.getOrDefault(current, List.of()));
+			}
+		}
+		if (reached.size() != objectCount) {
+			throw invalid(path, "The relationship list must connect all objects in this pattern into one whole. "
+					+ "Connect them using declared relationships or query them in separate DSL queries");
 		}
 	}
 

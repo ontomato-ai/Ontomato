@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import io.ontomato.dataengine.bean.DslExecutionResult;
 import io.ontomato.dataengine.config.DataRagConfig;
@@ -104,6 +106,49 @@ class HttpRequestUtilGrammarTest {
 		assertEquals("steps[0].graph.relationship", violation.getDslPath());
 		assertTrue(violation.getDetail().contains("graph.patterns[i].relationship"));
 		verify(adapter, never()).executeDsl(anyString(), anyString(), any(), any());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"", ",\"relationship\":[{\"from\":7,\"to\":3,\"type\":[\"connected_to\"]}]"})
+	void disconnectedObjectsInOnePatternAreRejectedBeforeTheAdapterRuns(String relationships) throws Exception {
+		DataAdapter adapter = mock(DataAdapter.class);
+		when(adapter.executeDsl(anyString(), anyString(), any(), any()))
+				.thenReturn("[{\"answer\":[{\"id\":\"S1\"}]}]");
+
+		var result = run(adapter, threeObjectPattern(relationships))[1];
+
+		assertTrue(result.failed(), "the objects must form one connected pattern");
+		var error = assertInstanceOf(DslContractViolationException.class, result.failure().cause());
+		var violation = error.getViolations().getFirst();
+		assertEquals(DslContractViolationException.Code.INVALID_GRAMMAR, violation.getCode());
+		assertEquals("steps[0].graph.patterns[0].relationship", violation.getDslPath());
+		assertTrue(violation.getDetail().contains("separate DSL queries"));
+		verify(adapter, never()).executeDsl(anyString(), anyString(), any(), any());
+	}
+
+	@Test
+	void objectsConnectedThroughAnotherObjectReachTheAdapter() throws Exception {
+		DataAdapter adapter = mock(DataAdapter.class);
+		when(adapter.executeDsl(anyString(), anyString(), any(), any()))
+				.thenReturn("[{\"answer\":[{\"id\":\"S1\"}]}]");
+
+		var result = run(adapter, threeObjectPattern("""
+				,"relationship":[{"from":7,"to":3,"type":["connected_to"]},
+				                 {"from":0,"to":3,"type":["connected_to"]}]
+				"""))[1];
+
+		assertFalse(result.failed());
+		verify(adapter).executeDsl(anyString(), anyString(), any(), any());
+	}
+
+	private static String threeObjectPattern(String relationships) {
+		return """
+				[{"answer":{"steps":[{"graph":{"patterns":[{"objects":[
+				  {"idx":0,"variable":"s","class":"/Sensor"},
+				  {"idx":3,"variable":"t","class":"/Sensor"},
+				  {"idx":7,"variable":"u","class":"/Sensor"}]%s}]},
+				  "output":{"fields":[{"variable":"u","field":"id","as":"id"}]}}]}}]
+				""".formatted(relationships);
 	}
 
 	@Test
