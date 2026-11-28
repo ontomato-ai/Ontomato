@@ -7,6 +7,29 @@ import path2 from "node:path";
 
 // packages/agent-skill-scripts/src/shared/query-package.mjs
 import { readFile, lstat } from "node:fs/promises";
+
+// packages/agent-skill-scripts/src/shared/json-input.mjs
+var WINDOW = 60;
+function parseJsonText(text, source2) {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const position = Number(/position (\d+)/.exec(error.message)?.[1]);
+    if (!Number.isInteger(position)) throw new Error(`${source2}: ${error.message}`, { cause: error });
+    const lineStart = text.lastIndexOf("\n", position - 1) + 1;
+    const lineEnd = text.indexOf("\n", position);
+    const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
+    const column = position - lineStart;
+    const from = Math.max(0, column - WINDOW), to = Math.min(line.length, column + WINDOW);
+    const excerpt = (from > 0 ? "\u2026" : "") + line.slice(from, to) + (to < line.length ? "\u2026" : "");
+    const caret = " ".repeat(column - from + (from > 0 ? 1 : 0)) + "^";
+    throw new Error(`${source2}: ${error.message}
+${excerpt}
+${caret}`, { cause: error });
+  }
+}
+
+// packages/agent-skill-scripts/src/shared/query-package.mjs
 import path from "node:path";
 function packagePath(name) {
   if (typeof name !== "string" || !name || name.startsWith("/") || /[\\:]/.test(name) || name.split("/").some((part) => !part || part === "." || part === ".."))
@@ -30,7 +53,7 @@ async function source(root, name) {
 async function collectPackage(filename) {
   const absolute = path.resolve(filename.replace(/^@/, ""));
   if ((await lstat(absolute)).isSymbolicLink()) throw new Error("Package links are not allowed");
-  const text = await readFile(absolute, "utf8"), value = JSON.parse(text);
+  const text = await readFile(absolute, "utf8"), value = parseJsonText(text, filename.replace(/^@/, ""));
   if (value.schema !== "ontomato.query-package.v1") {
     if (!value.answer?.steps) throw new Error('Expected one DSL object, {"problem": "...", "answer": {"steps": [...]}} (not an array), or a query-package manifest with "schema": "ontomato.query-package.v1"');
     return dslPackage(text);
@@ -65,7 +88,7 @@ var active = flags.includes("--active");
 var args = flags.filter((flag) => flag !== "--active");
 if (!["deliver", "preview", "begin", "close"].includes(command))
   throw new Error("Use deliver @query with --meta @delivery.json [--out outputs/result.dataset.json]");
-var json = async (file) => JSON.parse(await readFile2(file.replace(/^@/, ""), "utf8"));
+var json = async (file) => parseJsonText(await readFile2(file.replace(/^@/, ""), "utf8"), file.replace(/^@/, ""));
 var options = {};
 for (let i = 0; i < args.length; i += 2) {
   if (!["--meta", "--params", "--out"].includes(args[i]) || !args[i + 1] || options[args[i]])

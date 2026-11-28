@@ -9,6 +9,32 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// packages/agent-skill-scripts/src/shared/json-input.mjs
+function parseJsonText(text, source2) {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const position = Number(/position (\d+)/.exec(error.message)?.[1]);
+    if (!Number.isInteger(position)) throw new Error(`${source2}: ${error.message}`, { cause: error });
+    const lineStart = text.lastIndexOf("\n", position - 1) + 1;
+    const lineEnd = text.indexOf("\n", position);
+    const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
+    const column = position - lineStart;
+    const from = Math.max(0, column - WINDOW), to = Math.min(line.length, column + WINDOW);
+    const excerpt = (from > 0 ? "\u2026" : "") + line.slice(from, to) + (to < line.length ? "\u2026" : "");
+    const caret = " ".repeat(column - from + (from > 0 ? 1 : 0)) + "^";
+    throw new Error(`${source2}: ${error.message}
+${excerpt}
+${caret}`, { cause: error });
+  }
+}
+var WINDOW;
+var init_json_input = __esm({
+  "packages/agent-skill-scripts/src/shared/json-input.mjs"() {
+    WINDOW = 60;
+  }
+});
+
 // packages/agent-skill-scripts/src/shared/query-package.mjs
 var query_package_exports = {};
 __export(query_package_exports, {
@@ -39,7 +65,7 @@ async function source(root, name) {
 async function collectPackage(filename) {
   const absolute = path.resolve(filename.replace(/^@/, ""));
   if ((await lstat(absolute)).isSymbolicLink()) throw new Error("Package links are not allowed");
-  const text = await readFile(absolute, "utf8"), value = JSON.parse(text);
+  const text = await readFile(absolute, "utf8"), value = parseJsonText(text, filename.replace(/^@/, ""));
   if (value.schema !== "ontomato.query-package.v1") {
     if (!value.answer?.steps) throw new Error('Expected one DSL object, {"problem": "...", "answer": {"steps": [...]}} (not an array), or a query-package manifest with "schema": "ontomato.query-package.v1"');
     return dslPackage(text);
@@ -67,10 +93,12 @@ function dslPackage(text) {
 }
 var init_query_package = __esm({
   "packages/agent-skill-scripts/src/shared/query-package.mjs"() {
+    init_json_input();
   }
 });
 
 // packages/agent-skill-scripts/src/entries/ontology-generation.mjs
+init_json_input();
 import { readFile as readFile2 } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 async function generationCommand(args, env = process.env, request = fetch) {
@@ -91,7 +119,7 @@ async function generationCommand(args, env = process.env, request = fetch) {
     if (!response.ok || result2.error) throw new Error(typeof result2.error === "string" ? result2.error : result2.error?.message ?? `HTTP ${response.status}`);
     return result2;
   }
-  const bodyFile = async (name) => JSON.parse(await readFile2(name.replace(/^@/, ""), "utf8"));
+  const bodyFile = async (name) => parseJsonText(await readFile2(name.replace(/^@/, ""), "utf8"), name.replace(/^@/, ""));
   let operation = command, body;
   switch (command) {
     case "explain":
