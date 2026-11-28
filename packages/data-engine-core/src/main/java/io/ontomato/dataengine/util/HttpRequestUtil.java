@@ -135,6 +135,8 @@ public class HttpRequestUtil {
         			}
         		}
         	}
+        } catch (DslContractViolationException e) {
+            throw e;
         } catch (Exception e) {}
         List<String> nodeList = new ArrayList<String>();
         if (nodeIds.size() > 100) {
