@@ -6,7 +6,7 @@ import { resolveLocale, tForLocale } from "../../i18n";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { OPS_DIAGNOSIS_KIND } from "@ontomato/contracts/ops-diagnosis";
+import { assistantName } from "../assistant/labels";
 import { assistantStore } from "../assistant/store";
 import { favoriteTargetKey, isFavoriteTarget, readFavoriteKeySet } from "../platform-home/service";
 import type { ProductOwner } from "../product-governance/service-authentication";
@@ -93,9 +93,7 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
         const favorited = favoriteKeys.has(favoriteTargetKey(AGENT_SESSION, item.sessionId));
         const openPath = sessionOpenPath(item.agentId, item.sessionId);
         const formattedUpdatedAt = formatShortDateTime(item.updatedAt, language);
-        const agentName = item.agentKind === OPS_DIAGNOSIS_KIND
-          ? sessionText(viewer.locale, "opsDiagnosisAgent")
-          : item.agentName;
+        const agentName = assistantName({ kind: item.agentKind, name: item.agentName }, viewer.locale);
         const subtitle = [agentName, formattedUpdatedAt].filter(Boolean).join(" · ");
         const running = runningIds.has(item.sessionId);
         const runningStatus = running ? sessionText(viewer.locale, "running") : "";
