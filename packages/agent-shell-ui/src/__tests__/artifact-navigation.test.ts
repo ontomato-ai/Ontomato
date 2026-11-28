@@ -53,3 +53,16 @@ it("returns to an existing ancestor when files link back to it", async () => {
   await display.openArtifact(report, notes.key);
   expect(display.artifacts.value).toEqual([report]);
 });
+
+it("names a file shown under its file name by the first link to it, and keeps a title a card gave", async () => {
+  const display = createDisplay();
+  await display.openArtifact({ ...report, title: "report.md" });
+  display.nameArtifact(report.key, "Staff changes");
+  display.nameArtifact(report.key, "Another title");
+  expect(display.artifacts.value[0]?.title).toBe("Staff changes");
+
+  await display.openArtifact(data);
+  display.nameArtifact(data.key, "Renamed");
+  display.nameArtifact(report.key, "Not shown");
+  expect(display.artifacts.value).toEqual([data]);
+});

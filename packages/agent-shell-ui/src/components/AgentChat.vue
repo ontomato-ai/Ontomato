@@ -133,6 +133,7 @@ provide(shellContextKey, {
       .catch((error) => emit("error", error instanceof Error ? error.message : String(error)));
   },
   openArtifactKey: noOpenArtifact,
+  nameOpenArtifact: () => {},
   pageLink: (href) => {
     const current = display();
     return current ? displayLink(current)(href) : null;

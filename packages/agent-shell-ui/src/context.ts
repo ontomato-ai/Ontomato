@@ -28,6 +28,8 @@ export interface ShellContext {
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   openArtifact(open: OpenArtifact, parentKey?: string): void;
   openArtifactKey: Ref<string | null>;
+  /** Names the shown file by a reply link's title when it is still titled by its file name. */
+  nameOpenArtifact(key: string, title: string): void;
   /** Opens an in-app page link beside the conversation, or null when the host does not recognise the address. */
   pageLink(href: string): (() => void) | null;
   /** Continue the current conversation from an explicit artifact action. */

@@ -28,6 +28,11 @@ watch(key, resolve, { immediate: true });
 // re-resolves regardless of whether an older version is already shown.
 watch(shell.artifactRevision, resolve);
 
+// The file this link points to may already be open beside the conversation under its file name.
+watch([active, () => props.title], ([shown, title]) => {
+  if (shown && title) shell.nameOpenArtifact(key.value, title);
+}, { immediate: true });
+
 function open() {
   if (artifact.value)
     shell.openArtifact({ key: key.value, artifact: artifact.value, title: props.title });

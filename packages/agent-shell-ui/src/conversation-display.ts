@@ -666,6 +666,17 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         return true;
       }),
 
+    /**
+     * A link in the reply names the file shown beside the conversation. Only a file still titled by its
+     * file name takes the name: the agent's display tool opens a file before the reply that links it.
+     */
+    nameArtifact: (key: string, title: string) => {
+      const current = shown.value.target;
+      if (current?.kind !== "artifact" || current.open.key !== key) return;
+      if (current.open.title !== fileName(current.open.artifact.path) || title === current.open.title) return;
+      shown.value = { ...shown.value, target: { kind: "artifact", open: { ...current.open, title } } };
+    },
+
     /** Close the current file and restore the preview it was opened from. */
     closeArtifact: (key: string) =>
       inOrder(async () => {

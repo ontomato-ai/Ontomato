@@ -237,6 +237,7 @@ provide(shellContextKey, {
     });
   },
   openArtifactKey: computed(() => openArtifact.value?.key ?? null),
+  nameOpenArtifact: (key, title) => display.nameArtifact(key, title),
   pageLink: (href) => displayLink(display, props.pageLinks)(href),
   continueConversation: async (message) => {
     if (conversation.sending.value) throw new Error(props.labels.working);
