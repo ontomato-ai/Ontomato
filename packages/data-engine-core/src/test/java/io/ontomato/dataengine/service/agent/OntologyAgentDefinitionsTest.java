@@ -46,7 +46,6 @@ class OntologyAgentDefinitionsTest {
         List.of(
             "SKILL.md",
             "scripts/dataset.mjs",
-            "references/dataset.md",
             "references/query-package.md"),
         paths);
   }

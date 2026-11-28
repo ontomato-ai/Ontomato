@@ -30,7 +30,27 @@ What you deliver is a query logic package. It has one of two shapes, delivered t
   their parameter values. Read [query packages](references/query-package.md) for the manifest; paths
   inside a package are relative to the manifest's directory.
 
-`work/delivery.json` describes the table for the reader: see [delivery inputs](references/dataset.md).
+## Delivery inputs
+
+`work/delivery.json` describes the table for the reader and has exactly these top-level fields:
+
+```json
+{
+  "title": "Active employees",
+  "columnLabels": {"headcount": "Active employees"},
+  "assumptions": ["Employees count only status = active, the business knowledge's default."],
+  "selfCheck": {"scope": "", "filters": "", "grain": "", "denominator": "", "nullGroups": ""}
+}
+```
+
+`columnLabels` gives every output key a label in the user's language. `assumptions` lists the scope
+choices you made (filters, deduplication, grouping) and why. Every `selfCheck` value is a short text:
+what population the table covers, which filters apply, what one row is, the denominator if there is a
+share, and how empty groups are treated; write "not applicable" where one does not apply. The host
+fills in the question, decisions, source graph, hashes and receipt. A delivery is your own query logic;
+do not look for a metric to reuse or compare against.
+
+## Delivering
 
 - One table per delivery. A question that needs several tables gets several deliveries, each with its
   own `--out`; do not merge unrelated results with Python.

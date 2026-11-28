@@ -723,7 +723,7 @@ class OntologyRetrievalContractTest {
   @Test
   void datasetExampleIsCompleteAndInvalidSubmissionsIdentifyTheirField() throws Exception {
     String reference;
-    try (var stream = getClass().getResourceAsStream("/ontology-skills/data-retrieval/references/dataset.md")) {
+    try (var stream = getClass().getResourceAsStream("/ontology-skills/data-retrieval/SKILL.md")) {
       reference = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
     }
     var example = JSON.parseObject(reference.split("```json\\R", 2)[1].split("```", 2)[0]);
