@@ -2,11 +2,22 @@ import { describe, expect, it } from "vitest";
 import { createApp, defineComponent, h, nextTick, type PropType } from "vue";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
-import { resolveArtifactRenderer } from "../artifacts";
+import { linkedArtifacts, resolveArtifactRenderer } from "../artifacts";
 import { skillOfCommand, stepActivity } from "../tools";
 
 /** The artifact Markdown contract: which destinations are files, and which renderer gets them. */
 describe("artifact references", () => {
+  it("finds a nested report citation in a saved reply without treating code or external links as artifacts", () => {
+    const answer = [
+      "- [Report](./outputs/reports/regional%20sales.md)",
+      "- [External document](https://example.test/outputs/external.md)",
+      "- [Dataset](outputs/sales.csv)",
+      "`[Example](outputs/example.md)`",
+    ].join("\n");
+    const reports = linkedArtifacts(answer, path => path.endsWith(".md"));
+    expect([...reports.keys()]).toEqual(["outputs/reports/regional sales.md"]);
+  });
+
   it("accepts only workspace outputs paths", () => {
     expect(artifactPath("outputs/sales.chart.json")).toBe("outputs/sales.chart.json");
     expect(artifactPath("./outputs/a%20b.csv")).toBe("outputs/a b.csv");

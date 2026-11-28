@@ -51,6 +51,12 @@ await mountPanel({
       return compose === "edit" && selected.value ? "edit" : "view";
     });
     const formDialogOpen = computed(() => mode.value === "create" || mode.value === "edit");
+    const pageTitle = computed(() => {
+      if (!inline.value) return t("panel.name");
+      if (mode.value === "create") return t("form.newScheduleTitle");
+      if (mode.value === "edit") return t("form.editScheduleTitle");
+      return t("workspace.title");
+    });
 
     // Independent right-side run records drawer state (SC-11, SC-12).
     const runsDrawerOpen = ref(Boolean(selected.value && mode.value === "view"));
@@ -573,6 +579,7 @@ await mountPanel({
       openResult,
       onChooseRun,
       onRunRowAction,
+      pageTitle,
     };
   },
 });

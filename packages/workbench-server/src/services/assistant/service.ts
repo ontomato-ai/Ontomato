@@ -27,9 +27,6 @@ import {
 } from "@ontomato/contracts/assistant-chat";
 import { agentHostSessionSchema } from "@ontomato/contracts/agent-host";
 import { listAssistantAgents } from "./agents";
-
-/** The platform's own assistants: the personal workspace lists the sessions of the agents its users built. */
-const platformAgentKinds = presetAgents.map(preset => preset.kind);
 import {
   runtimeArtifactSchema,
   type RuntimeArtifact,
@@ -63,6 +60,9 @@ const db = () => getPostgresPool(),
   RECONCILE_PAGE = 200;
 export { publicSnapshot } from "../../platform/agent-runtime/projection";
 import { publicHistoryRuns, publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
+// DataAgent includes its built-in data assistants as well as custom analysis agents.
+const nonAnalysisAgentKinds = presetAgents.map(preset => preset.kind)
+  .filter(kind => kind !== "regular" && kind !== "analysis");
 type LatestRun = Parameters<typeof runStatusView>[0];
 const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
   agentHostSessionSchema.parse({
@@ -155,7 +155,7 @@ export const assistantService = {
           input.limit + 1,
           input.workspaceId ?? null,
           input.analysisOnly ?? false,
-          platformAgentKinds,
+          nonAnalysisAgentKinds,
         ],
       )
     ).rows as SessionRow[];

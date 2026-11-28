@@ -83,7 +83,7 @@ export function toolSummary(args: Record<string, RuntimeJsonValue>): string {
   return "";
 }
 
-function userText(content: string | { type: string; text?: string }[]): string {
+export function userText(content: string | { type: string; text?: string }[]): string {
   if (typeof content === "string") return content;
   return content.map((part) => (part.type === "text" ? (part.text ?? "") : "")).join("");
 }

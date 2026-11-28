@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useId, useSlots, watch } from "vue";
-import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
+import { ArrowLeft, PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
 import { ElDrawer } from "@ontomato/foundation-ui/overlay";
 import { conversationQuestions, displayQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
 import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand, type PageComposerRequest } from "../page-composer-entry";
@@ -11,15 +11,18 @@ import {
   pageContextLine,
   pageMoved,
   samePageAddress,
+  writtenText,
   type CarriedTarget,
 } from "../page-context";
-import { fileName } from "../artifacts";
+import { fileName, linkedArtifacts } from "../artifacts";
+import { historyCursor } from "@ontomato/contracts/session-history";
 import { displayLink, type ConversationDisplay, type DisplayPage } from "../conversation-display";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
-import type { UserItem } from "../view";
+import { userText, type UserItem } from "../view";
 import type {
   ArtifactRendererOverride,
+  OpenArtifact,
   ShellBottomEntry,
   ShellFeedbackPort,
   ShellLabels,
@@ -73,6 +76,8 @@ const props = withDefaults(
     /** Whether agents ask before they run a panel operation, for a host whose conversations can run them. */
     panelOperations?: ShellPanelOperationsPort;
     artifactRenderers?: readonly ArtifactRendererOverride[];
+    /** A host-selected artifact that should be reachable before the reader opens a message card. */
+    primaryArtifactPath?: (path: string) => boolean;
     toolRenderers?: readonly ToolRendererOverride[];
     /** What is shown beside the conversation: the one controller this shell's gestures and the host's address go through. */
     display: ConversationDisplay;
@@ -103,10 +108,12 @@ const props = withDefaults(
     neutralAgentSelection?: boolean;
     /** The selected feature is an item in the history column and takes the place of the conversation. */
     historyPageSelected?: boolean;
+    /** Allows the host to return from a conversation opened by another view. */
+    conversationBackLabel?: string;
     /** An editor shown over the conversation, with its own form actions. */
     editorTitle?: string;
     formatSessionDate?: (date: string) => string;
-    agentActions?: { createLabel: string; editLabel: string; create(): void; edit(): void };
+    agentSettings?: { label: string; open(): void };
   }>(),
   { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null, conversations: true, agentPicker: false },
 );
@@ -115,6 +122,7 @@ const emit = defineEmits<{
   error: [message: string];
   featureAction: [id: string];
   railAgentSelected: [];
+  conversationBack: [];
   openBottom: [];
   run: [change: ShellRunChange];
 }>();
@@ -207,6 +215,61 @@ watch([sessionId, () => props.historyPageSelected], ([id, featureSelected]) => {
 }, { immediate: true });
 watch(openArtifact, (artifact) => { previewSelected.value = Boolean(artifact); });
 const inlinePreview = computed(() => Boolean(props.inlineArtifacts && openArtifact.value && previewSelected.value));
+const primaryArtifact = shallowRef<OpenArtifact | null>(null);
+const visiblePrimaryArtifact = computed(() =>
+  primaryArtifact.value?.artifact.sessionId === sessionId.value ? primaryArtifact.value : null);
+const primaryCandidates = computed(() => {
+  const matches = props.primaryArtifactPath;
+  if (!matches || !props.inlineArtifacts || !sessionId.value || conversation.state.sessionId !== sessionId.value) return [];
+  const candidates = new Map<string, { key: string; runId: string; path: string; title: string }>();
+  const add = (runId: string, path: string, title: string) => {
+    const key = [runId, path].join(":");
+    if (!candidates.has(key)) candidates.set(key, { key, runId, path, title });
+  };
+  const runs = Object.values(conversation.state.runs)
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  const replies = new Map(conversation.items.value.flatMap(item => item.kind === "response" ? [[item.runId, item] as const] : []));
+  for (const run of runs) {
+    const reply = replies.get(run.id);
+    if (reply?.answerText) {
+      for (const [path, title] of linkedArtifacts(reply.answerText, matches)) add(run.id, path, title);
+    }
+    for (const artifact of [...run.artifacts].reverse()) {
+      if (matches(artifact.path)) add(run.id, artifact.path, fileName(artifact.path));
+    }
+  }
+  return [...candidates.values()];
+});
+watch(primaryCandidates, async (candidates, _previous, onCleanup) => {
+  let current = true;
+  onCleanup(() => { current = false; });
+  if (!candidates.some(candidate => candidate.key === primaryArtifact.value?.key)) primaryArtifact.value = null;
+  for (const { key, runId, path, title } of candidates) {
+    if (primaryArtifact.value?.key === key && visiblePrimaryArtifact.value) return;
+    try {
+      const artifact = await conversation.resolveArtifact(runId, path);
+      if (!current) return;
+      if (artifact && artifact.sessionId === sessionId.value) {
+        primaryArtifact.value = { key, artifact, title };
+        return;
+      }
+    } catch {
+      if (!current) return;
+    }
+  }
+}, { immediate: true });
+const rootArtifact = computed(() => artifactTrail.value[0]);
+const rootIsPrimary = computed(() => Boolean(rootArtifact.value && (
+  props.primaryArtifactPath?.(rootArtifact.value.artifact.path)
+  ?? rootArtifact.value.artifact.path.startsWith("outputs/reports/")
+)));
+async function showPrimaryArtifact() {
+  if (rootIsPrimary.value && openArtifact.value) {
+    previewSelected.value = true;
+  } else if (visiblePrimaryArtifact.value && await display.openArtifact(visiblePrimaryArtifact.value)) {
+    previewSelected.value = true;
+  }
+}
 function showArtifactLoad(key: string, load: Parameters<typeof display.loaded>[0]) {
   if (openArtifact.value?.key === key) display.loaded(load);
 }
@@ -330,7 +393,10 @@ function chooseAgent(id: string) {
 
 async function selectRailAgent(id: string) {
   if (props.historyPageSelected && !conversation.busy.value && !(await display.close())) return;
-  if (id === agentId.value || !conversation.busy.value) emit("railAgentSelected");
+  if (id === agentId.value || !conversation.busy.value) {
+    showHistory();
+    emit("railAgentSelected");
+  }
   chooseAgent(id);
 }
 
@@ -419,6 +485,31 @@ const linePrompts = () => ({
   state: props.labels.stateContext,
   forms: props.labels.formsContext,
 });
+const firstVisibleQuestion = computed(() => conversation.items.value.find(
+  (item): item is UserItem => item.kind === "user" && !item.answer && !item.queued && Boolean(item.text.trim()),
+));
+const currentSession = computed(() => nav.currentSession.value ?? conversation.state.session);
+async function initialInstruction() {
+  const id = sessionId.value;
+  if (!id || conversation.state.sessionId !== id) return "";
+  const written = (text: string) =>
+    writtenText(text, { ...linePrompts(), file: props.labels.fileContext, closed: props.labels.pageContextClosed }).trim();
+  if (!conversation.olderCursor.value) return written(firstVisibleQuestion.value?.text ?? "");
+  // A long conversation may have paged its opening instruction out of the visible tail.
+  const tail = conversation.olderCursor.value;
+  let after: string | null = historyCursor(id, 0);
+  while (after && sessionId.value === id) {
+    const page = await props.client.readHistory(id, { after, through: tail });
+    if (sessionId.value !== id) return "";
+    for (const { message } of page.messages) {
+      if (message.role !== "user") continue;
+      const instruction = written(userText(message.content));
+      if (instruction) return instruction;
+    }
+    after = page.page.nextCursor;
+  }
+  return sessionId.value === id ? written(firstVisibleQuestion.value?.text ?? "") : "";
+}
 /**
  * What a reopened conversation already carries, read when the shell first sends in it: its history shows the line each
  * message ended with, so the page or file the last such line named is known, and a message written beside that same
@@ -517,7 +608,11 @@ async function requestArtifactAction(message: string) {
 }
 const canRequestArtifactAction = computed(() => Boolean(sessionId.value && !conversation.busy.value && !conversation.sending.value));
 
-defineExpose({ reloadAgents: () => nav.loadAgents().catch(report), send, fill, requestArtifactAction, canRequestArtifactAction });
+function showHistory() {
+  historyCollapsed.value = false;
+}
+
+defineExpose({ reloadAgents: () => nav.loadAgents().catch(report), send, fill, requestArtifactAction, canRequestArtifactAction, showHistory });
 
 onMounted(() => {
   // An address that names both a conversation and a paired page reopens them side by side.
@@ -561,7 +656,7 @@ onMounted(() => {
           :agent-picker="agentPicker"
           :split-navigation="splitNavigation"
           :format-session-date="formatSessionDate"
-          :agent-actions="agentActions"
+          :agent-settings="agentSettings"
           :labels="labels"
           @new-conversation="startNavConversation"
           @select-feature="display.openFeature($event)"
@@ -589,14 +684,24 @@ onMounted(() => {
       {{ labels.sessions }}
     </button>
     <main v-show="!pageFull" class="shell-main">
-      <nav v-if="inlineArtifacts && openArtifact" class="artifact-switcher" :aria-label="labels.fileTab">
+      <nav v-if="inlineArtifacts && !display.page.value && (openArtifact || visiblePrimaryArtifact)" class="artifact-switcher" :aria-label="labels.fileTab">
         <button type="button" :aria-pressed="!previewSelected" @click="previewSelected = false">{{ labels.conversationTab ?? labels.sessions }}</button>
-        <button type="button" :aria-pressed="previewSelected" @click="previewSelected = true">
-          {{ artifactTrail[0]?.artifact.path.startsWith('outputs/reports/') ? labels.reportTab : labels.fileTab }}
+        <button v-if="visiblePrimaryArtifact || rootIsPrimary" type="button" :aria-pressed="previewSelected && rootIsPrimary" @click="showPrimaryArtifact">
+          {{ labels.reportTab }}
+        </button>
+        <button v-if="openArtifact && !rootIsPrimary" type="button" :aria-pressed="previewSelected" @click="previewSelected = true">
+          {{ labels.fileTab }}
         </button>
       </nav>
-      <header v-if="splitNavigation && sessionId && !display.page.value" v-show="!inlinePreview" class="conversation-heading">
-        <h1>{{ nav.currentSession.value?.title || currentAgent?.name || labels.newConversation }}</h1>
+      <header v-if="splitNavigation && sessionId && !display.page.value" v-show="conversationBackLabel || !inlinePreview" class="conversation-heading">
+        <button v-if="conversationBackLabel" type="button" class="conversation-back" @click="emit('conversationBack')">
+          <ArrowLeft :size="16" aria-hidden="true" />
+          {{ conversationBackLabel }}
+        </button>
+        <h1>{{ currentSession?.title || currentAgent?.name || labels.newConversation }}</h1>
+        <slot v-if="!inlinePreview && conversation.state.sessionId === sessionId && (firstVisibleQuestion || conversation.olderCursor.value)"
+          name="conversation-heading-actions" :session-id="sessionId" :agent-id="currentSession?.agentId ?? conversation.state.agentId"
+          :title="currentSession?.title" :origin="currentSession?.origin" :initial-instruction="initialInstruction" />
       </header>
       <button
         v-if="closedPage && !display.target.value"
@@ -707,10 +812,32 @@ onMounted(() => {
 .shell-editor-body { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .agent-shell.split-navigation { container-type: inline-size; }
 .conversation-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   flex: none;
   padding: var(--spacing-md) var(--spacing-lg);
   border-block-end: 1px solid var(--el-border-color);
 }
+.conversation-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
+.conversation-back:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.conversation-back:focus-visible { outline: 2px solid var(--el-color-primary); }
 .conversation-heading h1 {
   margin: 0;
   font-size: var(--text-base);

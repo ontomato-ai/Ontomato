@@ -313,6 +313,7 @@ export function useAgentConversation(
       if (current !== token) return null;
       if (createdSession) {
         state.sessionId = createdSession.id;
+        state.session = createdSession;
         state.workspaceId = createdSession.workspaceId ?? null;
       }
       const result = await client.send(state.sessionId!, {

@@ -13,9 +13,8 @@ import { useLeaveConfirmation, usePageAccess, usePageAdmission, usePilotPage, us
 import "@ontomato/agent-shell-ui/style.css";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { createSchedulesApi } from "@ontomato/platform-schedules";
-import { scheduledTaskFrequencyText } from "@ontomato/platform-schedules/panel-text";
-import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
+import type { DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
+import { PLATFORM_SCHEDULE_TEXT_MAX, PLATFORM_SCHEDULE_TITLE_MAX, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { nodeApiRequest } from "../../../utils/api";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance } from "../api";
@@ -25,12 +24,13 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import { useDashboardStore } from "../../dashboard";
 import { formatRelativeTime } from "../../../utils/relative-time";
-import { Calendar, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, X } from "lucide-vue-next";
+import { ArrowLeft, CalendarClock, ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, Plus, X } from "lucide-vue-next";
 import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
 import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import ReportActions from "./ReportActions.vue";
+import AgentScheduleRows from "./AgentScheduleRows.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
   PANEL_APPLICATION_PAGE_ID,
@@ -99,8 +99,9 @@ const resolvePilot = usePilotPage()((address) => {
     const query = new URLSearchParams(address.split("?")[1]);
     const sessionId = query.get("sessionId");
     if (sessionId) {
-      const { page: _page, ...remaining } = route.query;
-      void router.push({ query: { ...remaining, sessionId } });
+      void openPanelConversation(sessionId);
+    } else if (query.has("agentId")) {
+      void openPanelAgent(query.get("agentId")!);
     }
     return;
   }
@@ -116,6 +117,14 @@ function internalPageAddress(address: string) {
 function platformPanelAddress(address: string) {
   const path = address.split("?")[0];
   if (path === props.internalPages?.dashboard) return routes.dashboards.path + address.slice(path.length);
+  if (path === props.internalPages?.agents) {
+    const query = new URLSearchParams(address.slice(path.length));
+    const mode = query.get("mode");
+    query.delete("mode");
+    if (mode === "create") query.set("creating", "true");
+    return panelAddress(query.has("selected") ? `${routes.agents.path}/detail` : routes.agents.path,
+      Object.fromEntries(query));
+  }
   if (props.internalPages?.schedules && (path === props.internalPages.schedules || path === routes.schedules.path)) {
     const query = new URLSearchParams(address.slice(path.length));
     query.set("workspace", "agent");
@@ -129,7 +138,7 @@ function pilot(address: string) {
   const target = platformPanelAddress(address);
   const path = target.split("?")[0];
   if (path === routes.dashboards.path || (props.internalPages.schedules && path === routes.schedules.path)
-    || path === props.internalPages.agents) return resolvePilot(target);
+    || path === routes.agents.path || path === `${routes.agents.path}/detail`) return resolvePilot(target);
   return null;
 }
 /** An in-app address that names a page this assembly mounts beside a conversation; a host elsewhere is never one. */
@@ -140,22 +149,32 @@ function resolvePage(href: string): DisplayPage | null {
   return page ? { featureId: page.id, address, instance: page.instance ?? address } : null;
 }
 
+let displayNavigation: string | null = null;
+
 /**
  * Enlarging a page opens its own address. A page beside the conversation rides as `?page=`; a move within the same
  * route replaces the address unless it follows a link.
  */
 async function serialize(page: DisplayPage | null, view: DisplayView, history: DisplayHistory): Promise<boolean> {
   const { page: _page, ...rest } = route.query;
+  const address = page && internalPageAddress(page.address);
+  if (address && props.internalPages?.dashboard === address.split("?")[0]) delete rest.taskView;
   const query = props.internalPages && !requestedAgent() && !requestedAgentKind()
     ? { ...rest, sessionId: conversationId.value ?? undefined }
     : rest;
   const to: RouteLocationRaw =
     page && view === "full" && display.view.value === "side" && !props.internalPages
       ? page.address
-      : { query: page ? { ...query, page: internalPageAddress(page.address) } : query };
-  const failure = await (history === "push" || router.resolve(to).path !== route.path ? router.push(to) : router.replace(to));
-  // The address already saying this is the router's duplicated navigation, however the link that wrote it encoded it.
-  return !failure || isNavigationFailure(failure, NavigationFailureType.duplicated);
+      : { query: address ? { ...query, page: address } : query, hash: route.hash };
+  const destination = router.resolve(to);
+  const target = destination.fullPath;
+  displayNavigation = target;
+  try {
+    const failure = await (history === "push" || destination.path !== route.path ? router.push(to) : router.replace(to));
+    return !failure || isNavigationFailure(failure, NavigationFailureType.duplicated);
+  } finally {
+    if (displayNavigation === target) displayNavigation = null;
+  }
 }
 
 /** Leaving a native page's draft asks first, by the platform's own question; a panel answers for itself. */
@@ -191,6 +210,8 @@ useUnsavedChanges({
   dirty: () => display.isDirty.value,
   paths: () => [route.path],
   guardSamePath: (fullPath) => {
+    // The display has already handled its own transition. Browser navigation still needs the route guard.
+    if (fullPath === displayNavigation) return Promise.resolve(true);
     const nextPage = queryText(router.resolve(fullPath).query.page);
     const currentPage = queryText(route.query.page);
     if (nextPage === currentPage) return Promise.resolve(true);
@@ -219,24 +240,65 @@ const inStandaloneSchedules = computed(() => Boolean(props.internalPages?.schedu
 const scheduleQuery = computed(() => new URLSearchParams(pageAddress.value?.split("?")[1]));
 const selectedSchedule = computed(() => inStandaloneSchedules.value ? scheduleQuery.value.get("selectedTask") : null);
 const creatingSchedule = computed(() => inStandaloneSchedules.value && scheduleQuery.value.get("workspaceCompose") === "new");
+const scheduleReturnPage = computed(() => {
+  const address = queryText(route.query.scheduleFrom);
+  return address && address.split("?")[0] === props.internalPages?.schedules ? address : null;
+});
+
+async function openPanelConversation(sessionId: string) {
+  const { page: _page, scheduleFrom: _from, scheduleFromSession: _fromSession, ...query } = route.query;
+  const from = inStandaloneSchedules.value ? queryText(route.query.page) : null;
+  await router.push({
+    hash: route.hash,
+    query: {
+      ...query,
+      sessionId,
+      ...(from ? { scheduleFrom: internalPageAddress(from), scheduleFromSession: queryText(query.sessionId) ?? undefined } : {}),
+    },
+  });
+}
+
+async function openPanelAgent(agentId: string) {
+  if (!agentId || !(await display.close())) return;
+  const { taskView: _taskView, sessionId: _session, scheduleFrom: _from, scheduleFromSession: _fromSession, ...query } = route.query;
+  await router.push({ query: { ...query, agentId }, hash: route.hash });
+}
+
+async function returnToSchedule() {
+  const page = scheduleReturnPage.value;
+  if (!page) return;
+  const { scheduleFrom: _from, scheduleFromSession, ...query } = route.query;
+  const target = { query: { ...query, page, sessionId: queryText(scheduleFromSession) ?? undefined }, hash: route.hash };
+  if (router.options.history.state.back === router.resolve(target).fullPath) {
+    router.back();
+    return;
+  }
+  await router.replace(target);
+}
+
 const scheduleTasks = ref<PlatformTask[]>([]);
+const schedulesLoading = ref(false);
 const scheduleLoadFailed = ref(false);
 const schedulesApi = createSchedulesApi({ request: nodeApiRequest });
 function scheduleAgentId(task: PlatformTask | undefined) {
   return task?.targetKind === "application" && task.appId === "agents" ? task.content.agentId : undefined;
 }
-const agentSchedules = computed(() => scheduleTasks.value.filter(task => scheduleAgentId(task) === agentId.value));
+const allAgentSchedules = computed(() => scheduleTasks.value.filter(task => typeof scheduleAgentId(task) === "string"));
+const agentSchedules = computed(() => allAgentSchedules.value.filter(task => scheduleAgentId(task) === agentId.value));
 let scheduleRead = 0;
 async function loadSchedules() {
   if (!props.internalPages?.schedules) return;
   const read = ++scheduleRead;
+  schedulesLoading.value = true;
+  scheduleLoadFailed.value = false;
   try {
     const { tasks } = await schedulesApi.list("agents");
     if (read !== scheduleRead) return;
     scheduleTasks.value = tasks;
-    scheduleLoadFailed.value = false;
   } catch {
     if (read === scheduleRead) scheduleLoadFailed.value = true;
+  } finally {
+    if (read === scheduleRead) schedulesLoading.value = false;
   }
 }
 const selectedDashboardId = computed(() => inStandaloneDashboard.value
@@ -244,20 +306,12 @@ const selectedDashboardId = computed(() => inStandaloneDashboard.value
   : null);
 
 const inAgentSettings = computed(() => {
-  const path = pageAddress.value?.split("?")[0];
+  const path = pageAddress.value && platformPanelAddress(pageAddress.value).split("?")[0];
   return path === routes.agents.path || path === `${routes.agents.path}/detail`;
 });
+const showPanelBack = computed(() => inStandaloneDashboard.value
+  || Boolean(props.internalPages && pageAddress.value && platformPanelAddress(pageAddress.value).split("?")[0] === routes.agents.path));
 const inPanelApplication = computed(() => display.page.value?.featureId === PANEL_APPLICATION_PAGE_ID);
-const editorTitle = computed(() => {
-  const address = pageAddress.value;
-  if (!props.internalPages || !address) return undefined;
-  const [path, query] = address.split("?");
-  if (path !== props.internalPages.agents) return undefined;
-  const creating = new URLSearchParams(query).get("mode") === "create";
-  if (locale.value === "zh-CN") return creating ? "新建智能体" : "编辑智能体";
-  if (locale.value === "zh-TW") return creating ? "新增智慧代理" : "編輯智慧代理";
-  return creating ? t("admin.newAgent", "New agent") : t("analysis.editAgent", "Edit agent");
-});
 
 /**
  * The open conversation. The address carries it while the settings are shown, so leaving them (or reloading) returns to
@@ -268,8 +322,9 @@ const conversationId = ref<string | null>(
 );
 watch(
   () => route.query.sessionId,
-  (id) => {
+  (id, previous) => {
     if (typeof id === "string" && id !== conversationId.value) conversationId.value = id;
+    else if (props.internalPages && id == null && typeof previous === "string") conversationId.value = null;
   },
 );
 const shell = ref<InstanceType<typeof AgentShell> | null>(null);
@@ -305,7 +360,8 @@ watch(conversationId, (id) => {
   if (id && agentId.value) rememberSession(agentId.value, id);
   // The standalone application can reopen this conversation after a document reload.
   if (!props.internalPages || requestedAgent() || requestedAgentKind() || queryText(route.query.sessionId) === id) return;
-  void router.replace({ query: { ...route.query, sessionId: id ?? undefined }, hash: route.hash });
+  const { scheduleFrom: _from, scheduleFromSession: _fromSession, ...query } = route.query;
+  void router.replace({ query: { ...query, sessionId: id ?? undefined }, hash: route.hash });
 });
 
 /**
@@ -333,8 +389,8 @@ const labels = computed(() => {
   if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", conversationTab: "會話", reportTab: "報告", fileTab: "檔案預覽" };
   return { ...base, conversationTab: "Conversation", reportTab: "Report", fileTab: "File preview" };
 });
-function isReport(artifact: RuntimeArtifact) {
-  return artifact.path.startsWith("outputs/") && /\.md$/i.test(artifact.path);
+function isReportPath(path: string) {
+  return path.startsWith("outputs/") && /\.md$/i.test(path);
 }
 
 async function requestReportPpt(sessionId: string, message: string) {
@@ -377,7 +433,8 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   features: workbenchFeatures(
     props.features,
     inPanelApplication.value
-      ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!, !inStandaloneDashboard.value && !inStandaloneSchedules.value)
+      ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!,
+          !inStandaloneDashboard.value && !inStandaloneSchedules.value && !(props.internalPages && inAgentSettings.value))
       : null,
   ),
 }));
@@ -409,14 +466,6 @@ watch(
     }
   },
 );
-// The one list notice stream of this page: every conversation it lists follows its run, whichever one is open.
-useSessionRunFeed({
-  port: client.sessionRuns,
-  sessions: () => nav.sessions.value,
-  // The conversation's display takes what its runs present; the stream asks for the binding that lets them.
-  presentation: true,
-  onError: (error) => ElMessage.error(error instanceof Error ? error.message : String(error)),
-});
 watch(locale, () => {
   void nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
 });
@@ -434,18 +483,15 @@ const opensModels = computed(() => canOpen(routes.usage.path));
  * in the application. An account without the agents' permission goes to the models the conversations run on, which is
  * the platform's own settings page.
  */
-function openInternalAgentEditor(mode: "create" | "edit") {
+function openInternalAgentSettings() {
   if (!props.internalPages || !editsAgents.value) return;
-  const state = mode === "edit" && agentId.value ? { mode, selected: agentId.value } : { mode };
   closeDashboards();
-  void display.navigate(panelAddress(props.internalPages.agents, state), { history: "push" });
+  void display.navigate(routes.agents.path, { history: "push" });
 }
 
-const agentActions = computed(() => props.internalPages && editsAgents.value ? {
-  createLabel: locale.value === "zh-CN" ? "添加智能体" : locale.value === "zh-TW" ? "新增智慧代理" : (t("analysis.addAgent") === "analysis.addAgent" ? "Add Agent" : t("analysis.addAgent")),
-  editLabel: locale.value === "zh-CN" ? "编辑智能体" : t("analysis.editAgent"),
-  create: () => openInternalAgentEditor("create"),
-  edit: () => openInternalAgentEditor("edit"),
+const agentSettings = computed(() => props.internalPages && editsAgents.value ? {
+  label: t("assistant.featureAgents"),
+  open: openInternalAgentSettings,
 } : undefined);
 
 function openSettings() {
@@ -453,51 +499,60 @@ function openSettings() {
   void router.push(routes.agents.path);
 }
 
-const showingTasks = ref(false);
+const showingTasks = computed(() => Boolean(props.internalPages && route.query.taskView === "all"));
+const scheduleAgentNames = computed(() => nav.agentsState.value === "ready"
+  ? new Map(nav.agents.value.map(agent => [agent.id, agent.name]))
+  : undefined);
 const scheduleAgent = computed(() => nav.agents.value.find((agent) => agent.id === agentId.value));
-const canScheduleAgent = computed(() => {
-  const agent = scheduleAgent.value;
+function isSchedulableAgent(agent: typeof scheduleAgent.value) {
   return Boolean(agent?.enabled && agent.kind !== "app-builder" && agent.kind !== "ops-diagnosis");
-});
+}
+const canScheduleAgent = computed(() => isSchedulableAgent(scheduleAgent.value));
 
 const taskSessions = ref<AgentHostSession[]>([]);
 const taskCursor = ref<string | null>(null);
 const tasksLoading = ref(false);
-const tasksError = ref(false);
+const tasksError = ref<"initial" | "more" | null>(null);
 let taskRequest = 0;
+// Both sidebar views follow their runs through the same page-level stream.
+useSessionRunFeed({
+  port: client.sessionRuns,
+  sessions: () => showingTasks.value ? taskSessions.value : nav.sessions.value,
+  presentation: true,
+  onError: (error) => ElMessage.error(error instanceof Error ? error.message : String(error)),
+});
 const allTasksLabel = computed(() => locale.value === "zh-CN" ? "全部任务" : locale.value === "zh-TW" ? "全部任務" : "All tasks");
+const visibleTaskCount = computed(() => taskSessions.value.length + allAgentSchedules.value.length);
+const taskStatusLabels = computed(() => ({
+  running: locale.value === "zh-CN" ? "执行中" : t("assistant.taskRunning"),
+  completed: t("assistant.taskCompleted"),
+  failed: t("assistant.taskFailed"),
+  cancelled: t("assistant.taskCancelled"),
+  pending: locale.value === "zh-CN" ? "待运行" : locale.value === "zh-TW" ? "待執行" : "Not started",
+}));
 const taskGroups = computed(() => {
-  const groups = {
-    running: { key: "running", label: locale.value === "zh-CN" ? "执行中" : t("assistant.taskRunning"), sessions: [] as AgentHostSession[] },
-    stopped: { key: "stopped", label: t("assistant.taskCompleted"), sessions: [] as AgentHostSession[] },
-    pending: { key: "pending", label: locale.value === "zh-CN" ? "待运行" : locale.value === "zh-TW" ? "待執行" : "Not started", sessions: [] as AgentHostSession[] },
-  };
+  const groups = new Map(Object.entries(taskStatusLabels.value).map(([key, label]) =>
+    [key, { key, label, sessions: [] as AgentHostSession[] }]));
   for (const session of taskSessions.value) {
-    const run = session.latestRun;
-    const group = !run ? groups.pending : run.status === "running" || run.delegatedRunning ? groups.running : groups.stopped;
-    group.sessions.push(session);
+    groups.get(analysisTaskStatus(session))!.sessions.push(session);
   }
-  return Object.values(groups).filter(group => group.sessions.length);
+  return [...groups.values()].filter(group => group.sessions.length);
 });
 
 function analysisTaskStatus(session: AgentHostSession) {
   const run = session.latestRun;
-  if (!run) return null;
+  if (!run) return "pending";
   if (run.status === "running" || run.delegatedRunning) return "running";
   if (run.stopReason === "aborted") return "cancelled";
   if (run.stopReason === "error" || run.stopReason === "length") return "failed";
   return "completed";
 }
 
-const taskStatusLabels = computed(() => ({
-  running: t("assistant.taskRunning"), completed: t("assistant.taskCompleted"),
-  failed: t("assistant.taskFailed"), cancelled: t("assistant.taskCancelled"),
-}));
-
 async function loadAnalysisTasks(append = false) {
+  if (append && (tasksLoading.value || !taskCursor.value)) return;
   const request = ++taskRequest;
   tasksLoading.value = true;
-  tasksError.value = false;
+  tasksError.value = null;
   try {
     const cursor = append ? taskCursor.value : null;
     const path = `/assistant/analysis-sessions${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`;
@@ -506,21 +561,42 @@ async function loadAnalysisTasks(append = false) {
     taskSessions.value = append ? [...taskSessions.value, ...page.sessions] : page.sessions;
     taskCursor.value = page.nextCursor;
   } catch {
-    if (request === taskRequest) tasksError.value = true;
+    if (request === taskRequest) tasksError.value = append ? "more" : "initial";
   } finally {
     if (request === taskRequest) tasksLoading.value = false;
   }
 }
 
 async function openAllTasks() {
+  if (showingTasks.value) {
+    shell.value?.showHistory();
+    return;
+  }
   if (!(await display.close())) return;
   closeDashboards();
-  nav.startNew();
-  showingTasks.value = true;
-  void loadAnalysisTasks();
+  const { sessionId: _session, scheduleFrom: _from, scheduleFromSession: _fromSession, ...query } = route.query;
+  const failure = await router.push({ query: { ...query, taskView: "all" }, hash: route.hash });
+  if (failure) return;
+  if (conversationId.value) nav.startNew();
+  shell.value?.showHistory();
 }
 
-function openAnalysisTask(session: AgentHostSession) {
+async function leaveAllTasks() {
+  if (!showingTasks.value) return;
+  // Use the conversation left by the rail selection, which may have started a new one.
+  await nextTick();
+  const { taskView: _taskView, ...query } = route.query;
+  await router.replace({ query: { ...query, sessionId: conversationId.value ?? undefined }, hash: route.hash });
+}
+
+watch(showingTasks, (open) => {
+  if (!open) return;
+  void loadAnalysisTasks();
+  void loadSchedules();
+}, { immediate: true });
+
+async function openAnalysisTask(session: AgentHostSession) {
+  if (display.page.value && !(await display.close())) return;
   nav.adoptAgent(session.agentId);
   nav.selectSession(session.id);
 }
@@ -735,8 +811,7 @@ watch(
 function openDashboardApplication(dashboardId: string) {
   if (props.internalPages) {
     closeDashboards();
-    void display.navigate(panelAddress(props.internalPages.dashboard, { dashboardId }), { history: "push" })
-      .then((opened) => { if (opened) showingTasks.value = false; });
+    void display.navigate(panelAddress(props.internalPages.dashboard, { dashboardId }), { history: "push" });
     return;
   }
   openDashboardPage(dashboardId);
@@ -749,14 +824,107 @@ function openDashboardPage(dashboardId: string) {
 }
 
 function openSchedule(task?: PlatformTask) {
-  if (!props.internalPages?.schedules || !agentId.value || (!task && !canScheduleAgent.value)) return;
+  const workspaceAgent = task ? scheduleAgentId(task) : agentId.value;
+  if (!props.internalPages?.schedules || typeof workspaceAgent !== "string" || (!task && !canScheduleAgent.value)) return;
   closeDashboards();
-  const state = { workspaceAgent: agentId.value, ...(task ? { selectedTask: task.id } : { workspaceCompose: "new" }) };
+  const state = { workspaceAgent, ...(task ? { selectedTask: task.id } : { workspaceCompose: "new" }) };
   void display.navigate(panelAddress(props.internalPages.schedules, state), { history: "push" });
 }
 
+type ConversationScheduleSource = {
+  sessionId: string;
+  agentId: string | null;
+  title?: string;
+  origin?: AgentHostSession["origin"];
+  initialInstruction: () => Promise<string>;
+};
+const preparingConversationSchedule = ref(false);
+let conversationScheduleDraft: {
+  agentId: string;
+  values: Record<string, string>;
+  filled: boolean;
+} | null = null;
+
+function sessionForSchedule(sessionId: string) {
+  return taskSessions.value.find(session => session.id === sessionId) ?? nav.currentSession.value;
+}
+
+function canScheduleConversation(source: ConversationScheduleSource) {
+  const origin = source.origin ?? sessionForSchedule(source.sessionId)?.origin ?? "user";
+  return Boolean(props.internalPages?.schedules && !scheduleReturnPage.value
+    && isSchedulableAgent(nav.agents.value.find(agent => agent.id === source.agentId))
+    && origin === "user");
+}
+
+async function scheduleConversation(source: ConversationScheduleSource) {
+  if (!props.internalPages?.schedules || !source.agentId || !canScheduleConversation(source) || preparingConversationSchedule.value) return;
+  preparingConversationSchedule.value = true;
+  try {
+    const instruction = await source.initialInstruction();
+    if (conversationId.value !== source.sessionId || display.page.value || !canScheduleConversation(source)) return;
+    if (!instruction || instruction.length > PLATFORM_SCHEDULE_TEXT_MAX) {
+      ElMessage.warning(t(instruction ? "scheduledTasks.instructionTooLong" : "scheduledTasks.instructionMissing", { max: PLATFORM_SCHEDULE_TEXT_MAX }));
+      return;
+    }
+    const address = panelAddress(props.internalPages.schedules, { workspaceAgent: source.agentId, workspaceCompose: "new" });
+    const title = (sessionForSchedule(source.sessionId)?.title || source.title || "").slice(0, PLATFORM_SCHEDULE_TITLE_MAX);
+    const draft = { agentId: source.agentId, values: { ...(title && { "/task/title": title }), "/instruction": instruction }, filled: false };
+    conversationScheduleDraft = draft;
+    closeDashboards();
+    if (!(await display.navigate(address, { history: "push" })) && conversationScheduleDraft === draft) {
+      conversationScheduleDraft = null;
+    }
+  } catch {
+    ElMessage.error(t("scheduledTasks.prefillFailed"));
+  } finally {
+    preparingConversationSchedule.value = false;
+  }
+}
+
+async function reportPanelContext(context: PageContext) {
+  display.context(context);
+  const draft = conversationScheduleDraft;
+  const form = context.forms?.find(form => form.member === "newForm" && !form.memberPath?.length);
+  if (!draft || draft.filled || !creatingSchedule.value || scheduleQuery.value.get("workspaceAgent") !== draft.agentId
+    || !form || !activePageController?.fillForm) return;
+  if (form.dirty) {
+    draft.filled = true;
+    return;
+  }
+  draft.filled = true;
+  try {
+    const outcome = await activePageController.fillForm({
+      member: form.member, values: draft.values, expectedFormInstanceId: form.formInstanceId,
+    });
+    if (conversationScheduleDraft === draft && (!outcome.ok || outcome.rejectedFields?.length)) {
+      ElMessage.warning(t("scheduledTasks.prefillFailed"));
+    }
+  } catch {
+    if (conversationScheduleDraft === draft) ElMessage.warning(t("scheduledTasks.prefillFailed"));
+  }
+}
+
+function reportPanelAddress(input: DisplayPageAddressInput) {
+  const draft = conversationScheduleDraft;
+  if (draft && input.kind === "state" && creatingSchedule.value
+    && internalPageAddress(input.address).split("?")[0] === props.internalPages?.schedules) {
+    const query = new URLSearchParams(input.address.split("?")[1]);
+    if (query.get("workspaceCompose") !== "new" && !query.get("selectedTask")) {
+      // The native form has already handled discarding edits before it reports cancel.
+      conversationScheduleDraft = null;
+      void display.close();
+      return;
+    }
+  }
+  display.address(input);
+}
+
+watch(creatingSchedule, (creating) => {
+  if (!creating) conversationScheduleDraft = null;
+});
+
 onMounted(async () => {
-  void loadSchedules();
+  if (!showingTasks.value) void loadSchedules();
   try {
     appearance.value = await getWorkbenchAppearance();
   } catch {
@@ -788,11 +956,12 @@ function appearanceSaved(value: WorkbenchAppearance) {
     agent-picker
     :split-navigation="splitNavigation"
     :inline-artifacts="splitNavigation"
-    :history-page-selected="inStandaloneSchedules || inStandaloneDashboard"
+    :primary-artifact-path="internalPages && splitNavigation ? isReportPath : undefined"
+    :history-page-selected="inStandaloneSchedules || inStandaloneDashboard || Boolean(internalPages && inAgentSettings)"
+    :conversation-back-label="scheduleReturnPage ? t('common.back') : undefined"
     :neutral-agent-selection="showingTasks || inStandaloneDashboard"
-    :editor-title="editorTitle"
     :format-session-date="splitNavigation ? formatRelativeTime : undefined"
-    :agent-actions="agentActions"
+    :agent-settings="agentSettings"
     :bottom="bottomEntry"
     :client="client"
     :labels="labels"
@@ -803,14 +972,15 @@ function appearanceSaved(value: WorkbenchAppearance) {
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"
     @open-bottom="openSettings"
-    @rail-agent-selected="showingTasks = false"
+    @conversation-back="returnToSchedule"
+    @rail-agent-selected="leaveAllTasks"
   >
     <template v-if="$slots.brand" #brand><slot name="brand" /></template>
     <template v-if="$slots.account" #account><slot name="account" /></template>
     <template v-if="internalPages" #shortcuts>
       <button class="legacy-footer-item" type="button" :title="allTasksLabel" :aria-pressed="showingTasks" @click="openAllTasks">
         <ListTodo :size="16" aria-hidden="true" /><span>{{ allTasksLabel }}</span>
-        <small v-if="taskSessions.length" class="legacy-task-badge">{{ taskSessions.length }}{{ taskCursor ? '+' : '' }}</small>
+        <small v-if="visibleTaskCount" class="legacy-task-badge">{{ visibleTaskCount }}{{ taskCursor ? '+' : '' }}</small>
       </button>
       <section v-if="dashboardsOpen && dashboards" id="data-agent-dashboard-list" class="legacy-dashboard-list" :aria-label="t('analysis.myDashboards')" @keydown.esc.stop="closeDashboards">
         <header>
@@ -842,12 +1012,12 @@ function appearanceSaved(value: WorkbenchAppearance) {
       </button>
     </template>
     <template v-if="internalPages?.schedules && (canScheduleAgent || agentSchedules.length)" #before-history>
-      <section class="agent-schedules" :aria-label="t('platform.schedules')">
+      <section class="agent-schedules" :aria-label="t('scheduledTasks.title')">
         <div class="section-title agent-schedules-heading">
           <span class="history-list-marker" aria-hidden="true" />
-          <span>{{ t('platform.schedules') }}<template v-if="agentSchedules.length"> ({{ agentSchedules.length }})</template></span>
+          <span>{{ t('scheduledTasks.title') }}<template v-if="agentSchedules.length"> ({{ agentSchedules.length }})</template></span>
           <button v-if="canScheduleAgent"
-            type="button" :title="t('platformSchedules.newTask')" :aria-label="t('platformSchedules.newTask')"
+            type="button" :title="t('scheduledTasks.newTask')" :aria-label="t('scheduledTasks.newTask')"
             :aria-pressed="creatingSchedule" @click="openSchedule()">
             <Plus :size="15" aria-hidden="true" />
           </button>
@@ -855,23 +1025,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
         <p v-if="scheduleLoadFailed" class="session-note" role="alert">
           {{ labels.loadFailed }} <button type="button" @click="loadSchedules">{{ labels.retry }}</button>
         </p>
-        <ul v-if="agentSchedules.length" class="session-list agent-schedule-list">
-          <li v-for="task in agentSchedules" :key="task.id">
-            <div class="session-item" :class="{ active: selectedSchedule === task.id }">
-              <button type="button" class="session-open agent-schedule-open" :title="task.title"
-                :aria-current="selectedSchedule === task.id ? 'page' : undefined" @click="openSchedule(task)">
-                <strong class="session-title">{{ task.title }}</strong>
-                <span class="history-list-meta">
-                  <Calendar :size="12" aria-hidden="true" />
-                  {{ scheduledTaskFrequencyText(task.frequency, locale, t) }}
-                  <span v-if="!task.enabled" class="agent-schedule-status">{{ t('platformSchedules.panelFields.stateOff') }}</span>
-                  <span v-else-if="task.pause" class="agent-schedule-status" data-status="paused">{{ t('platformSchedules.panelFields.statePaused') }}</span>
-                  <span v-else class="agent-schedule-status" data-status="scheduled">{{ t('platformSchedules.card.scheduled') }}</span>
-                </span>
-              </button>
-            </div>
-          </li>
-        </ul>
+        <AgentScheduleRows v-if="agentSchedules.length" class="session-list" :tasks="agentSchedules"
+          :selected-id="selectedSchedule" @select="openSchedule" />
       </section>
     </template>
     <template v-if="showingTasks" #session-list>
@@ -879,37 +1034,69 @@ function appearanceSaved(value: WorkbenchAppearance) {
         <div class="legacy-task-avatar"><ClipboardList :size="22" aria-hidden="true" /></div>
         <div><strong>{{ allTasksLabel }}</strong><p>{{ locale === 'zh-CN' ? '跨智能体统一任务看板' : locale === 'zh-TW' ? '跨智慧代理任務總覽' : 'Tasks across agents' }}</p></div>
       </header>
-      <div v-loading="tasksLoading && !taskSessions.length" class="legacy-task-body" :aria-busy="tasksLoading" :element-loading-text="t('common.loading')">
-        <p v-if="tasksError" class="legacy-task-note" role="alert">{{ labels.loadFailed }} <button type="button" @click="loadAnalysisTasks()">{{ labels.retry }}</button></p>
-        <p v-else-if="!tasksLoading && !taskSessions.length" class="legacy-task-note">{{ locale === 'zh-CN' ? '暂无分析任务' : locale === 'zh-TW' ? '暫無分析任務' : 'No analysis tasks yet' }}</p>
-        <div v-if="taskSessions.length" class="session-list legacy-task-list">
-          <section v-for="group in taskGroups" :key="group.key" class="legacy-task-group" :aria-label="group.label">
-            <h2><span class="history-list-marker" :data-status="group.key" aria-hidden="true" />{{ group.label }} ({{ group.sessions.length }})</h2>
-            <ul>
-              <li v-for="session in group.sessions" :key="session.id" class="session-item" :class="{ active: session.id === conversationId }">
-                <button type="button" class="session-open" :aria-current="session.id === conversationId ? 'page' : undefined" @click="openAnalysisTask(session)">
-                  <span class="session-title">{{ session.title || labels.newConversation }}</span>
-                  <span class="history-list-meta">
-                    {{ formatRelativeTime(session.createdAt) }}
-                    <template v-if="analysisTaskStatus(session)">
-                      <span class="legacy-task-status" :data-status="analysisTaskStatus(session)">{{ taskStatusLabels[analysisTaskStatus(session)!] }}</span>
-                    </template>
-                  </span>
-                </button>
-              </li>
-            </ul>
+      <div class="legacy-task-body" :aria-busy="tasksLoading || schedulesLoading">
+        <div class="session-list legacy-task-list">
+          <section v-if="internalPages?.schedules" class="legacy-task-group" :aria-label="t('scheduledTasks.title')">
+            <h2 class="agent-schedules-heading"><span class="history-list-marker" aria-hidden="true" />{{ t('scheduledTasks.title') }}<template v-if="allAgentSchedules.length"> ({{ allAgentSchedules.length }})</template></h2>
+            <p v-if="scheduleLoadFailed" class="legacy-task-note" role="alert">
+              {{ t('scheduledTasks.loadFailed') }} <button type="button" @click="loadSchedules">{{ labels.retry }}</button>
+            </p>
+            <p v-else-if="!allAgentSchedules.length" class="legacy-task-note">
+              {{ schedulesLoading ? t('common.loading') : t('scheduledTasks.empty') }}
+            </p>
+            <AgentScheduleRows v-if="allAgentSchedules.length" :tasks="allAgentSchedules" :selected-id="selectedSchedule"
+              :agent-names="scheduleAgentNames" @select="openSchedule" />
           </section>
-          <button v-if="taskCursor" type="button" class="more" :disabled="tasksLoading" @click="loadAnalysisTasks(true)">{{ labels.more }}</button>
+          <section class="legacy-task-history" :aria-label="t('assistant.conversationHistory')">
+            <p v-if="tasksError === 'initial'" class="legacy-task-note" role="alert">
+              {{ labels.loadFailed }} <button type="button" @click="loadAnalysisTasks()">{{ labels.retry }}</button>
+            </p>
+            <p v-else-if="!taskSessions.length && !taskCursor" class="legacy-task-note">{{ tasksLoading ? t('common.loading') : labels.noSessions }}</p>
+            <section v-for="group in taskGroups" :key="group.key" class="legacy-task-group" :aria-label="group.label">
+              <h2><span class="history-list-marker" :data-status="group.key" aria-hidden="true" />{{ group.label }} ({{ group.sessions.length }})</h2>
+              <ul>
+                <li v-for="session in group.sessions" :key="session.id" class="session-item" :class="{ active: !inStandaloneSchedules && session.id === conversationId }">
+                  <button type="button" class="session-open" :aria-current="!inStandaloneSchedules && session.id === conversationId ? 'page' : undefined" @click="openAnalysisTask(session)">
+                    <span class="session-title">{{ session.title || labels.newConversation }}</span>
+                    <span class="history-list-meta">
+                      <span v-if="session.origin === 'scheduled'" role="img" :title="labels.scheduledSession" :aria-label="labels.scheduledSession">
+                        <CalendarClock :size="12" aria-hidden="true" />
+                      </span>
+                      {{ formatRelativeTime(session.createdAt) }}
+                      <span v-if="group.key !== 'pending'" class="legacy-task-status" :data-status="group.key">{{ group.label }}</span>
+                    </span>
+                  </button>
+                </li>
+              </ul>
+            </section>
+            <p v-if="tasksError === 'more'" class="legacy-task-note" role="alert">{{ labels.loadFailed }}</p>
+            <button v-if="taskCursor && tasksError !== 'initial'" type="button" class="more" :disabled="tasksLoading" @click="loadAnalysisTasks(true)">
+              {{ tasksLoading ? t('common.loading') : tasksError === 'more' ? labels.retry : labels.more }}
+            </button>
+          </section>
         </div>
       </div>
     </template>
     <template v-if="showingTasks" #conversation-empty>
-      <p>{{ locale === 'zh-CN' ? '从列表中选择分析任务查看详情' : locale === 'zh-TW' ? '從清單中選擇分析任務查看詳情' : 'Choose an analysis task to view its details' }}</p>
+      <p>{{ locale === 'zh-CN' ? '从列表中选择任务查看详情' : locale === 'zh-TW' ? '從清單中選擇任務查看詳情' : 'Choose a task to view its details' }}</p>
     </template>
     <template v-if="$slots.welcome" #welcome="scope">
       <slot name="welcome" v-bind="scope" />
     </template>
+    <template v-if="internalPages?.schedules" #conversation-heading-actions="source">
+      <button v-if="canScheduleConversation(source)" type="button" class="workbench-conversation-schedule"
+        :disabled="preparingConversationSchedule" @click="scheduleConversation(source)">
+        <CalendarClock :size="16" aria-hidden="true" />
+        {{ t('scheduledTasks.newTask') }}
+      </button>
+    </template>
     <template #feature="{ featureId: page }">
+      <div v-if="showPanelBack" class="workbench-panel-nav">
+        <button type="button" class="workbench-panel-back" @click="display.close()">
+          <ArrowLeft :size="16" aria-hidden="true" />
+          {{ t('common.back') }}
+        </button>
+      </div>
       <!-- What the page hands its display: what the reader looks at, its address moves, what its loader knows, and
            whether leaving it now would drop unsaved changes. What the display hands the page: when to read its objects
            again. -->
@@ -924,18 +1111,18 @@ function appearanceSaved(value: WorkbenchAppearance) {
         :object-refresh="display.objectRefresh.value"
         :live-state="display.liveState.value"
         :register-page-controller="(controller: DisplayPageController) => registerActivePageController(display.page.value!.instance, controller)"
-        @context="display.context"
-        @display-address="display.address"
+        @context="reportPanelContext"
+        @display-address="reportPanelAddress"
         @display-loaded="display.loaded"
         @display-dirty="display.dirty"
         @display-skill="display.skill"
-        @objects-changed="inStandaloneSchedules && loadSchedules()"
+        @objects-changed="inStandaloneSchedules ? loadSchedules() : internalPages && inAgentSettings ? nav.loadAgents() : undefined"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #artifact-actions="{ artifact, title, caption }">
       <ReportActions
-        v-if="splitNavigation && isReport(artifact)"
+        v-if="splitNavigation && isReportPath(artifact.path)"
         :key="artifact.id"
         :artifact="artifact"
         :title="title"
@@ -943,10 +1130,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
         :request-ppt="requestReportPpt"
         @open-dashboard="openDashboardApplication"
       />
-      <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
-           into cards there, a chart file is put on the board as it is. -->
-      <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardPage" />
-      <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardPage" />
+      <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
+      <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="!internalPages && sessionId && runId" :session-id="sessionId" :run-id="runId" />
@@ -962,6 +1147,25 @@ function appearanceSaved(value: WorkbenchAppearance) {
 </template>
 
 <style scoped>
+.workbench-panel-nav {
+  flex: none;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-block-end: 1px solid var(--el-border-color-lighter);
+}
+.workbench-panel-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.workbench-panel-back:hover { background: var(--el-fill-color); color: var(--el-text-color-primary); }
 .brand {
   display: flex;
   align-items: center;

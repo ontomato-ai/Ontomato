@@ -86,6 +86,9 @@
     margin: 0 0 var(--spacing-md);
     font-size: var(--text-base);
   }
+  .schedules-inline-form {
+    padding-top: var(--spacing-sm);
+  }
   .schedules-task-details {
     padding: var(--spacing-sm) var(--spacing-md);
     border: 1px solid var(--sdk-border-color);
@@ -215,7 +218,7 @@
 </style>
 
 <div id="app" v-cloak class="schedules-shell">
-  <page-header v-if="!inline || !formDialogOpen" :title="t('panel.name')" :description="inline ? undefined : t('intro')">
+  <page-header :title="pageTitle" :description="inline ? undefined : t('intro')">
     <template #actions>
       <sdk-button
         v-if="!inline"
@@ -296,14 +299,13 @@
   <component
     v-if="!inline || formDialogOpen"
     :is="inline ? 'section' : 'sdk-dialog'"
-    v-bind="inline ? { class: 'schedules-inline-section' } : {
+    v-bind="inline ? { class: 'schedules-inline-section schedules-inline-form' } : {
       modelValue: formDialogOpen, title: mode === 'create' ? t('form.newTitle') : t('form.editTitle'),
       width: '640px', alignCenter: true, destroyOnClose: true, closeOnClickModal: false
     }"
     @update:model-value="onFormDialogToggle"
     @closed="restoreFocusAfterForm"
   >
-    <h2 v-if="inline">{{ mode === 'create' ? t('form.newScheduleTitle') : t('form.editScheduleTitle') }}</h2>
     <div class="schedules-dialog-body">
       <p v-if="!inline && mode === 'create'" class="schedules-dialog-sub">{{ t("form.subtitle") }}</p>
       <p v-if="!inline" class="schedules-note">{{ t("form.identity") }}</p>
