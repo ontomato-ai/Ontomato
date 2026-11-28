@@ -6,7 +6,7 @@ import type { ObjectListRef } from "./object-list-types";
 import ObjectGraphCanvas from "./ObjectGraphCanvas.vue";
 
 /**
- * Platform-dedicated visual modeling graph canvas (`panelUsable: false`).
+ * Visual modeling graph canvas.
  *
  * Wraps the shared `ObjectGraphCanvas` / `G6GraphCanvas` engine with the visual modeling workspace's fixed layout,
  * appearance, and gestures:

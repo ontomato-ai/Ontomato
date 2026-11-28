@@ -1,5 +1,7 @@
 export { default as AgentShell } from "./components/AgentShell.vue";
 export { default as AgentChat } from "./components/AgentChat.vue";
+export { default as AgentArtifactPreview } from "./components/AgentArtifactPreview.vue";
+export { default as ArtifactPreviewCore } from "./components/ArtifactPreviewCore.vue";
 export { default as ShellComposer } from "./components/ShellComposer.vue";
 export { default as PageComposer } from "./components/PageComposer.vue";
 export { default as ShellDockRoom } from "./components/ShellDockRoom.vue";
@@ -47,11 +49,13 @@ export {
   type SessionRunPort,
 } from "./host";
 export type { PageSkillContext } from "@ontomato/contracts/page-context";
-export type { AgentHostAgent } from "@ontomato/contracts/agent-host";
+export type { AgentArtifactTarget, AgentHostAgent, AgentRunComplete } from "@ontomato/contracts/agent-host";
 export type {
+  ArtifactLinkSlotScope,
   ArtifactPresentation,
   ArtifactRendererOverride,
   ArtifactRendererProps,
+  ArtifactSlotScope,
   ConversationInputRun,
   MessageActionContext,
   ProcessStepView,

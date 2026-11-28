@@ -46,6 +46,7 @@ export const baseComponents = {
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
   AnnotatedCode: () => import("./base/AnnotatedCode.vue").then(module => module.default),
   ConversationEntry: () => import("./base/ConversationEntry.vue").then(module => module.default),
+  AgentArtifactPreview: () => import("./chat/AgentArtifactPreview.vue").then(module => module.default),
   AgentAvatar: () => import("@ontomato/agent-shell-ui").then(module => module.AgentAvatar),
   AgentPicker: () => import("@ontomato/agent-shell-ui").then(module => module.AgentPicker),
   PanelData: () => import("./base/PanelData.vue").then(module => module.default),

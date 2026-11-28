@@ -81,8 +81,8 @@ export const appsSdkComponentCatalogEntrySchema = componentDeclarationBaseSchema
   exportName: z.string().min(1),
   /** Purpose group used to organize the component catalogue overview. */
   group: appsSdkComponentGroupSchema.optional(),
-  /** Whether a registered panel may use this component (derived at build time from runtime facts unless explicitly set). */
-  panelUsable: z.boolean().optional(),
+  /** Every official SDK catalogue entry is usable in panels; platform-only internals stay out of the catalogue. */
+  panelUsable: z.literal(true).optional(),
 });
 export type AppsSdkComponentCatalogEntry = z.infer<typeof appsSdkComponentCatalogEntrySchema>;
 

@@ -16,7 +16,6 @@ import { panelAppearance } from "./panel-appearance.mjs";
 import { writePackageComponentsRelease } from "./package-components-release.mjs";
 import { sdkChunks } from "./sdk-chunks.mjs";
 import {
-  baseComponentIds,
   catalogueMarkdown,
   checkCatalogue,
   componentMetadata,
@@ -221,20 +220,21 @@ async function main() {
   // own schema accepts the catalogue before it ships, so a component this version cannot describe, or a datum naming a
   // read result no owner registers, fails the build rather than the reader.
   const ports = componentPorts({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries });
-  const panelBaseIds = baseComponentIds(join(HERE, "src/base-components.ts"));
   const { uiPrimitives, uiDirectives, themeTokens } = buildUiCatalogue();
   const catalogue = check.appsSdkComponentCatalogSchema.parse({
     version,
     components: components.map(({ metadata }) => {
+      if (metadata.panelUsable === false) {
+        throw new Error(
+          `Catalogue component '${metadata.componentId}' cannot declare panelUsable: false; official SDK components must be panel-usable`,
+        );
+      }
       const { declaredProps, ports: templatePorts } = ports.get(`${metadata.module}#${metadata.exportName}`);
-      // Derive panel usability from runtime facts unless explicitly overridden: a component is usable in a registered
-      // panel if it declares projection `data` or is registered in `baseComponents` as a panel template tag.
-      const panelUsable = metadata.panelUsable ?? (metadata.data !== undefined || panelBaseIds.has(metadata.componentId));
       const restMetadata = { ...metadata };
       delete restMetadata.configProps;
-      const resolvedConfig = resolveDeclaredConfig(metadata, declaredProps, { requireDeclaration: panelUsable });
+      const resolvedConfig = resolveDeclaredConfig(metadata, declaredProps, { requireDeclaration: true });
       // A component with no author-facing configuration declares none rather than an empty list.
-      return { ...restMetadata, panelUsable, ...(resolvedConfig?.length ? { config: resolvedConfig } : {}), ports: templatePorts };
+      return { ...restMetadata, panelUsable: true, ...(resolvedConfig?.length ? { config: resolvedConfig } : {}), ports: templatePorts };
     }),
     uiPrimitives,
     uiDirectives,

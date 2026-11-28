@@ -11,15 +11,14 @@ import {
   pageContextLine,
   pageMoved,
   samePageAddress,
-  writtenText,
   type CarriedTarget,
 } from "../page-context";
 import { fileName, linkedArtifacts } from "../artifacts";
-import { historyCursor } from "@ontomato/contracts/session-history";
+import { findFirstVisibleQuestion, readInitialInstruction } from "../initial-instruction";
 import { displayLink, type ConversationDisplay, type DisplayPage } from "../conversation-display";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
-import { userText, type UserItem } from "../view";
+import type { UserItem } from "../view";
 import type {
   ArtifactRendererOverride,
   ConversationInputRun,
@@ -34,11 +33,11 @@ import type {
 } from "../types";
 import { conversationStreamShell, pageSessionStream, sessionRunNotices } from "../session-run-notices";
 import { useAgentConversation } from "../useAgentConversation";
+import ArtifactPreviewCore from "./ArtifactPreviewCore.vue";
 import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
 import ShellNavBody from "./ShellNavBody.vue";
 import ShellPagePane from "./ShellPagePane.vue";
-import ShellSidePanel from "./ShellSidePanel.vue";
 
 /**
  * A conversation application inside the area the platform gives it: its own column, then the conversation with the right
@@ -290,6 +289,12 @@ provide(shellContextKey, {
     get artifactActions() {
       return slots["artifact-actions"];
     },
+    get artifactLink() {
+      return slots["artifact-link"];
+    },
+    get artifact() {
+      return slots.artifact;
+    },
     get messageActions() {
       return slots["message-actions"];
     },
@@ -491,30 +496,17 @@ const linePrompts = () => ({
   state: props.labels.stateContext,
   forms: props.labels.formsContext,
 });
-const firstVisibleQuestion = computed(() => conversation.items.value.find(
-  (item): item is UserItem => item.kind === "user" && !item.answer && !item.queued && Boolean(item.text.trim()),
-));
+const firstVisibleQuestion = computed(() => findFirstVisibleQuestion(conversation.items.value));
 const currentSession = computed(() => nav.currentSession.value ?? conversation.state.session);
-async function initialInstruction() {
-  const id = sessionId.value;
-  if (!id || conversation.state.sessionId !== id) return "";
-  const written = (text: string) =>
-    writtenText(text, { ...linePrompts(), file: props.labels.fileContext, closed: props.labels.pageContextClosed }).trim();
-  if (!conversation.olderCursor.value) return written(firstVisibleQuestion.value?.text ?? "");
-  // A long conversation may have paged its opening instruction out of the visible tail.
-  const tail = conversation.olderCursor.value;
-  let after: string | null = historyCursor(id, 0);
-  while (after && sessionId.value === id) {
-    const page = await props.client.readHistory(id, { after, through: tail });
-    if (sessionId.value !== id) return "";
-    for (const { message } of page.messages) {
-      if (message.role !== "user") continue;
-      const instruction = written(userText(message.content));
-      if (instruction) return instruction;
-    }
-    after = page.page.nextCursor;
-  }
-  return sessionId.value === id ? written(firstVisibleQuestion.value?.text ?? "") : "";
+function initialInstruction() {
+  return readInitialInstruction({
+    client: props.client,
+    labels: () => props.labels,
+    getSessionId: () => sessionId.value,
+    getConversationSessionId: () => conversation.state.sessionId,
+    getOlderCursor: () => conversation.olderCursor.value,
+    getFirstVisibleQuestion: () => firstVisibleQuestion.value,
+  });
 }
 /**
  * What a reopened conversation already carries, read when the shell first sends in it: its history shows the line each
@@ -779,18 +771,14 @@ onMounted(() => {
           <slot name="composer-context" :page-open="pairedPage" :inline="false" :unstarted="unstarted" />
         </template>
       </ShellConversation>
-      <template v-if="inlineArtifacts">
-        <ShellSidePanel
-          v-for="(artifact, index) in artifactTrail"
-          v-show="inlinePreview && artifact.key === openArtifact?.key"
-          :key="artifact.key"
-          :open="artifact"
-          :back="index > 0"
-          inline
-          @close="display.closeArtifact(artifact.key)"
-          @loaded="showArtifactLoad(artifact.key, $event)"
-        />
-      </template>
+      <ArtifactPreviewCore
+        v-if="inlineArtifacts"
+        :trail="artifactTrail"
+        :visible="inlinePreview"
+        inline
+        @close="display.closeArtifact($event)"
+        @loaded="showArtifactLoad"
+      />
     </main>
 
     <ElDrawer v-if="display.page.value && editorTitle" :model-value="true" class="shell-editor-drawer"
@@ -823,17 +811,12 @@ onMounted(() => {
       <slot name="feature" :feature-id="display.page.value.featureId" :view="display.view.value" />
     </ShellPagePane>
 
-    <template v-if="!inlineArtifacts">
-      <ShellSidePanel
-        v-for="(artifact, index) in artifactTrail"
-        v-show="artifact.key === openArtifact?.key"
-        :key="artifact.key"
-        :open="artifact"
-        :back="index > 0"
-        @close="display.closeArtifact(artifact.key)"
-        @loaded="showArtifactLoad(artifact.key, $event)"
-      />
-    </template>
+    <ArtifactPreviewCore
+      v-if="!inlineArtifacts"
+      :trail="artifactTrail"
+      @close="display.closeArtifact($event)"
+      @loaded="showArtifactLoad"
+    />
   </div>
 </template>
 

@@ -5,8 +5,9 @@ import { resolveArtifactRenderer } from "../artifacts";
 import { shellContextKey } from "../context";
 import { defaultArtifactRenderers } from "../renderers";
 import FileRenderer from "../renderers/FileRenderer.vue";
-import type { ArtifactPresentation } from "../types";
+import type { ArtifactPresentation, ArtifactRendererProps, ArtifactSlotScope } from "../types";
 import type { DisplayLoad } from "@ontomato/contracts/agent-presentation";
+import SlotOutlet from "./SlotOutlet.vue";
 
 /** Resolves an outputs/ reference within its run: host override → shell default → file card. */
 const props = defineProps<{
@@ -58,6 +59,33 @@ const renderer = computed(() =>
   resolveArtifactRenderer(props.path, shell.artifactRenderers.value, defaultArtifactRenderers),
 );
 const read = () => shell.readArtifact(resolved.value!);
+const openDetails = () =>
+  shell.openArtifact({ key: `${props.runId}:${props.path}`, artifact: resolved.value!, title: props.title, caption: props.caption });
+const fallbackComponent = computed(() => renderer.value.component ?? FileRenderer);
+const rendererProps = computed<ArtifactRendererProps>(() => ({
+  artifact: resolved.value!,
+  title: props.title,
+  presentation: props.presentation,
+  read,
+  openDetails,
+  continueConversation: shell.continueConversation,
+  fallback: renderer.value.component ? (renderer.value.fallback ?? FileRenderer) : null,
+}));
+const artifactSlotScope = computed<ArtifactSlotScope>(() => ({
+  artifact: resolved.value!,
+  title: props.title,
+  caption: props.caption,
+  presentation: props.presentation,
+  read,
+  openDetails,
+  continueConversation: shell.continueConversation,
+  component: fallbackComponent.value,
+  props: rendererProps.value,
+  fallback: {
+    component: fallbackComponent.value,
+    props: rendererProps.value,
+  },
+}));
 </script>
 
 <template>
@@ -67,16 +95,15 @@ const read = () => shell.readArtifact(resolved.value!);
   <div v-else-if="state !== 'ready' || !resolved" class="artifact-missing">
     {{ shell.labels.value.artifactMissing }} · {{ path }}
   </div>
+  <SlotOutlet
+    v-else-if="shell.slots?.artifact"
+    :content="shell.slots.artifact"
+    :scope="artifactSlotScope"
+  />
   <component
-    :is="renderer.component ?? FileRenderer"
+    :is="fallbackComponent"
     v-else
-    :artifact="resolved"
-    :title="title"
-    :presentation="presentation"
-    :read="read"
-    :open-details="() => shell.openArtifact({ key: `${runId}:${path}`, artifact: resolved!, title, caption })"
-    :continue-conversation="shell.continueConversation"
-    :fallback="renderer.component ? (renderer.fallback ?? FileRenderer) : null"
+    v-bind="rendererProps"
   />
 </template>
 

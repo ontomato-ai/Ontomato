@@ -14,10 +14,13 @@ import {
   type AgentHostClient,
   type PanelChatHost,
 } from "@ontomato/agent-shell-ui";
+import type { AgentArtifactTarget } from "@ontomato/contracts/agent-host";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import en from "../../../workbench-ui/src/locales/en";
 import ConversationEntry from "../../../apps-sdk/src/base/ConversationEntry.vue";
+import AgentArtifactPreview from "../../../apps-sdk/src/chat/AgentArtifactPreview.vue";
 import AgentChat from "../../../apps-sdk/src/chat/AgentChat.vue";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
@@ -91,11 +94,39 @@ function makeClient(agents: AgentHostAgent[]): AgentHostClient {
       },
       pendingQuestions: [],
     })),
-    readRun: vi.fn(),
+    readRun: vi.fn(async (_sessionId: string, runId: string) => ({
+      run: {
+        id: runId,
+        status: "stopped",
+        stopReason: "completed",
+        errorMessage: null,
+        answerMessageId: "answer-1",
+        finishedAt: "2026-11-25T00:00:01Z",
+      },
+      cursor: { seq: 1, streamId: "stream" },
+      messages: [],
+      pendingMessages: [],
+      toolExecutions: [],
+      artifacts: [],
+      pendingQuestions: [],
+      outcome: { result: "complete" },
+    })),
     subscribe: vi.fn(() => () => {}),
     answerQuestion: vi.fn(),
     cancelRun: vi.fn(),
-    readArtifact: vi.fn(),
+    resolveArtifact: vi.fn(async (sessionId: string, runId: string, path: string): Promise<RuntimeArtifact> => ({
+      id: `art-${path}`,
+      sessionId,
+      runId,
+      toolCallId: null,
+      path,
+      sha256: "a".repeat(64),
+      size: 64,
+      mediaType: "text/markdown",
+      createdAt: "2026-11-25T00:00:01Z",
+      seq: 1,
+    })),
+    readArtifact: vi.fn(async () => new Blob(["# Report body"], { type: "text/markdown" })),
     sessionRuns: {
       read: vi.fn(async () => ({ sessions: [] })),
       subscribe: vi.fn(() => () => {}),
@@ -131,18 +162,24 @@ function mountProjectionChat(options: {
   claimComposer?: () => () => void;
   sessionId?: string | null;
   props?: Record<string, unknown>;
+  slots?: Record<string, string | ((...args: any[]) => unknown)>;
+  clientOverrides?: Record<string, unknown>;
   real?: boolean;
   display?: () => ConversationDisplay;
   provide?: Record<symbol, unknown>;
 }) {
-  const client = makeClient(options.agents);
+  const client = { ...makeClient(options.agents), ...options.clientOverrides } as AgentHostClient;
   const outputs = new Map<string, unknown>();
+  const stateOutputs = new Map<string, unknown>();
   const projection = makeProjection(options.target);
   const panelContext = {
     t: (key: string) => key,
     instance: {
       setMemberOutput(_member: string, name: string, value: unknown) {
         outputs.set(name, value);
+      },
+      output(_member: string, name: string, value: unknown) {
+        stateOutputs.set(name, value);
       },
     },
   } as unknown as PanelContext;
@@ -179,10 +216,10 @@ function mountProjectionChat(options: {
   const trigger = (request: Parameters<PageComposerExpand>[0]) => expand(request);
   const wrapper = mount(AgentChat, {
     props: { sessionId: options.sessionId ?? null, ...options.props },
-    slots: {
+    slots: (options.slots ?? {
       "composer-context": "<div data-context />",
       "message-actions": '<template #default="{ runId, outcome }"><div :data-result="runId">{{ outcome?.result }}</div></template>',
-    },
+    }) as any,
     global: {
       plugins: [i18n],
       provide: {
@@ -204,7 +241,7 @@ function mountProjectionChat(options: {
       stubs: options.real ? {} : { AgentChat: stub },
     },
   });
-  return { wrapper, client, outputs, trigger };
+  return { wrapper, client, outputs, stateOutputs, trigger };
 }
 
 describe("AgentChat projection member", () => {
@@ -315,11 +352,12 @@ describe("AgentChat projection member", () => {
     expect(wrapper.emitted("expand")).toHaveLength(2);
     expect(client.createSession).toHaveBeenCalledWith({ agentId: DEPT_AGENT.id, context: { token: ["a", 2] } });
     expect(wrapper.emitted("runComplete")?.[0]).toEqual([
-      { sessionId: "sess-created-1", runId: "run-1", ok: true, outcome: { result: "complete" } },
+      { sessionId: "sess-created-1", runId: "run-1", ok: true, outcome: { result: "complete" }, artifacts: [] },
     ]);
     await wrapper.setProps({ collapsed: false });
     expect(wrapper.getComponent(ShellAgentChat).element).toBe(chat);
-    expect(wrapper.get('[data-result="run-1"]').text()).toBe("complete");
+    expect(wrapper.get('.response-footer .actions [data-result="run-1"]').text()).toBe("complete");
+    expect(wrapper.findAll('[data-result="run-1"]')).toHaveLength(1);
     expect(client.readHistory).not.toHaveBeenCalled();
     await trigger({ target: { kind: "id", id: DEPT_AGENT.id }, prefill: "Draft", newSession: true });
     await flushPromises();
@@ -383,6 +421,147 @@ describe("AgentChat projection member", () => {
     await flushPromises();
     expect(client.listAgents).not.toHaveBeenCalled();
     expect(wrapper.find(".standalone-chat").attributes("data-agent-id")).toBe(DEPT_AGENT.id);
+    wrapper.unmount();
+  });
+
+  it("supports external agentId override, cross-agent session switching without remount, header-actions metadata, and artifact v-model", async () => {
+    const { wrapper, client, stateOutputs } = mountProjectionChat({
+      target: { kind: "id", id: REGULAR_AGENT.id },
+      agents: [REGULAR_AGENT, DEPT_AGENT],
+      real: true,
+      sessionId: "sess-cross",
+      props: { agentId: REGULAR_AGENT.id },
+      clientOverrides: {
+        readHistory: vi.fn(async (id: string) => ({
+          session: { id, agentId: DEPT_AGENT.id, title: "Dept Q&A", origin: "user" },
+          page: { messageSeq: 2, olderCursor: null },
+          runs: [{
+            id: "run-hist",
+            status: "stopped",
+            stopReason: "completed",
+            errorMessage: null,
+            answerMessageId: "m2",
+            finishedAt: "2026-11-25T00:00:01Z",
+          }],
+          messages: [
+            { id: "m1", runId: "run-hist", messageSeq: 1, contextSeq: 1, message: { role: "user", content: "Initial prompt", timestamp: 1 } },
+            { id: "m2", runId: "run-hist", messageSeq: 2, contextSeq: 2, message: { role: "assistant", content: [{ type: "text", text: "See [Summary](outputs/summary.md)" }], timestamp: 2 } },
+          ],
+          pendingQuestions: [],
+          notifications: [],
+          latestRun: null,
+        })),
+      },
+      slots: {
+        "header-actions": (scope: { sessionId: string | null; agentId: string | null; title: string; hasInitialInstruction: boolean }) =>
+          h("span", { class: "header-meta" }, `${scope.sessionId}|${scope.agentId}|${scope.title}|${scope.hasInitialInstruction}`),
+        "message-actions": (scope: Record<string, unknown>) =>
+          h("span", { class: "panel-msg-action" }, `${scope.sessionId}|${scope.runId}|${scope.messageId}|${scope.text}|${scope.workspaceCommit}|${(scope.outcome as { commit?: string } | undefined)?.commit}`),
+      },
+    });
+    await flushPromises();
+
+    // Cross-agent history switches active agentId without destroying ShellAgentChat.
+    const innerEl = wrapper.getComponent(ShellAgentChat).element;
+    expect(wrapper.emitted("update:agentId")?.at(-1)).toEqual([DEPT_AGENT.id]);
+    expect(stateOutputs.get("agentId")).toBe(DEPT_AGENT.id);
+    expect(wrapper.getComponent(ShellAgentChat).props("agentId")).toBe(DEPT_AGENT.id);
+    expect(wrapper.getComponent(ShellAgentChat).element).toBe(innerEl);
+    expect(wrapper.get(".header-meta").text()).toBe(`sess-cross|${DEPT_AGENT.id}|Dept Q&A|true`);
+    expect(wrapper.get(".response-footer .actions .panel-msg-action").text()).toBe(
+      "sess-cross|run-hist|m2|See [Summary](outputs/summary.md)|null|undefined",
+    );
+    expect(await (wrapper.vm as unknown as { initialInstruction: () => Promise<string> }).initialInstruction()).toBe("Initial prompt");
+
+    // Clicking an artifact card emits update:artifact and writes panel artifact state.
+    await vi.waitFor(() => expect(wrapper.find(".artifact-card").exists()).toBe(true));
+    await vi.waitFor(() => expect((wrapper.get(".artifact-card").element as HTMLButtonElement).disabled).toBe(false));
+    await wrapper.get(".artifact-card").trigger("click");
+    const expectedTarget: AgentArtifactTarget = {
+      sessionId: "sess-cross",
+      runId: "run-hist",
+      path: "outputs/summary.md",
+      title: "Summary",
+    };
+    expect(wrapper.emitted("update:artifact")?.at(-1)).toEqual([expectedTarget]);
+    expect(stateOutputs.get("artifact")).toEqual(expectedTarget);
+
+    // Subsequent send in this cross-agent session targets the switched agent (DEPT_AGENT), not the initial REGULAR_AGENT.
+    await wrapper.get("textarea").setValue("Follow-up question");
+    await wrapper.get("textarea").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+    expect(client.send).toHaveBeenCalledWith("sess-cross", { message: "Follow-up question" });
+    expect(wrapper.getComponent(ShellAgentChat).props("agentId")).toBe(DEPT_AGENT.id);
+    wrapper.unmount();
+
+    // External agentId prop overrides declared target before any session exists.
+    const overridden = mountProjectionChat({
+      target: { kind: "id", id: REGULAR_AGENT.id },
+      agents: [REGULAR_AGENT, DEPT_AGENT],
+      real: true,
+      props: { agentId: DEPT_AGENT.id },
+    });
+    await flushPromises();
+    expect(overridden.wrapper.getComponent(ShellAgentChat).props("agentId")).toBe(DEPT_AGENT.id);
+    await overridden.wrapper.get("textarea").setValue("Start with override");
+    await overridden.wrapper.get("textarea").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+    expect(overridden.client.createSession).toHaveBeenCalledWith(DEPT_AGENT.id);
+    overridden.wrapper.unmount();
+  });
+
+  it("mounts AgentArtifactPreview in projection mode using panelChatHostKey and writes artifact state on close", async () => {
+    const client = makeClient([DEPT_AGENT]);
+    const stateOutputs = new Map<string, unknown>();
+    const projection: ProductProjection = {
+      ...makeProjection({ kind: "id", id: DEPT_AGENT.id }),
+      componentId: "@ontomato/sdk:AgentArtifactPreview",
+      inputs: { artifact: { kind: "json" } },
+      outputs: { artifact: { kind: "json" } },
+      conversationEntry: undefined,
+    };
+    const member = {
+      key: "preview",
+      scoped: false,
+      projection,
+      data: { get: () => ({ status: "ready", value: {} }) },
+      inputs: { get: () => undefined },
+      operations: {},
+    } as unknown as PanelMemberContext;
+    const panelContext = {
+      t: (key: string) => key,
+      instance: {
+        output(_member: string, name: string, value: unknown) {
+          stateOutputs.set(name, value);
+        },
+      },
+    } as unknown as PanelContext;
+
+    const target: AgentArtifactTarget = {
+      sessionId: "sess-1",
+      runId: "run-1",
+      path: "outputs/summary.md",
+      title: "Summary",
+    };
+    const wrapper = mount(AgentArtifactPreview, {
+      props: { artifact: target, inline: true },
+      global: {
+        plugins: [i18n],
+        provide: {
+          [panelContextKey as symbol]: panelContext,
+          [projectionKey as symbol]: { slot: "preview", projection },
+          [panelMemberKey as symbol]: () => member,
+          [panelChatHostKey as symbol]: { client: () => client } satisfies PanelChatHost,
+        },
+      },
+    });
+    await flushPromises();
+    await vi.waitFor(() => expect(wrapper.find(".panel-title").text()).toBe("Summary"));
+    expect(client.resolveArtifact).toHaveBeenCalledWith("sess-1", "run-1", "outputs/summary.md");
+
+    await wrapper.get('button[aria-label="Close"]').trigger("click");
+    expect(wrapper.emitted("update:artifact")?.at(-1)).toEqual([null]);
+    expect(stateOutputs.get("artifact")).toBeNull();
     wrapper.unmount();
   });
 });

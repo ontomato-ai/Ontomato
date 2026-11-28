@@ -78,7 +78,6 @@ vi.mock("../../app-builder/sdk", () => ({
           exportName: "WildcardBox",
           role: "presentation",
           group: "layout",
-          panelUsable: false,
           meaning: "Accepts any datum name.",
           data: {
             "*": { results: ["panelRecord"], required: false },
@@ -151,7 +150,6 @@ beforeAll(() => {
           "panels.sdkComponent.group.layout": "布局",
           "panels.sdkComponent.panelUsable": "使用范围",
           "panels.sdkComponent.panelUsableYes": "面板可用",
-          "panels.sdkComponent.panelUsableShellOnly": "仅平台外壳",
           "panels.sdkComponent.yes": "是",
           "panels.sdkComponent.no": "否",
           "panels.sdkComponent.wildcard": "任意名称",
@@ -274,8 +272,8 @@ it("lists components in canonical purpose group order with summary attributes an
     },
     {
       primaryKey: "@ontomato/sdk:WildcardBox",
-      fields: { package: "@ontomato/sdk", role: "展示组件", panelUsable: "仅平台外壳", group: "布局" },
-      tones: { role: "default", panelUsable: "default" },
+      fields: { package: "@ontomato/sdk", role: "展示组件", panelUsable: "面板可用", group: "布局" },
+      tones: { role: "default", panelUsable: "success" },
     },
     {
       primaryKey: "@acme/widgets:ActionCard",
@@ -291,8 +289,8 @@ it("lists components in canonical purpose group order with summary attributes an
   const byGroupLabel = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }, "图谱"));
   expect(byGroupLabel.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:ObjectRelations"]);
 
-  const byAvailability = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }, "仅平台外壳"));
-  expect(byAvailability.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:WildcardBox"]);
+  const byAvailability = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }, "面板可用"));
+  expect(byAvailability).toHaveLength(4);
 
   const byMeaning = panelRecordListSchema.parse(await listSdkComponents(owner, { locale: "zh-CN" }, "records"));
   expect(byMeaning.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:SampleList"]);
