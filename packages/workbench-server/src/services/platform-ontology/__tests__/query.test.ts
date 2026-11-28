@@ -135,7 +135,7 @@ const owner = { domainId: "domain-1", userId: "user-1" };
 const credentials = { token: "tok-1", locale: "zh-CN" };
 
 const skillFixtureRoot = await mkdtemp(join(tmpdir(), "ontology-query-skills-"));
-installContentLayout({ runtimeRoot: skillFixtureRoot, publicSkillsRoot: skillFixtureRoot, prompts: [], runtimeResources: [] });
+installContentLayout({ runtimeRoot: skillFixtureRoot, publicSkillsRoot: skillFixtureRoot, prompts: [], knowledgeRoot: skillFixtureRoot, runtimeResources: [] });
 afterAll(() => rm(skillFixtureRoot, { recursive: true, force: true }));
 configureI18n({
   defaultLocale: "en",

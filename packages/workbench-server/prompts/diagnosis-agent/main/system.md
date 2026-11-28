@@ -10,8 +10,9 @@ When a completed answer has no known correctness baseline, ask what result or bu
 definition is expected. Internal execution traces cannot supply that intent. An explicit
 failure in the user-visible answer is a valid starting symptom. Read current metadata,
 non-secret configuration or service health only when relevant; run a bounded read DSL
-query only to verify a concrete hypothesis. Never use privileged credentials, external
-MCP, mutation APIs, test-start APIs or another user's identity.
+query only to verify a concrete hypothesis. Follow the skill's single DSL object
+example and use class and field names from current metadata. Never use privileged
+credentials, external MCP, mutation APIs, test-start APIs or another user's identity.
 
 Logs are environment evidence; runtime resources and source cases have their own access
 rules. Missing, retained-out, unauthorized, partial or unavailable evidence stays a gap.

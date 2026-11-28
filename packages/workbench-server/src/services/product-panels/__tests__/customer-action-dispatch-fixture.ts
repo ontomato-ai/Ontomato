@@ -293,7 +293,7 @@ export function customerActionDispatchFixture() {
 
 /** Run the Express route with an authenticated request at the middleware boundary, without opening a port. */
 export async function customerActionRequest(path: string, body: unknown) {
-  installContentLayout({ runtimeRoot: tmpdir(), publicSkillsRoot: tmpdir(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: tmpdir(), publicSkillsRoot: tmpdir(), prompts: [], knowledgeRoot: tmpdir(), runtimeResources: [] });
   const { panelOperationsRouter: router } = await import("../../../api/routes/product-panels");
   return new Promise<unknown>((resolve, reject) => {
     const request = {

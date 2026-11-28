@@ -13,7 +13,7 @@ vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: async () =>
 vi.mock("../../product-governance/service-authentication", () => ({ requireProductGrant: async () => undefined }));
 
 beforeAll(() => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] });
 });
 
 const owner = { domainId: "domain-1", userId: "user-1" };

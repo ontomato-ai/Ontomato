@@ -36,6 +36,7 @@ installContentLayout({
   runtimeRoot: os.tmpdir(),
   prompts: [],
   publicSkillsRoot: path.join(os.tmpdir(), "no-public-skills"),
+  knowledgeRoot: os.tmpdir(),
   runtimeResources: [],
 });
 

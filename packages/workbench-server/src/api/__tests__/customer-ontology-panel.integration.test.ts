@@ -148,7 +148,7 @@ beforeAll(async () => {
   await ensureProductPanelsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "customer-ontology-panel-"));
   await writeBundledAppSdkFixture(contentRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], knowledgeRoot: contentRoot, runtimeResources: [] });
 
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();

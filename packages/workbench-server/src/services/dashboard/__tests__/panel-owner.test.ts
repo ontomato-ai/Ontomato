@@ -86,6 +86,7 @@ beforeAll(async () => {
     runtimeRoot: process.cwd(),
     publicSkillsRoot: path.resolve("skills"),
     prompts: [],
+    knowledgeRoot: process.cwd(),
     runtimeResources: [],
   });
   configureI18n({

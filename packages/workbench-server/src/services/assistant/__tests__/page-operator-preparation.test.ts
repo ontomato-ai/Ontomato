@@ -29,6 +29,7 @@ installContentLayout({
   runtimeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "page-operator-prepare-runtime-")),
   prompts: [],
   publicSkillsRoot: fs.mkdtempSync(path.join(os.tmpdir(), "page-operator-prepare-public-")),
+  knowledgeRoot: process.cwd(),
   runtimeResources: [],
 });
 const { prepareAssistantSkills, validateAssistantSkills, validateCurrentPageContext } = await import("../skills");

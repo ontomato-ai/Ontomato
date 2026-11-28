@@ -45,7 +45,7 @@ configureI18n({
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-ops-"));
 const publicSkillsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-ops-pub-"));
-installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot });
+installContentLayout({ runtimeRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [], publicSkillsRoot });
 
 const { skillServerOperations, skillExportOperation } = await import("../panel-operations");
 const deleteOp = skillServerOperations.find((op): op is Extract<typeof op, { targetInput: string }> => op.handlerRef === DELETE_SKILL)!;

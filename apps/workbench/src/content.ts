@@ -10,9 +10,9 @@ export function ossContentLayout(runtimeRoot: string): ContentLayout {
     runtimeRoot,
     prompts: [{ from: shared("prompts"), to: "." }],
     publicSkillsRoot: shared("skills"),
+    knowledgeRoot: shared("data", "knowledge"),
     runtimeResources: [
       { from: shared("data", "echart"), to: "echart" },
-      { from: shared("data", "knowledge"), to: "knowledge" },
     ],
   };
 }

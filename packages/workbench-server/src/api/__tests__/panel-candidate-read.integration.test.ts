@@ -47,7 +47,7 @@ beforeAll(async () => {
   await ensureProductPanelsSchema(state.pool);
   root = await mkdtemp(join(tmpdir(), "candidate-panel-read-"));
   await writeBundledAppSdkFixture(root);
-  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [] });
 
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();

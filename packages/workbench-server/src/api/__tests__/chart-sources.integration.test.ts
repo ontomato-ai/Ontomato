@@ -94,7 +94,7 @@ beforeAll(async () => {
 
   root = await mkdtemp(join(tmpdir(), "chart-sources-"));
   await writeBundledAppSdkFixture(root);
-  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [] });
   const { default: dashboardsRouter } = await import("../routes/dashboards");
   const { createChartProjectionsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
