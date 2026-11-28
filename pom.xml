@@ -169,6 +169,7 @@
                                 <include>**/SandboxSampleInputTest.java</include>
                                 <include>**/SandboxConnectionBindingTest.java</include>
                                 <include>**/JacksonAgentBoundaryTest.java</include>
+                                <include>**/DslReferenceBoundaryTest.java</include>
                                 <include>**/LiveInstanceGraphPermissionsTest.java</include>
                                 <include>**/WriteWhereBoundaryTest.java</include>
                                 <include>**/ActionFunctionAdmissionTest.java</include>

@@ -34,8 +34,6 @@ public class DslRuleUtil {
     }
 
     public static String generateDslRule(JSONObject subQuery, Map<String, Object> jsonRule) {
-        List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
-
         Set<String> types = new HashSet<String>();
         // relationship rule
         if (subQuery.containsKey("DSL_relationship") && subQuery.getBoolean("DSL_relationship")) {
@@ -61,35 +59,36 @@ public class DslRuleUtil {
             types.add("cStep_save_table");
             types.add("cStep_other");
         }
-        JSONArray classes = subQuery.getJSONArray("classes");
-        for (int i = 0; i < classes.size(); i++) {
-            String className = classes.getString(i).trim();
-            if (!className.startsWith("/")) {
-                className = "/" + className;
-            }
-            if (className.endsWith("/")) {
-                className = className.substring(0, className.length() - 1);
-            }
-            for (Map<String, Object> classDef : classDefs) {
-                if (className.equals(classDef.get("className"))) {
-                    List<Map<String, String>> attrs = (List<Map<String, String>>)classDef.get("attrs");
-                    for (Map<String, String> attr : attrs) {
-                        if ("text".equals(attr.get("type"))) {
-                            types.add("text");
-                        } else if ("bucket".equals(attr.get("type"))) {
-                            types.add("timeseries");
-                        } else if ("vector".equals(attr.get("type"))) {
-                            types.add("vector");
-                        }
-                    }
-                    break;
-                }
-            }
-        }
+        types.addAll(selectedAttributeRuleTypes(subQuery.getJSONArray("classes"), jsonRule));
 
         return assembleDslRule(types);
     }
-    
+
+    @SuppressWarnings("unchecked")
+    private static Set<String> selectedAttributeRuleTypes(JSONArray classes, Map<String, Object> jsonRule) {
+        List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
+        Set<String> types = new HashSet<>();
+        for (String requested : classes.toJavaList(String.class)) {
+            String className = DBSchemaUtil.normalizeClassName(requested.trim(), classDefs);
+            for (var classDef : classDefs) {
+                if (!className.equals(classDef.get("className"))) {
+                    continue;
+                }
+                var attrs = (List<Map<String, Object>>) classDef.get("attrs");
+                for (var attr : attrs) {
+                    Object type = attr.get("type");
+                    if ("bucket".equals(type)) {
+                        types.add("timeseries");
+                    } else if ("text".equals(type) || "vector".equals(type)) {
+                        types.add((String) type);
+                    }
+                }
+                break;
+            }
+        }
+        return types;
+    }
+
     public static String generateWholeDslRule(Map<String, Object> jsonRule) {
         Set<String> types = new HashSet<String>();
         // relationship rule
@@ -126,38 +125,13 @@ public class DslRuleUtil {
     }
     
     public static String generateDslExample(JSONObject subQuery, Map<String, Object> jsonRule) {
-        List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
-
         boolean cStepFlag = subQuery.containsKey("C_Step") && !"".equals(subQuery.getString("C_Step").trim());
         JSONArray classes = subQuery.getJSONArray("classes");
         boolean relationshipFlag = classes.size() > 1;
-        boolean textFlag = false;
-        boolean vectorFlag = false;
-        boolean timeseriesFlag = false;
-        for (int i = 0; i < classes.size(); i++) {
-            String className = classes.getString(i).trim();
-            if (!className.startsWith("/")) {
-                className = "/" + className;
-            }
-            if (className.endsWith("/")) {
-                className = className.substring(0, className.length() - 1);
-            }
-            for (Map<String, Object> classDef : classDefs) {
-                if (className.equals(classDef.get("className"))) {
-                    List<Map<String, String>> attrs = (List<Map<String, String>>)classDef.get("attrs");
-                    for (Map<String, String> attr : attrs) {
-                        if ("text".equals(attr.get("type"))) {
-                            textFlag = true;
-                        } else if ("bucket".equals(attr.get("type"))) {
-                            timeseriesFlag = true;
-                        } else if ("vector".equals(attr.get("type"))) {
-                            vectorFlag = true;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
+        Set<String> attributeTypes = selectedAttributeRuleTypes(classes, jsonRule);
+        boolean textFlag = attributeTypes.contains("text");
+        boolean vectorFlag = attributeTypes.contains("vector");
+        boolean timeseriesFlag = attributeTypes.contains("timeseries");
 
         JSONObject dsl = new JSONObject();
         dsl.put("problem", "xxxxxxxxxx...");
