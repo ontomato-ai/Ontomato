@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { expect, it, vi } from "vitest";
 import ReportActions from "../components/ReportActions.vue";
 
@@ -11,14 +11,15 @@ vi.mock("element-plus", async importOriginal => {
 });
 vi.mock("lucide-vue-next", () => {
   const icon = { template: "<i />" };
-  return { Download: icon, ImagePlus: icon, LayoutDashboard: icon, Loader2: icon, Presentation: icon };
+  return { ChevronDown: icon, Download: icon, ImagePlus: icon, LayoutDashboard: icon, Loader2: icon, Presentation: icon };
 });
 
-it("opens with legacy-inspired editable Chinese presentation guidance and a reset action", async () => {
+it("keeps the draft available after the host refuses the PPT request", async () => {
+  const requestPpt = vi.fn().mockRejectedValueOnce(new Error("network")).mockResolvedValueOnce(undefined);
   const wrapper = mount(ReportActions, {
     props: {
       artifact: { id: "artifact", path: "outputs/report.md", runId: "run", sessionId: "session", mediaType: "text/markdown", size: 12, sha256: "a".repeat(64), createdAt: "2026-01-01T00:00:00Z", toolCallId: null, seq: 1 },
-      title: "Report", canGeneratePpt: true, requestPpt: vi.fn(),
+      title: "Report", canGeneratePpt: true, requestPpt,
     },
     global: { stubs: {
       ElDialog: { template: '<div v-if="modelValue"><slot /><slot name="footer" /></div>', props: ["modelValue"] },
@@ -31,9 +32,17 @@ it("opens with legacy-inspired editable Chinese presentation guidance and a rese
     } },
   });
   await wrapper.get('button[aria-label="生成 PPT"]').trigger("click");
-  const prompt = wrapper.get('textarea[aria-label="自定义提示词"]');
-  expect((prompt.element as HTMLTextAreaElement).value).toContain("每页只讲一个观点");
-  await wrapper.findAll("button").find(button => button.text().includes("恢复默认"))!.trigger("click");
-  expect(wrapper.text()).toContain("上传图片");
-  expect(wrapper.text()).toContain("恢复默认");
+  const more = wrapper.get("button[aria-expanded]");
+  expect(more.attributes("aria-expanded")).toBe("false");
+  await more.trigger("click");
+  expect(more.attributes("aria-expanded")).toBe("true");
+  const submit = () => wrapper.findAll("button").at(-1)!.trigger("click");
+  await submit();
+  await flushPromises();
+  expect(wrapper.find('[role="alert"]').exists()).toBe(true);
+  expect(more.attributes("aria-expanded")).toBe("true");
+  await submit();
+  await flushPromises();
+  expect(requestPpt.mock.calls[1]).toEqual(requestPpt.mock.calls[0]);
+  expect(wrapper.find("button[aria-expanded]").exists()).toBe(false);
 });

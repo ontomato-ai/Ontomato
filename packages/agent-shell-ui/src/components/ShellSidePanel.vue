@@ -43,7 +43,7 @@ async function download() {
         <span class="panel-title" :title="title">{{ title }}</span>
       </span>
       <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title, caption: open.caption }" />
-      <button type="button" class="panel-button panel-download-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
+      <button v-if="!/\.pptx$/i.test(open.artifact.path)" type="button" class="panel-button panel-download-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
         <span class="panel-download-label">{{ shell.labels.value.download }}</span>
       </button>

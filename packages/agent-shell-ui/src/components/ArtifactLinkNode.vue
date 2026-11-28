@@ -4,6 +4,7 @@ import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
 import { plainText, type InlineMarkdownNode } from "../artifacts";
 import { messageContextKey, shellContextKey } from "../context";
 import ArtifactCard from "./ArtifactCard.vue";
+import PptArtifactCard from "./PptArtifactCard.vue";
 
 /** markstream link node: outputs/ files become side-panel cards; web links stay links. */
 const props = defineProps<{
@@ -19,6 +20,14 @@ const safeHref = computed(() => (/^(https?:|mailto:)/i.test(props.node.href) ? p
 
 <template>
   <span v-if="node.loading" class="link-pending">{{ node.text }}</span>
+  <span v-else-if="path && shell.inlineArtifactAlreadyShown?.(message.runId, path)">{{ label }}</span>
+  <PptArtifactCard
+    v-else-if="path && /\.pptx$/i.test(path)"
+    :key="message.runId + ':' + path"
+    :run-id="message.runId"
+    :path="path"
+    :title="label"
+  />
   <ArtifactCard
     v-else-if="path"
     :key="`${message.runId}:${path}`"

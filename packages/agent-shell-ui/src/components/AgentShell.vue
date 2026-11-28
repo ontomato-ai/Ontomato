@@ -22,6 +22,7 @@ import type { AgentNav } from "../useAgentNav";
 import { userText, type UserItem } from "../view";
 import type {
   ArtifactRendererOverride,
+  ConversationInputRun,
   OpenArtifact,
   ShellBottomEntry,
   ShellFeedbackPort,
@@ -78,6 +79,9 @@ const props = withDefaults(
     artifactRenderers?: readonly ArtifactRendererOverride[];
     /** A host-selected artifact that should be reachable before the reader opens a message card. */
     primaryArtifactPath?: (path: string) => boolean;
+    /** Inputs the host renders through the input slot instead of the normal message bubble. */
+    customInput?: (text: string) => boolean;
+    inlineArtifactAlreadyShown?: ShellContext["inlineArtifactAlreadyShown"];
     toolRenderers?: readonly ToolRendererOverride[];
     /** What is shown beside the conversation: the one controller this shell's gestures and the host's address go through. */
     display: ConversationDisplay;
@@ -209,6 +213,7 @@ async function closeEditor() {
 const artifactTrail = display.artifacts;
 const openArtifact = computed(() => artifactTrail.value.at(-1) ?? null);
 const previewSelected = ref(false);
+const revealLatestInput = ref(0);
 const historyCollapsed = ref(false);
 watch([sessionId, () => props.historyPageSelected], ([id, featureSelected]) => {
   if (id || featureSelected) historyCollapsed.value = true;
@@ -290,6 +295,7 @@ provide(shellContextKey, {
     },
   },
   resolveArtifact: conversation.resolveArtifact,
+  inlineArtifactAlreadyShown: (runId, path) => props.inlineArtifactAlreadyShown?.(runId, path) ?? false,
   artifactRevision: conversation.artifactRevision,
   readArtifact: (artifact) => props.client.readArtifact(artifact),
   tasks: props.client.tasks,
@@ -523,9 +529,12 @@ function carried(): CarriedTarget {
   return carriedTargetIn(texts, { ...linePrompts(), file: props.labels.fileContext, closed: props.labels.pageContextClosed });
 }
 
-async function send(input: string) {
+async function send(input: string, requireNewRun = false) {
   const agent = agentId.value;
-  if (!agent) return;
+  if (!agent) {
+    if (requireNewRun) throw new Error(props.labels.working);
+    return;
+  }
   const page = pairedPage.value ? display.pageContext.value : null;
   const initialPage = page === null ? undefined : display.pageSnapshot(page);
   const shown = display.target.value;
@@ -545,6 +554,9 @@ async function send(input: string) {
       : closes ? props.labels.pageContextClosed : "";
   const text = line ? `${input}\n\n${line}` : input;
   const result = await conversation.send(agent, text, { initialPage });
+  if (requireNewRun && result?.delivery?.delivery !== "run") {
+    throw new Error(conversation.sendError.value ?? props.labels.working);
+  }
   if (!result) return;
   // Only a message the host accepted moved the conversation's page; a refused one carries it again next time. It went to
   // the conversation this send started, or to the one it was written in.
@@ -603,10 +615,23 @@ async function requestArtifactAction(message: string) {
   if (!canRequestArtifactAction.value) {
     throw new Error(props.labels.working);
   }
-  previewSelected.value = false;
-  await send(message);
+  const session = sessionId.value;
+  await send(message, true);
+  if (sessionId.value === session) {
+    previewSelected.value = false;
+    revealLatestInput.value++;
+  }
 }
 const canRequestArtifactAction = computed(() => Boolean(sessionId.value && !conversation.busy.value && !conversation.sending.value));
+
+function inputRun(inputId: string | null): ConversationInputRun | null {
+  const id = inputId ? conversation.state.messages[inputId]?.runId : null;
+  return id ? conversation.state.runs[id] ?? null : null;
+}
+
+function inputPreparationFailed(inputId: string | null) {
+  return conversation.tasks.value?.preparationFailures?.some(failure => failure.inputId === inputId) ?? false;
+}
 
 function showHistory() {
   historyCollapsed.value = false;
@@ -733,15 +758,20 @@ onMounted(() => {
         :history-revision="conversation.historyRevision.value"
         :send-error="conversation.sendError.value"
         :pending-input="conversation.pendingInput.value"
+        :reveal-latest-input="revealLatestInput"
+        :custom-input="slots.input ? customInput : undefined"
         :busy="conversation.busy.value"
         :sending="conversation.sending.value"
         :entry="entry"
         :feedback="feedback"
-        @send="send"
+        @send="send($event)"
         @stop="conversation.cancel"
         @retry="conversation.open(sessionId)"
         @load-older="conversation.loadOlder"
       >
+        <template v-if="slots.input" #input="scope">
+          <slot name="input" v-bind="scope" :run="inputRun(scope.inputId)" :preparation-failed="inputPreparationFailed(scope.inputId)" />
+        </template>
         <template v-if="slots.welcome" #welcome="scope">
           <slot name="welcome" v-bind="scope" />
         </template>

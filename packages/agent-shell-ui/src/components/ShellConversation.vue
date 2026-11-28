@@ -25,6 +25,8 @@ const props = defineProps<{
   historyRevision: number;
   sendError: string | null;
   pendingInput: string | null;
+  revealLatestInput?: number;
+  customInput?: (text: string) => boolean;
   busy: boolean;
   /** A panel's conversation entry for the composer here; see ShellComposer. */
   entry?: ComposerEntry | null;
@@ -193,6 +195,12 @@ watch(lastUserKey, (key, previous) => {
   if (pinned.value && key !== null && key !== previous) pin();
 }, { flush: "post" });
 
+watch(() => props.revealLatestInput, async () => {
+  pinned.value = true;
+  await nextTick();
+  pin();
+}, { flush: "post" });
+
 /** A message sent while nothing runs starts a turn and takes the top; one sent into a running reply joins its process. */
 function expandFromComposer(event: MouseEvent) {
   if (props.collapsed && event.target instanceof HTMLElement && !event.target.closest("button")) emit("expand");
@@ -255,10 +263,11 @@ async function send(text: string) {
           </div>
           <template v-for="item in items" :key="item.key">
             <div v-if="item.kind === 'user'" class="user-turn" :class="{ queued: item.queued }" :data-pin="item.key === pinTarget || undefined">
-              <div class="user-bubble">
-                <QuestionAnswer v-if="item.answer" :text="written(item.text)" :question="item.question" />
-                <template v-else>{{ written(item.text) }}</template>
+              <div v-if="item.answer" class="user-bubble">
+                <QuestionAnswer :text="written(item.text)" :question="item.question" />
               </div>
+              <slot v-else-if="customInput?.(written(item.text))" name="input" :input-id="item.key" :text="written(item.text)" :queued="Boolean(item.queued)" />
+              <div v-else class="user-bubble">{{ written(item.text) }}</div>
               <div v-if="item.queued" class="user-queued" role="status" aria-live="polite">
                 <Clock :size="12" aria-hidden="true" />
                 <span>{{ labels.queuedWaiting }}</span>
@@ -271,7 +280,8 @@ async function send(text: string) {
             </template>
           </template>
           <div v-if="pendingInput !== null" class="user-turn" :data-pin="pinTarget === PENDING || undefined">
-            <div class="user-bubble pending">{{ written(pendingInput) }}</div>
+            <slot v-if="customInput?.(written(pendingInput))" name="input" :input-id="null" :text="written(pendingInput)" :queued="false" />
+            <div v-else class="user-bubble pending">{{ written(pendingInput) }}</div>
           </div>
           <div v-if="waiting" class="waiting" aria-live="polite" :aria-label="labels.working">
             <span class="dot" /><span class="dot" /><span class="dot" />

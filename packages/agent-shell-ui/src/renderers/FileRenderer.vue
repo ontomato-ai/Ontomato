@@ -1,37 +1,31 @@
 <script setup lang="ts">
-import { inject, ref } from "vue";
-import { Download, FileText } from "lucide-vue-next";
-import { fileKind, fileName, formatSize, saveBlob } from "../artifacts";
+import { computed, inject } from "vue";
+import { Download, FileText, Presentation } from "lucide-vue-next";
+import { fileKind, fileName, formatSize } from "../artifacts";
 import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
+import { useArtifactDownload } from "../useArtifactDownload";
 
 /** Fallback for extensions without a registered renderer: name, size and download. */
 const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
-const saving = ref(false);
-
-async function download() {
-  saving.value = true;
-  try {
-    saveBlob(await props.read(), fileName(props.artifact.path));
-  } finally {
-    saving.value = false;
-  }
-}
+const ppt = computed(() => fileKind(props.artifact.path) === "pptx");
+const { saving, failed, download } = useArtifactDownload(() => props.read());
 </script>
 
 <template>
   <div class="file-artifact">
-    <span class="file-icon"><FileText :size="18" /></span>
+    <span class="file-icon"><Presentation v-if="ppt" :size="18" /><FileText v-else :size="18" /></span>
     <span class="file-text">
       <span class="file-title">{{ title || fileName(artifact.path) }}</span>
       <span class="file-meta">{{ fileKind(artifact.path).toUpperCase() }} · {{ formatSize(artifact.size) }}</span>
     </span>
-    <button type="button" class="file-download" :disabled="saving" @click="download">
+    <button type="button" class="file-download" :disabled="saving" :aria-busy="saving" @click="download(artifact)">
       <Download :size="15" />
-      <span>{{ shell.labels.value.download }}</span>
+      <span>{{ saving ? shell.labels.value.loading : (ppt ? shell.labels.value.downloadPptx : undefined) ?? shell.labels.value.download }}</span>
     </button>
   </div>
+  <p v-if="failed" class="file-error" role="alert">{{ shell.labels.value.downloadFailed ?? shell.labels.value.loadFailed }}</p>
 </template>
 
 <style scoped>
@@ -87,6 +81,7 @@ async function download() {
 .file-download:hover {
   background: var(--el-fill-color);
 }
+.file-error { color: var(--el-color-danger); font-size: var(--text-sm, 13px); }
 .file-download:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;

@@ -412,3 +412,16 @@ it("continues the existing conversation from a report action with its file conte
   expect(createSession).not.toHaveBeenCalled();
   expect(sent).toEqual(["Generate PPT\n\nCurrent file: Report (outputs/reports/test/report.md)"]);
 });
+
+it("reports a rejected report action to its caller and keeps the source report visible", async () => {
+  const { root, send, shell, display } = render({ agentId, messages: [] }, page, false, true);
+  await settle();
+  await display.openArtifact({
+    key: "report", artifact: { id: "report", runId, path: "outputs/reports/test/report.md" } as never, title: "Report",
+  });
+  await settle();
+  send.mockRejectedValueOnce(new Error("admission refused"));
+  await expect(shell.value!.requestArtifactAction("Generate PPT")).rejects.toThrow("admission refused");
+  const panel = root.querySelector<HTMLElement>(".side-panel")!;
+  expect(panel.style.display).not.toBe("none");
+});
