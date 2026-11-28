@@ -30,7 +30,7 @@ export interface ListFeedbackOptions {
   all?: boolean;
   /** The request's language for the record labels and the filter choices. */
   locale?: string;
-  viewer?: AssistantCredentials;
+  viewer: AssistantCredentials;
 }
 
 /**
@@ -120,7 +120,7 @@ export async function listFeedback(
       updatedAt: new Date(row.updated_at).getTime(),
     });
   }
-  if (o.viewer && records.length > 0) {
+  if (records.length > 0) {
     const ids = [...new Set(records.map(record => record.userId))];
     const names = new Map(
       (await readPrincipalDirectory(o.viewer, { kind: "member", ids })).options

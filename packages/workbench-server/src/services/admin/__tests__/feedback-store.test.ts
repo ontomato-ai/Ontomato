@@ -2,11 +2,12 @@ import { beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
-const { query } = vi.hoisted(() => ({ query: vi.fn() }));
+const { query, principalDirectory } = vi.hoisted(() => ({ query: vi.fn(), principalDirectory: vi.fn() }));
 vi.mock("../../../infrastructure/postgres", () => ({
   getPostgresPool: () => ({ query }),
   qualifiedTable: (name: string) => name,
 }));
+vi.mock("../../identity/principal-directory", () => ({ readPrincipalDirectory: principalDirectory }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: class {
     async run() {
@@ -40,7 +41,11 @@ it("is empty when the record names no turn", () => {
   expect(feedbackTurnKey({ targetId: "target", threadId: thread })).toBe("");
 });
 
-beforeEach(() => query.mockReset());
+beforeEach(() => {
+  query.mockReset();
+  principalDirectory.mockReset();
+  principalDirectory.mockResolvedValue({ options: [] });
+});
 
 function row() {
   return {
@@ -62,7 +67,7 @@ function row() {
 it("reads every record unpaged and takes turnKey from the joined turn", async () => {
   query.mockResolvedValue({ rows: [row()] });
 
-  const page = await listFeedback({ domainId: "domain-1", all: true, locale: "en" });
+  const page = await listFeedback({ domainId: "domain-1", all: true, locale: "en", viewer: {} });
 
   expect(page.records[0]?.turnKey).toBe(`turn.${thread}.9`);
   const [sql, params] = query.mock.calls[0] as [string, unknown[]];
@@ -75,7 +80,7 @@ it("reads every record unpaged and takes turnKey from the joined turn", async ()
 it("labels every record and offers the filter choices in the request language", async () => {
   query.mockResolvedValue({ rows: [row()] });
 
-  const page = await listFeedback({ domainId: "domain-1", all: true, locale: "en" });
+  const page = await listFeedback({ domainId: "domain-1", all: true, locale: "en", viewer: {} });
 
   expect(page.records[0]).toMatchObject({
     sourceType: "qa",
@@ -109,6 +114,7 @@ it("filters by one feedback id", async () => {
     feedbackId: "44444444-4444-4444-8444-444444444444",
     all: true,
     locale: "en",
+    viewer: {},
   });
 
   const [sql, params] = query.mock.calls[0] as [string, unknown[]];

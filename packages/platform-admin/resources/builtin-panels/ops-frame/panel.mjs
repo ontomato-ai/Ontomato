@@ -164,7 +164,7 @@ await mountPanel({
     watch([chatPaneRef, isFloating, composerFolded], ([element]) => {
       floatingDockObserver?.disconnect();
       floatingDockObserver = undefined;
-      if (element && isFloating.value && !composerFolded.value && typeof ResizeObserver === "function") {
+      if (element && isFloating.value && !composerFolded.value) {
         floatingDockObserver = new ResizeObserver(measureFloatingDock);
         floatingDockObserver.observe(element);
       }
