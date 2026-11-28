@@ -26,7 +26,7 @@ let readRegisteredProjectionOperations: typeof import("./registered-operations-f
 let serverOperations: typeof import("../server-operations");
 
 beforeAll(async () => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] });
   configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { ...enLocaleMeta, messages: en } } });
   plan = await import("../registered-read-plan");
   ({ readRegisteredProjectionOperations } = await import("./registered-operations-fixture"));

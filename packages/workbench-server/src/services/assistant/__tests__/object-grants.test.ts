@@ -19,7 +19,7 @@ vi.mock("../../../identity/management", () => ({
   assertManagement: mocks.managementAccess,
 }));
 
-installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), runtimeResources: [] });
+installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), knowledgeRoot: tmpdir(), runtimeResources: [] });
 const { assistantService } = await import("../service");
 const { agentDefinitionOperations } = await import("../../product-panels/agent-definition-operations");
 const { createAgentDefinitionDirectory } = await import("../../product-panels/agent-definition-directory");

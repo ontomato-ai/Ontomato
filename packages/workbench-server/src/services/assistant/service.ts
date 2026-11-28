@@ -10,7 +10,7 @@ import { ChannelProcessClient } from "../agent-host/process";
 import { agentExecutionCredentials, executionActor } from "./execution";
 import { openAgentCaller } from "../agent-host/caller";
 import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/agent-channel";
-import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
+import type { RuntimeSessionSnapshot, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { prepareAnalystRun } from "./prepare";
 import { prepareAppBuilderRun } from "../app-builder/prepare";
 import { visibilityReader } from "../agent-host/presentation";
@@ -75,7 +75,14 @@ const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
     latestRun: latestRun ? runStatusView(latestRun) : null,
     origin: s.origin,
   });
-export { sessionView };
+export function assistantSessionSnapshot(row: SessionRow, snapshot: RuntimeSessionSnapshot) {
+  return {
+    session: sessionView(row, snapshot.latestRun?.run ?? null),
+    pendingQuestions: snapshot.pendingQuestions,
+    messages: publicMessages(snapshot.messages),
+    latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null,
+  };
+}
 function requiredBuilderAppId(context: AgentHostCreateSession["context"]) {
   const parsed = z.string().min(1).max(128).safeParse(context?.appId);
   if (!parsed.success)
@@ -205,12 +212,7 @@ export const assistantService = {
   async snapshot(id: string, owner: AssistantOwner) {
     const row = await assistantStore.session(id, owner),
       s = await new RuntimeClient(owner.domainId, undefined, owner.userId).session(id);
-    return {
-      session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
-      pendingQuestions: s.pendingQuestions,
-      messages: publicMessages(s.messages),
-      latestRun: s.latestRun ? publicSnapshot(s.latestRun) : null,
-    };
+    return assistantSessionSnapshot(await assistantStore.session(row.id, owner), s);
   },
   /** The run belongs to this user's session by the workbench's own turn record; no runtime read is needed. */
   async ownRun(sessionId: string, id: string, owner: AssistantOwner) {

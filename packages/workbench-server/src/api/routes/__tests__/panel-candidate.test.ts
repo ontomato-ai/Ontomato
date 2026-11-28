@@ -44,7 +44,7 @@ let commit: string;
 beforeAll(async () => {
   configureI18n({ defaultLocale: "en", languageSwitchEnabled: false, appTextLocale: "en", packs: { en: { messages: { ...en, ...appTextEn }, ...enLocaleMeta } } });
   root = await mkdtemp(join(tmpdir(), "panel-candidate-"));
-  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [] });
   installWorkbenchIdentity({ requireDomainId: () => scope.domainId } as unknown as WorkbenchIdentity);
   const git = new WorkspaceGit(join(root, "author-workspace"));
   await git.initialize();

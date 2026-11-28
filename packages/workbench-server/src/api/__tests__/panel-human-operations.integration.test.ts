@@ -71,7 +71,7 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensurePanelOperationsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-human-operations-"));
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], knowledgeRoot: contentRoot, runtimeResources: [] });
   const { panelOperationsRouter } = await import("../routes/product-panels");
 
   const app = express();

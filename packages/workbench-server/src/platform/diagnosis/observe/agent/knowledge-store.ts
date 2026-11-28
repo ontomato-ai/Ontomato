@@ -4,8 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseSkillMarkdownFrontmatter } from "../../../../core/skills/manifest";
 
-const LEGACY_ENTRY_DIRS = new Set(["builtin", "custom"]);
-
 export const KNOWLEDGE_INDEX_RELATIVE_PATH = "data/knowledge/index.md";
 
 export class KnowledgePathError extends Error {}
@@ -56,14 +54,8 @@ function buildNode(filePath: string, rootDir: string): KnowledgeTreeNode | null 
   const relativePath = toKnowledgePath(filePath, rootDir);
 
   if (stat.isDirectory()) {
-    const entries = sortEntries(fs.readdirSync(filePath, { withFileTypes: true })).filter(
-      (entry) => {
-        if (entry.name.startsWith(".")) return false;
-        if (relativePath === "" && entry.isDirectory() && LEGACY_ENTRY_DIRS.has(entry.name))
-          return false;
-        return true;
-      }
-    );
+    const entries = sortEntries(fs.readdirSync(filePath, { withFileTypes: true }))
+      .filter((entry) => !entry.name.startsWith("."));
     const children = entries
       .map((entry) => buildNode(path.join(filePath, entry.name), rootDir))
       .filter((node): node is KnowledgeTreeNode => Boolean(node));

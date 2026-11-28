@@ -78,6 +78,7 @@ beforeAll(async () => {
     runtimeRoot: tmpdir(),
     prompts: [],
     publicSkillsRoot: tmpdir(),
+    knowledgeRoot: tmpdir(),
     runtimeResources: [],
   });
   ({ createAgentDefinitionDirectory } = await import("../agent-definition-directory"));

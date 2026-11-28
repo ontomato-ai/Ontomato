@@ -62,7 +62,7 @@ const credentials = { token: "reader-token", locale: "en" };
 const context = { owner: viewer, credentials, locale: "en" };
 
 beforeAll(async () => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] });
   ({ readBuiltinProducts } = await import("../builtin-products"));
   ({ prepareOperationDescriptions } = await import("../direct-operations"));
   ({ prepareRegisteredOperationRead } = await import("../registered-operation-reads"));

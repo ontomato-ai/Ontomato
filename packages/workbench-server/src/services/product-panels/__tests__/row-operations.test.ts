@@ -166,7 +166,7 @@ configureI18n({
 });
 
 beforeAll(async () => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] });
   ({ readPanelData } = await import("../registered-read-plan"));
 });
 

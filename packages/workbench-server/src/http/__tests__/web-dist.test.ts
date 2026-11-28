@@ -16,7 +16,7 @@ let port: number;
 
 beforeAll(async () => {
   root = mkdtempSync(path.join(tmpdir(), "web-dist-"));
-  installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: root });
+  installContentLayout({ runtimeRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [], publicSkillsRoot: root });
   const webRoot = path.join(root, "dist", "web");
   mkdirSync(path.join(webRoot, "assets"), { recursive: true });
   writeFileSync(path.join(webRoot, "index.html"), INDEX);

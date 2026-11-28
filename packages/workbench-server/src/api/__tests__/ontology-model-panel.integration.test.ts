@@ -218,7 +218,7 @@ beforeAll(async () => {
   await ensureProductPanelsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "ontology-model-panel-"));
   await writeBundledAppSdkFixture(contentRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], knowledgeRoot: contentRoot, runtimeResources: [] });
 
   const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { ensurePanelOperationsSchema } = await import("../../infrastructure/postgres-migrations/20261118-panel-operations/schema");

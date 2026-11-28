@@ -42,7 +42,7 @@ const builder: CatalogApplication = {
 beforeAll(async () => {
   configureI18n({ defaultLocale: "en", languageSwitchEnabled: false, appTextLocale: "en", packs: { en: { messages: { ...en, ...appTextEn }, ...enLocaleMeta } } });
   runtimeRoot = mkdtempSync(path.join(os.tmpdir(), "app-builder-access-"));
-  installContentLayout({ runtimeRoot, publicSkillsRoot: runtimeRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot, publicSkillsRoot: runtimeRoot, prompts: [], knowledgeRoot: runtimeRoot, runtimeResources: [] });
   const { default: assistantRouter } = await import("../assistant");
   installWorkbenchIdentity({
     requireDomainId: () => "domain-a",
