@@ -139,6 +139,58 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		}
 	}
 
+
+	private static void requireRenderableFirstStepShape(JSONObject step) {
+		JSONArray patterns = step.getJSONObject("graph").getJSONArray("patterns");
+		if (patterns == null || patterns.size() != 1) {
+			throw unsupportedStep("answer.steps[0].graph.patterns",
+					"PostgreSQL renders exactly one pattern per step; split multiple patterns into separate DSL queries");
+		}
+		JSONObject pattern = patterns.getJSONObject(0);
+		JSONArray objects = pattern.getJSONArray("objects");
+		if (objects == null || objects.isEmpty()) {
+			throw invalidStep("answer.steps[0].graph.patterns[0].objects", "a step requires at least one object");
+		}
+		if (objects.size() == 1) {
+			return;
+		}
+		JSONArray relationships = pattern.getJSONArray("relationship");
+		Map<Integer, Set<Integer>> connected = new HashMap<>();
+		for (int i = 0; i < objects.size(); i++) {
+			connected.put(objects.getJSONObject(i).getInteger("idx"), new HashSet<>());
+		}
+		if (relationships != null) {
+			for (int i = 0; i < relationships.size(); i++) {
+				JSONObject relationship = relationships.getJSONObject(i);
+				Integer from = relationship.getInteger("from");
+				Integer to = relationship.getInteger("to");
+				if (!connected.containsKey(from) || !connected.containsKey(to)) {
+					throw invalidStep("answer.steps[0].graph.patterns[0].relationship[" + i + "]",
+							"relationship endpoints must be object idx values in the same pattern");
+				}
+				connected.get(from).add(to);
+				connected.get(to).add(from);
+			}
+		}
+		Set<Integer> reached = new HashSet<>();
+		List<Integer> queue = new ArrayList<>();
+		Integer first = objects.getJSONObject(0).getInteger("idx");
+		reached.add(first);
+		queue.add(first);
+		while (!queue.isEmpty()) {
+			Integer current = queue.removeFirst();
+			for (Integer next : connected.get(current)) {
+				if (reached.add(next)) {
+					queue.add(next);
+				}
+			}
+		}
+		if (reached.size() != objects.size()) {
+			throw unsupportedStep("answer.steps[0].graph.patterns[0].relationship",
+					"all objects in one step must be connected by relationships; PostgreSQL does not render independent objects as a Cartesian product, so split them into separate DSL queries or connect them explicitly");
+		}
+	}
+
 	private static DslContractViolationException unsupportedStep(String path, String detail) {
 		return new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT, path, detail);
 	}
@@ -229,6 +281,7 @@ public class PostgreAdapter extends SandboxDataAdapter {
 
 			JSONArray steps = dsl.getJSONObject("answer").getJSONArray("steps");
 			JSONObject firstStep = steps.getJSONObject(0);
+			requireRenderableFirstStepShape(firstStep);
 			if (steps.size() > 1) {
 				requireSupportedTwoStepShape(steps);
 			}

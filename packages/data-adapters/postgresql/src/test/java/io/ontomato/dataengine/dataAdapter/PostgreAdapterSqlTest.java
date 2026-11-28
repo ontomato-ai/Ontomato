@@ -193,4 +193,26 @@ class PostgreAdapterSqlTest {
     assertTrue(error.getMessage().contains("person_id"), error.getMessage());
   }
 
+
+  @Test
+  void multiplePatternsAreRejectedInsteadOfUsingOnlyTheFirst() {
+    JSONObject dsl = JSONArray.parseArray("[" + Q18 + "]").getJSONObject(0);
+    JSONObject graph = dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("graph");
+    JSONArray patterns = graph.getJSONArray("patterns");
+    patterns.add(JSONObject.parseObject(patterns.getJSONObject(0).toJSONString()));
+    DslContractViolationException error = assertThrows(DslContractViolationException.class, () -> sql(dsl.toJSONString()));
+    assertTrue(error.getMessage().contains("answer.steps[0].graph.patterns"), error.getMessage());
+    assertTrue(error.getMessage().contains("exactly one pattern"), error.getMessage());
+  }
+
+  @Test
+  void disconnectedObjectsAreRejectedInsteadOfBeingDroppedFromSql() {
+    JSONObject dsl = JSONArray.parseArray("[" + Q18 + "]").getJSONObject(0);
+    dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("graph")
+        .getJSONArray("patterns").getJSONObject(0).put("relationship", new JSONArray());
+    DslContractViolationException error = assertThrows(DslContractViolationException.class, () -> sql(dsl.toJSONString()));
+    assertTrue(error.getMessage().contains("answer.steps[0].graph.patterns[0].relationship"), error.getMessage());
+    assertTrue(error.getMessage().contains("connected by relationships"), error.getMessage());
+  }
+
 }
