@@ -4,8 +4,8 @@ import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifact
 import ReportPptTurn from "../components/ReportPptTurn.vue";
 import { reportPptMessage } from "../report-ppt";
 
-vi.mock("@ontomato/agent-shell-ui", () => ({
-  PptArtifactCard: { props: ["artifact"], template: '<span :data-artifact="artifact.id" />' },
+vi.mock("@ontomato/agent-shell-ui/ppt-artifact-card", () => ({
+  default: { props: ["artifact"], template: '<span :data-artifact="artifact.id" />' },
 }));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ locale: { value: "zh-CN" } }) }));
 

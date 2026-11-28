@@ -1,5 +1,4 @@
 export { default as AgentShell } from "./components/AgentShell.vue";
-export { default as PptArtifactCard } from "./components/PptArtifactCard.vue";
 export { default as AgentChat } from "./components/AgentChat.vue";
 export { default as ShellComposer } from "./components/ShellComposer.vue";
 export { default as PageComposer } from "./components/PageComposer.vue";

@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { Check, CircleAlert, Loader2 } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
-import { PptArtifactCard, type ConversationInputRun } from "@ontomato/agent-shell-ui";
+import type { ConversationInputRun } from "@ontomato/agent-shell-ui";
+import PptArtifactCard from "@ontomato/agent-shell-ui/ppt-artifact-card";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import { readReportPptMessage } from "../report-ppt";
 
