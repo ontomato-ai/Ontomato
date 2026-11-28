@@ -683,15 +683,17 @@ public class EsAdapter extends SandboxDataAdapter {
 	private List<JSONObject> executeTwoStep(JSONObject first, JSONObject second, List<String> generatedMqls,
 			DslRowLimit.Tracker rowLimit) throws Exception {
 		JSONObject firstOutput = first.getJSONObject("output");
+		JSONObject secondOutput = second.getJSONObject("output");
 		if (!isAggregated(firstOutput) && !hasDistinct(firstOutput.getJSONArray("fields"))
-				&& firstOutput.getJSONObject("limit") == null && isAggregated(second.getJSONObject("output"))) {
+				&& firstOutput.getJSONObject("limit") == null
+				&& (isAggregated(secondOutput) || hasDistinct(secondOutput.getJSONArray("fields")))) {
 			// A plain, unbounded projection is only a rename, not a materialization boundary.
 			Map<String, JSONObject> columns = new HashMap<>();
 			for (Object item : firstOutput.getJSONArray("fields")) {
 				JSONObject field = (JSONObject) item;
 				columns.put(field.getString("as"), field);
 			}
-			JSONObject output = JSONObject.parseObject(second.getJSONObject("output").toJSONString());
+			JSONObject output = JSONObject.parseObject(secondOutput.toJSONString());
 			if (resolveProjectedFields(output, columns)) {
 				return executeStep(JSONObject.of("graph", first.getJSONObject("graph"), "output", output), generatedMqls, rowLimit, true);
 			}

@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.dataAdapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,15 +20,23 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+
+import io.ontomato.dataengine.config.DataRagConfig;
+import io.ontomato.dataengine.core.db.mql.MQLQuery.LogicQuery;
+import io.ontomato.dataengine.core.db.mql.MQLQuery.PropertyQuery;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
+import io.ontomato.dataengine.util.HttpRequestUtil;
 
 /**
  * Controlled HTTP REST protocol regression for the Elasticsearch/OpenSearch adapter.
@@ -304,6 +313,133 @@ class EsAdapterHttpTest {
 	// ----------------------------------------------------------------------------------
 	// Fixtures and helpers
 	// ----------------------------------------------------------------------------------
+
+	@Test
+	void pureDistinctOverAProjectionUsesTheSameNativeQueryWithoutTruncation() throws Throwable {
+		withSmallDistinctWorkingSet(() -> {
+			var source = distinctClass();
+			var one = distinctDsl(false, "category");
+			var two = distinctDsl(true, "chosen_category");
+			for (JSONObject query : List.of(one, two)) {
+				query.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("graph")
+						.getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0)
+						.put("conditions", JSONObject.of("properties", JSONObject.of(
+								"field", "scope", "operator", "=", "value", "allowed")));
+			}
+			JSONObject direct = distinctAnswer(adapter(EsDialect.ELASTICSEARCH, source), one);
+			JSONObject folded = distinctAnswer(adapter(EsDialect.ELASTICSEARCH, source), two);
+			assertEquals(JSONArray.of(JSONObject.of("value", "a"), JSONObject.of("value", "b")), direct.getJSONArray("answer"));
+			assertEquals(direct.getJSONArray("answer"), folded.getJSONArray("answer"));
+			assertNull(direct.getBoolean("truncated"));
+			assertNull(folded.getBoolean("truncated"));
+			var searches = searchRequests();
+			assertEquals(searches.get(0), searches.get(1));
+		});
+	}
+
+	@Test
+	void foldedDistinctPreservesTheInjectedRowPermissionFilter() throws Throwable {
+		withSmallDistinctWorkingSet(() -> {
+			var source = distinctClass();
+			var rule = Map.<String, Object>of("classDef", List.of(source));
+			var permission = new UserDataPermission();
+			permission.addRowPermission("role", "/Order", LogicQuery.and(
+					new PropertyQuery("scope", "=", "restricted")));
+			var result = HttpRequestUtil.executeDsl(
+					new DataRagConfig(), adapter(EsDialect.ELASTICSEARCH, source),
+					JSONArray.of(distinctDsl(true, "chosen_category")).toJSONString(), "s", true,
+					rule, null, permission, DslExecutionMode.OPTIMIZED, "domain")[1];
+			assertFalse(result.failed(), () -> String.valueOf(result.rawResponse()));
+			JSONObject answer = new JSONObject(result.rawResponse()).getJSONArray("data").getJSONObject(0);
+			assertEquals(JSONArray.of(JSONObject.of("value", "b")), answer.getJSONArray("answer"));
+			assertNull(answer.getBoolean("truncated"));
+			assertTrue(searchRequests().getFirst().getJSONObject("query").toJSONString().contains("restricted"));
+		});
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void pureDistinctDoesNotFoldWhenTheProjectionCannotBeInlined(boolean limitedFirstStep) throws Throwable {
+		withSmallDistinctWorkingSet(() -> {
+			var query = distinctDsl(true, limitedFirstStep ? "chosen_category" : "missing_projection");
+			if (limitedFirstStep) {
+				query.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("output")
+						.put("limit", JSONObject.of("count", 1));
+			}
+			JSONObject answer = distinctAnswer(adapter(EsDialect.ELASTICSEARCH, distinctClass()), query);
+			assertTrue(searchRequests().stream().noneMatch(search -> search.containsKey("aggs")));
+			if (limitedFirstStep) {
+				assertEquals(JSONArray.of(JSONObject.of("value", "a")), answer.getJSONArray("answer"));
+			} else {
+				assertEquals(true, answer.getBoolean("truncated"));
+			}
+		});
+	}
+
+	private void withSmallDistinctWorkingSet(Executable test) throws Throwable {
+		String key = "ontomato.es.maxMaterialize";
+		String previous = System.getProperty(key);
+		System.setProperty(key, "2");
+		setPitHandler(EsDialect.ELASTICSEARCH, "i_order", "{\"count\":4}",
+				caps(Map.of("id", "keyword", "category", "keyword", "scope", "keyword")), request -> {
+			JSONObject body = JSONObject.parseObject(request.body());
+			if (body.containsKey("aggs")) {
+				JSONArray buckets = new JSONArray();
+				if (!body.getJSONObject("query").toJSONString().contains("restricted")) {
+					buckets.add(distinctBucket("a"));
+				}
+				buckets.add(distinctBucket("b"));
+				return ok(JSONObject.of("aggregations", JSONObject.of("groups", JSONObject.of("buckets", buckets))).toJSONString());
+			}
+			JSONArray hits = new JSONArray();
+			for (int i = 0; i < Math.min(4, body.getIntValue("size")); i++) {
+				hits.add(JSONObject.of("_source", JSONObject.of("category", i == 3 ? "b" : "a"), "sort", JSONArray.of(i)));
+			}
+			return ok(JSONObject.of("hits", JSONObject.of("hits", hits)).toJSONString());
+		});
+		try {
+			test.execute();
+		} finally {
+			if (previous == null) System.clearProperty(key); else System.setProperty(key, previous);
+		}
+	}
+
+	private static JSONObject distinctBucket(String category) {
+		return JSONObject.of("key", JSONObject.of("g0", category),
+				"first", JSONObject.of("hits", JSONObject.of("hits", JSONArray.of(
+						JSONObject.of("_source", JSONObject.of("category", category))))));
+	}
+
+	private static Map<String, Object> distinctClass() {
+		return Map.of("className", "/Order", "attrs", List.of(
+				Map.of("name", "id", "type", "varchar", "primaryKey", true, "enable", true),
+				Map.of("name", "category", "type", "varchar", "enable", true),
+				Map.of("name", "scope", "type", "varchar", "enable", true)));
+	}
+
+	private static JSONObject distinctDsl(boolean twoStep, String column) {
+		JSONObject dsl = JSONArray.parseArray(singleClassDsl("/Order")).getJSONObject(0);
+		JSONArray steps = dsl.getJSONObject("answer").getJSONArray("steps");
+		JSONObject first = steps.getJSONObject(0).getJSONObject("output");
+		if (!twoStep) {
+			first.put("fields", JSONArray.of(JSONObject.of("variable", "o", "field", column, "as", "value", "distinct", true)));
+			return dsl;
+		}
+		first.put("fields", JSONArray.of(JSONObject.of("variable", "o", "field", "category", "as", "chosen_category")));
+		first.put("to_user", false);
+		first.put("save_table", "/order_detail");
+		steps.add(JSONObject.of(
+				"graph", JSONObject.of("patterns", JSONArray.of(JSONObject.of("objects", JSONArray.of(
+						JSONObject.of("class", "/order_detail", "variable", "t", "idx", 0))))),
+				"output", JSONObject.of("to_user", true, "fields", JSONArray.of(
+						JSONObject.of("variable", "t", "field", column, "as", "value", "distinct", true)))));
+		return dsl;
+	}
+
+	private static JSONObject distinctAnswer(EsAdapter adapter, JSONObject dsl) throws Exception {
+		String result = adapter.executeDsl(JSONArray.of(dsl).toJSONString(), "s", DslExecutionMode.OPTIMIZED, new ArrayList<>());
+		return JSONArray.parseArray(result).getJSONObject(0);
+	}
 
 	/**
 	 * The shared PIT protocol fixture: count, create PIT, _field_caps and close answer on the documented
