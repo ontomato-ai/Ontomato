@@ -26,6 +26,10 @@ import com.alibaba.fastjson2.JSONObject;
  */
 public final class DslGrammarValidator {
 
+	private static final String MULTIPLE_OBJECT_CALCULATION =
+			"A step with two or more objects must not aggregate, group or deduplicate. "
+			+ "Join the objects and save the detail rows to a temporary table in the first step, then read that table and calculate in the second step.";
+
 	/** Resources a vector query returns when it names no {@code topK}. */
 	public static final int VECTOR_TOP_K_DEFAULT = 20;
 
@@ -85,9 +89,7 @@ public final class DslGrammarValidator {
 
 	private static void checkStepObjects(JSONObject step, int s, List<Map<String, Object>> classDefs,
 			Map<String, Integer> temporaryTables) {
-		JSONArray patterns = step == null || step.getJSONObject("graph") == null
-				? null
-				: step.getJSONObject("graph").getJSONArray("patterns");
+		JSONArray patterns = stepPatterns(step);
 		if (patterns == null) {
 			return;
 		}
@@ -126,6 +128,30 @@ public final class DslGrammarValidator {
 						object.getString("class"), classDef);
 			}
 		}
+	}
+
+	private static JSONArray stepPatterns(JSONObject step) {
+		JSONObject graph = step == null ? null : step.getJSONObject("graph");
+		return graph == null ? null : graph.getJSONArray("patterns");
+	}
+
+	static boolean hasMultipleObjects(JSONObject step) {
+		JSONArray patterns = stepPatterns(step);
+		if (patterns == null) {
+			return false;
+		}
+		int objects = 0;
+		for (int i = 0; i < patterns.size(); i++) {
+			JSONObject pattern = patterns.getJSONObject(i);
+			JSONArray entries = pattern == null ? null : pattern.getJSONArray("objects");
+			if (entries != null) {
+				objects += entries.size();
+				if (objects >= 2) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/** Remember the temporary table a step saves, so later steps can recognize objects that read it. */
@@ -196,19 +222,33 @@ public final class DslGrammarValidator {
 	 */
 	private static void checkOutputFields(JSONObject step, int stepIndex) {
 		JSONObject output = step == null ? null : step.getJSONObject("output");
-		JSONArray fields = output == null ? null : output.getJSONArray("fields");
+		if (output == null) {
+			return;
+		}
+		String outputPath = "steps[" + stepIndex + "].output";
+		boolean multipleObjects = hasMultipleObjects(step);
+		if (multipleObjects && output.get("group_by") != null) {
+			throw invalid(outputPath + ".group_by", MULTIPLE_OBJECT_CALCULATION);
+		}
+		JSONArray fields = output.getJSONArray("fields");
 		if (fields == null) {
 			return;
 		}
 		for (int i = 0; i < fields.size(); i++) {
 			JSONObject field = fields.getJSONObject(i);
-			String path = "steps[" + stepIndex + "].output.fields[" + i + "]";
+			String path = outputPath + ".fields[" + i + "]";
 			if (field == null) {
 				throw invalid(path, "output field must be an object");
 			}
 			String alias = field.getString("as");
 			if (alias == null || alias.isBlank()) {
 				throw invalid(path + ".as", "output field requires a nonblank `as` alias");
+			}
+			if (multipleObjects && hasText(field.getString("function"))) {
+				throw invalid(path + ".function", MULTIPLE_OBJECT_CALCULATION);
+			}
+			if (multipleObjects && Boolean.TRUE.equals(field.getBoolean("distinct"))) {
+				throw invalid(path + ".distinct", MULTIPLE_OBJECT_CALCULATION);
 			}
 			String expr = field.getString("expr");
 			boolean variable = hasText(field.getString("variable"));

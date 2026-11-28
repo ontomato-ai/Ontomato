@@ -39,6 +39,69 @@ class AgentWritePostgresContractTest {
   private static final Path FIXTURES = Path.of("../../data-engine-core/src/test/resources/agent-contracts");
   private static String fixture(String name) throws Exception { return Files.readString(FIXTURES.resolve(name)); }
 
+
+  @Test void twoStepNeighborProjectionPreservesDistinctRowsAndPagination() throws Exception {
+    String url = Objects.requireNonNull(System.getenv("ONTOMATO_TEST_POSTGRES_URL"));
+    String user = System.getenv("ONTOMATO_TEST_POSTGRES_USER");
+    String password = System.getenv("ONTOMATO_TEST_POSTGRES_PASSWORD");
+    var admin = new JdbcTemplate(new DriverManagerDataSource(url, user, password));
+    String schema = "neighbors_" + UUID.randomUUID().toString().replace("-", "");
+    admin.execute("CREATE SCHEMA " + schema);
+    try {
+      String scoped = url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema;
+      var jdbc = new JdbcTemplate(new DriverManagerDataSource(scoped, user, password));
+      jdbc.execute("CREATE TABLE org (id varchar)");
+      jdbc.execute("CREATE TABLE person (id varchar, org_id varchar, label varchar)");
+      jdbc.execute("INSERT INTO org VALUES ('o1'), ('o2')");
+      jdbc.execute("INSERT INTO person VALUES ('p1','o1','A'), ('p1','o1','A'), ('p2','o1','B'), ('p3','o1','C'), ('p4','o2','D')");
+      var id = Map.of("name", "id", "type", "varchar", "primaryKey", true);
+      var model = Map.<String, Object>of("classDef", List.of(
+          Map.of("className", "org", "attrs", List.of(id)),
+          Map.of("className", "person", "attrs", List.of(id, Map.of("name", "org_id", "type", "varchar"),
+              Map.of("name", "label", "type", "varchar")))), "relationship_rule",
+          Map.of("staff", JSONObject.of("fromclass", "person", "toclass", "org", "fromField", "org_id", "toField", "id", "type", "n:1")));
+      var connection = new DataAdapterConnection();
+      connection.put("url", scoped);
+      connection.put("user", user);
+      connection.put("password", password);
+      var adapter = new PostgreAdapter(connection, model);
+      var joined = JSONObject.parseObject("""
+          {"patterns":[{"objects":[{"class":"org","idx":0,"variable":"source",
+            "conditions":{"properties":{"field":"id","operator":"=","value":"o1"}}},
+            {"class":"person","idx":1,"variable":"target"}],
+            "relationship":[{"from":1,"to":0,"type":["staff"]}]}]}
+          """);
+      var oldOutput = JSONObject.parseObject("""
+          {"to_user":true,"fields":[{"variable":"target","field":"id","as":"id","distinct":true},
+            {"variable":"target","field":"label","as":"label"}],
+            "sort":{"fields":[{"variable":"target","field":"id","order":"asc"}]},"limit":{"count":2,"offset":1}}
+          """);
+      var detail = JSONObject.parseObject("""
+          {"to_user":false,"save_table":"/details","fields":[{"variable":"target","field":"id","as":"id"},
+            {"variable":"target","field":"label","as":"label"}]}
+          """);
+      var second = JSONObject.parseObject("""
+          {"graph":{"patterns":[{"objects":[{"class":"/details","idx":0,"variable":"rows"}]}]},
+            "output":{"to_user":true,"fields":[{"variable":"rows","field":"id","as":"id","distinct":true},
+              {"variable":"rows","field":"label","as":"label"}],
+              "sort":{"fields":[{"variable":"rows","field":"id","order":"asc"}]},"limit":{"count":2,"offset":1}}}
+          """);
+      var direct = neighborAnswer(adapter, JSONObject.of("graph", joined, "output", oldOutput));
+      var twoStep = neighborAnswer(adapter, JSONObject.of("graph", joined, "output", detail), second);
+      assertEquals(JSONArray.of(JSONObject.of("id", "p2", "label", "B"), JSONObject.of("id", "p3", "label", "C")), direct.getJSONArray("answer"));
+      assertEquals(direct.getJSONArray("answer"), twoStep.getJSONArray("answer"));
+      assertEquals(direct.get("truncated"), twoStep.get("truncated"));
+    } finally {
+      admin.execute("DROP SCHEMA " + schema + " CASCADE");
+    }
+  }
+
+  private static JSONObject neighborAnswer(PostgreAdapter adapter, JSONObject... steps) throws Exception {
+    var dsl = JSONArray.of(JSONObject.of("answer", JSONObject.of("steps", JSONArray.of(steps))));
+    return JSONArray.parseArray(adapter.executeDsl(dsl.toJSONString(), "test", DslExecutionMode.OPTIMIZED, new ArrayList<>()))
+        .getJSONObject(0);
+  }
+
   @Test void quotedNamesRoundTripAndLegacyTablesKeepTheirPhysicalNames() throws Exception {
     String url = Objects.requireNonNull(System.getenv("ONTOMATO_TEST_POSTGRES_URL"));
     String user = System.getenv("ONTOMATO_TEST_POSTGRES_USER");

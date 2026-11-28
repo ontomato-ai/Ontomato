@@ -9,8 +9,11 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
 /**
@@ -163,4 +166,37 @@ class DslGrammarValidatorTest {
 		assertDoesNotThrow(() -> DslGrammarValidator.validate(twoStepDsl(""), List.of()));
 		assertDoesNotThrow(() -> DslGrammarValidator.validate(twoStepDsl(",\"conditions\":{\"properties\":{}}"), List.of()));
 	}
+
+	@ParameterizedTest
+	@CsvSource({"function, .fields[0].function", "distinct, .fields[0].distinct", "group_by, .group_by"})
+	void calculationIsRejectedInAnyStepWithMultipleObjects(String calculation, String path) {
+		var object = JSONObject.of("class", "/Person", "variable", "p", "idx", 0);
+		var pattern = JSONObject.of("objects", JSONArray.of(object));
+		var graph = JSONObject.of("patterns", JSONArray.of(pattern));
+		var field = JSONObject.of("as", "result", "variable", "p", "field", "id");
+		var output = JSONObject.of("fields", JSONArray.of(field));
+		switch (calculation) {
+			case "function" -> field.put("function", "count");
+			case "distinct" -> field.put("distinct", true);
+			case "group_by" -> output.put("group_by", JSONObject.of("fields",
+					JSONArray.of(JSONObject.of("variable", "p", "field", "id"))));
+		}
+		var query = JSONObject.of("answer", JSONObject.of("steps",
+				JSONArray.of(JSONObject.of("graph", graph, "output", output))));
+		assertDoesNotThrow(() -> DslGrammarValidator.validate(query, List.of()));
+
+		pattern.getJSONArray("objects").add(JSONObject.of("class", "/Department", "variable", "d", "idx", 1));
+		var failure = assertThrows(DslContractViolationException.class, () -> DslGrammarValidator.validate(query, List.of()));
+		var violation = failure.getViolations().getFirst();
+		assertEquals(DslContractViolationException.Code.INVALID_GRAMMAR, violation.getCode());
+		assertEquals("steps[0].output" + path, violation.getDslPath());
+		assertTrue(failure.getMessage().contains("temporary table"), failure.getMessage());
+
+		query.getJSONObject("answer").getJSONArray("steps")
+				.add(twoStepDsl("").getJSONObject("answer").getJSONArray("steps").getJSONObject(1));
+		var twoStepFailure = assertThrows(DslContractViolationException.class,
+				() -> DslGrammarValidator.validate(query, List.of()));
+		assertEquals(violation.getDslPath(), twoStepFailure.getViolations().getFirst().getDslPath());
+	}
+
 }
