@@ -810,7 +810,7 @@ onBeforeUnmount(() => {
   unregisterSave?.();
 });
 
-function activeUserEditedPaths(): string[] {
+function carriedUserEditedPaths(): string[] {
   const invalidPaths = Object.keys(activeInvalid.value);
   return [...userEditedPaths.value].filter((userPath) =>
     invalidPaths.some((invalidPath) => pathsOverlap(invalidPath, userPath))
@@ -886,7 +886,7 @@ async function handleDiscardAction(
   const targetLabel = currentTarget.kind === "object"
     ? panel.instance.objectName(currentTarget.objectType, currentTarget.primaryKey) ?? currentTarget.primaryKey
     : objectType;
-  const hasHumanUnsavedEdits = activeUserEditedPaths().length > 0;
+  const hasHumanUnsavedEdits = carriedUserEditedPaths().length > 0;
   const created = await panel.instance.requestLocalConfirmation({
     agentRun: request.agentContext.agentRun,
     operationLabel: t("platform.discard"),
@@ -1228,8 +1228,9 @@ function remove(path: string) {
 
 /**
  * Local per-branch unsaved draft cache for `refreshOnChange` discriminator fields: switching away from a branch keeps
- * its edited field values locally without polluting the active branch's values or `dirty` state, and switching back
- * restores them.
+ * its edited field values locally without polluting the active branch's values or `dirty` state. When the owner's answer
+ * keeps one of those values at a field the new branch still describes, that edit stays live; values it does not keep stay
+ * in the cache, and switching back restores them.
  */
 interface RefreshBranchDraft {
   readonly entries: readonly { readonly path: string; readonly value: RuntimeJsonValue | undefined }[];
@@ -1252,8 +1253,9 @@ function edit(path: string, next: PanelFormValues, source: "user" | "agent" = "u
   const switchingRefreshBranch = Boolean(
     field?.refreshOnChange && !jsonValuesEqual(valueAt(previousValues, path), valueAt(next, path)),
   );
+  let previousBranchKey: string | null = null;
   if (switchingRefreshBranch) {
-    const previousBranchKey = branchDraftKey(path, valueAt(previousValues, path));
+    previousBranchKey = branchDraftKey(path, valueAt(previousValues, path));
     const branchEdited = [...editedPaths.value].filter(
       (editedPath) => !pathsOverlap(editedPath, path) && !isFixed(editedPath)
         && activeFieldAt(previousFields, previousValues, editedPath) !== undefined,
@@ -1304,7 +1306,7 @@ function edit(path: string, next: PanelFormValues, source: "user" | "agent" = "u
   values.value = next;
   editedAt.set(path, ++edits);
   syncLocalDraft();
-  if (field?.refreshOnChange) askOwner(path);
+  if (field?.refreshOnChange) askOwner(path, previousBranchKey);
 }
 
 /** How many edits the reader has made, and when each path was last edited, counted in them. */
@@ -1313,7 +1315,7 @@ const editedAt = new Map<string, number>();
 /** A question to the owner on its way, and the field changed since that the next question is about. */
 const asking = ref(false);
 let latestAsk = 0;
-let askNext: string | null = null;
+let askNext: { changedField: string; previousBranchKey: string | null } | null = null;
 let askSettledResolvers: (() => void)[] = [];
 function waitForOwnerAsk(): Promise<void> {
   if (!asking.value && askNext === null) return Promise.resolve();
@@ -1332,9 +1334,9 @@ function flushOwnerAskWaiters() {
  * question at a time: edits made while one is on its way wait for its answer and set off one more, for the values then.
  * An answer is for the values it was asked with, so what the reader edited after asking stays as they left it.
  */
-function askOwner(changedField: string) {
+function askOwner(changedField: string, previousBranchKey: string | null = null) {
   if (asking.value) {
-    askNext = changedField;
+    askNext = { changedField, previousBranchKey };
     return;
   }
   asking.value = true;
@@ -1352,8 +1354,41 @@ function askOwner(changedField: string) {
     if (reading !== latestRead) return;
     const localDraft = values.value;
     ownerShown.value = answer;
-    description.value = fixDescription(answer);
-    let baseValues = description.value.values;
+    const shown = fixDescription(answer);
+    description.value = shown;
+    let baseValues = shown.values;
+    if (previousBranchKey !== null) {
+      const previousBranch = branchDrafts.get(previousBranchKey);
+      if (previousBranch) {
+        const carriedEntries = previousBranch.entries.filter((entry) =>
+          activeFieldAt(shown.fields, baseValues, entry.path) !== undefined
+          && jsonValuesEqual(valueAt(baseValues, entry.path), entry.value),
+        );
+        const carriedPaths = new Set(carriedEntries.map((entry) => entry.path));
+        const carriedEdited = previousBranch.editedPaths.filter((entry) => carriedPaths.has(entry));
+        const carriedUserEdited = previousBranch.userEditedPaths.filter((entry) => carriedPaths.has(entry));
+        const carriedAgentFilled = previousBranch.agentFilledPaths.filter((entry) => carriedPaths.has(entry));
+        const carriedSubmitted = previousBranch.submitted.filter((entry) =>
+          carriedPaths.has(entry) || carriedEntries.some((carried) => pathsOverlap(carried.path, entry)),
+        );
+        if (carriedEdited.length > 0) editedPaths.value = new Set([...editedPaths.value, ...carriedEdited]);
+        if (carriedUserEdited.length > 0) userEditedPaths.value = new Set([...userEditedPaths.value, ...carriedUserEdited]);
+        if (carriedAgentFilled.length > 0) agentFilledPaths.value = new Set([...agentFilledPaths.value, ...carriedAgentFilled]);
+        if (carriedSubmitted.length > 0) submitted.value = new Set([...submitted.value, ...carriedSubmitted]);
+        const remainingEntries = previousBranch.entries.filter((entry) => !carriedPaths.has(entry.path));
+        const remaining = {
+          entries: remainingEntries,
+          editedPaths: previousBranch.editedPaths.filter((entry) => !carriedPaths.has(entry)),
+          userEditedPaths: previousBranch.userEditedPaths.filter((entry) => !carriedPaths.has(entry)),
+          agentFilledPaths: previousBranch.agentFilledPaths.filter((entry) => !carriedPaths.has(entry)),
+          submitted: previousBranch.submitted.filter((entry) =>
+            !carriedSubmitted.includes(entry) || remainingEntries.some((remainingEntry) => pathsOverlap(remainingEntry.path, entry)),
+          ),
+        };
+        if (remaining.entries.length === 0 && remaining.submitted.length === 0) branchDrafts.delete(previousBranchKey);
+        else branchDrafts.set(previousBranchKey, remaining);
+      }
+    }
     const cachedBranch = branchDrafts.get(branchDraftKey(changedField, valueAt(localDraft, changedField)));
     if (cachedBranch) {
       for (const entry of cachedBranch.entries) {
@@ -1376,13 +1411,13 @@ function askOwner(changedField: string) {
     errors.value = fieldMessages(answer.errors);
     syncLocalDraft();
   }, (reason) => {
-    if (reading === latestRead) fail(reason, () => askOwner(changedField));
+    if (reading === latestRead) fail(reason, () => askOwner(changedField, previousBranchKey));
   }).finally(() => {
     if (ask !== latestAsk) return;
     asking.value = false;
     const again = askNext;
     askNext = null;
-    if (again !== null) askOwner(again);
+    if (again !== null) askOwner(again.changedField, again.previousBranchKey);
     else flushOwnerAskWaiters();
   });
 }
@@ -1835,9 +1870,9 @@ useProjectionForm({
     // Standard detail 3.8: only block when filling fields that overlap unsaved edits made by the user.
     // Filling untouched fields or revising fields filled by the agent earlier in this session proceeds directly.
     if (!options?.overwriteUnsaved) {
-      const activeUserEdited = activeUserEditedPaths();
+      const carriedUserEdited = carriedUserEditedPaths();
       const conflicts = [...pending.keys()].filter((pointer) =>
-        !isSecret(pointer) && activeUserEdited.some((userPath) => pathsOverlap(pointer, userPath)),
+        !isSecret(pointer) && carriedUserEdited.some((userPath) => pathsOverlap(pointer, userPath)),
       );
       if (conflicts.length > 0) {
         return {
