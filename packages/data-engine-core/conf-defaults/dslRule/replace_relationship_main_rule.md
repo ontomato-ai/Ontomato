@@ -5,4 +5,4 @@
 		- type is a list structure that refers to the list of relationship names between two types of objects; the ["*"] wildcard represents all relationships
 		- min_hops represents how many hops of relationship exist at least, and it can currently only be set to 1
 		- max_hops represents the maximum number of hops of relationship to query, and -1 means unlimited
-		- When the list of relationship is empty, the relationship item may be omitted.
+		- When a pattern has more than one object, its relationship list must connect all of them into one whole. A step produces a single table. Query objects that have no relationship path between them in separate DSL queries. A pattern with a single object may omit relationship.

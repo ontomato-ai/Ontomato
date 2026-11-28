@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.dataAdapter;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -89,7 +90,15 @@ public final class DslGrammarValidator {
 
 	private static void checkStepObjects(JSONObject step, int s, List<Map<String, Object>> classDefs,
 			Map<String, Integer> temporaryTables) {
-		JSONArray patterns = stepPatterns(step);
+		JSONObject graph = stepGraph(step);
+		if (graph == null) {
+			return;
+		}
+		if (graph.containsKey("relationship")) {
+			throw invalid("steps[" + s + "].graph.relationship",
+					"Move relationship to graph.patterns[i].relationship in the same pattern as the objects it connects");
+		}
+		JSONArray patterns = graph.getJSONArray("patterns");
 		if (patterns == null) {
 			return;
 		}
@@ -127,16 +136,52 @@ public final class DslGrammarValidator {
 				checkTimeseriesFields(timeseries.getJSONObject("properties"), objectPath + ".conditions.timeseries",
 						object.getString("class"), classDef);
 			}
+			checkPatternConnectivity(objects.size(), indices, pattern.getJSONArray("relationship"),
+					"steps[" + s + "].graph.patterns[" + p + "].relationship");
 		}
 	}
 
-	private static JSONArray stepPatterns(JSONObject step) {
-		JSONObject graph = step == null ? null : step.getJSONObject("graph");
-		return graph == null ? null : graph.getJSONArray("patterns");
+	private static void checkPatternConnectivity(int objectCount, Set<Integer> indices, JSONArray relationships,
+			String path) {
+		if (objectCount < 2) {
+			return;
+		}
+
+		Map<Integer, List<Integer>> neighbors = new HashMap<>();
+		if (relationships != null) {
+			for (int i = 0; i < relationships.size(); i++) {
+				JSONObject relationship = relationships.getJSONObject(i);
+				Integer from = relationship.getInteger("from");
+				Integer to = relationship.getInteger("to");
+				if (indices.contains(from) && indices.contains(to)) {
+					neighbors.computeIfAbsent(from, ignored -> new ArrayList<>()).add(to);
+					neighbors.computeIfAbsent(to, ignored -> new ArrayList<>()).add(from);
+				}
+			}
+		}
+
+		var pending = new ArrayDeque<Integer>();
+		var reached = new HashSet<Integer>();
+		indices.stream().findFirst().ifPresent(pending::add);
+		while (!pending.isEmpty()) {
+			Integer current = pending.removeFirst();
+			if (reached.add(current)) {
+				pending.addAll(neighbors.getOrDefault(current, List.of()));
+			}
+		}
+		if (reached.size() != objectCount) {
+			throw invalid(path, "The relationship list must connect all objects in this pattern into one whole. "
+					+ "Connect them using declared relationships or query them in separate DSL queries");
+		}
+	}
+
+	private static JSONObject stepGraph(JSONObject step) {
+		return step == null ? null : step.getJSONObject("graph");
 	}
 
 	static boolean hasMultipleObjects(JSONObject step) {
-		JSONArray patterns = stepPatterns(step);
+		JSONObject graph = stepGraph(step);
+		JSONArray patterns = graph == null ? null : graph.getJSONArray("patterns");
 		if (patterns == null) {
 			return false;
 		}
