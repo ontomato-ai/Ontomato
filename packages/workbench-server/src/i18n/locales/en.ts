@@ -142,7 +142,6 @@ export const en = {
   "panels.sdkComponent.group.layout": "Layout",
   "panels.sdkComponent.panelUsable": "Availability",
   "panels.sdkComponent.panelUsableYes": "Panel-usable",
-  "panels.sdkComponent.panelUsableShellOnly": "Platform shell only",
   "panels.sdkComponent.bindsElement": "Applicable object types",
   "panels.sdkComponent.meaning": "Purpose",
   "panels.sdkComponent.effects": "Effects",

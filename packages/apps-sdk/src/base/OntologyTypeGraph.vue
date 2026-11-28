@@ -5,7 +5,7 @@ import type { ObjectListRef } from "./object-list-types";
 import ObjectGraphCanvas from "./ObjectGraphCanvas.vue";
 
 /**
- * Platform-dedicated ontology model graph canvas (`panelUsable: false`).
+ * Ontology model graph canvas.
  *
  * Wraps the shared `ObjectGraphCanvas` / `G6GraphCanvas` engine with the ontology graph's fixed visual language:
  * 62px nodes with 5px strokes and subtle shadow, stronger highlighted/selected strokes (6px selected, 7px path/neighbor

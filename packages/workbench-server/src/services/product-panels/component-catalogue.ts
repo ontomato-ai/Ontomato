@@ -35,7 +35,7 @@ export type ComponentScope = {
   componentUsable?: (row: CurrentProductRow) => boolean | undefined;
 };
 
-type AuthorComponentDeclaration = ComponentDeclaration & Partial<Pick<AppsSdkComponentCatalogEntry, "module" | "exportName" | "group" | "panelUsable">>;
+type AuthorComponentDeclaration = ComponentDeclaration & Partial<Pick<AppsSdkComponentCatalogEntry, "module" | "exportName" | "group">>;
 type AuthorComponentEntry = { declaration: AuthorComponentDeclaration; label: string; packageName?: string };
 
 const SDK_COMPONENT_GROUP_ORDER = new Map<AppsSdkComponentGroup, number>(
@@ -52,10 +52,6 @@ function sdkComponentRoleLabel(role: ComponentDeclaration["role"], locale: strin
     : role === "control"
       ? tForLocale(locale, "panels.sdkComponent.roleControl")
       : role;
-}
-
-function sdkComponentPanelUsableLabel(panelUsable: boolean, locale: string | undefined): string {
-  return tForLocale(locale, panelUsable ? "panels.sdkComponent.panelUsableYes" : "panels.sdkComponent.panelUsableShellOnly");
 }
 
 function sdkComponentGroupRank(group: AppsSdkComponentGroup | undefined): number {
@@ -222,13 +218,12 @@ export async function listSdkComponents(
     group: word("group"),
     bindsElement: word("bindsElement"),
   };
+  const panelUsableLabel = word("panelUsableYes");
   const matched: Array<{ rank: number; record: PanelRecord }> = [];
   for (const [primaryKey, { label, declaration, packageName }] of components) {
     const { role, group, bindsElement, meaning, effects } = declaration;
-    const panelUsable = declaration.panelUsable !== false;
     const packageLabel = packageName ?? word("domain");
     const roleLabel = sdkComponentRoleLabel(role, locale);
-    const panelUsableLabel = sdkComponentPanelUsableLabel(panelUsable, locale);
     const groupLabel = sdkComponentGroupLabel(group, locale);
     if (
       term
@@ -263,7 +258,7 @@ export async function listSdkComponents(
         ...(summarizedBindsElement ? { tags: { bindsElement: summarizedBindsElement } } : {}),
         tones: {
           role: role === "control" ? "info" : "default",
-          panelUsable: panelUsable ? "success" : "default",
+          panelUsable: "success",
         },
         fieldLabels,
       },
@@ -289,8 +284,7 @@ export async function readSdkComponentRecord(
   const word = (key: string) => tForLocale(locale, `panels.sdkComponent.${key}`);
   const packageLabel = entry.packageName ?? word("domain");
   const roleLabel = sdkComponentRoleLabel(declaration.role, locale);
-  const panelUsable = declaration.panelUsable !== false;
-  const panelUsableLabel = sdkComponentPanelUsableLabel(panelUsable, locale);
+  const panelUsableLabel = word("panelUsableYes");
   const groupLabel = sdkComponentGroupLabel(declaration.group, locale);
   const fields: PanelRecord["fields"] = {
     componentId: declaration.componentId,
@@ -312,7 +306,7 @@ export async function readSdkComponentRecord(
     ...(declaration.bindsElement?.length ? { tags: { bindsElement: [...declaration.bindsElement] } } : {}),
     tones: {
       role: declaration.role === "control" ? "info" : "default",
-      panelUsable: panelUsable ? "success" : "default",
+      panelUsable: "success",
     },
     fieldLabels: {
       componentId: word("componentId"),
