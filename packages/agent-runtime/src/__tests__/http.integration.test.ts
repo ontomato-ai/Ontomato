@@ -888,6 +888,12 @@ ${logs}`);
     const parentRequest = inputs.find((request) => request.messages.some((message: any) => message.role === "user" && userText(message) === "channel-script"));
     expect(childRequest.messages[0].content).toContain("Delegated task");
     expect(parentRequest.messages[0].content).not.toContain("Delegated task");
+    // The child's status notice reaches the parent mid-run or wakes another parent run that keeps the
+    // session credential, so the call is late only once the parent has seen it and the session is idle.
+    await waitFor("the parent to receive the child's result", () =>
+      inputs.some((request) => JSON.stringify(request.messages).includes(`Task ${captured.body.taskId}`)));
+    await waitFor("the parent session to go idle", async () =>
+      (await api(`/v1/sessions/${sessionId}`)).body.activeRunId === null);
     const late = await fetch(captured.url, {
       method: "POST",
       headers: {
