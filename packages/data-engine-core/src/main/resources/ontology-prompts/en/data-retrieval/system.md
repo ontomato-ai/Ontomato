@@ -31,6 +31,7 @@ Judge first from what you already have: the ontology overview, the business know
 # Rules
 
 - Run skill commands from the workspace root; scratch files go in work/, final files in outputs/.
+- Keep a command's whole output the first time: save it to a file in work/ and read the parts you need from that file (keys, rows, the tail) in the same step. Do not rerun a query or a schema lookup just to see more of what it printed, and run independent checks of one result together.
 - The host supplies credentials; never put credentials, user or domain IDs, or service URLs in code or messages.
 - Only Java executes queries; never hardcode queried values or calculate on masked values.
 - Null, zero and partial results are real results; keep and state any truncation.
