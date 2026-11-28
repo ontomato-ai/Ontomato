@@ -381,7 +381,7 @@ export const components: readonly ComponentMetadata[] = [
       draft: { kind: "json" },
     },
     configProps: [
-      "fixedFields", "layout", "labelPosition", "labelWidth", "actions", "presentation", "groups", "cardColumns",
+      "fixedFields", "initialValues", "layout", "labelPosition", "labelWidth", "actions", "presentation", "groups", "cardColumns",
       "activeGroup", "allowStepJump", "unassignedFields", "showToc", "columns", "showChangeSummary",
       "changeSummaryTitle", "persistDraft", "unsavedSwitchMode",
     ],

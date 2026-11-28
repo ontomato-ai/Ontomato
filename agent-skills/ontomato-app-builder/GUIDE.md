@@ -146,8 +146,10 @@ projections/
   project identity. Retain all declared values, including translations, so a source round trip preserves the definition.
 - A panel's directory name is its ID. `panel.json` contains `name`, `description`, `visibility` and
   `manifest`, plus optional `template`, `theme` and `content.messages`. HTML, module, stylesheet and recipes
-  travel as source files. `manifest.members` places a projection with `target: { projectionId: "…" }` or
-  places a panel by ID. Use the [member field reference](references/panel-authoring/FIELDS.md) for bindings.
+  travel as source files. In an application tree, `manifest.members` places a formal projection with
+  `target: { projectionId: "…" }` or places a panel by ID. The short inline member syntax is only for platform
+  built-in panels and legacy single-panel registration material. Use the
+  [member field reference](references/panel-authoring/FIELDS.md) for bindings.
 - Each owned projection has its registered definition in `projections/<projectionId>.json`, including its
   component, owner reads and operations, and input and output declarations as applicable. Place it by ID in the
   panel manifest. Use `panel projection <id>` to inspect an existing definition. The directory has no files
