@@ -10,6 +10,7 @@ import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeView;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
+import io.ontomato.dataengine.util.DslUtil;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -103,7 +104,7 @@ class CustomerRecordPanelReads {
         String direction = outgoing ? "outgoing" : "incoming";
         String targetKey = keyAttribute(targetAttributes);
         var fields = new JSONArray();
-        fields.add(JSONObject.of("variable", "target", "field", targetKey, "as", targetKey, "distinct", true));
+        fields.add(JSONObject.of("variable", "target", "field", targetKey, "as", targetKey));
         for (var attribute : targetAttributes) {
             if (attribute.enable() && attribute.businessKey() && !targetKey.equals(attribute.name()))
                 fields.add(JSONObject.of("variable", "target", "field", attribute.name(), "as", attribute.name()));
@@ -114,11 +115,22 @@ class CustomerRecordPanelReads {
         var edge = JSONObject.of("from", outgoing ? 0 : 1, "to", outgoing ? 1 : 0, "type", JSONArray.of(relation));
         var pattern = JSONObject.of("objects", JSONArray.of(source, target), "relationship", JSONArray.of(edge));
         var graph = JSONObject.of("pattern_logic", "and", "patterns", JSONArray.of(pattern));
-        var sort = JSONObject.of("fields", JSONArray.of(JSONObject.of("variable", "target", "field", targetKey, "order", "asc")));
-        var output = JSONObject.of("to_user", true, "fields", fields, "sort", sort,
+        var detail = JSONObject.of("graph", graph, "output", JSONObject.of("to_user", false, "fields", fields));
+        var temporaryObject = JSONObject.of("idx", 0, "variable", "rows");
+        var temporaryGraph = JSONObject.of("patterns", JSONArray.of(
+                JSONObject.of("objects", JSONArray.of(temporaryObject))));
+        var projected = new JSONArray();
+        for (int i = 0; i < fields.size(); i++) {
+            String name = fields.getJSONObject(i).getString("as");
+            projected.add(JSONObject.of("variable", "rows", "field", name, "as", name));
+        }
+        projected.getJSONObject(0).put("distinct", true);
+        var sort = JSONObject.of("fields", JSONArray.of(JSONObject.of("variable", "rows", "field", targetKey, "order", "asc")));
+        var output = JSONObject.of("to_user", true, "fields", projected, "sort", sort,
                 "limit", JSONObject.of("count", count, "offset", offset));
-        var query = JSONObject.of("problem", "", "answer",
-                JSONObject.of("steps", JSONArray.of(JSONObject.of("graph", graph, "output", output))));
+        var query = JSONObject.of("problem", "", "answer", JSONObject.of("steps", JSONArray.of(
+                detail, JSONObject.of("graph", temporaryGraph, "output", output))));
+        DslUtil.setRandomTempTableName(query);
         try {
             var answer = new JSONObject(dsl.executeV1ForDomain(query, subject.liveDataPermission(), subject.identity().domainId()));
             if (answer.containsKey("error"))

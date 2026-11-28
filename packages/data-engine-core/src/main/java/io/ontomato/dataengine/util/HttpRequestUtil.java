@@ -105,6 +105,7 @@ public class HttpRequestUtil {
     	
     	List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 		queryJson = DslUtil.normalizeClassNames(queryJson, classDefs);
+		DslGrammarValidator.validate(JSONArray.parseArray(queryJson).getJSONObject(0), classDefs);
 
 		Object[] dsl_selectAsFilePathsMap_vectorResourceAsSet;
 		try {
@@ -135,6 +136,8 @@ public class HttpRequestUtil {
         			}
         		}
         	}
+        } catch (DslContractViolationException e) {
+            throw e;
         } catch (Exception e) {}
         List<String> nodeList = new ArrayList<String>();
         if (nodeIds.size() > 100) {

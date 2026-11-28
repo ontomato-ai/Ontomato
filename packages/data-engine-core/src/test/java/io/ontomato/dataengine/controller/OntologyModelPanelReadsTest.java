@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -280,19 +281,32 @@ class OntologyModelPanelReadsTest {
                 .thenReturn(centerRecord());
         var rows = JSONArray.of(JSONObject.of("personId", "p3", "name", "Bob", "team", "Ops"));
         when(dsl.executeV1ForDomain(any(), eq(permission), eq("d1"))).thenAnswer(call -> {
-            var step = firstStep(call.getArgument(0));
+            JSONObject query = call.getArgument(0);
+            var step = firstStep(query);
             var pattern = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0);
             var center = pattern.getJSONArray("objects").getJSONObject(0);
             assertEquals(JSONObject.of("field", "orgId", "operator", "=", "value", "o1"),
                     center.getJSONObject("conditions").getJSONObject("properties"));
             assertEquals(JSONObject.of("from", 1, "to", 0, "type", JSONArray.of("staff")),
                     pattern.getJSONArray("relationship").getJSONObject(0));
-            var output = step.getJSONObject("output");
+            var detail = step.getJSONObject("output");
+            assertFalse(detail.getBooleanValue("to_user"));
+            assertFalse(detail.containsKey("sort"));
+            assertFalse(detail.containsKey("limit"));
             assertEquals(JSONArray.of(
-                    JSONObject.of("variable", "target", "field", "personId", "as", "personId", "distinct", true),
+                    JSONObject.of("variable", "target", "field", "personId", "as", "personId"),
                     JSONObject.of("variable", "target", "field", "name", "as", "name"),
-                    JSONObject.of("variable", "target", "field", "team", "as", "team")), output.getJSONArray("fields"));
-            assertEquals(JSONObject.of("variable", "target", "field", "personId", "order", "asc"),
+                    JSONObject.of("variable", "target", "field", "team", "as", "team")), detail.getJSONArray("fields"));
+            var result = query.getJSONObject("answer").getJSONArray("steps").getJSONObject(1);
+            var reader = result.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
+                    .getJSONArray("objects").getJSONObject(0);
+            assertEquals(detail.getString("save_table"), reader.getString("class"));
+            var output = result.getJSONObject("output");
+            assertEquals(JSONArray.of(
+                    JSONObject.of("variable", "rows", "field", "personId", "as", "personId", "distinct", true),
+                    JSONObject.of("variable", "rows", "field", "name", "as", "name"),
+                    JSONObject.of("variable", "rows", "field", "team", "as", "team")), output.getJSONArray("fields"));
+            assertEquals(JSONObject.of("variable", "rows", "field", "personId", "order", "asc"),
                     output.getJSONObject("sort").getJSONArray("fields").getJSONObject(0));
             assertEquals(2, output.getJSONObject("limit").getIntValue("count"));
             assertEquals(1, output.getJSONObject("limit").getIntValue("offset"));
@@ -324,8 +338,10 @@ class OntologyModelPanelReadsTest {
         var from = new ArrayList<Integer>();
         var rows = JSONArray.of(JSONObject.of("id", "p1"));
         when(dsl.executeV1ForDomain(any(), eq(permission), eq("d1"))).thenAnswer(call -> {
-            var step = firstStep(call.getArgument(0));
-            var limit = step.getJSONObject("output").getJSONObject("limit");
+            JSONObject query = call.getArgument(0);
+            var step = firstStep(query);
+            var limit = query.getJSONObject("answer").getJSONArray("steps").getJSONObject(1)
+                    .getJSONObject("output").getJSONObject("limit");
             assertEquals(3, limit.getIntValue("count"));
             assertEquals(0, limit.getIntValue("offset"));
             var pattern = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0);

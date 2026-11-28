@@ -57,9 +57,10 @@ public class MysqlAdapter extends SandboxDataAdapter {
 
 	@Override
 	public String executeDsl(String queryJson, String sessionId, DslExecutionMode mode, List<String> generatedMqls) throws Exception {
-		JSONArray dsls = JSONArray.parseArray(queryJson);
+		JSONObject dsl = JSONArray.parseArray(queryJson).getJSONObject(0);
+		SqlDslChecks.requireSupported(dsl, MysqlAdapter.class);
 		DslRowLimit.Tracker rowLimit = new DslRowLimit.Tracker();
-		String sql = toSql(dsls.getJSONObject(0), jsonRule, rowLimit);
+		String sql = toSql(dsl, jsonRule, rowLimit);
 		generatedMqls.add(sql);
 		JSONArray data = executeSql(sql);
 		boolean truncated = rowLimit.defaulted() && data.size() > rowLimit.effectiveLimit();
