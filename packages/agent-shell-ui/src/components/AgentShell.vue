@@ -194,8 +194,13 @@ async function selectNavSession(id: string) {
   if (props.historyPageSelected && !(await display.close())) return;
   nav.selectSession(id);
 }
+function resetUnstartedSend() {
+  // An unstarted send (`sessionId === null`) does not trigger `watch(sessionId)` when starting anew.
+  if (sessionId.value === null && conversation.sending.value) void conversation.open(null);
+}
 async function startNavConversation() {
   if (props.historyPageSelected && !(await display.close())) return;
+  resetUnstartedSend();
   nav.startNew();
   closeNav(true);
 }
@@ -384,34 +389,27 @@ watch(pageSkill, (page) => void nav.setPage(page).catch(report), { immediate: tr
 
 /**
  * The agent is chosen at the head of the application's column (the user's place for it, 2026-11-06): one chooser for the
- * whole conversation, never a second one in its composers. The reader chooses only between conversations; a reply still
- * running keeps the agent it started with, so the choice waits until it ends rather than moving the running conversation
- * to another agent.
+ * whole conversation, never a second one in its composers. Switching opens a new blank conversation on the chosen agent;
+ * any reply still running keeps its own session and agent in the background.
  */
 function chooseAgent(id: string) {
   if (id === agentId.value) return;
-  if (conversation.busy.value) {
-    emit("error", props.labels.switchWhileRunning);
-    return;
-  }
   agentId.value = id;
 }
 
 async function selectRailAgent(id: string) {
-  if (props.historyPageSelected && !conversation.busy.value && !(await display.close())) return;
-  if (id === agentId.value || !conversation.busy.value) {
-    showHistory();
-    emit("railAgentSelected");
-  }
+  if (props.historyPageSelected && !(await display.close())) return;
+  showHistory();
+  emit("railAgentSelected");
   chooseAgent(id);
 }
 
 /**
  * A panel's conversation entry on the page beside this conversation (design U18): when the agent it names is this
- * conversation's, its sentence is filled here; when it is another of the page's candidates, a new conversation starts
- * with that agent and takes the sentence, the open one keeping its own agent and the page staying open. When the named
- * agent is unavailable among current candidates, it refuses without switching agents, prefilling, or submitting, and
- * reports the refusal through `error`. A run still going prevents switching and only opens the composer.
+ * conversation's, its sentence is filled here; when it is another of the page's candidates, or requests a new or preview
+ * session, a new conversation starts with that agent and takes the sentence, the open one keeping its own agent and any
+ * running reply in the background and the page staying open. When the named agent is unavailable among current
+ * candidates, it refuses without switching agents, prefilling, or submitting, and reports the refusal through `error`.
  */
 const entry = shallowRef<ComposerEntry | null>(null);
 function showEntry(text: string | null) {
@@ -432,11 +430,8 @@ const expandEntry: PageComposerExpand = async (request) => {
   const named = resolved.agentId;
   // A preview's entry never goes on in the conversation that is open: it starts the preview's own.
   const startsNew = named !== agentId.value || request.newSession === true || request.preview === true;
-  if (startsNew && conversation.busy.value) {
-    emit("error", props.labels.switchWhileRunning);
-    return showEntry(null);
-  }
   if (startsNew) {
+    resetUnstartedSend();
     nav.beginWith(named);
     await nextTick();
   }
@@ -553,17 +548,21 @@ async function send(input: string, requireNewRun = false) {
       ? (told === file.path ? "" : fileContextLine(file, props.labels.fileContext))
       : closes ? props.labels.pageContextClosed : "";
   const text = line ? `${input}\n\n${line}` : input;
+  const sentSessionId = conversation.state.sessionId;
   const result = await conversation.send(agent, text, { initialPage });
   if (requireNewRun && result?.delivery?.delivery !== "run") {
     throw new Error(conversation.sendError.value ?? props.labels.working);
   }
   if (!result) return;
-  // Only a message the host accepted moved the conversation's page; a refused one carries it again next time. It went to
-  // the conversation this send started, or to the one it was written in.
-  carriedIn = result.createdSession?.id ?? conversation.state.sessionId ?? null;
-  if (page) carriedPage.value = samePageAddress(page.url);
-  else if (file) carriedPage.value = file.path;
-  else if (closes) carriedPage.value = CLOSED_TARGET;
+  const targetSessionId = result.createdSession?.id ?? sentSessionId;
+  if (conversation.state.sessionId === targetSessionId) {
+    // Only a message the host accepted moved the conversation's page; a refused one carries it again next time. It went to
+    // the conversation this send started, or to the one it was written in.
+    carriedIn = targetSessionId ?? null;
+    if (page) carriedPage.value = samePageAddress(page.url);
+    else if (file) carriedPage.value = file.path;
+    else if (closes) carriedPage.value = CLOSED_TARGET;
+  }
   if (!result.delivery) {
     // The conversation was created but its run refused: the host takes it as listed (still empty), so sending again
     // goes on in the conversation the host knows.
@@ -574,10 +573,10 @@ async function send(input: string, requireNewRun = false) {
   const created = result.createdSession;
   if (created) {
     // The state already carries this session; linking the id afterwards keeps the watch from opening it again and
-    // discarding the pending message. A reader who opened another conversation meanwhile stays in it; the new one is
-    // listed, and the notice feed reads its run state.
+    // discarding the pending message. A reader who opened another conversation or started a new one meanwhile stays
+    // there; the new session is listed, and the notice feed reads its run state.
     nav.promoteSession(created, text);
-    if (sessionId.value === null) sessionId.value = created.id;
+    if (sessionId.value === null && conversation.state.sessionId === created.id) sessionId.value = created.id;
     return;
   }
   // Sending in a conversation already listed moves it up, and titles it when the host has not yet. Its run state is the

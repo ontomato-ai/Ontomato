@@ -211,8 +211,6 @@ export interface ShellLabels {
   working: string;
   /** Shown on a received message waiting in the session queue for the previous turn to finish. */
   queuedWaiting: string;
-  /** The composer's agent choice while a reply runs: the running conversation keeps the agent it started with. */
-  switchWhileRunning: string;
   /**
    * A page that declares its own skill cannot offer an agent: the reader holds no mapping for the page, or its registered
    * default agent is gone. The page shows this rather than choosing another agent.

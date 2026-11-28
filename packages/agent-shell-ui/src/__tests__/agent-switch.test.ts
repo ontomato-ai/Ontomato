@@ -2,35 +2,43 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
 import AgentShell from "../components/AgentShell.vue";
 import { testDisplay } from "./display";
-import { useAgentNav } from "../useAgentNav";
+import { useAgentNav, type AgentNav } from "../useAgentNav";
+import { servePageComposerKey, type PageComposerExpand } from "../page-composer-entry";
+import type { AgentHostSendResult, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 
 /*
- * Switching the agent is a new conversation: the conversation already open belongs to the agent it was started with and
- * is not handed to another one. A reply still running keeps its agent until it ends, because the run is admitted under
- * that agent; non-run switches start clean, and nothing rebinds a live session.
+ * Switching the agent starts a new blank conversation: the conversation already open belongs to the agent it was
+ * started with and keeps running in the background when left, so switching during a running reply or via a panel
+ * conversation entry opens a new conversation without error or rebinding.
  *
  * The agent is chosen at the head of the application's column, where the user put it (2026-11-06), and only there: the
  * conversation's composer has no chooser of its own, so nothing else on the screen can change the current agent.
  */
-const labels = { placeholder: "Message", send: "Send", stop: "Stop", working: "Working", switchWhileRunning: "Wait" } as unknown as ShellLabels;
+const labels = { agent: "Agent", placeholder: "Message", send: "Send", stop: "Stop", working: "Working" } as unknown as ShellLabels;
 const workbench: ShellWorkbenchDeclaration = { id: "agents", label: "Agents", features: [] };
 const assistant = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const analyst = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const runId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-const admission = (): unknown => ({
-  delivery: { messageId: runId, sessionRef: { providerId: "workbench", sessionId: session.id }, runId, delivery: "run", status: "running" },
-  input: { id: runId, runId, messageSeq: 1, contextSeq: 1, message: { role: "user", content: "Price by region", timestamp: 1 } },
-  snapshot: {
-    pendingQuestions: [],
-    run: { id: runId, sessionId: session.id, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
-    cursor: { runId, seq: 1, streamId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" },
-    messages: [], pendingMessages: [], toolExecutions: [], artifacts: [],
-  },
-  pendingQuestions: [], replayed: false,
-});
-const session = { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", agentId: assistant, title: "Earlier", origin: "user", createdAt: new Date(0).toISOString(), latestRun: null };
+const session: AgentHostSession = {
+  id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", agentId: assistant, title: "Earlier", origin: "user",
+  createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), latestRun: null,
+};
+
+function admission(sessionId: string, content = "Price by region"): AgentHostSendResult {
+  return {
+    delivery: { messageId: runId, sessionRef: { providerId: "workbench", sessionId }, runId, delivery: "run", status: "running" },
+    input: { id: runId, runId, messageSeq: 1, contextSeq: 1, message: { role: "user", content, timestamp: 1 } },
+    snapshot: {
+      pendingQuestions: [],
+      run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
+      cursor: { runId, seq: 1, streamId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" },
+      messages: [], pendingMessages: [], toolExecutions: [], artifacts: [],
+    },
+    pendingQuestions: [], replayed: false,
+  };
+}
 
 let app: App | null = null;
 afterEach(() => {
@@ -46,60 +54,102 @@ async function settle() {
   }
 }
 
-function client(): AgentHostClient {
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function makeSession(id: string, agentId: string): AgentHostSession {
+  return { id, agentId, title: "", origin: "user", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), latestRun: null };
+}
+
+function makeClient(overrides: Partial<AgentHostClient> = {}): AgentHostClient {
   return {
     listAgents: vi.fn().mockResolvedValue([
       { id: assistant, name: "Assistant", description: "", icon: null, enabled: true },
       { id: analyst, name: "Analyst", description: "", icon: null, enabled: true },
     ]),
     listSessions: vi.fn().mockResolvedValue({ sessions: [session], nextCursor: null }),
-    readHistory: vi.fn().mockResolvedValue({ messages: [], hasOlder: false, nextCursor: null }),
-    // The reply the second test switches during is admitted and never reaches its end.
-    send: vi.fn(async () => admission()),
+    readHistory: vi.fn().mockResolvedValue({
+      pendingQuestions: [],
+      session,
+      messages: [],
+      runs: [],
+      latestRun: null,
+      page: { messageSeq: 0, olderCursor: null },
+    }),
+    createSession: vi.fn(async (input) => {
+      const targetAgent = typeof input === "string" ? input : input.agentId;
+      return makeSession(`session-${targetAgent}`, targetAgent);
+    }),
+    send: vi.fn(async (id: string, input: { message: string }) => admission(id, input.message)),
+    cancel: vi.fn().mockResolvedValue(undefined),
+    subscribe: vi.fn(() => () => {}),
     sessionRuns: { read: vi.fn().mockResolvedValue({ sessions: [] }), subscribe: () => () => {} },
+    ...overrides,
   } as unknown as AgentHostClient;
 }
 
-function render(busy = false) {
+function render(options: { initialSessionId?: string | null; client?: AgentHostClient } = {}) {
+  const host = options.client ?? makeClient();
   const agentId = ref<string | null>(assistant);
-  const sessionId = ref<string | null>(session.id);
+  const sessionId = ref<string | null>(options.initialSessionId === undefined ? session.id : options.initialSessionId);
   const errors: string[] = [];
   const left: number[] = [];
-  let loadAgents = () => {};
+  const served: PageComposerExpand[] = [];
+  const shell = ref<{ send(text: string): Promise<void> } | null>(null);
+  let nav!: AgentNav;
   const Host = defineComponent({
     setup() {
-      const nav = useAgentNav({
-        client,
+      nav = useAgentNav({
+        client: () => host,
         agentId: () => agentId.value,
         setAgentId: (id) => (agentId.value = id),
         sessionId: () => sessionId.value,
         setSessionId: (id) => (sessionId.value = id),
         onLeaveConversation: () => left.push(1),
       });
-      loadAgents = () => void nav.loadAgents();
+      void nav.loadAgents();
       return () =>
         h(
           AgentShell,
           {
-            // The agent platform: an application that runs on several agents, so its column heads with the chooser.
-            workbench, display: testDisplay(workbench), client: client(), labels, nav, agentPicker: true,
+            ref: shell,
+            workbench, display: testDisplay(workbench), client: host, labels, nav, agentPicker: true,
             agentId: agentId.value,
             "onUpdate:agentId": (id: string | null) => (agentId.value = id),
             sessionId: sessionId.value,
             "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
             onError: (message: string) => errors.push(message),
           },
-          // The shell's composer reads the busy state from the conversation it opened; a reply is simulated by a run
-          // that is still going, which the state only knows from a send.
+          { "composer-context": ({ unstarted }: { unstarted: boolean }) => h("span", { class: "unstarted" }, String(unstarted)) },
         );
     },
   });
   app = createApp(Host);
+  app.provide(servePageComposerKey, (expand: PageComposerExpand) => {
+    served.push(expand);
+    return () => void served.splice(served.indexOf(expand), 1);
+  });
   const root = document.createElement("div");
   document.body.append(root);
   app.mount(root);
-  void loadAgents();
-  return { root, agentId, sessionId, errors, left, busy };
+  return { root, host, agentId, sessionId, errors, left, served, shell, nav: () => nav };
+}
+
+async function pickAgent(root: HTMLElement, name: string) {
+  const trigger = root.querySelector(".shell-nav-body .switch-trigger") as HTMLButtonElement;
+  trigger.click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await nextTick();
+  const options = [...document.querySelectorAll<HTMLButtonElement>(".agent-menu .agent-option")];
+  options.find((option) => option.textContent?.includes(name))!.click();
+  await settle();
 }
 
 it("chooses the agent at the column's head, once, and never in the composer", async () => {
@@ -116,13 +166,7 @@ it("switches agent into a new conversation, not by rebinding the open one", asyn
   await settle();
   expect(agentId.value).toBe(assistant);
 
-  const trigger = root.querySelector(".shell-nav-body .switch-trigger") as HTMLButtonElement;
-  trigger.click();
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  await nextTick();
-  const options = [...document.querySelectorAll<HTMLButtonElement>(".agent-menu .agent-option")];
-  options.find((option) => option.textContent?.includes("Analyst"))!.click();
-  await settle();
+  await pickAgent(root, "Analyst");
 
   expect(agentId.value).toBe(analyst);
   // The conversation belonged to the assistant: switching starts a new one instead of moving it.
@@ -130,9 +174,10 @@ it("switches agent into a new conversation, not by rebinding the open one", asyn
   expect(left.length).toBeGreaterThan(0);
 });
 
-it("keeps the running conversation's agent until the reply ends", async () => {
-  const { root, agentId, sessionId, errors } = render();
+it("switches to a new blank conversation when a reply is running, leaving the running reply untouched", async () => {
+  const { root, host, agentId, sessionId, errors, left } = render();
   await settle();
+
   const input = root.querySelector("textarea")!;
   input.value = "Price by region";
   input.dispatchEvent(new Event("input"));
@@ -140,15 +185,199 @@ it("keeps the running conversation's agent until the reply ends", async () => {
   (root.querySelector(".composer-button") as HTMLButtonElement).click();
   await settle();
 
-  const trigger = root.querySelector(".shell-nav-body .switch-trigger") as HTMLButtonElement;
-  trigger.click();
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  await nextTick();
-  const options = [...document.querySelectorAll<HTMLButtonElement>(".agent-menu .agent-option")];
-  options.find((option) => option.textContent?.includes("Analyst"))!.click();
+  await pickAgent(root, "Analyst");
+
+  expect(agentId.value).toBe(analyst);
+  expect(sessionId.value).toBeNull();
+  expect(errors).toEqual([]);
+  expect(left.length).toBeGreaterThan(0);
+  expect(root.querySelector(".unstarted")?.textContent).toBe("true");
+  expect(host.cancel).not.toHaveBeenCalled();
+
+  // Returning to the original agent and conversation still opens the original session.
+  await pickAgent(root, "Assistant");
+  sessionId.value = session.id;
+  await settle();
+  expect(host.readHistory).toHaveBeenLastCalledWith(session.id);
+});
+
+it("allows a panel conversation entry to start a new or preview session while a reply is running", async () => {
+  const createdIds = ["new-analyst-session", "preview-analyst-session"];
+  let createdIndex = 0;
+  const host = makeClient({
+    createSession: vi.fn(async (input) => {
+      const id = createdIds[createdIndex++] ?? `session-${createdIndex}`;
+      const targetAgent = typeof input === "string" ? input : input.agentId;
+      return makeSession(id, targetAgent);
+    }),
+  });
+  const { root, agentId, sessionId, errors, served } = render({ client: host });
   await settle();
 
-  expect(agentId.value).toBe(assistant);
-  expect(sessionId.value).toBe(session.id);
-  expect(errors).toEqual([labels.switchWhileRunning]);
+  // Start a running reply on the assistant session.
+  const input = root.querySelector("textarea")!;
+  input.value = "Price by region";
+  input.dispatchEvent(new Event("input"));
+  await nextTick();
+  (root.querySelector(".composer-button") as HTMLButtonElement).click();
+  await settle();
+
+  // Entry naming another agent opens and sends a new session without blocking or cancelling the running one.
+  await served.at(-1)!({ target: { kind: "id", id: analyst }, prefill: "Analyze sales", submit: true });
+  await settle();
+
+  expect(errors).toEqual([]);
+  expect(agentId.value).toBe(analyst);
+  expect(sessionId.value).toBe("new-analyst-session");
+  expect(host.createSession).toHaveBeenNthCalledWith(1, analyst);
+  expect(host.send).toHaveBeenLastCalledWith("new-analyst-session", expect.objectContaining({ message: "Analyze sales" }));
+  expect(host.cancel).not.toHaveBeenCalled();
+
+  // Entry with preview: true on the now-running same agent starts a separate preview session.
+  await served.at(-1)!({ target: { kind: "id", id: analyst }, prefill: "Preview check", submit: true, preview: true });
+  await settle();
+
+  expect(errors).toEqual([]);
+  expect(sessionId.value).toBe("preview-analyst-session");
+  expect(host.createSession).toHaveBeenNthCalledWith(2, analyst, { preview: true });
+  expect(host.send).toHaveBeenLastCalledWith("preview-analyst-session", expect.objectContaining({ message: "Preview check" }));
+
+  // Entry with newSession: true prefill opens a clean blank composer while preview session is still running.
+  await served.at(-1)!({ target: { kind: "id", id: analyst }, prefill: "Fresh draft", newSession: true });
+  await settle();
+
+  expect(errors).toEqual([]);
+  expect(sessionId.value).toBeNull();
+  expect(root.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Fresh draft");
+});
+
+it("drops an unaccepted first-sentence send when switching to another agent before session creation or run admission", async () => {
+  // 1) Switch before createSession resolves: client.send is never called for the abandoned session.
+  const firstCreate = deferred<AgentHostSession>();
+  const hostBeforeCreate = makeClient({
+    createSession: vi.fn(() => firstCreate.promise),
+  });
+  const view1 = render({ initialSessionId: null, client: hostBeforeCreate });
+  await settle();
+
+  const firstSend = view1.shell.value!.send("Before create");
+  await settle();
+  await pickAgent(view1.root, "Analyst");
+
+  expect(view1.agentId.value).toBe(analyst);
+  expect(view1.sessionId.value).toBeNull();
+  expect(view1.root.querySelector(".unstarted")?.textContent).toBe("true");
+  expect(view1.root.textContent).not.toContain("Before create");
+
+  firstCreate.resolve(makeSession("abandoned-before-create", assistant));
+  await firstSend;
+  await settle();
+
+  expect(hostBeforeCreate.send).not.toHaveBeenCalled();
+  expect(view1.sessionId.value).toBeNull();
+  expect(view1.agentId.value).toBe(analyst);
+
+  app?.unmount();
+  app = null;
+  document.body.innerHTML = "";
+
+  // 2) Switch via panel entry after createSession resolved, while client.send is still pending.
+  const pendingAdmit = deferred<AgentHostSendResult>();
+  let count = 0;
+  const hostBeforeAdmit = makeClient({
+    listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
+    createSession: vi.fn(async (input) => {
+      const id = count++ === 0 ? "assistant-unadmitted" : "analyst-fresh";
+      const targetAgent = typeof input === "string" ? input : input.agentId;
+      return makeSession(id, targetAgent);
+    }),
+    send: vi.fn(async (id: string, input: { message: string }) => {
+      if (id === "assistant-unadmitted") return pendingAdmit.promise;
+      return admission(id, input.message);
+    }),
+  });
+  const view2 = render({ initialSessionId: null, client: hostBeforeAdmit });
+  await settle();
+
+  const sentToAssistant = view2.shell.value!.send("Before admit");
+  await settle();
+  await view2.served.at(-1)!({ target: { kind: "id", id: analyst }, prefill: "Analyst question", submit: true });
+  await settle();
+
+  expect(view2.agentId.value).toBe(analyst);
+  expect(view2.sessionId.value).toBe("analyst-fresh");
+
+  pendingAdmit.resolve(admission("assistant-unadmitted", "Before admit"));
+  await sentToAssistant;
+  await settle();
+
+  expect(view2.agentId.value).toBe(analyst);
+  expect(view2.sessionId.value).toBe("analyst-fresh");
+  expect(view2.nav().sessions.value.map((row) => row.id)).not.toContain("assistant-unadmitted");
+});
+
+it("resets an unaccepted first-sentence send on same-agent new/preview entry or A -> B -> A before admission", async () => {
+  // 1) Same-agent preview entry while sessionId is still null and client.send is pending must not drop or hijack.
+  const firstAdmit = deferred<AgentHostSendResult>();
+  let seq = 0;
+  const hostSameAgent = makeClient({
+    listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
+    createSession: vi.fn(async (input) => {
+      const id = seq++ === 0 ? "first-unadmitted" : "preview-fresh";
+      const targetAgent = typeof input === "string" ? input : input.agentId;
+      return makeSession(id, targetAgent);
+    }),
+    send: vi.fn(async (id: string, input: { message: string }) => {
+      if (id === "first-unadmitted") return firstAdmit.promise;
+      return admission(id, input.message);
+    }),
+  });
+  const view1 = render({ initialSessionId: null, client: hostSameAgent });
+  await settle();
+
+  const firstSend = view1.shell.value!.send("First unaccepted");
+  await settle();
+  await view1.served.at(-1)!({ target: { kind: "id", id: assistant }, prefill: "Preview question", submit: true, preview: true });
+  await settle();
+
+  expect(view1.sessionId.value).toBe("preview-fresh");
+  expect(hostSameAgent.createSession).toHaveBeenNthCalledWith(2, assistant, { preview: true });
+  expect(hostSameAgent.send).toHaveBeenLastCalledWith("preview-fresh", expect.objectContaining({ message: "Preview question" }));
+
+  firstAdmit.resolve(admission("first-unadmitted", "First unaccepted"));
+  await firstSend;
+  await settle();
+
+  expect(view1.sessionId.value).toBe("preview-fresh");
+
+  app?.unmount();
+  app = null;
+  document.body.innerHTML = "";
+
+  // 2) Switching A -> B -> A while A's first send is pending admission must not hijack A's fresh blank conversation.
+  const returnAdmit = deferred<AgentHostSendResult>();
+  const hostRoundTrip = makeClient({
+    listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
+    createSession: vi.fn(async () => makeSession("round-trip-unadmitted", assistant)),
+    send: vi.fn(() => returnAdmit.promise),
+  });
+  const view2 = render({ initialSessionId: null, client: hostRoundTrip });
+  await settle();
+
+  const roundTripSend = view2.shell.value!.send("Abandoned before admit");
+  await settle();
+  await pickAgent(view2.root, "Analyst");
+  await pickAgent(view2.root, "Assistant");
+
+  expect(view2.agentId.value).toBe(assistant);
+  expect(view2.sessionId.value).toBeNull();
+  expect(view2.root.querySelector(".unstarted")?.textContent).toBe("true");
+
+  returnAdmit.resolve(admission("round-trip-unadmitted", "Abandoned before admit"));
+  await roundTripSend;
+  await settle();
+
+  expect(view2.sessionId.value).toBeNull();
+  expect(view2.root.querySelector(".unstarted")?.textContent).toBe("true");
+  expect(view2.nav().sessions.value.map((row) => row.id)).toContain("round-trip-unadmitted");
 });

@@ -860,7 +860,6 @@ export default {
     "thinking": "Thinking",
     "working": "Working",
     "queuedWaiting": "Received — waiting for the previous turn to finish",
-    "switchWhileRunning": "Finish or stop the running reply before switching agents",
     "collapseComposer": "Hide the message box",
     "expandComposer": "Ask about this page",
     "pageAgentUnavailable": "This page's agent is unavailable: no enabled agent you can use carries the page operation skill, or the agent the page names has gone. Ask a domain administrator to check the page's configuration.",
