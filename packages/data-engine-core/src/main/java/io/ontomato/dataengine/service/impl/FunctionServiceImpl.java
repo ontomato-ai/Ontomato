@@ -304,9 +304,7 @@ public class FunctionServiceImpl implements FunctionService {
     JSONObject values = request.getJSONObject("values");
     // A stored Function and a refresh carry no verdict; an incoming draft is checked and its errors returned with it.
     List<ObjectNode> errors = List.of();
-    JSONObject current = PanelFormFields.asset(function);
-    // A new definition has no ID yet; its form must not offer one for the create to carry.
-    if (!existing) current.remove("id");
+    JSONObject current = PanelFormFields.definitionValues(function, !existing);
     FunctionForm.labelColumnsFromAnalysis(current);
     if (values == null) {
       values = current;

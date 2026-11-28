@@ -172,6 +172,7 @@
                                 <include>**/LiveInstanceGraphPermissionsTest.java</include>
                                 <include>**/WriteWhereBoundaryTest.java</include>
                                 <include>**/ActionFunctionAdmissionTest.java</include>
+                                <include>**/ActionFormTest.java</include>
                                 <include>**/FunctionProtocolSaveTest.java</include>
                                 <include>**/ActionParameterDefaultsTest.java</include>
                                 <include>**/MetricViewBindingContractTest.java</include>

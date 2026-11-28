@@ -137,6 +137,13 @@ public final class PanelFormFields {
     return JSON.parseObject(JSON.toJSONString(value, Feature.WriteMapNullValue));
   }
 
+  /** A new definition has no top-level id until the owner saves it. */
+  public static JSONObject definitionValues(Object value, boolean creating) {
+    JSONObject values = asset(value);
+    if (creating) values.remove("id");
+    return values;
+  }
+
   /** A JSON Pointer token for a property name. */
   public static String pointer(String token) {
     return token.replace("~", "~0").replace("/", "~1");

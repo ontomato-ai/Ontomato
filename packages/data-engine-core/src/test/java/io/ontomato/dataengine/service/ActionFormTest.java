@@ -158,6 +158,7 @@ class ActionFormTest {
     JSONObject form = form(JSONObject.of("target", JSONObject.of("kind", "draft")));
 
     JSONObject values = form.getJSONObject("values");
+    assertFalse(values.containsKey("id"));
     assertEquals("USER", values.getString("origin"));
     assertEquals(Action.STATUS_PENDING_REVIEW, values.getString("status"));
     assertNull(values.get("target"));
