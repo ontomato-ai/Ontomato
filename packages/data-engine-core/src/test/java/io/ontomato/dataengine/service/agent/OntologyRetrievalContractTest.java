@@ -55,6 +55,7 @@ class OntologyRetrievalContractTest {
       files = new ConcurrentHashMap<>();
   final Map<String,JSONArray> inputs=new ConcurrentHashMap<>();
   final Set<String> cancelled = ConcurrentHashMap.newKeySet();
+  volatile String runAdmittedDuringObservation;
   final String skillDigest = "a".repeat(64);
 
   static String id() {
@@ -124,6 +125,11 @@ class OntologyRetrievalContractTest {
                 r.put("finishedAt", Instant.now().toString());
               }
               status = 204;
+            } else if (path.matches("/v1/channel/sessions/[^/]+/intents/[^/]+")) {
+              String[] parts = path.split("/");
+              String run = parts[6];
+              if (run.equals(runAdmittedDuringObservation)) runs.putIfAbsent(run, snapshot(parts[4], run));
+              value = JSONObject.of("status", runs.containsKey(run) ? "running" : "starting");
             } else if (path.startsWith("/v1/runs/")) {
               String run = path.split("/")[3];
               if (!runs.containsKey(run)) {
@@ -602,6 +608,26 @@ class OntologyRetrievalContractTest {
         () ->
             store.session(
                 retrievalId, new OntologyAgentStore.Owner(owner.userId(), "other-domain")));
+  }
+
+  @Test
+  void recoveryKeepsADelegatedRunAdmittedDuringObservation() throws Exception {
+    executorPermission = visibleClasses("org");
+    String caller = classScopeCaller(List.of("org"), true);
+    String session = id(), run = id();
+    prepareChannel(channelRequest(caller, session, run, List.of("org"), null, true), 200);
+    runAdmittedDuringObservation = run;
+
+    retrieval.recover();
+
+    org.awaitility.Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> {
+      var state = store.run(session, run, owner);
+      return state.getBooleanValue("runtime_admitted") || state.getString("admission_error") != null;
+    });
+    var state = store.run(session, run, owner);
+    assertNull(state.getString("admission_error"));
+    assertTrue(state.getBooleanValue("runtime_admitted"));
+    assertTrue(state.getBooleanValue("open"));
   }
 
   @Test

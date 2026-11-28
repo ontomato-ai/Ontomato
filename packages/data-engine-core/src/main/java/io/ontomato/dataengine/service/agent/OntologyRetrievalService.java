@@ -908,6 +908,12 @@ public class OntologyRetrievalService {
                 return;
               }
               if (row.getBooleanValue("cancel_requested") && !row.getBooleanValue("cancel_confirmed")) cancelWork(session, id, owner);
+              if (row.getJSONObject("request").getBooleanValue("agentChannel") && !row.getBooleanValue("runtime_admitted")) {
+                // Runtime publishes the running intent and run in one transaction. Read the intent first
+                // so a pre-admission 404 cannot be paired with an already-admitted intent.
+                var intent = runtime.json(owner.domainId(), id, "/v1/channel/sessions/" + session + "/intents/" + id, "GET", null, null);
+                if ("starting".equals(intent.getString("status"))) return;
+              }
               // Only the lifecycle view is read each pass; the full snapshot once the run has stopped.
               var view = runtime.status(owner.domainId(), id);
               if(!row.getBooleanValue("runtime_admitted")) {
@@ -927,10 +933,6 @@ public class OntologyRetrievalService {
             } catch (AgentHttpException error) {
               if (error.status() == 404) {
                 try {
-                  if(row.getJSONObject("request").getBooleanValue("agentChannel") && !row.getBooleanValue("runtime_admitted")) {
-                    var intent=runtime.json(row.getString("domain_id"),id,"/v1/channel/sessions/"+row.getString("session_id")+"/intents/"+id,"GET",null,null);
-                    if("starting".equals(intent.getString("status"))) return;
-                  }
                   if(!row.getBooleanValue("runtime_admitted")) admissionFailed(row.getString("session_id"),id,owner(row),"Retriever admission was interrupted");
                   // An admitted run the runtime no longer has can never deliver: close the round with that failure.
                   else results.publish(row.getString("session_id"),id,owner(row),JSONObject.of("answer","","run",null,
