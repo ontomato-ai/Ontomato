@@ -1,34 +1,29 @@
 # Schema/Metadata Inconsistency Causes Query Anomalies
 
-- **Scope**: query failures, empty results, or graph not displayed caused by JSONRule metadata being inconsistent with the actual database schema.
-- **Mechanism source**: the query backend management console's pretty JSONRule and internal storage bidirectional conversion (`service/impl/AdminServiceImpl.java`), `util/JSONCheckUtil.java`; database queries are strictly case-sensitive.
-- **Last verified**: 2026-08-26.
+- **Scope**: ontology definitions, visible metadata, query artifacts, and adapter/source mapping disagree with one another, causing rejection, execution errors, missing graph links, or unexpected empty results.
+- **Implementation source**: `packages/data-engine-core/src/main/java/io/ontomato/dataengine/service/OntologyQueryService.java`, `service/impl/AdminServiceImpl.java`, `util/DBSchemaUtil.java`, and the configured data adapters under `packages/data-adapters/`.
 
 ## Symptoms
 
-- Query reports `class not found` / `property not found` / `relation not found`, or returns empty when there should be data.
-- Identifiers in the DSL appear as PascalCase / camelCase (e.g. `/univ_demo/Person`, `personToTechDuty`), while the database is actually all-lowercase / snake_case.
-- The object-class relationship graph has no content or missing links.
-- The metadata probing tool's type judgment conflicts with the schema description (e.g. a field marked varchar but the probing tool refuses to process it as varchar).
+- Query admission reports an unknown or invisible ontology class, field, or relationship.
+- DSL validation rejects the query shape, or the adapter reports that a source table, field, or relationship cannot be resolved.
+- The visible ontology overview lacks an expected class or relationship, or a two-step query cannot read its temporary table.
 
-## Possible Causes
+## Possible Causes and Boundaries
 
-- **Naming style inconsistency**: the Agent generates DSL based on JSONRule; when class names, field names, and relationship names are inconsistent with the database's actual naming, the query fails or is empty. The database is strictly case-sensitive.
-- **Dangling relationship references**: `relationshipDefs`' `fromClass` / `toClass` are hand-written strings and may reference class names that do not exist in `classDefs` (trailing/leading underscores, spaces, case differences).
-- Note: `classDefs` / `relationshipDefs` refer to the pretty JSONRule format visible in the management console; the internal storage field names differ (`classDef` / `relationship_rule` / `fromclass` / `toclass`); verification should use the pretty format exported from the management console.
-
-## Distinguishing Characteristics
-
-- `is not exist` involving business class/field/relationship names → this entry; involving `sys_` prefixed system tables → go to [System index and table initialization failure causes startup or link anomalies](system-index-and-table-init-failure-causes-startup-or-link-errors.md).
-- Type registration problems can also appear as execution-layer failures (conditions silently dropped, SQL generation anomalies), see [Unregistered class names cause execution NPE or illegal SQL](../standard-query-turn/unregistered-class-name-causes-npe-or-invalid-sql.md).
+- The class, attribute, or relationship is absent or disabled in the stored JSONRule, or a relationship endpoint does not exactly match a defined class.
+- The object is present in raw metadata but hidden from this run by data permission or class scope.
+- Multi-source routing or adapter mapping points a class or relationship at the wrong source, or the source-side name no longer matches the ontology mapping.
+- Leading-slash spelling is normalized to the schema's own spelling and is not by itself a mismatch. Other case, whitespace, or spelling differences are not normalized.
+- A temporary table is known only after an earlier step in the same DSL saves it. Reading any other temporary or unregistered name is not a valid ontology class reference.
 
 ## Verification and Localization
 
-1. From the current artifacts (`diagnostics/query_logic.md` or the failed result's query logic), extract the actual DSL's class names, field names, and relationship names.
-2. Use `read_metadata` to obtain the current JSONRule, and `data_query_execute` to sample-verify the actual database schema, comparing case, naming style, and extra characters one by one.
-3. For graph problems, iterate `relationshipDefs`, checking that each `fromClass` / `toClass` exactly exists in `classDefs[].name`.
-4. Manually changing DSL identifiers to the actual database names for temporary verification is only for attribution; disposition is to fix the metadata and then retest with the original question.
+1. Take the actual recipe, query package, or DSL and its `sourceAnalysis` from the failed round's artifact; do not reconstruct the query from the reply text.
+2. Read current raw metadata with `ops.mjs metadata '{"format":"json"}'` and compare canonical class, attribute, relationship, endpoint, and enabled flags exactly.
+3. Separate visible-scope absence from raw-metadata absence before changing anything. For adapter errors, use a narrow read-only query to verify the source-side resolution.
+4. After the owning metadata or mapping is corrected, retest the original question rather than only the edited fragment.
 
 ## When to Exclude
 
-- Identifiers all consistent and query legal but still no result → go to [Missing data relations or identifier inconsistency causes empty query results](missing-or-inconsistent-data-relations-cause-empty-results.md).
+- Metadata and query shape are consistent and execution succeeds, but the result is empty or wrong — continue with [Missing data relations or identifier inconsistency causes empty query results](missing-or-inconsistent-data-relations-cause-empty-results.md).
