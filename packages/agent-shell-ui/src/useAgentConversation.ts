@@ -301,22 +301,24 @@ export function useAgentConversation(
     sendError.value = null;
     pendingInput.value = text;
     let createdSession: AgentHostSession | null = null;
+    const sentSessionId = state.sessionId;
     try {
       const view = presentation();
       const binding = view && { viewId: view.viewId, ...(initialPage === undefined ? {} : { initialPage }) };
       const page = pageSkill();
-      if (!state.sessionId) {
+      if (!sentSessionId) {
         const context = sessionContext();
         const input = context === undefined ? agentId : { agentId, context };
         createdSession = await (opensPreview() ? client.createSession(input, { preview: true }) : client.createSession(input));
       }
-      if (current !== token) return null;
-      if (createdSession) {
+      if (current !== token && port() !== client) return null;
+      const targetSessionId = createdSession?.id ?? sentSessionId!;
+      if (createdSession && current === token) {
         state.sessionId = createdSession.id;
         state.session = createdSession;
         state.workspaceId = createdSession.workspaceId ?? null;
       }
-      const result = await client.send(state.sessionId!, {
+      const result = await client.send(targetSessionId, {
         message: text, ...reply, ...(binding ? { presentationBinding: binding } : {}), ...(page ? { pageSkillContext: page } : {}),
       });
       if (current !== token) return moved() ? null : { createdSession, ...result };

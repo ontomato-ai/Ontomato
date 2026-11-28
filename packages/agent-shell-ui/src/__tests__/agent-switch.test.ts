@@ -4,7 +4,7 @@ import AgentShell from "../components/AgentShell.vue";
 import { testDisplay } from "./display";
 import { useAgentNav, type AgentNav } from "../useAgentNav";
 import { servePageComposerKey, type PageComposerExpand } from "../page-composer-entry";
-import type { AgentHostSendResult, AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { AgentHostSendResult, AgentHostSession, AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 
@@ -16,7 +16,10 @@ import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
  * The agent is chosen at the head of the application's column, where the user put it (2026-11-06), and only there: the
  * conversation's composer has no chooser of its own, so nothing else on the screen can change the current agent.
  */
-const labels = { agent: "Agent", placeholder: "Message", send: "Send", stop: "Stop", working: "Working" } as unknown as ShellLabels;
+const labels = {
+  agent: "Agent", placeholder: "Message", send: "Send", stop: "Stop", working: "Working",
+  elapsed: (time: string) => time, worked: (time: string) => `Worked ${time}`,
+} as unknown as ShellLabels;
 const workbench: ShellWorkbenchDeclaration = { id: "agents", label: "Agents", features: [] };
 const assistant = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const analyst = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -251,37 +254,191 @@ it("allows a panel conversation entry to start a new or preview session while a 
   expect(root.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Fresh draft");
 });
 
-it("drops an unaccepted first-sentence send when switching to another agent before session creation or run admission", async () => {
-  // 1) Switch before createSession resolves: client.send is never called for the abandoned session.
-  const firstCreate = deferred<AgentHostSession>();
-  const hostBeforeCreate = makeClient({
-    createSession: vi.fn(() => firstCreate.promise),
+function makeRecordedHost(options: {
+  createSession?: (input: string | { agentId: string }) => Promise<AgentHostSession>;
+  send?: (id: string, message: string, defaultSend: (id: string, message: string) => Promise<AgentHostSendResult>) => Promise<AgentHostSendResult>;
+} = {}) {
+  const sessions = new Map<string, AgentHostSession>();
+  const histories = new Map<string, AgentHostSessionHistory>();
+  let seq = 0;
+
+  const defaultCreate = async (input: string | { agentId: string }) => {
+    const targetAgent = typeof input === "string" ? input : input.agentId;
+    return makeSession(`recorded-${++seq}`, targetAgent);
+  };
+
+  const defaultSend = async (id: string, message: string): Promise<AgentHostSendResult> => {
+    const existing = sessions.get(id);
+    if (existing && !existing.title) {
+      sessions.set(id, { ...existing, title: message });
+    }
+    const replyRunId = `run-${id}`;
+    const answerId = `answer-${id}`;
+    const userMsg = { id: `user-${id}`, runId: replyRunId, messageSeq: 1, contextSeq: 1, message: { role: "user" as const, content: message, timestamp: 1 } };
+    const assistantMsg = {
+      id: answerId, runId: replyRunId, messageSeq: 2, contextSeq: 2,
+      message: {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: `Answer to: ${message}` }],
+        api: null, provider: null, model: null, usage: null, stopReason: "stop" as const, timestamp: 2,
+      },
+    };
+    const finishedRun = {
+      id: replyRunId, sessionId: id, status: "stopped" as const, stopReason: "stop" as const, errorMessage: null,
+      answerMessageId: answerId, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: new Date(0).toISOString(), resolvedSkills: [],
+    };
+    histories.set(id, {
+      pendingQuestions: [],
+      session: sessions.get(id) ?? makeSession(id, assistant),
+      messages: [userMsg, assistantMsg],
+      runs: [finishedRun],
+      latestRun: null,
+      page: { messageSeq: 2, olderCursor: null, nextCursor: null, throughCursor: "" },
+    });
+    return admission(id, message);
+  };
+
+  const client = makeClient({
+    listSessions: vi.fn(async (targetAgent: string) => ({
+      sessions: [...sessions.values()].filter((row) => row.agentId === targetAgent),
+      nextCursor: null,
+    })),
+    readHistory: vi.fn(async (id: string): Promise<AgentHostSessionHistory> => histories.get(id) ?? {
+      pendingQuestions: [],
+      session: sessions.get(id) ?? session,
+      messages: [],
+      runs: [],
+      latestRun: null,
+      page: { messageSeq: 0, olderCursor: null, nextCursor: null, throughCursor: "" },
+    }),
+    createSession: vi.fn(async (input) => {
+      const created = await (options.createSession ? options.createSession(input) : defaultCreate(input));
+      sessions.set(created.id, created);
+      return created;
+    }),
+    send: vi.fn(async (id: string, input: { message: string }) =>
+      options.send ? options.send(id, input.message, defaultSend) : defaultSend(id, input.message),
+    ),
   });
-  const view1 = render({ initialSessionId: null, client: hostBeforeCreate });
+
+  return { client, sessions };
+}
+
+it("1) sends the first sentence into its own background session when switching away before createSession returns", async () => {
+  const firstCreate = deferred<AgentHostSession>();
+  const host = makeRecordedHost({ createSession: () => firstCreate.promise });
+  const view = render({ initialSessionId: null, client: host.client });
   await settle();
 
-  const firstSend = view1.shell.value!.send("Before create");
+  const firstSend = view.shell.value!.send("Before create");
   await settle();
-  await pickAgent(view1.root, "Analyst");
+  await pickAgent(view.root, "Analyst");
 
-  expect(view1.agentId.value).toBe(analyst);
-  expect(view1.sessionId.value).toBeNull();
-  expect(view1.root.querySelector(".unstarted")?.textContent).toBe("true");
-  expect(view1.root.textContent).not.toContain("Before create");
+  expect(view.agentId.value).toBe(analyst);
+  expect(view.sessionId.value).toBeNull();
+  expect(view.root.querySelector(".unstarted")?.textContent).toBe("true");
+  expect(view.root.textContent).not.toContain("Before create");
 
-  firstCreate.resolve(makeSession("abandoned-before-create", assistant));
+  firstCreate.resolve(makeSession("bg-before-create", assistant));
   await firstSend;
   await settle();
 
-  expect(hostBeforeCreate.send).not.toHaveBeenCalled();
-  expect(view1.sessionId.value).toBeNull();
-  expect(view1.agentId.value).toBe(analyst);
+  expect(host.client.send).toHaveBeenCalledWith("bg-before-create", expect.objectContaining({ message: "Before create" }));
+  expect(view.agentId.value).toBe(analyst);
+  expect(view.sessionId.value).toBeNull();
+  expect(view.nav().sessions.value.map((row) => row.id)).not.toContain("bg-before-create");
 
-  app?.unmount();
-  app = null;
-  document.body.innerHTML = "";
+  await pickAgent(view.root, "Assistant");
+  const openBtn = [...view.root.querySelectorAll<HTMLButtonElement>(".session-list .session-open")]
+    .find((btn) => btn.textContent?.includes("Before create"));
+  expect(openBtn).toBeDefined();
+  openBtn!.click();
+  await settle();
+  expect(view.sessionId.value).toBe("bg-before-create");
+  expect(view.root.textContent).toContain("Before create");
+  expect(view.root.textContent).toContain("Answer to: Before create");
+});
 
-  // 2) Switch via panel entry after createSession resolved, while client.send is still pending.
+it("2) sends the first sentence into its own background session when switching away after createSession returns and before client.send is called", async () => {
+  const secondCreate = deferred<AgentHostSession>();
+  let view!: ReturnType<typeof render>;
+  const host = makeRecordedHost({
+    createSession: () => {
+      const p = secondCreate.promise;
+      void p.then(() => {
+        // User starts a new blank conversation on the same agent right as createSession resolves, before send() resumes.
+        (view.root.querySelector(".nav-item.primary") as HTMLButtonElement).click();
+      });
+      return p.then((created) => created);
+    },
+  });
+  view = render({ initialSessionId: null, client: host.client });
+  await settle();
+
+  const secondSend = view.shell.value!.send("After create before send");
+  await nextTick();
+  secondCreate.resolve(makeSession("bg-between-create-and-send", assistant));
+  await secondSend;
+  await settle();
+
+  expect(host.client.send).toHaveBeenCalledWith("bg-between-create-and-send", expect.objectContaining({ message: "After create before send" }));
+  expect(view.sessionId.value).toBeNull();
+  expect(view.root.querySelector(".unstarted")?.textContent).toBe("true");
+  const openBtn = [...view.root.querySelectorAll<HTMLButtonElement>(".session-list .session-open")]
+    .find((btn) => btn.textContent?.includes("After create before send"));
+  expect(openBtn).toBeDefined();
+  openBtn!.click();
+  await settle();
+  expect(view.sessionId.value).toBe("bg-between-create-and-send");
+  expect(view.root.textContent).toContain("After create before send");
+  expect(view.root.textContent).toContain("Answer to: After create before send");
+});
+
+it("3) runs the first sentence in its own background session when switching away after client.send is called and before run admission", async () => {
+  const pendingAdmit = deferred<AgentHostSendResult>();
+  const host = makeRecordedHost({
+    send: async (id, message, defaultSend) => {
+      const result = await defaultSend(id, message);
+      if (id === "bg-before-admit") return pendingAdmit.promise;
+      return result;
+    },
+    createSession: async (input) => {
+      const targetAgent = typeof input === "string" ? input : input.agentId;
+      return makeSession(targetAgent === assistant ? "bg-before-admit" : "analyst-fresh", targetAgent);
+    },
+  });
+  const view = render({ initialSessionId: null, client: host.client });
+  await settle();
+
+  const sentToAssistant = view.shell.value!.send("Before admit");
+  await settle();
+  await pickAgent(view.root, "Analyst");
+
+  expect(view.agentId.value).toBe(analyst);
+  expect(view.sessionId.value).toBeNull();
+  expect(view.root.querySelector(".unstarted")?.textContent).toBe("true");
+
+  pendingAdmit.resolve(admission("bg-before-admit", "Before admit"));
+  await sentToAssistant;
+  await settle();
+
+  expect(view.agentId.value).toBe(analyst);
+  expect(view.sessionId.value).toBeNull();
+  expect(view.nav().sessions.value.map((row) => row.id)).not.toContain("bg-before-admit");
+
+  await pickAgent(view.root, "Assistant");
+  const openBtn = [...view.root.querySelectorAll<HTMLButtonElement>(".session-list .session-open")]
+    .find((btn) => btn.textContent?.includes("Before admit"));
+  expect(openBtn).toBeDefined();
+  openBtn!.click();
+  await settle();
+  expect(view.sessionId.value).toBe("bg-before-admit");
+  expect(view.root.textContent).toContain("Before admit");
+  expect(view.root.textContent).toContain("Answer to: Before admit");
+});
+
+it("keeps an unaccepted first-sentence send from hijacking a panel entry switch before admission", async () => {
+  // Switch via panel entry after createSession resolved, while client.send is still pending.
   const pendingAdmit = deferred<AgentHostSendResult>();
   let count = 0;
   const hostBeforeAdmit = makeClient({
