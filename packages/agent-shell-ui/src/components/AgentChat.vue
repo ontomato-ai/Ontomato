@@ -121,7 +121,6 @@ provide(shellContextKey, {
   resolveArtifact: conversation.resolveArtifact,
   artifactRevision,
   readArtifact: (artifact) => props.client.readArtifact(artifact),
-  get readVectorResource() { return props.client.readVectorResource; },
   openArtifact: (open) => {
     void props.client
       .readArtifact(open.artifact)

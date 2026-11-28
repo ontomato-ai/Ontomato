@@ -7,7 +7,6 @@ import java.util.List;
 import com.alibaba.fastjson2.JSONObject;
 
 import io.ontomato.dataengine.bean.VectorResource;
-import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 public interface VectorResourceService {
 
@@ -40,6 +39,6 @@ public interface VectorResourceService {
 	 */
 	public void deleteAndDetach(String className, String attrName, String objectId, String path, String domainId);
 
-	public File getFile(String indexName, String fileName, String domainId, UserDataPermission permission);
+	public File getFile(String indexName, String fileName);
 	
 }

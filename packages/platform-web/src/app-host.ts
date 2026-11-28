@@ -30,7 +30,7 @@ import {panelUploadSize} from '@ontomato/contracts/panel-upload';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
 import type {AppBridgeConfirmPanelOperation,AppBridgeConfirmPanelOperationResult,AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import type {PanelConversationEntry} from '@ontomato/contracts/panel-conversation-entry';
-import {servePageComposerKey,vectorResourceTarget,type PageComposerExpand,type PageComposerRequest,type ServePageComposer} from '@ontomato/agent-shell-ui';
+import {servePageComposerKey,type PageComposerExpand,type PageComposerRequest,type ServePageComposer} from '@ontomato/agent-shell-ui';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
@@ -383,13 +383,10 @@ export function installAppHost(options: {
       // A panel's frame asks only for what its own declaration covers; every other frame for the SDK's capabilities.
       const panel=panelFrames.get(source);
       if(panel&&service===''&&method==='POST'&&path===PANEL_READ)init={...init,body:readAsFrame(panel,init.body)};
-      const readsVectorResource = !panel && execution.kind === 'live' && service === '/data-query' && method === 'GET'
-        && path.startsWith('/vectorResource/resource/') && path.split('/').length === 5
-        && Boolean(vectorResourceTarget(path));
       if(panel)admitPanelRequest(panel,method,path,service,init.body);
       else{
         const allowed=service==='/data-query'?['/metricView/queryById','/metricView/execute','/action/form','/action/execute']:[];
-        if(service==='/data-query'&&!readsVectorResource&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
+        if(service==='/data-query'&&!allowed.includes(path))throw new Error('Use a declared SDK capability');
         const declared=['/business-definitions','/business-definition-triggers','/assistant'].some(prefix=>path===prefix||path.startsWith(prefix+'/')||path.startsWith(prefix+'?'));
         if(service===''&&!declared)throw new Error('Use a declared SDK product operation');
       }
@@ -404,7 +401,7 @@ export function installAppHost(options: {
       // A preview marks every request it sends; each write entry refuses that identity itself. Reads and
       // building travel exactly as they do live because their owners do not admit writes by this header.
       if(execution.kind==='preview')headers.set(EXECUTION_CONTEXT_HEADER,previewExecutionContextHeader);
-      const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${path}`,{...init,headers,credentials:'omit',...(readsVectorResource ? {redirect:'error'} : {})});
+      const response=await fetchWorkbench(readRuntimeConfig().apiBase,`${service}${path}`,{...init,headers,credentials:'omit'});
       return panel?relayToPanel(panel,method,path,service,response):response;
     },
     invalidateProductData(source,event){

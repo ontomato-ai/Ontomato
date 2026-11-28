@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.nio.file.Path;
+import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
 
@@ -172,13 +173,9 @@ public class VectorResourceController {
 
 	@GetMapping("/vectorResource/resource/{indexName}/{fileName}")
 	public ResponseEntity<Resource> download(@PathVariable String indexName, @PathVariable String fileName) {
-		User user = identity.getCurrentUser();
-        if (user == null || user.getDomainId() == null)
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A domain credential is required");
-        identity.getCurrentCredentialExpiresAt();
-        Resource resource = new FileSystemResource(vectorResourceService.getFile(indexName, fileName,
-                user.getDomainId(), identity.getCurrentUserDataPermission()));
-		if (resource.exists() && resource.isReadable()) {
+		File file = vectorResourceService.getFile(indexName, fileName);
+		Resource resource = file == null ? null : new FileSystemResource(file);
+		if (resource != null && resource.exists() && resource.isReadable()) {
             return ResponseEntity.ok()
                     .contentType(determineContentType(fileName))
                     .body(resource);

@@ -367,22 +367,8 @@ public class VectorResourceDao extends BaseDao {
 		}
 	}
 
-    public record ResourceObject(String className, String attribute, String objectId) {}
-
-    public ResourceObject findResourceObject(String indexName, String fileName, String domainId) {
-        if (indexName.indexOf('/') >= 0 || indexName.indexOf('\\') >= 0
-                || !indexName.startsWith("vector-") || !indexName.endsWith("-" + domainId)
-                || !fileName.matches("[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+")) return null;
-        String table = quotedTable(indexName);
-        if (jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class, table) == null) return null;
-        return jdbcTemplate.query("SELECT class_name, attr_name, object_id FROM " + table + " WHERE path = ?",
-                (row, number) -> new ResourceObject(row.getString("class_name"), row.getString("attr_name"),
-                        row.getString("object_id")), indexName + "/" + fileName).stream()
-                .filter(object -> indexName.equals(generateIndexName(object.className(), object.attribute(), domainId)))
-                .findFirst().orElse(null);
-    }
-
 	public File getFile(String indexName, String fileName) {
+		if (!indexName.matches("vector-[^/\\\\]+") || !fileName.matches("[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+")) return null;
 		return new File("conf/" + dirName + "/" + indexName + "/" + fileName);
 	}
 

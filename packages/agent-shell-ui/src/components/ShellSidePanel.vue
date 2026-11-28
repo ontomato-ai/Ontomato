@@ -20,7 +20,6 @@ const shell = inject(shellContextKey)!;
 provide(shellContextKey, {
   ...shell,
   get workspaceId() { return shell.workspaceId; },
-  get readVectorResource() { return shell.readVectorResource; },
   openArtifact: (next) => shell.openArtifact(next, props.open.key),
 });
 const { width, resizing, startResize } = usePanelWidth();

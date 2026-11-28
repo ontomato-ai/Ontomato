@@ -13,7 +13,6 @@ import type {
 } from "./types";
 
 export interface ShellContext {
-  readVectorResource?: import("./vector-resource").ReadVectorResource;
   labels: Ref<ShellLabels>;
   workspaceId?: string | null;
   /** The host's task routes, when its conversations delegate work. */
