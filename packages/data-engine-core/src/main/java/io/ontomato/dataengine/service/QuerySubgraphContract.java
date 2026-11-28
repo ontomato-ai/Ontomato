@@ -2,17 +2,20 @@ package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.*;
 import com.alibaba.fastjson2.schema.JSONSchema;
+import io.ontomato.dataengine.util.JsonSchemaError;
 import java.util.*;
 
 /** Dataset sourceAnalysis boundary; structural schema is generated from the shared TS contract. */
 public final class QuerySubgraphContract {
   private QuerySubgraphContract() {}
 
+  private static final JSONObject SCHEMA_JSON;
   private static final JSONSchema SHAPE;
   static {
     try (var input = QuerySubgraphContract.class.getResourceAsStream("/ontology-contracts/query-subgraph.schema.json")) {
       if (input == null) throw new IllegalStateException("Missing query subgraph contract");
-      SHAPE = JSONSchema.of(JSON.parseObject(input.readAllBytes()));
+      SCHEMA_JSON = JSON.parseObject(input.readAllBytes());
+      SHAPE = JSONSchema.of(SCHEMA_JSON);
     } catch (Exception error) {
       throw new ExceptionInInitializerError(error);
     }
@@ -20,7 +23,7 @@ public final class QuerySubgraphContract {
 
   public static JSONObject validate(JSONObject graph) {
     var validation = SHAPE.validate(graph);
-    if (!validation.isSuccess()) throw new IllegalArgumentException("Invalid query subgraph: " + validation.getMessage());
+    if (!validation.isSuccess()) throw new IllegalArgumentException("Invalid query subgraph: " + JsonSchemaError.explain(SCHEMA_JSON, graph, validation.getMessage()));
     List<String> issues = issues(graph);
     if (!issues.isEmpty()) throw new IllegalArgumentException(String.join("; ", issues));
     return graph;

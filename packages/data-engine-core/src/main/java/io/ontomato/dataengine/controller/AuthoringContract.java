@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.schema.JSONSchema;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
+import io.ontomato.dataengine.util.JsonSchemaError;
 import java.io.IOException;
 import java.util.Map;
 import java.util.HashMap;
@@ -11,15 +12,22 @@ import java.util.HashMap;
 /** Request shapes generated from the same public contract that registers the Workbench callback. */
 final class AuthoringContract {
   private static final Map<String, JSONSchema> SHAPES;
+  private static final Map<String, JSONObject> SCHEMAS;
 
   static {
     try (var input = AuthoringContract.class.getResourceAsStream("/ontology-contracts/authoring.java.schema.json")) {
       var definitions = JSON.parseObject(input.readAllBytes()).getJSONObject("definitions");
       var shapes = new HashMap<String, JSONSchema>();
-      definitions.forEach((name, shape) -> shapes.put(name, JSONSchema.of((JSONObject) shape)));
-      shapes.put("adoptionInput", JSONSchema.of(definitions.getJSONObject("adoptionRequest")
-          .getJSONObject("properties").getJSONObject("input")));
+      var rawShapes = new HashMap<String, JSONObject>();
+      definitions.forEach((name, shape) -> {
+        shapes.put(name, JSONSchema.of((JSONObject) shape));
+        rawShapes.put(name, (JSONObject) shape);
+      });
+      var adoptionInput = definitions.getJSONObject("adoptionRequest").getJSONObject("properties").getJSONObject("input");
+      shapes.put("adoptionInput", JSONSchema.of(adoptionInput));
+      rawShapes.put("adoptionInput", adoptionInput);
       SHAPES = Map.copyOf(shapes);
+      SCHEMAS = Map.copyOf(rawShapes);
     } catch (IOException error) {
       throw new ExceptionInInitializerError(error);
     }
@@ -29,7 +37,7 @@ final class AuthoringContract {
 
   static void validate(String name, JSONObject value) {
     var result = SHAPES.get(name).validate(value);
-    if (!result.isSuccess()) throw AgentHttpException.invalid(result.getMessage());
+    if (!result.isSuccess()) throw AgentHttpException.invalid(JsonSchemaError.explain(SCHEMAS.get(name), value, result.getMessage()));
   }
 
   static void validateOperation(String kind, String operation, JSONObject input) {

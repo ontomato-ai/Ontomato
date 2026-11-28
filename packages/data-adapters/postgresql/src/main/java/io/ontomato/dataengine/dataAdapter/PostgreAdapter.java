@@ -20,6 +20,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -139,7 +140,6 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		}
 	}
 
-
 	private static void requireRenderableFirstStepShape(JSONObject step) {
 		JSONArray patterns = step.getJSONObject("graph").getJSONArray("patterns");
 		if (patterns == null || patterns.size() != 1) {
@@ -197,15 +197,6 @@ public class PostgreAdapter extends SandboxDataAdapter {
 
 	private static DslContractViolationException invalidStep(String path, String detail) {
 		return new DslContractViolationException(DslContractViolationException.Code.INVALID_GRAMMAR, path, detail);
-	}
-
-	private static Set<String> outputAliases(JSONObject step) {
-		Set<String> aliases = new LinkedHashSet<>();
-		JSONArray fields = step.getJSONObject("output").getJSONArray("fields");
-		for (int i = 0; i < fields.size(); i++) {
-			aliases.add(fields.getJSONObject(i).getString("as"));
-		}
-		return aliases;
 	}
 
 	private static final class OrderContext {
@@ -310,158 +301,8 @@ public class PostgreAdapter extends SandboxDataAdapter {
 									"the timeseries condition is not implemented by " + getClass().getSimpleName());
 						}
 					if (conditions.getJSONObject("properties") != null) {
-						JSONObject properties = conditions.getJSONObject("properties");
-						List<Object[]> queue = new ArrayList<>();
-						queue.add(new Object[] { properties, null });
-						while (!queue.isEmpty()) {
-							Object[] objs = queue.removeFirst();
-							JSONObject cond = objs[0] == null ? null : (JSONObject) objs[0];
-							String and_or_end = objs[1] == null ? null : (String) objs[1];
-							if (cond == null && and_or_end != null) {
-								objWhere += and_or_end;
-							} else if (cond.getJSONArray("and") != null && cond.getJSONArray("and").size() > 0) {
-								objWhere += "(";
-								List<Object[]> newQueue = new ArrayList<>();
-								JSONArray ands = cond.getJSONArray("and");
-								for (int j = 0; j < ands.size(); j++) {
-									JSONObject and = ands.getJSONObject(j);
-									newQueue.add(new Object[] { and, null });
-									if (j < ands.size() - 1) {
-										newQueue.add(new Object[] { null, " and " });
-									}
-								}
-								newQueue.add(new Object[] { null, ")" });
-								newQueue.addAll(queue);
-								queue = newQueue;
-							} else if (cond.getJSONArray("or") != null && cond.getJSONArray("or").size() > 0) {
-								objWhere += "(";
-								List<Object[]> newQueue = new ArrayList<>();
-								JSONArray ors = cond.getJSONArray("or");
-								for (int j = 0; j < ors.size(); j++) {
-									JSONObject or = ors.getJSONObject(j);
-									newQueue.add(new Object[] { or, null });
-									if (j < ors.size() - 1) {
-										newQueue.add(new Object[] { null, " or " });
-									}
-								}
-								newQueue.add(new Object[] { null, ")" });
-								newQueue.addAll(queue);
-								queue = newQueue;
-							} else if (cond.getJSONArray("not") != null && cond.getJSONArray("not").size() > 0) {
-								objWhere += "(not (";
-								List<Object[]> newQueue = new ArrayList<>();
-								newQueue.add(new Object[] { DslGrammarValidator.negated(cond), null });
-								newQueue.add(new Object[] { null, "))" });
-								newQueue.addAll(queue);
-								queue = newQueue;
-							} else {
-								String attr = cond.getString("field");
-								String type = attrTypeMap.get(attr);
-								String column = columnReference(alias, physicalIdentifier(attr));
-								String sqlCond = null;
-								if ("=".equals(cond.getString("operator"))
-										|| "!=".equals(cond.getString("operator"))) {
-									if ("varchar".equals(type) || "text".equals(type)) {
-										sqlCond = column + " " + cond.getString("operator")
-												+ " '" + cond.getString("value").replace("'", "''") + "'";
-									} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
-										sqlCond = column + " " + cond.getString("operator")
-												+ " " + cond.get("value");
-									} else if ("boolean".equals(type)) {
-										sqlCond = column + " " + cond.getString("operator")
-												+ " " + booleanLiteral(cond.get("value"));
-									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
-										sqlCond = column + " " + cond.getString("operator")
-												+ " " + timeLiteral(cond.get("value"));
-									}
-								} else if ("like".equals(cond.getString("operator")) && LikePattern.escaped(cond)) {
-									if ("varchar".equals(type) || "text".equals(type)) {
-										String pattern = LikePattern.of(cond, true).sql("").replace("'", "''");
-										sqlCond = column + " like '" + pattern + "' escape '!'";
-									}
-								} else if ("like".equals(cond.getString("operator"))
-										|| "not like".equals(cond.getString("operator"))) {
-									if ("varchar".equals(type) || "text".equals(type)) {
-										String value = cond.getString("value").replace("'", "''").trim();
-										if (!value.startsWith("%") && !value.endsWith("%")) {
-											value = "%" + value + "%";
-										}
-										sqlCond = column + " " + cond.getString("operator")
-												+ " '" + value + "'";
-									}
-								} else if (">".equals(cond.getString("operator"))
-										|| ">=".equals(cond.getString("operator"))
-										|| "<=".equals(cond.getString("operator"))
-										|| "<".equals(cond.getString("operator"))) {
-									if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
-										sqlCond = column + " " + cond.getString("operator")
-												+ " " + cond.get("value");
-									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
-										sqlCond = column + " " + cond.getString("operator")
-												+ " " + timeLiteral(cond.get("value"));
-									} else if ("varchar".equals(type)) {
-										sqlCond = column + " " + cond.getString("operator")
-												+ " '" + cond.get("value").toString().replace("'", "''") + "'";
-									}
-								} else if ("between".equals(cond.getString("operator"))) {
-									JSONArray value = cond.getJSONArray("value");
-									if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
-										sqlCond = "(" + column + " >= " + value.get(0)
-												+ " and " + column + " <= " + value.get(1) + ")";
-									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
-										sqlCond = "(" + column + " >= " + timeLiteral(value.get(0))
-												+ " and " + column
-												+ " <= " + timeLiteral(value.get(1)) + ")";
-									} else if ("varchar".equals(type)) {
-										sqlCond = "(" + column + " >= '" + value.get(0).toString().replace("'", "''")
-												+ "' and " + column + " <= '" + value.get(1).toString().replace("'", "''") + "')";
-									}
-								} else if ("in".equals(cond.getString("operator"))) {
-									JSONArray value = cond.getJSONArray("value");
-									if ("varchar".equals(type) || "text".equals(type)) {
-										String in = "";
-										for (int j = 0; j < value.size(); j++) {
-											in += "'" + value.getString(j).replace("'", "''") + "',";
-										}
-										in = "(" + in.substring(0, in.length() - 1) + ")";
-										sqlCond = column + " in " + in;
-									} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
-										String in = "";
-										for (int j = 0; j < value.size(); j++) {
-											in += value.get(j) + ",";
-										}
-										in = "(" + in.substring(0, in.length() - 1) + ")";
-										sqlCond = column + " in " + in;
-									} else if ("boolean".equals(type)) {
-										String in = "";
-										for (int j = 0; j < value.size(); j++) {
-											in += booleanLiteral(value.get(j)) + ",";
-										}
-										in = "(" + in.substring(0, in.length() - 1) + ")";
-										sqlCond = column + " in " + in;
-									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
-										String in = "";
-										for (int j = 0; j < value.size(); j++) {
-											in += timeLiteral(value.get(j)) + ",";
-										}
-										in = "(" + in.substring(0, in.length() - 1) + ")";
-										sqlCond = column + " in " + in;
-									}
-								} else if ("is".equals(cond.getString("operator"))
-										|| "is not".equals(cond.getString("operator"))) {
-									sqlCond = column + " " + cond.getString("operator") + " null";
-								}
-								if (sqlCond == null) {
-									throw new DslContractViolationException(
-											DslContractViolationException.Code.UNSUPPORTED_OPERATOR_FOR_TYPE,
-											"conditions.properties",
-											"operator '" + cond.getString("operator") + "' on field '" + attr
-													+ "' of type '" + type + "' is not supported by "
-													+ getClass().getSimpleName());
-								}
-								objWhere += sqlCond;
-							}
-						}
+						objWhere = renderPropertiesWhere(conditions.getJSONObject("properties"), alias, attrTypeMap, false,
+								"conditions.properties");
 					}
 					if (conditions.getJSONObject("text") != null) {
 						JSONObject text = conditions.getJSONObject("text");
@@ -683,7 +524,7 @@ public class PostgreAdapter extends SandboxDataAdapter {
 				return subSelectSql;
 			} else {
 				OrderContext firstOrderContext = orderContext(firstStep, null, classAttrTypeMap, null);
-				Set<String> temporaryFields = outputAliases(firstStep);
+				Map<String, String> temporaryTypes = temporaryFieldTypes(firstStep, classAttrTypeMap);
 				subSelectSql = appendGroupByHaving(firstStep, subSelectSql, null);
 				subSelectSql = appendOrderBy(firstStep, subSelectSql, firstOrderContext, "answer.steps[0]");
 				subSelectSql = appendIntermediateLimit(firstStep, subSelectSql);
@@ -722,12 +563,12 @@ public class PostgreAdapter extends SandboxDataAdapter {
 						+ "from (\n"
 						+ subSelectSql + "\n"
 						+ ") as " + quoteIdentifier(tmpClassAs);
-				String temporaryWhere = temporaryWhere(secondStep, tmpClassAs, temporaryFields);
+				String temporaryWhere = temporaryWhere(secondStep, tmpClassAs, temporaryTypes);
 				if (!temporaryWhere.isEmpty()) {
 					sql += "\nwhere\n    " + temporaryWhere;
 				}
 
-				OrderContext secondOrderContext = orderContext(secondStep, tmpClassAs, null, temporaryFields);
+				OrderContext secondOrderContext = orderContext(secondStep, tmpClassAs, null, temporaryTypes.keySet());
 				sql = appendGroupByHaving(secondStep, sql, tmpClassAs);
 				sql = appendOrderBy(secondStep, sql, secondOrderContext, "answer.steps[1]");
 				sql = appendLimit(secondStep, sql, rowLimit);
@@ -741,6 +582,208 @@ public class PostgreAdapter extends SandboxDataAdapter {
 			log.error(e.getMessage(), e);
 			throw new Exception("Failed to convert DSL to SQL");
 		}
+	}
+
+	private static Map<String, String> temporaryFieldTypes(JSONObject step,
+			Map<String, Map<String, String>> classAttrTypeMap) {
+		Map<String, String> objectClasses = new HashMap<>();
+		JSONArray objects = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).getJSONArray("objects");
+		for (int i = 0; i < objects.size(); i++) {
+			JSONObject object = objects.getJSONObject(i);
+			objectClasses.put(object.getString("variable"), object.getString("class"));
+		}
+		Map<String, String> types = new LinkedHashMap<>();
+		JSONArray fields = step.getJSONObject("output").getJSONArray("fields");
+		for (int i = 0; i < fields.size(); i++) {
+			JSONObject field = fields.getJSONObject(i);
+			String alias = field.getString("as");
+			if (field.getString("expr") != null && !field.getString("expr").isBlank()) {
+				types.put(alias, null);
+				continue;
+			}
+			String variable = field.getString("variable");
+			String sourceField = field.getString("field");
+			Map<String, String> sourceTypes = classAttrTypeMap.get(objectClasses.get(variable));
+			String sourceType = sourceTypes == null ? null : sourceTypes.get(sourceField);
+			String function = field.getString("function");
+			if (function == null || function.isBlank()) {
+				types.put(alias, sourceType);
+				continue;
+			}
+			String normalized = function.trim().toLowerCase(Locale.ROOT);
+			if ("count".equals(normalized)) {
+				types.put(alias, "long");
+			} else if ("avg".equals(normalized)) {
+				types.put(alias, "double");
+			} else if ("min".equals(normalized) || "max".equals(normalized) || "sum".equals(normalized)) {
+				types.put(alias, sourceType);
+			} else {
+				types.put(alias, null);
+			}
+		}
+		return types;
+	}
+
+	private String renderPropertiesWhere(JSONObject properties, String alias, Map<String, String> attrTypeMap,
+			boolean quotedFields, String path) {
+		String objWhere = "";
+		List<Object[]> queue = new ArrayList<>();
+		queue.add(new Object[] { properties, null });
+		while (!queue.isEmpty()) {
+			Object[] objs = queue.removeFirst();
+			JSONObject cond = objs[0] == null ? null : (JSONObject) objs[0];
+			String and_or_end = objs[1] == null ? null : (String) objs[1];
+			if (cond == null && and_or_end != null) {
+				objWhere += and_or_end;
+			} else if (cond.getJSONArray("and") != null && cond.getJSONArray("and").size() > 0) {
+				objWhere += "(";
+				List<Object[]> newQueue = new ArrayList<>();
+				JSONArray ands = cond.getJSONArray("and");
+				for (int j = 0; j < ands.size(); j++) {
+					JSONObject and = ands.getJSONObject(j);
+					newQueue.add(new Object[] { and, null });
+					if (j < ands.size() - 1) {
+						newQueue.add(new Object[] { null, " and " });
+					}
+				}
+				newQueue.add(new Object[] { null, ")" });
+				newQueue.addAll(queue);
+				queue = newQueue;
+			} else if (cond.getJSONArray("or") != null && cond.getJSONArray("or").size() > 0) {
+				objWhere += "(";
+				List<Object[]> newQueue = new ArrayList<>();
+				JSONArray ors = cond.getJSONArray("or");
+				for (int j = 0; j < ors.size(); j++) {
+					JSONObject or = ors.getJSONObject(j);
+					newQueue.add(new Object[] { or, null });
+					if (j < ors.size() - 1) {
+						newQueue.add(new Object[] { null, " or " });
+					}
+				}
+				newQueue.add(new Object[] { null, ")" });
+				newQueue.addAll(queue);
+				queue = newQueue;
+			} else if (cond.getJSONArray("not") != null && cond.getJSONArray("not").size() > 0) {
+				objWhere += "(not (";
+				List<Object[]> newQueue = new ArrayList<>();
+				newQueue.add(new Object[] { DslGrammarValidator.negated(cond), null });
+				newQueue.add(new Object[] { null, "))" });
+				newQueue.addAll(queue);
+				queue = newQueue;
+			} else {
+				String attr = cond.getString("field");
+				String type = attrTypeMap.get(attr);
+				if (type == null && attrTypeMap.containsKey(attr)
+						&& !"is".equals(cond.getString("operator")) && !"is not".equals(cond.getString("operator"))) {
+					throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT, path,
+							"the type of field '" + attr + "' cannot be determined; project a typed source attribute or a count/avg/min/max/sum result before filtering it");
+				}
+				String column = columnReference(alias, quotedFields ? quoteIdentifier(attr) : physicalIdentifier(attr));
+				String sqlCond = null;
+				if ("=".equals(cond.getString("operator"))
+						|| "!=".equals(cond.getString("operator"))) {
+					if ("varchar".equals(type) || "text".equals(type)) {
+						sqlCond = column + " " + cond.getString("operator")
+								+ " '" + cond.getString("value").replace("'", "''") + "'";
+					} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
+						sqlCond = column + " " + cond.getString("operator")
+								+ " " + cond.get("value");
+					} else if ("boolean".equals(type)) {
+						sqlCond = column + " " + cond.getString("operator")
+								+ " " + booleanLiteral(cond.get("value"));
+					} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
+						sqlCond = column + " " + cond.getString("operator")
+								+ " " + timeLiteral(cond.get("value"));
+					}
+				} else if ("like".equals(cond.getString("operator")) && LikePattern.escaped(cond)) {
+					if ("varchar".equals(type) || "text".equals(type)) {
+						String pattern = LikePattern.of(cond, true).sql("").replace("'", "''");
+						sqlCond = column + " like '" + pattern + "' escape '!'";
+					}
+				} else if ("like".equals(cond.getString("operator"))
+						|| "not like".equals(cond.getString("operator"))) {
+					if ("varchar".equals(type) || "text".equals(type)) {
+						String value = cond.getString("value").replace("'", "''").trim();
+						if (!value.startsWith("%") && !value.endsWith("%")) {
+							value = "%" + value + "%";
+						}
+						sqlCond = column + " " + cond.getString("operator")
+								+ " '" + value + "'";
+					}
+				} else if (">".equals(cond.getString("operator"))
+						|| ">=".equals(cond.getString("operator"))
+						|| "<=".equals(cond.getString("operator"))
+						|| "<".equals(cond.getString("operator"))) {
+					if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
+						sqlCond = column + " " + cond.getString("operator")
+								+ " " + cond.get("value");
+					} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
+						sqlCond = column + " " + cond.getString("operator")
+								+ " " + timeLiteral(cond.get("value"));
+					} else if ("varchar".equals(type)) {
+						sqlCond = column + " " + cond.getString("operator")
+								+ " '" + cond.get("value").toString().replace("'", "''") + "'";
+					}
+				} else if ("between".equals(cond.getString("operator"))) {
+					JSONArray value = cond.getJSONArray("value");
+					if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
+						sqlCond = "(" + column + " >= " + value.get(0)
+								+ " and " + column + " <= " + value.get(1) + ")";
+					} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
+						sqlCond = "(" + column + " >= " + timeLiteral(value.get(0))
+								+ " and " + column
+								+ " <= " + timeLiteral(value.get(1)) + ")";
+					} else if ("varchar".equals(type)) {
+						sqlCond = "(" + column + " >= '" + value.get(0).toString().replace("'", "''")
+								+ "' and " + column + " <= '" + value.get(1).toString().replace("'", "''") + "')";
+					}
+				} else if ("in".equals(cond.getString("operator"))) {
+					JSONArray value = cond.getJSONArray("value");
+					if ("varchar".equals(type) || "text".equals(type)) {
+						String in = "";
+						for (int j = 0; j < value.size(); j++) {
+							in += "'" + value.getString(j).replace("'", "''") + "',";
+						}
+						in = "(" + in.substring(0, in.length() - 1) + ")";
+						sqlCond = column + " in " + in;
+					} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
+						String in = "";
+						for (int j = 0; j < value.size(); j++) {
+							in += value.get(j) + ",";
+						}
+						in = "(" + in.substring(0, in.length() - 1) + ")";
+						sqlCond = column + " in " + in;
+					} else if ("boolean".equals(type)) {
+						String in = "";
+						for (int j = 0; j < value.size(); j++) {
+							in += booleanLiteral(value.get(j)) + ",";
+						}
+						in = "(" + in.substring(0, in.length() - 1) + ")";
+						sqlCond = column + " in " + in;
+					} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
+						String in = "";
+						for (int j = 0; j < value.size(); j++) {
+							in += timeLiteral(value.get(j)) + ",";
+						}
+						in = "(" + in.substring(0, in.length() - 1) + ")";
+						sqlCond = column + " in " + in;
+					}
+				} else if ("is".equals(cond.getString("operator"))
+						|| "is not".equals(cond.getString("operator"))) {
+					sqlCond = column + " " + cond.getString("operator") + " null";
+				}
+				if (sqlCond == null) {
+					throw new DslContractViolationException(
+							DslContractViolationException.Code.UNSUPPORTED_OPERATOR_FOR_TYPE,
+							path,
+							"operator '" + cond.getString("operator") + "' on field '" + attr
+									+ "' of type '" + type + "' is not supported by "
+									+ getClass().getSimpleName());
+				}
+				objWhere += sqlCond;
+			}
+		}
+		return objWhere;
 	}
 
 	private String appendGroupByHaving(JSONObject step, String sql, String tmpClassAs) {
@@ -832,7 +875,6 @@ public class PostgreAdapter extends SandboxDataAdapter {
 				+ String.join("`, `", context.outputAliases) + "`");
 	}
 
-
 	private static void requireSortableAlias(String alias, OrderContext context, String path) {
 		String source = context.detailAliases.get(alias);
 		if (context.aggregate && source != null && !context.grouped.contains(source)) {
@@ -841,7 +883,7 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		}
 	}
 
-	private String temporaryWhere(JSONObject step, String tmpClassAs, Set<String> temporaryFields) {
+	private String temporaryWhere(JSONObject step, String tmpClassAs, Map<String, String> temporaryTypes) {
 		JSONObject object = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
 				.getJSONArray("objects").getJSONObject(0);
 		JSONObject conditions = object.getJSONObject("conditions");
@@ -865,25 +907,35 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		if (properties == null) {
 			return "";
 		}
-		return temporaryCondition(properties, tmpClassAs, temporaryFields, path + ".properties");
+		requireTemporaryConditionFields(properties, temporaryTypes.keySet(), path + ".properties");
+		return renderPropertiesWhere(properties, tmpClassAs, temporaryTypes, true, path + ".properties");
 	}
 
-	private static String temporaryCondition(JSONObject condition, String tmpClassAs, Set<String> temporaryFields,
-			String path) {
-		if (condition == null) {
-			throw invalidStep(path, "a temporary-table condition must be an object");
-		}
+	private static void requireTemporaryConditionFields(JSONObject condition, Set<String> temporaryFields, String path) {
 		JSONArray and = condition.getJSONArray("and");
 		if (and != null) {
-			return temporaryLogic(and, " and ", tmpClassAs, temporaryFields, path);
+			if (and.isEmpty()) {
+				throw invalidStep(path, "a logic condition requires a nonempty `and` list");
+			}
+			for (int i = 0; i < and.size(); i++) {
+				requireTemporaryConditionFields(and.getJSONObject(i), temporaryFields, path);
+			}
+			return;
 		}
 		JSONArray or = condition.getJSONArray("or");
 		if (or != null) {
-			return temporaryLogic(or, " or ", tmpClassAs, temporaryFields, path);
+			if (or.isEmpty()) {
+				throw invalidStep(path, "a logic condition requires a nonempty `or` list");
+			}
+			for (int i = 0; i < or.size(); i++) {
+				requireTemporaryConditionFields(or.getJSONObject(i), temporaryFields, path);
+			}
+			return;
 		}
 		JSONArray not = condition.getJSONArray("not");
 		if (not != null) {
-			return "(not (" + temporaryCondition(DslGrammarValidator.negated(condition), tmpClassAs, temporaryFields, path) + "))";
+			requireTemporaryConditionFields(DslGrammarValidator.negated(condition), temporaryFields, path);
+			return;
 		}
 		String field = condition.getString("field");
 		if (field == null || field.isBlank()) {
@@ -893,83 +945,6 @@ public class PostgreAdapter extends SandboxDataAdapter {
 			throw invalidStep(path + ".field", "unknown temporary-table field `" + field + "`; available fields are `"
 					+ String.join("`, `", temporaryFields) + "`");
 		}
-		String operator = condition.getString("operator");
-		String column = columnReference(tmpClassAs, quoteIdentifier(field));
-		if ("=".equals(operator) || "!=".equals(operator) || ">".equals(operator) || ">=".equals(operator)
-				|| "<=".equals(operator) || "<".equals(operator)) {
-			return column + " " + operator + " " + sqlLiteral(condition.get("value"), path + ".value");
-		}
-		if ("like".equals(operator) || "not like".equals(operator)) {
-			return temporaryLike(condition, column, operator, path);
-		}
-		if ("between".equals(operator)) {
-			JSONArray value = condition.getJSONArray("value");
-			if (value == null || value.size() != 2) {
-				throw invalidStep(path + ".value", "`between` requires a two-element array");
-			}
-			return "(" + column + " >= " + sqlLiteral(value.get(0), path + ".value") + " and " + column + " <= "
-					+ sqlLiteral(value.get(1), path + ".value") + ")";
-		}
-		if ("in".equals(operator)) {
-			JSONArray value = condition.getJSONArray("value");
-			if (value == null || value.isEmpty()) {
-				throw invalidStep(path + ".value", "`in` requires a nonempty array");
-			}
-			List<String> values = new ArrayList<>();
-			for (int i = 0; i < value.size(); i++) {
-				values.add(sqlLiteral(value.get(i), path + ".value"));
-			}
-			return column + " in (" + String.join(",", values) + ")";
-		}
-		if ("is".equals(operator) || "is not".equals(operator)) {
-			if (condition.get("value") != null) {
-				throw invalidStep(path + ".value", "`" + operator + "` only tests null and requires `value: null`");
-			}
-			return column + " " + operator + " null";
-		}
-		throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_OPERATOR_FOR_TYPE,
-				path + ".operator", "operator '" + operator + "' on temporary-table field '" + field
-						+ "' is not supported by PostgreAdapter");
-	}
-
-	private static String temporaryLogic(JSONArray children, String joiner, String tmpClassAs, Set<String> temporaryFields,
-			String path) {
-		if (children.isEmpty()) {
-			throw invalidStep(path, "a logic condition requires a nonempty `and`, `or` or `not` list");
-		}
-		List<String> rendered = new ArrayList<>();
-		for (int i = 0; i < children.size(); i++) {
-			rendered.add(temporaryCondition(children.getJSONObject(i), tmpClassAs, temporaryFields, path));
-		}
-		return "(" + String.join(joiner, rendered) + ")";
-	}
-
-	private static String temporaryLike(JSONObject condition, String column, String operator, String path) {
-		if (!(condition.get("value") instanceof String text)) {
-			throw invalidStep(path + ".value", "`" + operator + "` requires a text value");
-		}
-		if (LikePattern.escaped(condition)) {
-			String pattern = LikePattern.of(condition, true).sql("").replace("'", "''");
-			return column + " " + operator + " '" + pattern + "' escape '!'";
-		}
-		String value = text.replace("'", "''").trim();
-		if (!value.startsWith("%") && !value.endsWith("%")) {
-			value = "%" + value + "%";
-		}
-		return column + " " + operator + " '" + value + "'";
-	}
-
-	private static String sqlLiteral(Object value, String path) {
-		if (value == null) {
-			return "null";
-		}
-		if (value instanceof Number || value instanceof Boolean) {
-			return value.toString();
-		}
-		if (value instanceof String text) {
-			return "'" + text.replace("'", "''") + "'";
-		}
-		throw invalidStep(path, "temporary-table condition values must be strings, numbers, booleans or null");
 	}
 
 	private String appendIntermediateLimit(JSONObject step, String sql) {
@@ -1932,7 +1907,5 @@ public class PostgreAdapter extends SandboxDataAdapter {
 		}
 		return dataMap;
 	}
-
-
 
 }

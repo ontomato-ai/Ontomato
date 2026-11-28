@@ -24,4 +24,15 @@ class MetricExecutionSourceTest {
     assertDoesNotThrow(() -> QuerySubgraphContract.validate(copied));
     assertNotSame(graph, copied);
   }
+
+  @Test void subgraphSchemaRejectionNamesTheNestedInputPath() {
+    var graph = JSONObject.parseObject("""
+        {"schema":"ontomato.query-subgraph.v1","queries":[],"nodes":[
+          {"id":"field","kind":"field","attrName":"name","label":"Name","surprise":true}],
+          "edges":[],"filters":[]}
+        """);
+    var error = assertThrows(IllegalArgumentException.class, () -> QuerySubgraphContract.validate(graph));
+    assertTrue(error.getMessage().contains("nodes[0].surprise"), error.getMessage());
+    assertTrue(error.getMessage().contains("unexpected key"), error.getMessage());
+  }
 }

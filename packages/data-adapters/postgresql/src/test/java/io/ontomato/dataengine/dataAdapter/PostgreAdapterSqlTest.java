@@ -23,10 +23,15 @@ class PostgreAdapterSqlTest {
 
   @SuppressWarnings("unchecked")
   private static List<Map<String, Object>> classDefs() {
-    return (List<Map<String, Object>>) (List<?>) JSONArray.of(
+    JSONArray classes = JSONArray.of(
         classDef("person", "id", "account", "name", "main_dept", "status", "polity", "staff_type", "person_sort", "subject_first"),
         classDef("szxxsb", "id", "person_id", "xm_name", "hjdc", "hpsj", "sydw"),
         classDef("org", "id", "name", "up", "dept_sort_name", "dwjb_name"));
+    JSONArray personAttrs = classes.getJSONObject(0).getJSONArray("attrs");
+    personAttrs.add(attr("age", "int"));
+    personAttrs.add(attr("active", "boolean"));
+    personAttrs.add(attr("hired", "date"));
+    return (List<Map<String, Object>>) (List<?>) classes;
   }
 
   private static Map<String, Object> rule() {
@@ -99,7 +104,6 @@ class PostgreAdapterSqlTest {
     assertTrue(error.getMessage().contains("answer.steps[0].output.sort.fields[0]"), error.getMessage());
     assertTrue(error.getMessage().contains("p.id"), error.getMessage());
   }
-
 
   @Test
   void aggregateSortByAnUngroupedDetailOutputAliasIsRejectedAtTheSortItem() {
@@ -209,7 +213,6 @@ class PostgreAdapterSqlTest {
     assertTrue(error.getMessage().contains("person_id"), error.getMessage());
   }
 
-
   @Test
   void multiplePatternsAreRejectedInsteadOfUsingOnlyTheFirst() {
     JSONObject dsl = JSONArray.parseArray("[" + Q18 + "]").getJSONObject(0);
@@ -231,4 +234,44 @@ class PostgreAdapterSqlTest {
     assertTrue(error.getMessage().contains("connected by relationships"), error.getMessage());
   }
 
+  @Test
+  void aTemporaryConditionWhoseOutputTypeCannotBeInferredIsRejected() {
+    JSONObject dsl = JSONArray.parseArray("[" + Q5_CHAIN + "]").getJSONObject(0);
+    JSONObject firstOutput = dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("output");
+    firstOutput.getJSONArray("fields").add(JSONObject.of("as", "mystery", "variable", "p", "field", "id", "function", "median"));
+    JSONObject properties = dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(1).getJSONObject("graph")
+        .getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0)
+        .getJSONObject("conditions").getJSONObject("properties");
+    properties.put("field", "mystery");
+    properties.put("operator", ">");
+    properties.put("value", 1);
+    DslContractViolationException error = assertThrows(DslContractViolationException.class, () -> sql(dsl.toJSONString()));
+    assertTrue(error.getMessage().contains("answer.steps[1].graph.patterns[0].objects[0].conditions.properties"), error.getMessage());
+    assertTrue(error.getMessage().contains("type of field 'mystery' cannot be determined"), error.getMessage());
+  }
+
+  @Test
+  void temporaryConditionsUseTheSameTypedLiteralsAsBaseTableConditions() throws Exception {
+    String chained = """
+        {"problem":"typed temporary filters","answer":{"steps":[
+        {"graph":{"patterns":[{"objects":[{"idx":0,"variable":"p","class":"person"}]}]},
+        "output":{"to_user":false,"save_table":"/typed","fields":[
+        {"as":"person_id","variable":"p","field":"id"},{"as":"name","variable":"p","field":"name"},
+        {"as":"age","variable":"p","field":"age"},{"as":"active","variable":"p","field":"active"},
+        {"as":"hired","variable":"p","field":"hired"}]}},
+        {"graph":{"patterns":[{"objects":[{"idx":0,"variable":"t","class":"/typed","conditions":{"properties":{"operator":"logic","and":[
+        {"field":"active","operator":"=","value":true},
+        {"field":"hired","operator":">=","value":"2024-01-02"},
+        {"field":"age","operator":"between","value":[30,40]},
+        {"field":"name","operator":"in","value":["O'Hara","Li"]},
+        {"field":"name","operator":"not like","value":"temp"}]}}}]}]},
+        "output":{"to_user":true,"fields":[{"as":"cnt","variable":"t","field":"person_id","function":"count"}]}}]}}
+        """;
+    String sql = sql(chained);
+    assertTrue(sql.contains("\"t\".\"active\" = true"), sql);
+    assertTrue(sql.contains("\"t\".\"hired\" >= '2024-01-02'"), sql);
+    assertTrue(sql.contains("(\"t\".\"age\" >= 30 and \"t\".\"age\" <= 40)"), sql);
+    assertTrue(sql.contains("\"t\".\"name\" in ('O''Hara','Li')"), sql);
+    assertTrue(sql.contains("\"t\".\"name\" not like '%temp%'"), sql);
+  }
 }
