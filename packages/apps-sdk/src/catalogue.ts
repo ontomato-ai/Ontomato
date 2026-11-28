@@ -45,6 +45,7 @@ export const components: readonly ComponentMetadata[] = [
       "Reads one published MetricView and hands its result to the page's own template; the loading state and a failed read reach it as values, and it draws nothing itself.",
     effects: "Reads the MetricView through the data engine as the reader; it computes no metric of its own.",
     bindsElement: ["MetricView:*"],
+    configProps: ["metricViewId", "parameters", "parameterTexts"],
   }),
   defineComponentMeta({
     componentId: "EChart",
@@ -129,15 +130,19 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "conversation",
     meaning:
-      "Holds a live conversation with one declared platform agent, inside a panel member or in a standalone page; use for an embedded chat where `AgentShell` is the platform's own.\n\n- The member's `agent` declaration says who the chat talks to (`'page-default'`, `{ kind: 'id', id }` or `{ kind: 'preset', agentKind }`); the component grants nothing, so the reader's own agent grants and business gates decide what the conversation may reach.\n- Sessions and history stay on the agent platform and are never duplicated per panel: binding `sessionId` is how two placements, or a page reopened later, land in one conversation.\n- While the chat owns that surface the host suppresses its default composer, so the reader types in one place only.\n- `sessionContext` is opaque creation input the platform passes through untouched.",
-    effects: "Sends the reader's messages to the agent platform as the signed-in user, shares its session history, and writes only the panel's optional `sessionId` state.",
+      "Holds a live conversation with a platform agent inside a panel member or standalone page; pair with `AgentArtifactPreview` to inspect run artifacts beside the conversation.\n\n- The member's `agent` declaration says who the chat starts with (`'page-default'`, `{ kind: 'id', id }` or `{ kind: 'preset', agentKind }`), and binding `agentId` lets the panel switch agents or follow cross-agent historical sessions; the component grants nothing, so the reader's own agent grants and business gates decide what the conversation may reach.\n- Sessions and history stay on the agent platform and are never duplicated per panel: binding `sessionId` is how two placements, or a page reopened later, land in one conversation.\n- Opening an artifact card inside the conversation emits its serializable target through `artifact` instead of rendering a preview inside the chat.\n- The exposed component API includes `requestArtifactAction(message)`, which sends an explicit artifact action in the open session and rejects unless a new run is admitted; reach it through the placing `<projection ref>`'s `component` property.\n- While the chat owns that surface the host suppresses its default composer, so the reader types in one place only.\n- `sessionContext` is opaque creation input the platform passes through untouched.",
+    effects: "Sends the reader's messages to the agent platform as the signed-in user, shares its session history, and writes only the panel's optional `sessionId`, `agentId`, and `artifact` state.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     data: {},
     inputs: {
       sessionId: { kind: "scalar", type: "string" },
+      agentId: { kind: "scalar", type: "string" },
+      artifact: { kind: "json" },
     },
     outputs: {
       sessionId: { kind: "scalar", type: "string" },
+      agentId: { kind: "scalar", type: "string" },
+      artifact: { kind: "json" },
     },
     readOnlyOutputs: {
       status: { kind: "scalar", type: "string" },
@@ -146,58 +151,26 @@ export const components: readonly ComponentMetadata[] = [
     },
     configProps: [
       "showHeader", "placeholderKey", "sessionContext", "collapsed", "greeting", "greetingKey", "description",
-      "descriptionKey", "feedback",
+      "descriptionKey", "feedback", "customInput", "artifactRenderers", "inlineArtifactAlreadyShown",
     ],
   }),
   defineComponentMeta({
-    componentId: "AgentShell",
+    componentId: "AgentArtifactPreview",
     module: "@ontomato/sdk/chat",
-    exportName: "AgentShell",
-    role: "control",
+    exportName: "AgentArtifactPreview",
+    role: "presentation",
     group: "conversation",
     meaning:
-      "Platform-owned full conversation shell (sidebar, conversation stream, and side page dock) for the platform host itself — not a panel projection member. Inside a panel, place `AgentChat` for an embedded conversation or `ConversationEntry` to open/hand off to the platform shell.",
-    effects: "Sends the reader's messages to the agent service as the signed-in user.",
-  }),
-  defineComponentMeta({
-    componentId: "ShellComposer",
-    module: "@ontomato/sdk/chat",
-    exportName: "ShellComposer",
-    role: "control",
-    group: "conversation",
-    meaning: "The input a reader types a message into, with what the message would carry; it sends nothing itself.",
-  }),
-  defineComponentMeta({
-    componentId: "PageComposer",
-    module: "@ontomato/sdk/chat",
-    exportName: "PageComposer",
-    role: "control",
-    group: "conversation",
-    meaning: "The composer of a page shown full beside the conversation, with the page the message will carry.",
-  }),
-  defineComponentMeta({
-    componentId: "ShellColumn",
-    module: "@ontomato/sdk/chat",
-    exportName: "ShellColumn",
-    role: "presentation",
-    group: "conversation",
-    meaning: "The conversation's own column: its agents and sessions, as the host lists them.",
-  }),
-  defineComponentMeta({
-    componentId: "ShellNavBody",
-    module: "@ontomato/sdk/chat",
-    exportName: "ShellNavBody",
-    role: "presentation",
-    group: "conversation",
-    meaning: "The rows of the conversation column, with their counts and their state.",
-  }),
-  defineComponentMeta({
-    componentId: "ShellDockRoom",
-    module: "@ontomato/sdk/chat",
-    exportName: "ShellDockRoom",
-    role: "presentation",
-    group: "conversation",
-    meaning: "The room the shell's own controls cover at the foot of a page, so the page's end scrolls clear.",
+      "Displays one run artifact resolved through the platform chat host, with nested artifact trail navigation, download, and customizable preview slots; bind `artifact` to `AgentChat` or any panel state.\n\n- Accepts a serializable `{ sessionId, runId, path, title? }` target and resolves the artifact metadata and content through the signed-in user's chat host client.\n- Supports both inline layout containers and resizable side-panel presentation (`inline`), optional header bar (`showHeader`), and `#artifact`, `#artifact-actions`, and `#artifact-link` slots.\n- Following a nested artifact link or stepping back updates the bound `artifact` target; closing emits `null`.",
+    effects: "Reads the bound artifact metadata and file content through the agent platform as the signed-in user, and writes only the panel's optional `artifact` state.",
+    data: {},
+    inputs: {
+      artifact: { kind: "json" },
+    },
+    outputs: {
+      artifact: { kind: "json" },
+    },
+    configProps: ["showHeader", "inline", "artifactRenderers", "continueConversation"],
   }),
   defineComponentMeta({
     componentId: "AgentPicker",
@@ -205,11 +178,9 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AgentPicker",
     role: "control",
     group: "conversation",
-    // The platform's own picker: a panel writes it as a tag when its composer skin differs from the standard one. Not an
-    // author-facing component of its own — the generic conversation entry already carries the default picker.
-    panelUsable: false,
     meaning:
-      "Chooses one of the agents the host serves; it grants nothing: the server decides what the reader may use. The generic conversation entry draws the standard picker itself; a platform page whose composer skin differs writes `<agent-picker variant=\"home\" :agents=\"…\" :agent-id=\"…\" :label=\"…\" @select=\"…\">` through the entry's `#agent-picker` slot.",
+      "Chooses one of the agents the host serves; it grants nothing because the server decides what the reader may use. Use `<agent-picker>` directly in a panel template or inside a `ConversationEntry` `#agent-picker` slot when a page supplies a custom agent selector.",
+    configProps: ["agents", "agentId", "currentAgent", "label", "variant"],
   }),
   defineComponentMeta({
     componentId: "AgentAvatar",
@@ -221,22 +192,15 @@ export const components: readonly ComponentMetadata[] = [
     configProps: ["icon", "size"],
   }),
   defineComponentMeta({
-    componentId: "ToolStep",
-    module: "@ontomato/sdk/chat",
-    exportName: "ToolStep",
-    role: "presentation",
-    group: "conversation",
-    meaning: "One tool call of a run: what was called, what it answered, and whether it failed.",
-  }),
-  defineComponentMeta({
     componentId: "Projection",
     module: "@ontomato/sdk/panel",
     exportName: "Projection",
     role: "presentation",
     group: "layout",
     meaning:
-      "Stands where one projection of a panel is drawn: it reads that projection's current record by ID, draws the component it names, and registers its ports. A panel places and sizes the member container via CSS (including `class` and `style` on `<Projection>`), and the official component fills that box or uses its default height when none is given; it never draws a projection itself. What it draws has one owner per value: the projection's `config` holds its fixed presentation, and a value that follows the page is passed as `:values=\"{ … }\"` where the member is placed (the member's declared inputs carry the same values from the panel's state or outputs). No other attribute on `<Projection>` configures the component; the panel's `@event` listeners still reach it.",
+      "Stands where one projection of a panel is drawn: it reads that projection's current record by ID, draws the component it names, and registers its ports. A panel places and sizes the member container via CSS (including `class` and `style` on `<Projection>`), and the official component fills that box or uses its default height when none is given; it never draws a projection itself. What it draws has one owner per value: the projection's `config` holds its fixed presentation, and a value that follows the page is passed as `:values=\"{ … }\"` where the member is placed (the member's declared inputs carry the same values from the panel's state or outputs). No other attribute on `<Projection>` configures the component; the panel's `@event` listeners still reach it. A template ref exposes `refresh()` and `component`, the mounted component's own exposed API.",
     effects: "Reads the projection's current definition through the platform as the reader, and again when that definition changes.",
+    configProps: ["slot", "inputs", "values"],
   }),
   defineComponentMeta({
     componentId: "ObjectList",
@@ -417,7 +381,7 @@ export const components: readonly ComponentMetadata[] = [
       draft: { kind: "json" },
     },
     configProps: [
-      "fixedFields", "layout", "labelPosition", "labelWidth", "actions", "presentation", "groups", "cardColumns",
+      "fixedFields", "initialValues", "layout", "labelPosition", "labelWidth", "actions", "presentation", "groups", "cardColumns",
       "activeGroup", "allowStepJump", "unassignedFields", "showToc", "columns", "showChangeSummary",
       "changeSummaryTitle", "persistDraft", "unsavedSwitchMode",
     ],
@@ -428,9 +392,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "TestcaseWorkbench",
     role: "control",
     group: "form",
-    panelUsable: false,
     meaning:
-      "Platform-dedicated editor for ops diagnosis test case sets (`platform:AutotestCaseSet`): a resizable case list beside one structured case form and a collapsible JSON pane kept in step with it. It binds the standard projection form protocol and registers with `instance.forms`, so drafts, back-navigation and unsaved-edit handling behave as an official form does.",
+      "Structured editor for ops diagnosis test case sets (`platform:AutotestCaseSet`): a resizable case list beside one structured case form and a collapsible JSON pane kept in step with it. It binds the standard projection form protocol and registers with `instance.forms`, so drafts, back-navigation and unsaved-edit handling behave as an official form does.",
     effects: "Reads the test case set form and saves through the projection's declared save operation.",
     bindsElement: ["PlatformObjectType:platform:AutotestCaseSet"],
     data: {
@@ -441,6 +404,7 @@ export const components: readonly ComponentMetadata[] = [
       dirty: { kind: "scalar", type: "boolean" },
       draft: { kind: "json" },
     },
+    configProps: ["persistDraft", "unsavedSwitchMode", "showFooterBar", "emptyText"],
   }),
   defineComponentMeta({
     componentId: "OperationButton",
@@ -1028,9 +992,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ScheduledTaskSummaryList",
     role: "control",
     group: "list",
-    panelUsable: false,
     meaning:
-      "Platform-dedicated list of scheduled tasks, as workspace attention counters with a Resolve action or as full task cards carrying an application's schedule and latest run.",
+      "Lists scheduled tasks as workspace attention counters with a Resolve action or as full task cards carrying an application's schedule and latest run.",
     effects: "Reads its bound `rows` datum as the reader and writes `selected` / `resolveTarget` when the reader opens or resolves a task. Cards dispatch the declared row operation `setEnabled` with enabled and the observed revision, and dispatch other named row operations through the panel instance.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -1048,6 +1011,7 @@ export const components: readonly ComponentMetadata[] = [
       resultCount: { kind: "scalar", type: "number" },
       runningCount: { kind: "scalar", type: "number" },
     },
+    configProps: ["presentation", "rowActions", "maxPerGroup", "resolveLabel", "showResolveAction", "emptyText"],
   }),
   defineComponentMeta({
     componentId: "EffectivePermissionsView",
@@ -1055,7 +1019,6 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "EffectivePermissionsView",
     role: "presentation",
     group: "detail",
-    panelUsable: false,
     meaning:
       "Governance-domain effective permissions view shared by Organization Management and Member Detail. Renders a bordered description table (direct roles, organization role grants, indented shared-data sources with row-rule popovers, app-grouped menus, collapsible searchable API list) and three-tab data permission tables.\n\n- One read per display: each record or list a parent hands over is drawn alone and its datum is not read again; `null` says the parent has nothing yet, and `undefined` alone leaves that datum to this view.",
     effects: "Reads bound permission summary and list data as the reader; writes nothing.",
@@ -1068,6 +1031,7 @@ export const components: readonly ComponentMetadata[] = [
       managedData: { results: ["panelRecordList"], required: false },
       effectiveData: { results: ["panelRecordList"], required: false },
     },
+    configProps: ["defaultDataTab"],
   }),
   defineComponentMeta({
     componentId: "ProductAssetGraph",
@@ -1075,9 +1039,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ProductAssetGraph",
     role: "control",
     group: "graph",
-    panelUsable: false,
     meaning:
-      "Platform-dedicated layered graph of a product asset's references, drawn as category columns of cards joined by arrows; several product pages share it.\n\n- Hovering, focusing or selecting an asset highlights the edges and relation labels that touch it and dims the rest, so one reference is read without leaving the page.\n- Activating an asset is the panel's to act on: the graph says which real asset was opened and writes only the navigation output its placement declares.",
+      "Layered graph of a product asset's references, drawn as category columns of cards joined by arrows.\n\n- Hovering, focusing or selecting an asset highlights the edges and relation labels that touch it and dims the rest, so one reference is read without leaving the page.\n- Activating an asset is the panel's to act on: the graph says which real asset was opened and writes only the navigation output its placement declares.",
     effects: "Reads its bound `graph` datum as the reader when declared and writes the optional `navigate` output state on asset activation; writes nothing to any owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -1095,6 +1058,7 @@ export const components: readonly ComponentMetadata[] = [
       nodeCount: { kind: "scalar", type: "number" },
       edgeCount: { kind: "scalar", type: "number" },
     },
+    configProps: ["title", "showCaption", "emptyText"],
   }),
   defineComponentMeta({
     componentId: "OntologyTypeGraph",
@@ -1102,9 +1066,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OntologyTypeGraph",
     role: "control",
     group: "graph",
-    panelUsable: false,
     meaning:
-      "Platform-dedicated ontology type graph canvas built on the shared `ObjectGraphCanvas` engine, carrying the ontology graph's fixed visual language.\n\n- Its drawing is fixed rather than configurable: node and edge strokes, selection and path emphasis, non-match dimming and a radial force layout are the ontology page's own.\n- A platform page places it; it writes only the panel state its outputs bind and never an owner, and its exported image keeps a solid background and carries the date.",
+      "Ontology type graph canvas built on the shared `ObjectGraphCanvas` engine, carrying the ontology graph's fixed visual language.\n\n- Its drawing is fixed rather than configurable: node and edge strokes, selection and path emphasis, non-match dimming and a radial force layout follow the ontology graph visual style.\n- It writes only the panel state its outputs bind and never an owner, and its exported image keeps a solid background and carries the date.",
     effects: "Reads its bound `nodes` and `edges` lists as the reader and writes the panel state its outputs bind; never writes to any owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -1133,6 +1096,7 @@ export const components: readonly ComponentMetadata[] = [
       nodeCount: { kind: "scalar", type: "number" },
       edgeCount: { kind: "scalar", type: "number" },
     },
+    configProps: ["edgeEnds", "categories", "nodeCategory", "categoryLabels", "edgeDashedField", "showCategoryLegend", "hint"],
   }),
   defineComponentMeta({
     componentId: "ModelingGraphEditor",
@@ -1140,9 +1104,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ModelingGraphEditor",
     role: "control",
     group: "graph",
-    panelUsable: false,
     meaning:
-      "Platform-dedicated visual modeling graph canvas built on the shared `ObjectGraphCanvas` engine, carrying the gestures a model is edited with.\n\n- Its connection ports are the editor's own: four directions per node, a live drag preview and a pending edge that shows a connection the reader has not committed — never written to an owner.\n- Selection keeps its own halo, edge labels are capsules, and the view toolbar carries zoom, fit and relayout beside whatever the page adds.\n- A double-click activates a node or edge rather than only selecting it.",
+      "Visual modeling graph canvas built on the shared `ObjectGraphCanvas` engine, carrying the gestures a model is edited with.\n\n- Its connection ports are the editor's own: four directions per node, a live drag preview and a pending edge that shows a connection the reader has not committed — never written to an owner.\n- Selection keeps its own halo, edge labels are capsules, and the view toolbar carries zoom, fit and relayout beside whatever the page adds.\n- A double-click activates a node or edge rather than only selecting it.",
     effects: "Reads its bound `nodes` and `edges` lists as the reader and writes selection, position, and pending connection endpoint state (`connectFrom`, `connectTo`); temporary visual edges are never written to any owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -1173,6 +1136,7 @@ export const components: readonly ComponentMetadata[] = [
       nodeCount: { kind: "scalar", type: "number" },
       edgeCount: { kind: "scalar", type: "number" },
     },
+    configProps: ["edgeEnds", "categories", "nodeCategory", "hint"],
   }),
   defineComponentMeta({
     componentId: "CurrentEntry",
@@ -1211,11 +1175,11 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "agentId", "agentKind", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAgentId", "defaultAppId", "defaultCommit", "direction", "editMode",
+          "agentId", "agentIds", "agentKind", "agentKinds", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAgentId", "defaultAppId", "defaultCommit", "direction", "editMode",
           "entryId", "favoritesOnly", "field", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
-          "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
+          "operation", "orgId", "origin", "origins", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
           "runId", "sampleToken", "scope", "search", "section", "selectedTask", "size", "sort", "source", "sourceType", "status",
-          "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version", "workspace", "workspaceAgent",
+          "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version", "workspace", "workspaceAgent", "workspaceId",
         ],
       },
     },

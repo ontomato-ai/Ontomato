@@ -7,6 +7,7 @@ await mountPanel({
   setup() {
     const { instance, t, notify, navigate } = usePanelContext();
     const values = instance.state.values;
+    const initialValues = computed(() => values.value.initialValues);
     const selected = computed(() => values.value.selectedTask ?? null);
     const selectedId = computed(() => selected.value?.primaryKey ?? null);
     const inline = computed(() => values.value.workspace === "agent");
@@ -113,6 +114,8 @@ await mountPanel({
 
     // Keep runs drawer synced with deep-linked runId or mode switches.
     watch(mode, (next) => {
+      // Nested placements bind these state fields to observe each create attempt.
+      if (next === "create") instance.state.setState({ createdTask: null, createCancelled: null });
       if (next === "create" || next === "edit") {
         runsDrawerOpen.value = false;
       }
@@ -475,6 +478,10 @@ await mountPanel({
     function closeFormDialog() {
       setMode("view");
     }
+    function cancelCreate() {
+      instance.state.set("createCancelled", true);
+      closeFormDialog();
+    }
     function onFormDialogToggle(next) {
       if (!next) closeFormDialog();
     }
@@ -514,13 +521,11 @@ await mountPanel({
       notify({ kind: "success", text: t("message.saved") });
     }
     function created(object) {
-      const id = object?.primaryKey;
       instance.state.setState({
         [inline.value ? "workspaceCompose" : "compose"]: null,
         newTask: null,
-        ...(id ? { selectedTask: { className: TASK, primaryKey: id }, runId: null } : {}),
+        ...(object.primaryKey ? { selectedTask: object, createdTask: object, runId: null } : {}),
       });
-      instance.refreshObjects();
       notify({ kind: "success", text: t("message.created") });
     }
 
@@ -562,6 +567,8 @@ await mountPanel({
       emptyStateMessage,
       fieldOptions,
       startCreate,
+      initialValues,
+      cancelCreate,
       openEdit,
       closeFormDialog,
       onFormDialogToggle,

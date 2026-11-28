@@ -1,3 +1,4 @@
+import type { AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import { APP_BUILDER_KIND, isAppBuilderKind } from "../app-builder/definition";
 import { OPS_DIAGNOSIS_KIND } from "../ops-diagnosis/definition";
@@ -25,11 +26,23 @@ export interface SessionRow {
   agent_id: string;
   workspace_id: string | null;
   title: string;
-  origin: "user" | "scheduled" | "delegated";
+  origin: NonNullable<AgentHostSession["origin"]>;
   latest_run_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
+interface SessionListOptions {
+  search?: string;
+  limit?: number;
+  agentId?: string;
+  agentIds?: string[];
+  agentKinds?: string[];
+  origins?: SessionRow["origin"][];
+  workspaceId?: string | null;
+  after?: { updatedAt: string; id: string };
+  hasRun?: boolean;
+}
+
 export interface TurnRow {
   id: string;
   session_id: string;
@@ -220,57 +233,45 @@ export const assistantStore = {
       updatedAt: row.updatedAt.toISOString(),
     }));
   },
-  /** Lists user-origin sessions for the current user in the current domain, newest first. */
-  async listUserSessions(
-    owner: AssistantOwner,
-    options: { search?: string; limit?: number; agentKind?: string; agentId?: string } = {},
-  ): Promise<Array<{ sessionId: string; agentId: string; agentKind: string; agentName: string; title: string; updatedAt: string }>> {
-    const limit = Math.max(1, Math.min(50, options.limit ?? 20));
+  /** Lists sessions private to the current user and domain, ordered for keyset pagination. */
+  async listSessions(owner: AssistantOwner, options: SessionListOptions) {
     const search = options.search?.trim();
     const params: unknown[] = [owner.domainId, owner.userId];
-    const where = [
-      "s.domain_id=$1",
-      "s.owner_id=$2",
-      "s.latest_run_id IS NOT NULL",
-      "s.origin='user'",
-    ];
+    const where = ["s.domain_id=$1", "s.owner_id=$2"];
+    const bind = (value: unknown) => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+    if (options.origins !== undefined) where.push(`s.origin=ANY(${bind(options.origins)}::text[])`);
+    if (options.hasRun) where.push("s.latest_run_id IS NOT NULL");
     if (search) {
-      params.push(`%${search.replace(/[\\%_]/g, "\\$&")}%`);
-      where.push(`(s.title ILIKE $${params.length} ESCAPE '\\' OR COALESCE(a.name, '') ILIKE $${params.length} ESCAPE '\\')`);
+      const pattern = bind(`%${search.replace(/[\\%_]/g, "\\$&")}%`);
+      where.push(`(s.title ILIKE ${pattern} ESCAPE '\\' OR COALESCE(a.name, '') ILIKE ${pattern} ESCAPE '\\')`);
     }
-    if (options.agentKind !== undefined) {
-      params.push(options.agentKind);
-      where.push(`a.kind=$${params.length}`);
+    if (options.agentId !== undefined) where.push(`s.agent_id=${bind(options.agentId)}`);
+    if (options.agentIds !== undefined) where.push(`s.agent_id=ANY(${bind(options.agentIds)}::uuid[])`);
+    if (options.agentKinds !== undefined) where.push(`a.kind=ANY(${bind(options.agentKinds)}::text[])`);
+    if (options.workspaceId === null) where.push("s.workspace_id IS NULL");
+    else if (options.workspaceId !== undefined) where.push(`s.workspace_id=${bind(options.workspaceId)}`);
+    if (options.after) {
+      where.push(`(s.updated_at,s.id)<(${bind(options.after.updatedAt)}::timestamptz,${bind(options.after.id)}::uuid)`);
     }
-    if (options.agentId !== undefined) {
-      params.push(options.agentId);
-      where.push(`s.agent_id=$${params.length}`);
-    }
-    params.push(limit);
-    const result = await db().query<{
-      sessionId: string;
-      agentId: string;
-      agentKind: string | null;
+    // Keep PostgreSQL's microseconds in the cursor; the displayed Date has millisecond precision.
+    const result = await db().query<SessionRow & {
       agentName: string | null;
-      title: string;
-      updatedAt: Date;
+      agentKind: string | null;
+      cursorUpdatedAt: string;
     }>(
-      `SELECT s.id AS "sessionId", s.agent_id AS "agentId", a.kind AS "agentKind", a.name AS "agentName", s.title, s.updated_at AS "updatedAt"
+      `SELECT s.*, a.name AS "agentName", a.kind AS "agentKind",
+              to_char(s.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorUpdatedAt"
        FROM ${table("assistant_sessions")} s
        LEFT JOIN ${table("assistant_agents")} a ON a.id = s.agent_id AND a.domain_id = s.domain_id
        WHERE ${where.join(" AND ")}
        ORDER BY s.updated_at DESC, s.id DESC
-       LIMIT $${params.length}`,
+       LIMIT ${bind(options.limit ?? 20)}`,
       params,
     );
-    return result.rows.map(row => ({
-      sessionId: row.sessionId,
-      agentId: row.agentId,
-      agentKind: row.agentKind ?? "",
-      agentName: row.agentName ?? "",
-      title: row.title,
-      updatedAt: row.updatedAt.toISOString(),
-    }));
+    return result.rows;
   },
   /** Batch reads session metadata owned by the current user in the current domain. */
   async ownedSessionsByIds(

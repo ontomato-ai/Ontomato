@@ -82,6 +82,7 @@ Start here: pick the row for your task and read only that recipe or component pa
 | Display an ontology or custom graph and link it to one-hop relations | [Graph & relations](references/panel-authoring/recipes/graph-and-relations.md) · `sdk read docs/components/InstanceGraph.md` · `RecordGraph.md` · `ObjectRelations.md` |
 | Select a child record or browse files, text, and annotated code | [Child records](references/panel-authoring/recipes/child-records.md) · `sdk read docs/components/ObjectTree.md` · `ObjectTextReader.md` · `AnnotatedCode.md` |
 | Put a conversation entry or embedded agent chat pointing to an agent on a page | [Conversation entries](references/panel-authoring/recipes/conversation-entries.md) · `sdk read docs/components/ConversationEntry.md` · `sdk read docs/components/AgentChat.md` |
+| Compose a conversation-centered workbench with agent/task navigation and artifact preview | [Conversation workbench](references/panel-authoring/recipes/conversation-workbench.md) · `sdk read docs/components/AgentArtifactPreview.md` |
 | Handle narrow containers, availability gating, and compact slot projections | [Availability & narrow containers](references/panel-authoring/recipes/availability-and-narrow-containers.md) |
 | Run `panel check` offline against an installed SDK release | [Offline check & SDK docs](references/panel-authoring/recipes/offline-check-and-sdk-docs.md) |
 | Check, preview, and publish application source | [Check & open](references/panel-authoring/recipes/register-and-open.md) · [Application source](GUIDE.md#application-source) |
@@ -104,8 +105,10 @@ machine checks cannot enforce:
    never present loaded row counts as a paged `total`.
 4. **No automatic writes on display.** Writes happen only on explicit user action or an explicit agent `page_action`.
 5. **Reuse first, follow lookup order.** Check existing components/panels first, advancing only when needed: official
-   defaults → `config` → official Vue slots → custom domain component as last resort. Escalate missing business reads
-   or Actions to the owner. Give each `ObjectList` column an explicit `labelKey` in `content.messages`.
+   defaults → `config` → official Vue slots → custom domain component as last resort. Official components are not split
+   into platform-only and application-usable tiers: when a generic page-building block is missing, report the gap for
+   the platform to fill rather than changing product code. Escalate missing business reads or Actions to the owner.
+   Give each `ObjectList` column an explicit `labelKey` in `content.messages`.
 6. **Public state, `deepLink`, and secrets.** Declare business view state and form/dialog switches in `manifest.state`.
    Set `deepLink: true` **only** on state needed to restore the same view (`selected`, `tab`, `search`, `filter`,
    `sort`) — **never** on dialog toggles or active-edit trackers. Only the human picks local files and enters/receives

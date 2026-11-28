@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { installedPackageClosure } from "./package-components-release.mjs";
-import { resolveDeclaredConfig } from "./reference.mjs";
+import { checkCatalogue, resolveDeclaredConfig } from "./reference.mjs";
 
 /*
  * The component catalogue an SDK release ships (design 6, "需要的数据"): `components.json` declares, beside each public
@@ -82,6 +82,7 @@ const DECLARED_DATA = {
   // Readable as a member it reads nothing; an empty table says so, and Node registers it on that declaration.
   ConversationEntry: {},
   AgentChat: {},
+  AgentArtifactPreview: {},
   AppPreview: {},
   ObjectTree: { files: ["panelRecordList", "panelRecordQuery"], rows: ["panelRecordList", "panelRecordQuery"] },
   ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
@@ -589,32 +590,52 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const componentsDoc = readFileSync(join(out, version, "docs/components.md"), "utf8");
     const componentsDocBytes = Buffer.byteLength(componentsDoc, "utf8");
     assert.ok(
-      componentsDocBytes < 12_000,
-      `docs/components.md overview must stay within a few KB (got ${componentsDocBytes} bytes)`,
+      componentsDocBytes < 16_000,
+      `docs/components.md overview must stay compact (got ${componentsDocBytes} bytes)`,
     );
     assert.doesNotMatch(componentsDoc, /^Binds:/mu, "docs/components.md must not emit misleading bare 'Binds:' lines");
-    // Every component carries a purpose group and derived panelUsable flag; only panel-usable components appear in the overview.
+    // Every official SDK component carries a purpose group, is panel-usable, and appears in the overview.
     for (const component of catalogue.components) {
       assert.equal(typeof component.group, "string", `${component.componentId} must declare a group`);
-      assert.equal(typeof component.panelUsable, "boolean", `${component.componentId} must derive panelUsable`);
+      assert.equal(component.panelUsable, true, `${component.componentId} must be panelUsable === true`);
       const singlePage = readFileSync(join(out, version, "docs/components", `${component.componentId}.md`), "utf8");
       assert.match(singlePage, new RegExp(`^# ${component.componentId}\\b`, "mu"));
       assert.doesNotMatch(singlePage, /^Binds:/mu, `${component.componentId}.md must not emit misleading bare 'Binds:' lines`);
       const overviewLink = `[**${component.componentId}**](components/${component.componentId}.md)`;
-      if (component.panelUsable) {
-        assert.ok(componentsDoc.includes(overviewLink), `panel-usable ${component.componentId} must appear in docs/components.md`);
-      } else {
-        assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
-      }
+      assert.ok(componentsDoc.includes(overviewLink), `${component.componentId} must appear in docs/components.md`);
     }
-for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "Projection", "ScheduledTaskSummaryList", "EffectivePermissionsView", "TestcaseWorkbench", "ProductAssetGraph", "OntologyTypeGraph", "ModelingGraphEditor"]) {
-      const entry = catalogue.components.find((c) => c.componentId === excluded);
-      assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
-      assert.equal(entry?.config, undefined, `non-panel ${excluded} must not emit author-facing config`);
+    for (const removedShell of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "ShellNavBody", "ShellDockRoom", "ToolStep"]) {
+      assert.equal(
+        catalogue.components.find((c) => c.componentId === removedShell),
+        undefined,
+        `host shell component ${removedShell} must not be published in the official SDK catalogue`,
+      );
+    }
+    const chatEntrySource = readFileSync(join(HERE, "src/entries/chat.ts"), "utf8");
+    assert.doesNotMatch(chatEntrySource, /export\s+\*\s+from\s+"@ontomato\/agent-shell-ui"/u, "entries/chat.ts must not wildcard re-export agent-shell-ui");
+    for (const removedShell of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "ShellNavBody", "ShellDockRoom", "ToolStep"]) {
+      assert.doesNotMatch(chatEntrySource, new RegExp(`\\b${removedShell}\\b`, "u"), `entries/chat.ts must not export host shell ${removedShell}`);
     }
     for (const removed of ["DashboardMetricPreview", "ScheduledTaskAppFilterBar", "ScheduledTaskRunDetail", "DataAdapterTestReport"]) {
       assert.equal(catalogue.components.find((c) => c.componentId === removed), undefined, `${removed} must be removed from the SDK catalogue`);
     }
+    assert.deepEqual(declared.get("AgentChat").inputs, {
+      sessionId: { kind: "scalar", type: "string" },
+      agentId: { kind: "scalar", type: "string" },
+      artifact: { kind: "json" },
+    });
+    assert.deepEqual(declared.get("AgentChat").outputs, {
+      sessionId: { kind: "scalar", type: "string" },
+      agentId: { kind: "scalar", type: "string" },
+      artifact: { kind: "json" },
+    });
+    assert.deepEqual(declared.get("AgentArtifactPreview").inputs, {
+      artifact: { kind: "json" },
+    });
+    assert.deepEqual(declared.get("AgentArtifactPreview").outputs, {
+      artifact: { kind: "json" },
+    });
+    assert.deepEqual((declared.get("AgentArtifactPreview").config ?? []).map((prop) => prop.name), ["showHeader", "inline", "artifactRenderers", "continueConversation"]);
     const recordGraph = declared.get("RecordGraph");
     const recordGraphConfigNames = (recordGraph.config ?? []).map((prop) => prop.name);
     for (const reclaimedGraphProp of ["nodeSize", "labelSize", "highlightBanner", "showFocusButton", "exportBackground", "exportFilename"]) {
@@ -633,7 +654,8 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
     // platform-fixed styles, deleted props, and duplicate wiring/locale-map props stay out of `components.json`
     // and `docs/components/<ComponentId>.md`.
     const excludedAuthorConfigs = [
-      ["AgentChat", ["client", "agentId", "agent", "labels", "sessionId"]],
+      ["AgentChat", ["client", "agentId", "agent", "labels", "sessionId", "artifact"]],
+      ["AgentArtifactPreview", ["client", "labels", "artifact"]],
       ["ObjectList", ["leadingIconKind", "leadingIconSize", "skeletonCount", "tabsVariant", "inlineRename", "expandedKeys", "searchSubmit", "rowToneMap", "rowActionIconVariant"]],
       ["GroupedGrid", ["sectionColumns", "sectionRowHeights", "sectionOrder", "sectionMinColSpans", "sectionResizeAxes"]],
       ["ObjectCount", ["labels"]],
@@ -743,9 +765,13 @@ for (const excluded of ["AgentShell", "AgentPicker", "ShellComposer", "PageCompo
       ["PlatformObjectType:platform:AutotestCaseSet"],
       "TestcaseWorkbench must bind PlatformObjectType:platform:AutotestCaseSet",
     );
-    for (const included of ["ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "AppPreview", "PageHeader", "MarkdownView"]) {
+    for (const included of [
+      "ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "AgentArtifactPreview", "AgentPicker",
+      "AppPreview", "PageHeader", "MarkdownView", "TestcaseWorkbench", "ScheduledTaskSummaryList",
+      "EffectivePermissionsView", "ProductAssetGraph", "OntologyTypeGraph", "ModelingGraphEditor",
+    ]) {
       const entry = catalogue.components.find((c) => c.componentId === included);
-      assert.equal(entry?.panelUsable, true, `${included} must derive panelUsable === true`);
+      assert.equal(entry?.panelUsable, true, `${included} must publish panelUsable === true`);
     }
     assert.deepEqual(Object.keys(declared.get("AppPreview").readOnlyOutputs ?? {}).sort(), [
       "activePage",
@@ -869,4 +895,16 @@ test("resolveDeclaredConfig emits strictly declared author-facing props and reje
 test("resolveDeclaredConfig keeps the runtime name of a multiword prop", () => {
   const pageSize = { name: "pageSize", type: "number", description: "", required: false };
   assert.equal(resolveDeclaredConfig({ componentId: "Demo", configProps: ["pageSize"] }, [pageSize])[0].name, "pageSize");
+});
+
+test("checkCatalogue rejects official SDK components declaring panelUsable: false", () => {
+  assert.throws(
+    () => checkCatalogue(
+      [],
+      [{ metadata: { componentId: "ForbiddenShell", module: "@ontomato/sdk/chat", exportName: "ForbiddenShell", panelUsable: false } }],
+      HERE,
+      join(HERE, "tsconfig.json"),
+    ),
+    /cannot declare panelUsable: false/,
+  );
 });

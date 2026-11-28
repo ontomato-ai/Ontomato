@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AGENT_SESSION, FAVORITE, RECENT_VISIT, RENAME_AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
+import type { AgentHostRunStatus } from "@ontomato/contracts/agent-host";
+import { assistantStore } from "../../assistant/store";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost, PanelRecordTarget } from "../server-operations";
 
 const state = vi.hoisted(() => ({
   sessions: [] as Array<{ sessionId: string; agentId: string; agentName: string; title: string; updatedAt: string }>,
+  runs: new Map<string, AgentHostRunStatus>(),
   favoriteKeys: new Set<string>(),
   visits: [] as Array<{ appId: string; title: string; path: string; context?: string; visitedAt: string }>,
   catalog: [] as Array<{ id: string; names: Record<string, string>; icon: string }>,
@@ -13,19 +16,30 @@ const state = vi.hoisted(() => ({
 
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: class {
-    async sessionStatuses() {
-      return [{ session: { id: state.sessions[0]?.sessionId }, latestRun: { status: "running" } }];
+    async sessionStatuses(ids: string[]) {
+      return ids.map(id => ({ session: { id }, latestRun: state.runs.get(id) ?? null }));
     }
   },
 }));
 
 vi.mock("../../assistant/store", () => ({
   assistantStore: {
-    listUserSessions: vi.fn(async (_owner, opts?: { search?: string; limit?: number }) => {
+    listSessions: vi.fn(async (_owner, opts?: { search?: string; limit?: number }) => {
       const q = opts?.search?.trim().toLowerCase() ?? "";
       return state.sessions
         .filter(item => !q || item.title.toLowerCase().includes(q) || item.agentName.toLowerCase().includes(q))
-        .slice(0, opts?.limit ?? 20);
+        .slice(0, opts?.limit ?? 20)
+        .map(item => ({
+          ...item,
+          id: item.sessionId,
+          agent_id: item.agentId,
+          agentKind: "regular",
+          workspace_id: null,
+          origin: "user",
+          updated_at: new Date(item.updatedAt),
+          created_at: new Date(item.updatedAt),
+          cursorUpdatedAt: item.updatedAt.replace(".000Z", ".000123Z"),
+        }));
     }),
     session: vi.fn(async (id: string) => {
       const found = state.sessions.find(item => item.sessionId === id);
@@ -102,6 +116,9 @@ beforeEach(() => {
       updatedAt: "2026-11-25T01:00:00.000Z",
     },
   ];
+  state.runs = new Map([[state.sessions[0]!.sessionId, {
+    id: "33333333-3333-4333-8333-333333333333", status: "running", stopReason: null,
+  }]]);
   state.favoriteKeys = new Set([JSON.stringify([AGENT_SESSION, "11111111-1111-4111-8111-111111111111"])]);
   state.visits = [
     { appId: "dashboards", title: "Sales Board", path: "/dashboards?dashboardId=b1", visitedAt: "2026-11-25T01:00:00.000Z" },
@@ -146,6 +163,39 @@ describe("platform:AgentSession and platform:RecentVisit panel reads and rename"
       affected: { objectTypes: [AGENT_SESSION, FAVORITE] },
     });
     expect(state.sessions[0]?.title).toBe("Q4 Board Review");
+  });
+
+  it("publishes the latest run outcome and passes an exact page boundary back to the store", async () => {
+    const [first] = state.sessions;
+    const others = ["completed", "failed", "cancelled", "pending", "lookahead"].map((_status, index) => ({
+      ...first!,
+      sessionId: `11111111-1111-4111-8111-11111111111${index + 2}`,
+    }));
+    state.sessions.push(...others);
+    const run = state.runs.get(first!.sessionId)!;
+    state.runs.set(first!.sessionId, { ...run, status: "stopped", stopReason: "stop", delegatedRunning: true });
+    for (const [index, stopReason] of (["stop", "length", "aborted"] as const).entries()) {
+      state.runs.set(others[index]!.sessionId, { ...run, status: "stopped", stopReason });
+    }
+    const adapter = createAgentSessionReadAdapter(owner, viewer);
+    const filters = { agentIds: [first!.agentId], agentKinds: ["regular"], workspaceId: "none", search: "Analyst", limit: 5 };
+    const page = await adapter.tasks(filters);
+    expect(page.rows.map(row => row.fields.status)).toEqual(["running", "completed", "failed", "cancelled", "pending"]);
+    expect(page.rows[0]).toMatchObject({
+      fields: {
+        agentId: first!.agentId, agentName: "Analyst", agentKind: "regular", origin: "user",
+        createdAt: first!.updatedAt, updatedAt: first!.updatedAt, running: true,
+        latestRun: { kind: "json", value: { id: run.id, status: "stopped", stopReason: "stop", delegatedRunning: true } },
+      },
+    });
+    expect(page.rows[0]!.fields).not.toHaveProperty("workspaceId");
+    expect(page.hasMore).toBe(true);
+    await adapter.tasks({ ...filters, cursor: page.nextCursor });
+    expect(assistantStore.listSessions).toHaveBeenLastCalledWith(owner, {
+      ...filters, limit: 6, workspaceId: null,
+      after: { updatedAt: "2026-11-25T01:00:00.000123Z", id: others[3]!.sessionId },
+    });
+    expect(() => adapter.tasks({ cursor: "invalid" })).toThrow(expect.objectContaining({ status: 400 }));
   });
 
   it("filters recent visits to currently visible applications and exposes context, formatted time, and openPath", async () => {

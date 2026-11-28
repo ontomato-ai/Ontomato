@@ -118,7 +118,11 @@ the full body as text with its original line breaks. The owner returns highlight
 
 ## Add an official SDK component
 
-Use an existing component if its ports already express the interaction. For a new component, record these five
+Use an existing component if its ports already express the interaction. Official components are not divided into
+platform-only and application-usable tiers: a component registered in the public SDK catalogue must be usable in
+panels, while platform shell assembly pieces that cannot be placed declaratively stay unregistered host internals.
+Application requirements must not add application-specific branches to shared conversation pages or shell components;
+extend the generic component or owner declaration instead. For a new component, record these five
 parts beside its implementation so authors can compose it from the released catalogue.
 
 | Part | What to declare |

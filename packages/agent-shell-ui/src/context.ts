@@ -19,8 +19,13 @@ export interface ShellContext {
   tasks?: ShellTaskPort;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
-  /** Host slots for business actions: `artifact-actions` ({artifact, title, caption?}) and `message-actions`. */
-  slots: { artifactActions?: Slot; messageActions?: Slot };
+  /** Host slots for business actions and artifact customization. */
+  slots: {
+    artifactActions?: Slot;
+    artifactLink?: Slot;
+    artifact?: Slot;
+    messageActions?: Slot;
+  };
   resolveArtifact(runId: string, path: string): Promise<RuntimeArtifact | null>;
   /** A file already shown by the host next to its input can leave only its label in the reply. */
   inlineArtifactAlreadyShown?: (runId: string, path: string) => boolean;
@@ -126,7 +131,7 @@ export const displayPlacementKey: InjectionKey<(probe: () => "side" | "overlay")
 
 /** Reports the outlet's own form while `element` is mounted: fixed over the conversation is the overlay. */
 export function useDisplayPlacement(element: Ref<HTMLElement | null>) {
-  const place = inject(displayPlacementKey);
+  const place = inject(displayPlacementKey, null);
   let release: (() => void) | undefined;
   onMounted(() => {
     release = place?.(() => (getComputedStyle(element.value!).position === "fixed" ? "overlay" : "side"));

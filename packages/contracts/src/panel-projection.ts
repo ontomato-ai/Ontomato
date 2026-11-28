@@ -11,7 +11,7 @@ import { z } from "zod";
 import { workspaceCommitSchema, workspacePathSchema } from "./workspaces";
 import { componentIdSchema } from "./product-record-id";
 import { agentSkillTargetSchema } from "./skills";
-import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
+import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, sessionOriginSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { findPanelFormOption, formFieldErrorSchema, formValuesSchema, panelFormOptionSchema, panelFormOptionValueSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
 import { directPanelPortTypeSchema, matchesObjectType, objectUnionTypes, panelFormTargetSchema, panelMessageKeySchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
@@ -176,6 +176,9 @@ export const panelObjectListRowActionsSchema = z.object({
 export type PanelObjectListRowActions = z.infer<typeof panelObjectListRowActionsSchema>;
 
 const fieldPath = formFieldErrorSchema.shape.field;
+
+/** Editable create defaults keyed by absolute form field pointer. */
+export const panelFormInitialValuesSchema = z.record(fieldPath, runtimeJsonValueSchema);
 const objectType = z.string().min(1);
 
 export { formTimeValueSchema as panelFormTimeValueSchema } from "./form-fields";
@@ -306,7 +309,12 @@ export const panelReadParameterSchemas = {
   keyword: z.string(),
   objectGrantField: z.string().min(1),
   agentKind: z.string().trim().min(1),
-  agentId: z.string().uuid(),
+  agentId: runtimeIdSchema,
+  agentIds: z.array(runtimeIdSchema),
+  agentKinds: z.array(z.string().trim().min(1)),
+  sessionOrigins: z.array(sessionOriginSchema).describe("Omit to include sessions from any origin."),
+  sessionWorkspace: z.union([runtimeIdSchema, z.literal("none")])
+    .describe('A workspace UUID, or "none" to match sessions with no workspace.'),
   agentSkillTarget: agentSkillTargetSchema,
   offset: z.number().int().nonnegative(),
   limit: positiveInteger.max(100),
@@ -360,6 +368,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "objectGrantField":
     case "agentKind":
     case "agentId":
+    case "sessionWorkspace":
     case "agentSkillTarget":
     case "workspaceCommit":
     case "workspacePath":
@@ -394,6 +403,10 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "applicationFormSection":
     case "applicationEntryId":
       return input?.kind === "scalar" && input.type === "string";
+    case "agentIds":
+    case "agentKinds":
+    case "sessionOrigins":
+      return input?.kind === "json" || (input?.kind === "list" && input.items.kind === "scalar" && input.items.type === "string");
     case "productTemplate":
     case "favoritesOnly":
       return input?.kind === "scalar" && input.type === "boolean";

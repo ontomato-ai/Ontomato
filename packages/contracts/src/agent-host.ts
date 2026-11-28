@@ -20,10 +20,13 @@ import {
 import {
   runtimeIdSchema,
   runtimeJsonObjectSchema,
+  runtimeJsonValueSchema,
   runtimeKeySchema,
+  runtimeRelativePathSchema,
   runtimeRunStatusSchema,
   runtimeStopReasonSchema,
   runtimeTimestampSchema,
+  sessionOriginSchema,
 } from "./agent-runtime-values";
 /** Application-neutral metadata for the shell's read-only agent selector. */
 export const agentHostAgentSchema = z
@@ -118,7 +121,7 @@ export const agentHostSessionSchema = z
     updatedAt: runtimeTimestampSchema,
     latestRun: agentHostRunStatusSchema.nullable(),
     /** How the session was started; absent means by its user. scheduled: by one of the user's scheduled tasks. */
-    origin: z.enum(["user", "scheduled", "delegated"]).optional(),
+    origin: sessionOriginSchema.optional(),
   })
   .strict();
 export const agentHostSessionSnapshotSchema = z
@@ -178,6 +181,28 @@ export const agentHostCancelResponseSchema = z
 export const agentHostArtifactResolutionSchema = z
   .object({ artifact: runtimeArtifactSchema.nullable() })
   .strict();
+/** Serializable artifact target passed between conversation and preview components or panel state. */
+export const agentArtifactTargetSchema = z
+  .object({
+    sessionId: runtimeIdSchema,
+    runId: runtimeIdSchema,
+    path: runtimeRelativePathSchema,
+    title: z.string().optional(),
+  })
+  .strict();
+/**
+ * Payload emitted when a conversation run settles.
+ * `artifacts` is `[]` when confirmed empty and omitted when reading the run snapshot failed.
+ */
+export const agentRunCompleteSchema = z
+  .object({
+    sessionId: runtimeIdSchema,
+    runId: runtimeIdSchema,
+    ok: z.boolean(),
+    outcome: runtimeJsonValueSchema.optional(),
+    artifacts: z.array(runtimeArtifactSchema).optional(),
+  })
+  .strict();
 export const agentHostErrorSchema = z
   .object({
     error: z
@@ -221,5 +246,7 @@ export type AgentHostCancelResponse = z.infer<
 export type AgentHostArtifactResolution = z.infer<
   typeof agentHostArtifactResolutionSchema
 >;
+export type AgentArtifactTarget = z.infer<typeof agentArtifactTargetSchema>;
+export type AgentRunComplete = z.infer<typeof agentRunCompleteSchema>;
 export type AgentHostError = z.infer<typeof agentHostErrorSchema>;
 export type AgentHostStreamFrame = z.infer<typeof agentHostStreamFrameSchema>;

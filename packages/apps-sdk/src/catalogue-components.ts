@@ -22,15 +22,8 @@ const LAZY: Record<string, () => Promise<Component>> = {
   HtmlPreview: () => import("@ontomato/foundation-ui/preview").then((module) => module.HtmlPreview),
   AppPreview: () => import("./preview/AppPreview.vue").then((module) => module.default),
   AgentChat: () => import("./chat/AgentChat.vue").then((module) => module.default),
-  AgentShell: () => import("@ontomato/agent-shell-ui").then((module) => module.AgentShell),
-  ShellColumn: () => import("@ontomato/agent-shell-ui").then((module) => module.ShellColumn),
-  ShellNavBody: () => import("@ontomato/agent-shell-ui").then((module) => module.ShellNavBody),
-  ShellDockRoom: () => import("@ontomato/agent-shell-ui").then((module) => module.ShellDockRoom),
   AgentPicker: () => import("@ontomato/agent-shell-ui").then((module) => module.AgentPicker),
   AgentAvatar: () => import("@ontomato/agent-shell-ui").then((module) => module.AgentAvatar),
-  ToolStep: () => import("@ontomato/agent-shell-ui").then((module) => module.ToolStep),
-  ShellComposer: () => import("@ontomato/agent-shell-ui").then((module) => module.ShellComposer),
-  PageComposer: () => import("@ontomato/agent-shell-ui").then((module) => module.PageComposer),
 };
 
 /** A component already fetched, by ID, so a second projection of the same one draws at once. */

@@ -202,7 +202,13 @@ function refresh() {
   }
   loaded.value?.member.data.refresh?.();
 }
-defineExpose({ refresh });
+defineExpose({
+  refresh,
+  /** The mounted component's own exposed API (for example AgentChat.requestArtifactAction). */
+  get component() {
+    return innerRef.value;
+  },
+});
 </script>
 
 <template>

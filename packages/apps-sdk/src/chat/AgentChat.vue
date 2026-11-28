@@ -5,13 +5,22 @@ import {
   AgentChat as ShellAgentChat,
   servePageComposerKey,
   usePanelChatHost,
-  type ComposerEntry,
-  type PageComposerExpand,
+  type AgentArtifactTarget,
   type AgentHostAgent,
   type AgentHostClient,
+  type AgentRunComplete,
+  type ArtifactLinkSlotScope,
+  type ArtifactRendererOverride,
+  type ArtifactSlotScope,
+  type ComposerEntry,
+  type ConversationInputRun,
+  type MessageActionContext,
+  type PageComposerExpand,
   type ShellFeedbackPort,
   type ShellLabels,
 } from "@ontomato/agent-shell-ui";
+import type { AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { useShellLabels } from "@ontomato/workbench-ui/composables/useShellLabels";
@@ -21,30 +30,39 @@ import { panelMemberKey, useMemberOutput } from "../panel/member";
 /**
  * Official conversation component:
  * - As a panel projection (`<Projection slot="...">` with `agent` declared on the member): resolves the declared
- *   agent through the platform's authenticated `AgentHostClient` under the signed-in reader's permissions and gates,
- *   shares the platform's own session history, binds optional `sessionId` state, publishes read-only `status`,
- *   `sessionId` and `busy` outputs, and claims the page's composer surface so the page never shows a second composer.
+ *   agent (or external `agentId` input) through the platform's authenticated `AgentHostClient` under the signed-in
+ *   reader's permissions and gates, shares the platform's own session history, binds optional `sessionId`, `agentId`
+ *   and `artifact` state, publishes read-only `status`, `sessionId` and `busy` outputs, and claims the page's composer
+ *   surface so the page never shows a second composer.
  * - In standalone pages (`@ontomato/sdk/chat`, passing explicit `client`, `agentId`, `agent` and `labels`): delegates
  *   directly to the underlying shell conversation panel.
  */
 const props = withDefaults(
   defineProps<{
-    /** Show the built-in header bar (agent name and New chat action) in projection mode. */
+    /** Show the built-in header bar (session/agent title, header actions and New chat action) in projection mode. */
     showHeader?: boolean;
     /** Optional panel message key (`content.messages`) overriding the input placeholder in projection mode. */
     placeholderKey?: string;
     /** Active conversation session ID; bind via `state: { sessionId: "..." }` to persist or deep-link a session. */
     sessionId?: string | null;
+    /** Active agent ID override; in projection mode overrides the declared target and follows cross-agent sessions. */
+    agentId?: string | null;
+    /** Active artifact target selected from conversation cards; bind with `AgentArtifactPreview`. */
+    artifact?: AgentArtifactTarget | null;
     sessionContext?: Record<string, RuntimeJsonValue>;
     collapsed?: boolean;
     greeting?: string;
     greetingKey?: string;
     description?: string;
     descriptionKey?: string;
+    /** Predicate selecting user messages rendered through the `#input` slot instead of the default bubble. */
+    customInput?: (text: string) => boolean;
+    /** Custom artifact renderers overriding shell defaults inside inline conversation artifacts. */
+    artifactRenderers?: readonly ArtifactRendererOverride[];
+    /** Predicate suppressing Markdown artifact cards already rendered inline by the host (e.g. custom input cards). */
+    inlineArtifactAlreadyShown?: (runId: string, path: string) => boolean;
     /** Standalone mode only: authenticated `AgentHostClient` from `createAssistantClient(context)`. */
     client?: AgentHostClient;
-    /** Standalone mode only: explicit agent ID. */
-    agentId?: string;
     /** Standalone mode only: explicit agent metadata. */
     agent?: AgentHostAgent | null;
     /** Standalone mode only: localized shell labels from `useShellLabels()`. */
@@ -57,8 +75,12 @@ const props = withDefaults(
     collapsed: false,
     placeholderKey: undefined,
     sessionId: null,
+    agentId: null,
+    artifact: null,
+    customInput: undefined,
+    artifactRenderers: undefined,
+    inlineArtifactAlreadyShown: undefined,
     client: undefined,
-    agentId: undefined,
     agent: null,
     labels: undefined,
     feedback: undefined,
@@ -68,12 +90,52 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** Emitted when a session is created, opened, or reset to `null`. */
   "update:sessionId": [id: string | null];
-  /** Emitted when a run settles in the conversation. */
-  runComplete: [payload: { sessionId: string; runId: string; ok: boolean; outcome?: RuntimeJsonValue }];
-  /** Emitted when loading the agent or running a turn fails. */
+  /** Emitted when opening a historical session reveals it belongs to another agent. */
+  "update:agentId": [id: string];
+  /** Emitted when the reader opens an artifact card or an open artifact receives its title. */
+  "update:artifact": [target: AgentArtifactTarget | null];
+  /** Emitted when a run settles, carrying persisted run artifacts when available. */
+  runComplete: [payload: AgentRunComplete];
+  /** Emitted when loading the agent, reading run artifacts, or running a turn fails. */
   error: [message: string];
+  /** Emitted when the reader expands a collapsed conversation surface. */
   expand: [];
+  /** Emitted after a sibling `ConversationEntry` activates this chat. */
   entryTriggered: [payload: { slot?: string; submit?: boolean; newSession?: boolean; sessionId?: string | null }];
+}>();
+
+defineSlots<{
+  /** Actions rendered beside the built-in header title with current session metadata and initial instruction reader. */
+  "header-actions"?(scope: {
+    sessionId: string | null;
+    agentId: string | null;
+    title: string | undefined;
+    origin: AgentHostSession["origin"];
+    hasInitialInstruction: boolean;
+    initialInstruction: () => Promise<string>;
+  }): unknown;
+  /** Custom welcome block above the composer when no session has started yet (keeps the composer). */
+  welcome?(scope: { agent: AgentHostAgent | null }): unknown;
+  /** Full empty-state replacement when no session has started yet (omits the composer). */
+  "conversation-empty"?(): unknown;
+  /** Custom rendering for user messages matched by `customInput`. */
+  input?(scope: {
+    inputId: string | null;
+    text: string;
+    queued: boolean;
+    run: ConversationInputRun | null;
+    preparationFailed: boolean;
+  }): unknown;
+  /** Context strip rendered directly above the composer. */
+  "composer-context"?(): unknown;
+  /** Custom actions rendered in the reply footer alongside copy and feedback actions. */
+  "message-actions"?(scope: MessageActionContext): unknown;
+  /** Custom Markdown artifact card renderer with fallback component and props. */
+  "artifact-link"?(scope: ArtifactLinkSlotScope): unknown;
+  /** Custom inline artifact body renderer with fallback component and props. */
+  artifact?(scope: ArtifactSlotScope): unknown;
+  /** Custom actions rendered in inline artifact headers. */
+  "artifact-actions"?(scope: { artifact: RuntimeArtifact; title: string; caption?: string }): unknown;
 }>();
 
 const standalone = computed(() => props.client !== undefined);
@@ -81,20 +143,37 @@ const standalone = computed(() => props.client !== undefined);
 const { t } = useI18n();
 const panel = inject(panelContextKey, null);
 const slot = inject(projectionKey, null);
+const memberGetter = inject(panelMemberKey, null);
 const chatHost = usePanelChatHost();
 const defaultLabels = useShellLabels();
 const serve = inject(servePageComposerKey, null);
 
 type PanelChatStatus = "loading" | "ready" | "forbidden" | "error";
 const status = ref<PanelChatStatus>(standalone.value ? "ready" : "loading");
+const availableAgents = shallowRef<readonly AgentHostAgent[]>([]);
+const agentsLoaded = ref(false);
 const resolvedAgent = shallowRef<AgentHostAgent | null>(null);
 const loadFailure = ref<string>("");
 const currentSessionId = ref<string | null>(props.sessionId ?? null);
+const currentAgentId = ref<string | null>(props.agentId ?? null);
+const currentArtifact = shallowRef<AgentArtifactTarget | null>(props.artifact ?? null);
 
 watch(
   () => props.sessionId,
   (next) => {
     currentSessionId.value = next ?? null;
+  },
+);
+watch(
+  () => props.agentId,
+  (next) => {
+    currentAgentId.value = next ?? null;
+  },
+);
+watch(
+  () => props.artifact,
+  (next) => {
+    currentArtifact.value = next ?? null;
   },
 );
 
@@ -117,9 +196,18 @@ const effectiveLabels = computed<ShellLabels>(() => {
 });
 const greeting = computed(() => translated(props.greetingKey) ?? props.greeting);
 const description = computed(() => translated(props.descriptionKey) ?? props.description);
-const activeAgent = computed(() => standalone.value ? props.agent : resolvedAgent.value);
-const activeAgentId = computed(() => standalone.value ? props.agentId : resolvedAgent.value?.id);
+const activeAgent = computed(() => (standalone.value ? props.agent : resolvedAgent.value));
+const activeAgentId = computed(() =>
+  standalone.value ? (props.agentId ?? undefined) : (currentAgentId.value ?? resolvedAgent.value?.id),
+);
 const entry = shallowRef<ComposerEntry | null>(null);
+
+function writeMemberOutput(name: string, value: RuntimeJsonValue | null) {
+  if (!slot || !memberGetter) return;
+  const member = memberGetter();
+  if (member.scoped) return;
+  panel?.instance?.output?.(member.key, name, value);
+}
 
 function matchDeclaredAgent(
   target: PanelConversationEntry["target"],
@@ -136,6 +224,42 @@ function matchDeclaredAgent(
   return enabled.find((agent) => agent.kind === resolvedTarget.agentKind) ?? null;
 }
 
+function syncResolvedAgent() {
+  if (standalone.value || !agentsLoaded.value) return;
+  const agents = availableAgents.value;
+  if (currentAgentId.value) {
+    const found = agents.find((agent) => agent.id === currentAgentId.value) ?? null;
+    if (found && found.enabled) {
+      resolvedAgent.value = found;
+      status.value = "ready";
+      return;
+    }
+    if (currentSessionId.value) {
+      resolvedAgent.value = found;
+      status.value = "ready";
+      return;
+    }
+    resolvedAgent.value = null;
+    status.value = "forbidden";
+    return;
+  }
+  const target = slot?.projection.conversationEntry?.target;
+  if (!target) {
+    resolvedAgent.value = null;
+    status.value = "error";
+    loadFailure.value = "This AgentChat projection declares no agent target";
+    return;
+  }
+  const match = matchDeclaredAgent(target, agents);
+  if (!match) {
+    resolvedAgent.value = null;
+    status.value = "forbidden";
+    return;
+  }
+  resolvedAgent.value = match;
+  status.value = "ready";
+}
+
 let loadSeq = 0;
 async function loadDeclaredAgent() {
   if (standalone.value) {
@@ -145,9 +269,10 @@ async function loadDeclaredAgent() {
   const seq = ++loadSeq;
   loadFailure.value = "";
   resolvedAgent.value = null;
+  agentsLoaded.value = false;
 
   const target = slot?.projection.conversationEntry?.target;
-  if (!target) {
+  if (!target && !currentAgentId.value) {
     status.value = "error";
     loadFailure.value = "This AgentChat projection declares no agent target";
     emit("error", loadFailure.value);
@@ -165,13 +290,9 @@ async function loadDeclaredAgent() {
   try {
     const agents = await client.listAgents();
     if (seq !== loadSeq) return;
-    const match = matchDeclaredAgent(target, agents);
-    if (!match) {
-      status.value = "forbidden";
-      return;
-    }
-    resolvedAgent.value = match;
-    status.value = "ready";
+    availableAgents.value = agents;
+    agentsLoaded.value = true;
+    syncResolvedAgent();
   } catch (reason: unknown) {
     if (seq !== loadSeq) return;
     status.value = "error";
@@ -187,6 +308,10 @@ watch(
   },
   { immediate: true },
 );
+
+watch([currentAgentId, currentSessionId], () => {
+  if (!standalone.value && agentsLoaded.value) syncResolvedAgent();
+});
 
 let releaseComposerClaim: (() => void) | null = null;
 watch(
@@ -204,7 +329,21 @@ onBeforeUnmount(() => {
 
 function handleSessionUpdate(next: string | null) {
   currentSessionId.value = next;
+  writeMemberOutput("sessionId", next);
   emit("update:sessionId", next);
+}
+
+function handleAgentUpdate(next: string) {
+  currentAgentId.value = next;
+  if (!standalone.value && agentsLoaded.value) syncResolvedAgent();
+  writeMemberOutput("agentId", next);
+  emit("update:agentId", next);
+}
+
+function handleArtifactUpdate(next: AgentArtifactTarget | null) {
+  currentArtifact.value = next;
+  writeMemberOutput("artifact", next);
+  emit("update:artifact", next);
 }
 
 function startNewChat() {
@@ -214,8 +353,14 @@ function startNewChat() {
 }
 
 const innerBusy = computed(() => Boolean(innerRef.value?.busy));
+const currentSession = computed<AgentHostSession | null>(() => innerRef.value?.session ?? null);
+const hasInitialInstruction = computed(() => Boolean(innerRef.value?.hasInitialInstruction));
+const headerTitle = computed(() => currentSession.value?.title || activeAgent.value?.name || "");
+const headerAgentId = computed(() => currentSession.value?.agentId ?? activeAgentId.value ?? null);
+const readInitialInstruction = () =>
+  innerRef.value ? innerRef.value.initialInstruction() : Promise.resolve("");
 
-if (slot && inject(panelMemberKey, null)) {
+if (slot && memberGetter) {
   useMemberOutput("status", () => status.value);
   useMemberOutput("sessionId", () => currentSessionId.value);
   useMemberOutput("busy", () => innerBusy.value);
@@ -264,7 +409,11 @@ watch(
 
 defineExpose({
   cancel: () => innerRef.value?.cancel(),
+  requestArtifactAction: (message: string) => innerRef.value!.requestArtifactAction(message),
   busy: innerBusy,
+  session: currentSession,
+  hasInitialInstruction,
+  initialInstruction: readInitialInstruction,
 });
 </script>
 
@@ -284,25 +433,36 @@ defineExpose({
     </div>
     <template v-else-if="activeClient && activeAgentId">
       <header v-if="!standalone && showHeader && !collapsed" class="sdk-agent-chat-header">
-        <span class="sdk-agent-chat-title">{{ activeAgent?.name }}</span>
-        <button
-          type="button"
-          class="sdk-agent-chat-btn"
-          :disabled="!currentSessionId || innerBusy"
-          @click="startNewChat"
-        >
-          {{ t("assistant.newConversation") }}
-        </button>
+        <span class="sdk-agent-chat-title">{{ headerTitle }}</span>
+        <div class="sdk-agent-chat-header-actions">
+          <slot
+            name="header-actions"
+            :session-id="currentSessionId"
+            :agent-id="headerAgentId"
+            :title="currentSession?.title"
+            :origin="currentSession?.origin"
+            :has-initial-instruction="hasInitialInstruction"
+            :initial-instruction="readInitialInstruction"
+          />
+          <button
+            type="button"
+            class="sdk-agent-chat-btn"
+            :disabled="!currentSessionId || innerBusy"
+            @click="startNewChat"
+          >
+            {{ t("assistant.newConversation") }}
+          </button>
+        </div>
       </header>
       <div class="sdk-agent-chat-body">
         <ShellAgentChat
           ref="innerRef"
-          :key="activeAgentId"
           :client="activeClient"
           :agent-id="activeAgentId"
           :agent="activeAgent"
           :labels="effectiveLabels"
           :session-id="currentSessionId"
+          :artifact="currentArtifact"
           :session-context="sessionContext"
           :display="chatHost?.display"
           :collapsed="collapsed"
@@ -310,13 +470,24 @@ defineExpose({
           :description="description"
           :entry="entry"
           :feedback="feedback"
+          :custom-input="customInput"
+          :artifact-renderers="artifactRenderers"
+          :inline-artifact-already-shown="inlineArtifactAlreadyShown"
           @expand="emit('expand')"
           @update:session-id="handleSessionUpdate"
+          @update:agent-id="handleAgentUpdate"
+          @update:artifact="handleArtifactUpdate"
           @run-complete="emit('runComplete', $event)"
           @error="emit('error', $event)"
         >
+          <template v-if="$slots.welcome" #welcome="scope"><slot name="welcome" v-bind="scope" /></template>
+          <template v-if="$slots['conversation-empty']" #conversation-empty><slot name="conversation-empty" /></template>
+          <template v-if="$slots.input" #input="scope"><slot name="input" v-bind="scope" /></template>
           <template v-if="$slots['composer-context']" #composer-context><slot name="composer-context" /></template>
           <template v-if="$slots['message-actions']" #message-actions="scope"><slot name="message-actions" v-bind="scope" /></template>
+          <template v-if="$slots['artifact-link']" #artifact-link="scope"><slot name="artifact-link" v-bind="scope" /></template>
+          <template v-if="$slots.artifact" #artifact="scope"><slot name="artifact" v-bind="scope" /></template>
+          <template v-if="$slots['artifact-actions']" #artifact-actions="scope"><slot name="artifact-actions" v-bind="scope" /></template>
         </ShellAgentChat>
       </div>
     </template>
@@ -353,6 +524,13 @@ defineExpose({
   gap: 12px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--sdk-border-color, var(--el-border-color-lighter, #e4e7ed));
+}
+
+.sdk-agent-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
 }
 
 .sdk-agent-chat-title {

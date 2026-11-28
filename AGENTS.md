@@ -17,6 +17,11 @@ from the host; business permissions are decided by the server. Data browsing and
 modeling belong to the Manager, and the main workbench keeps no second implementation of
 them.
 
+Official product-layer components have no platform-only tier. A component registered in the public SDK catalogue must
+be usable in panels; host-shell assembly pieces that cannot be placed declaratively are not SDK components. Platform
+pages and application panels share the same implementation of reusable blocks, and application requirements must not
+add application-specific branches to shared conversation pages or shell components.
+
 ## Language
 
 Write all new commit messages, including subjects and bodies, in English. Use

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { agentArtifactTargetSchema, agentRunCompleteSchema } from "./agent-host";
 import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
 import { bindPanelAuthoringChart, expandPanelAuthoringMember, panelAuthoringMemberSchema, panelManifestSchema } from "./panel-check";
 import { panelOperationDeclarationSchema } from "./panel-operations";
@@ -1568,4 +1569,84 @@ test("InstanceGraph accepts customer Relationship.neighbors via capability decla
     typeTable: customerTypeTable,
   });
   assert.deepEqual(expandedGrid.projection.data.rows.source, { type: { kind: "ObjectType", id: "Course" } });
+});
+
+test("agent artifact target, run complete, AgentArtifactPreview short member, and panelUsable enforcement contracts", () => {
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const runId = "22222222-2222-4222-8222-222222222222";
+  const artifactId = "33333333-3333-4333-8333-333333333333";
+  const target = agentArtifactTargetSchema.parse({
+    sessionId,
+    runId,
+    path: "outputs/report.md",
+    title: "Monthly report",
+  });
+  assert.deepEqual(target, {
+    sessionId,
+    runId,
+    path: "outputs/report.md",
+    title: "Monthly report",
+  });
+  assert.throws(() => agentArtifactTargetSchema.parse({ sessionId, runId, path: "../secret.txt" }));
+  assert.throws(() => agentArtifactTargetSchema.parse({ sessionId: "not-a-uuid", runId, path: "outputs/a.md" }));
+
+  const withoutArtifacts = agentRunCompleteSchema.parse({ sessionId, runId, ok: true });
+  assert.equal("artifacts" in withoutArtifacts, false);
+  const emptyArtifacts = agentRunCompleteSchema.parse({ sessionId, runId, ok: true, artifacts: [] });
+  assert.deepEqual(emptyArtifacts.artifacts, []);
+  const withArtifacts = agentRunCompleteSchema.parse({
+    sessionId,
+    runId,
+    ok: true,
+    outcome: { result: "complete" },
+    artifacts: [{
+      id: artifactId,
+      sessionId,
+      runId,
+      toolCallId: null,
+      path: "outputs/report.md",
+      sha256: "a".repeat(64),
+      size: 128,
+      mediaType: "text/markdown",
+      createdAt: "2026-11-28T00:00:00.000Z",
+      seq: 1,
+    }],
+  });
+  assert.equal(withArtifacts.artifacts?.length, 1);
+
+  const previewComponent = buildComponent("AgentArtifactPreview", {
+    module: "@ontomato/sdk/chat",
+    role: "presentation",
+    data: {},
+    inputs: { artifact: { kind: "json" } },
+    outputs: { artifact: { kind: "json" } },
+    config: [{ name: "inline", type: "boolean", description: "Inline mode", required: false }],
+  });
+  const previewMember = panelAuthoringMemberSchema.parse({
+    component: "AgentArtifactPreview",
+    state: { artifact: "activeArtifact" },
+    config: { inline: true },
+  });
+  assert("component" in previewMember);
+  const expandedPreview = expandPanelAuthoringMember("preview", previewMember, {
+    state: { activeArtifact: { type: { kind: "json" }, personal: false, deepLink: false, external: false } },
+    components: [previewComponent],
+    typeTable,
+  });
+  assert.deepEqual(expandedPreview.projection.data, {});
+  assert.deepEqual(expandedPreview.placement.inputs, { artifact: { state: "activeArtifact" } });
+  assert.deepEqual(expandedPreview.placement.outputs, { artifact: { state: "activeArtifact" } });
+
+  assert.throws(
+    () => appsSdkComponentCatalogEntrySchema.parse({
+      componentId: "ForbiddenShell",
+      module: "@ontomato/sdk/chat",
+      exportName: "ForbiddenShell",
+      role: "control",
+      panelUsable: false,
+      meaning: "Host only",
+      ports: { props: [], slots: [], events: [] },
+    }),
+    /Invalid literal value|expected true/i,
+  );
 });

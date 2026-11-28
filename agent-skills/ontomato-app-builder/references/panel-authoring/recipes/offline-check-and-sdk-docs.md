@@ -59,4 +59,6 @@ For a calculated MetricView chart from an existing dashboard card, declare `comp
 `unchecked`. Ask the card owner to register it, then reference the projection by ID). `MetricChart` also
 supports binding its data directly without `sourceCard` when rendering a standalone or preview chart. To refresh a
 single mounted projection in place (for example one dashboard card) without reloading the whole panel, attach a Vue
-template `ref` to `<projection slot="...">` and call `memberRef.value?.refresh()`.
+template `ref` to `<projection slot="...">` and call `memberRef.value?.refresh()`. The same ref's `component`
+property is the mounted component's own exposed API when its SDK page documents one (for example
+`AgentChat.requestArtifactAction`).
