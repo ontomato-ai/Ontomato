@@ -483,7 +483,7 @@
   }
 
   .ops-feature-body.has-floating-dock {
-    padding-bottom: 88px;
+    padding-bottom: var(--ops-floating-dock, 0px);
   }
 
   .ops-feature-body > .sdk-current-entry-slot {
@@ -599,6 +599,7 @@
   <div class="ops-workspace" :data-ops-layout="layoutMode">
     <section
       v-if="hasConversationEntry"
+      ref="chatPaneRef"
       class="ops-chat-pane"
       :class="{
         'is-floating': isFloating,
@@ -731,6 +732,7 @@
       <div
         class="ops-feature-body"
         :class="{ 'has-floating-dock': isFloating && !composerFolded }"
+        :style="floatingDockStyle"
       >
         <current-entry member="content" />
       </div>

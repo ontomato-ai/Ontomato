@@ -55,7 +55,7 @@ export function feedbackExportTimeZone(value: unknown): string {
   return timeZone;
 }
 
-type ExportFilters = Pick<Parameters<typeof listFeedback>[0], "domainId" | "sourceType" | "rating" | "keyword" | "locale">;
+type ExportFilters = Pick<Parameters<typeof listFeedback>[0], "domainId" | "sourceType" | "rating" | "keyword" | "locale" | "viewer">;
 
 export async function exportFeedback({ timeZone, ...filters }: ExportFilters & { timeZone: string }) {
   const { records } = await listFeedback({ ...filters, all: true });

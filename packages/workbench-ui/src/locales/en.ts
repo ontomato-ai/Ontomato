@@ -807,8 +807,8 @@ export default {
     "testExecution": "Test Execution"
   },
   "observe": {
-    "frontendLogs": "Frontend Logs",
-    "backendLogs": "Backend Logs",
+    "frontendLogs": "Workbench Logs",
+    "backendLogs": "Ontology Service Logs",
     "keywordSearch": "Keyword Search",
     "waitingForLogs": "Waiting for logs...",
     "clickConnectToStart": "Click \"Connect\" to start receiving logs",
