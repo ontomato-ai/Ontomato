@@ -22,6 +22,7 @@ function setup(options: {
   initial?: { page: DisplayPage; view: DisplayView };
   readinessTimeoutMs?: number;
   confirmLeave?: () => Promise<boolean>;
+  onSerialize?: (page: DisplayPage | null) => void;
 } = {}) {
   const serialized: { page: DisplayPage | null; view: DisplayView; history: string }[] = [];
   const pages: Record<string, string> = {
@@ -40,6 +41,7 @@ function setup(options: {
     ...(options.admit ? { admit: options.admit } : {}),
     serialize: async (page, view, history) => {
       serialized.push({ page, view, history });
+      options.onSerialize?.(page);
       return true;
     },
     context: (page, reported) => ({
@@ -58,6 +60,29 @@ function setup(options: {
 }
 
 describe("live agent page control (requirement-64995244)", () => {
+  it("returns the loaded page when its address changes during presentation", async () => {
+    const address = "/actions?selected=update-description";
+    const { display } = setup({
+      initial: { page: { featureId: "panel", address: "/graph", instance: "/graph" }, view: "side" },
+      onSerialize: (page) => {
+        if (page?.address !== "/actions") return;
+        display.loaded({ status: "loading" });
+        display.address({ kind: "state", address });
+        setTimeout(() => display.loaded({ status: "ready" }), 0);
+      },
+    });
+
+    await expect(display.present(frame({
+      kind: "page",
+      address: "/actions",
+      state: { selected: { className: "platform:Action", primaryKey: "update-description" } },
+    }))).resolves.toMatchObject({
+      status: "opened",
+      reason: "target_selected",
+      current: { target: { url: address }, load: { status: "ready" } },
+    });
+  });
+
   it("preserves all three layout states (none -> side, side -> side, full -> full) and writes navigation to address", async () => {
     // 1. Conversation only -> opens in side-by-side and writes to address.
     const { display, serialized } = setup();
