@@ -29,7 +29,6 @@ return computed<ShellLabels>(() => ({
   thinking: t("assistant.thinking"),
   working: t("assistant.working"),
   queuedWaiting: t("assistant.queuedWaiting"),
-  switchWhileRunning: t("assistant.switchWhileRunning"),
   pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
   collapseComposer: t("assistant.collapseComposer"),
   expandComposer: t("assistant.expandComposer"),
