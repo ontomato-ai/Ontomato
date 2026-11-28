@@ -386,26 +386,21 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     return { ok: true };
   }
 
-  async function waitForLoadSettle(targetPage: DisplayTarget, timeoutMs = 5000): Promise<void> {
+  async function waitForLoadSettle(targetPage: DisplayPage, timeoutMs = 5000): Promise<void> {
+    // A panel can report its canonical address while the same instance is still loading.
+    const isLoadingTarget = () => load.value.status === "loading" && page.value?.instance === targetPage.instance;
     await nextTick();
-    if (load.value.status !== "loading") return;
+    if (!isLoadingTarget()) return;
     await new Promise<void>((resolve) => {
-      let done = false;
       const finish = () => {
-        if (done) return;
-        done = true;
         clearTimeout(timer);
         stop();
         resolve();
       };
       const timer = setTimeout(finish, timeoutMs);
-      const stop = watch(
-        () => [load.value.status, shown.value.target] as const,
-        ([status, currentTarget]) => {
-          if (status !== "loading" || currentTarget !== targetPage) finish();
-        },
-        { immediate: true },
-      );
+      const stop = watch(isLoadingTarget, (loading) => {
+        if (!loading) finish();
+      });
     });
     await nextTick();
   }
