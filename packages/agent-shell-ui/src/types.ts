@@ -2,6 +2,7 @@ import type { Component } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunStatus, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import type { PageSkillContext } from "@ontomato/contracts/page-context";
+import type { InlineMarkdownNode } from "./artifacts";
 
 export type ArtifactPresentation = "inline" | "panel";
 
@@ -23,6 +24,43 @@ export interface ArtifactRendererProps {
   continueConversation?: (message: string) => Promise<void>;
   /** The renderer this one replaces (shell default or file card), so an override can wrap it. */
   fallback?: Component | null;
+}
+
+/** Scope passed to the `artifact-link` slot when customizing Markdown artifact cards. */
+export interface ArtifactLinkSlotScope {
+  node: {
+    href: string;
+    title: string | null;
+    text: string;
+    children: readonly InlineMarkdownNode[];
+    loading?: boolean;
+  };
+  runId: string;
+  path: string;
+  title: string;
+  artifact: RuntimeArtifact | null;
+  open: () => void;
+  fallback: {
+    component: Component;
+    props: { runId: string; path: string; title: string };
+  };
+}
+
+/** Scope passed to the `artifact` slot when customizing artifact preview body rendering. */
+export interface ArtifactSlotScope {
+  artifact: RuntimeArtifact;
+  title: string;
+  caption?: string;
+  presentation: ArtifactPresentation;
+  read: () => Promise<Blob>;
+  openDetails: () => void;
+  continueConversation?: (message: string) => Promise<void>;
+  component: Component;
+  props: ArtifactRendererProps;
+  fallback: {
+    component: Component;
+    props: ArtifactRendererProps;
+  };
 }
 
 /**

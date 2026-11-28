@@ -2,7 +2,7 @@
 import type { Slot } from "vue";
 
 /** Renders a host slot captured by the shell at a nested position. */
-const props = defineProps<{ content?: Slot; scope: Record<string, unknown> }>();
+const props = defineProps<{ content?: Slot; scope: object }>();
 const render = () => props.content?.(props.scope);
 </script>
 
