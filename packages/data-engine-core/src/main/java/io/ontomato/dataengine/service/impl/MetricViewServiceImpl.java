@@ -555,9 +555,7 @@ public class MetricViewServiceImpl implements MetricViewService {
     JSONObject values = request.getJSONObject("values");
     // A stored metric and a refresh carry no verdict; an incoming draft is checked and its errors returned with it.
     List<ObjectNode> errors = List.of();
-    JSONObject current = PanelFormFields.asset(metric);
-    // A new definition has no ID yet; its form must not offer one for the create to carry.
-    if (!existing) current.remove("id");
+    JSONObject current = PanelFormFields.definitionValues(metric, !existing);
     FunctionForm.labelColumnsFromAnalysis(current.getJSONObject("function"));
     if (values == null) {
       values = current;
