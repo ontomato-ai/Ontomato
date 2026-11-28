@@ -430,7 +430,7 @@ defineExpose({
       <div v-if="isZoomed" class="sdk-metric-chart-zoom-body" data-testid="metric-chart-zoom-modal">
         <div v-if="activeViewMode === 'table'" class="sdk-metric-chart-table-overlay">
           <div class="sdk-metric-chart-table-body">
-            <TablePreview :table="tableSummary.table" :page-size="50" />
+            <TablePreview :table="tableSummary.table" :page-size="50" wrap />
           </div>
           <footer class="sdk-metric-chart-table-footer">
             <span class="sdk-metric-chart-table-count">{{ tableFooterText }}</span>

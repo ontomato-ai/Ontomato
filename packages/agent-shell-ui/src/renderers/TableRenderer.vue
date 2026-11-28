@@ -135,15 +135,6 @@ watch(() => props.artifact.id, () => {
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
 }
-.table-renderer :deep(.el-table__inner-wrapper::before) {
-  display: none;
-}
-.table-renderer :deep(.el-table__body tr:last-child td.el-table__cell) {
-  border-bottom: 0;
-}
-.table-renderer :deep(.table-preview-pager) {
-  border-top: 1px solid var(--el-border-color-lighter);
-}
 .lineage {
   border-top: 1px solid var(--el-border-color-lighter);
   background: var(--el-bg-color);

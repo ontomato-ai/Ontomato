@@ -314,6 +314,11 @@ Table alignment follows data type, numeric values are tabular, long cells use de
 pagination/filter/error/loading treatments are consistent. Preserve readable headers and action reachability at zoom.
 A table fills the width it is given; when its columns need more, it scrolls sideways inside its own border (a row's
 actions column may stay pinned at the right), and nothing of it is cut off.
+Shared data preview tables (`TablePreview`, used in conversation dataset cards, dashboard data overlays/zoom modals,
+metric charts and object text readers) render as semantic native tables at full width with an unshaded semibold header
+over a hairline and horizontal row hairlines: single-column tables align left even for numbers, multi-column numeric
+columns align right with sort/filter controls to the left of the heading, and long cells default to single-line
+truncation with full text on hover (or wrap when configured for long-text reading).
 Do not constrain a complex editor to a small generic modal or remove functionality for visual simplicity.
 
 Manager-specific button integration lives in `ontology-manager/src/buttons.css`, scoped to `.ontology-manager`

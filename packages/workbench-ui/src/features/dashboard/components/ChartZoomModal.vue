@@ -16,6 +16,7 @@
       :table="table"
       height="100%"
       :empty-text="t('dashboard.noDataToDisplay')"
+      wrap
     />
   </el-dialog>
 </template>
@@ -58,11 +59,6 @@ const { t } = useI18n();
 .chart-zoom-body {
   display: flex;
   flex-direction: column;
-}
-
-.chart-zoom-dialog .chart-zoom-body .table-preview .el-table__header .cell {
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 
 .chart-zoom-body > * {

@@ -3,7 +3,6 @@ import { computed, ref, watch } from "vue";
 import { ElImage, ElImageViewer } from "@ontomato/foundation-ui/preview";
 import { FileText, ExternalLink, File } from "lucide-vue-next";
 import { cellAttachments, type CellAttachment } from "./cell-attachments";
-import TableTextCell from "./TableTextCell.vue";
 
 const props = defineProps<{ text: string; gallery?: CellAttachment[] }>();
 const attachments = computed(() => cellAttachments(props.text));
@@ -15,7 +14,7 @@ watch(() => props.text, () => { viewing.value = null; });
 </script>
 
 <template>
-  <div v-if="attachments.length" class="cell-attachments">
+  <div v-if="attachments.length" class="cell-attachments" title="">
     <template v-for="(item, index) in attachments" :key="`${index}:${item.url}`">
       <figure v-if="item.kind === 'image'" class="cell-image">
         <button type="button" class="image-open" :aria-label="item.caption" @click.stop="viewing = images.indexOf(item.url)">
@@ -33,14 +32,14 @@ watch(() => props.text, () => { viewing.value = null; });
       </a>
     </template>
   </div>
-  <TableTextCell v-else :text="text" />
+  <template v-else>{{ text }}</template>
   <el-image-viewer v-if="viewing !== null" :url-list="images" :initial-index="viewing" teleported hide-on-click-modal @switch="viewing = $event" @close="viewing = null">
     <template #default><div v-if="viewedCaption" class="viewer-caption">{{ viewedCaption }}</div></template>
   </el-image-viewer>
 </template>
 
 <style scoped>
-.cell-attachments { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding-block: 4px; }
+.cell-attachments { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding-block: 4px; white-space: normal; }
 .cell-image { margin: 0; width: 88px; }
 .image-open { display: block; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: zoom-in; }
 .image-open:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
