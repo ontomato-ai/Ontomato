@@ -199,12 +199,22 @@ function ownerFieldsFor(fn: FunctionFixture, existing: boolean) {
       valueSchema: { type: "string", enum: ["OPERATION_READ", "OPERATION_WRITE"] },
       control: {
         kind: "select",
+        presentation: "radio",
         options: [
           { value: "OPERATION_READ", label: "Read", description: null, disabled: false, disabledReason: null },
           { value: "OPERATION_WRITE", label: "Write", description: null, disabled: false, disabledReason: null },
         ],
       },
+      refreshOnChange: true,
     },
+    ...(fn.operation === "OPERATION_WRITE" ? [{
+      path: "/code",
+      label: "Code",
+      required: false,
+      readOnly: false,
+      valueSchema: { type: "string" },
+      control: { kind: "text", multiline: true },
+    }] : []),
     {
       path: "/logic",
       label: "Logic",
@@ -293,14 +303,25 @@ async function mountFunctionsApp(options: HarnessOptions = {}) {
     (operationId, call) => {
       if (operationId === "definition.save") {
         savedPayloads.push({ operationId, call });
-        const inputValues = ((call.input as { values?: Record<string, unknown> } | undefined)?.values ?? {}) as Record<string, unknown>;
+        const input = (call.input ?? {}) as { values?: Record<string, unknown>; submittedFields?: string[] };
+        const inputValues = (input.values ?? {}) as Record<string, unknown>;
+        const submittedValues = (baseline: Record<string, unknown>) => {
+          if (!Array.isArray(input.submittedFields)) return { ...inputValues };
+          const merged = { ...baseline };
+          for (const path of input.submittedFields) {
+            const key = path.replace(/^\//, "");
+            if (Object.hasOwn(inputValues, key)) merged[key] = inputValues[key];
+          }
+          return merged;
+        };
         const target = call.target as { kind?: string; primaryKey?: string } | undefined;
         if (target?.kind === "object" && target.primaryKey) {
           const existing = store.find((item) => item.id === target.primaryKey);
           if (existing) {
-            if (typeof inputValues.name === "string") existing.name = inputValues.name;
-            if (typeof inputValues.description === "string") existing.description = inputValues.description;
-            if (typeof inputValues.logic === "string") existing.logic = inputValues.logic;
+            const accepted = submittedValues(toFormValue(existing) as Record<string, unknown>);
+            if (typeof accepted.name === "string") existing.name = accepted.name;
+            if (typeof accepted.description === "string") existing.description = accepted.description;
+            if (typeof accepted.logic === "string") existing.logic = accepted.logic;
           }
           return {
             kind: "success",
@@ -313,14 +334,20 @@ async function mountFunctionsApp(options: HarnessOptions = {}) {
         }
         createdSeq += 1;
         const newId = `fn-created-${createdSeq}`;
-        const operation = inputValues.operation === "OPERATION_WRITE" ? "OPERATION_WRITE" : "OPERATION_READ";
+        const accepted = submittedValues({
+          name: "",
+          description: "",
+          operation: "OPERATION_READ",
+          logic: "",
+        });
+        const operation = accepted.operation === "OPERATION_WRITE" ? "OPERATION_WRITE" : "OPERATION_READ";
         store.push({
           id: newId,
-          name: typeof inputValues.name === "string" ? inputValues.name : "Untitled function",
-          description: typeof inputValues.description === "string" ? inputValues.description : "",
+          name: typeof accepted.name === "string" ? accepted.name : "Untitled function",
+          description: typeof accepted.description === "string" ? accepted.description : "",
           operation,
           operationLabel: operation === "OPERATION_WRITE" ? "Write" : "Read",
-          logic: typeof inputValues.logic === "string" ? inputValues.logic : "",
+          logic: typeof accepted.logic === "string" ? accepted.logic : "",
         });
         return {
           kind: "success",
@@ -480,11 +507,17 @@ async function mountFunctionsApp(options: HarnessOptions = {}) {
           operationLabel: "Read",
           logic: "",
         };
+        const checked = (body.runtimeParams?.values ?? {}) as Record<string, unknown>;
+        const values = { ...toFormValue(draft), ...checked };
+        const shown: FunctionFixture = {
+          ...draft,
+          operation: values.operation === "OPERATION_WRITE" ? "OPERATION_WRITE" : "OPERATION_READ",
+        };
         return Response.json({
           status: "ready",
           value: {
-            fields: ownerFieldsFor(draft, false),
-            values: toFormValue(draft),
+            fields: ownerFieldsFor(shown, false),
+            values,
             errors: [],
             save: { method: "POST", path: "/function/save", bodySchema: {} },
           },
@@ -704,6 +737,50 @@ describe("Functions two-entry panels (catalog -> detail)", () => {
       await vi.waitFor(() => {
         expect(app.element.querySelector(".sdk-page-header")?.textContent).toContain("Net margin query");
         expect(app.element.querySelector<HTMLElement>(".sdk-page-header-actions > div")?.style.display).not.toBe("none");
+      }, { timeout: 3000 });
+    } finally {
+      app.app.unmount();
+    }
+  });
+
+  it("keeps common fields submitted when a create switches the refresh-on-change operation branch", async () => {
+    const app = await mountFunctionsApp({
+      initialPath: panelAddress(DETAIL_PATH, { mode: "create" }),
+    });
+    try {
+      await vi.waitFor(() => {
+        expect(app.element.querySelector('[data-field="/name"] input')).not.toBeNull();
+      }, { timeout: 3000 });
+      const input = (path: string) => app.element.querySelector<HTMLInputElement>(`[data-field="${path}"] input, [data-field="${path}"] textarea`)!;
+      input("/name").value = "Branch switching function";
+      input("/name").dispatchEvent(new Event("input"));
+      input("/description").value = "Common fields survive the operation switch";
+      input("/description").dispatchEvent(new Event("input"));
+      await nextTick();
+
+      const writeRadio = [...app.element.querySelectorAll<HTMLElement>('[data-field="/operation"] .el-radio')]
+        .find((radio) => radio.textContent?.trim() === "Write")!;
+      writeRadio.click();
+      await vi.waitFor(() => {
+        expect(app.element.querySelector('[data-field="/code"]')).not.toBeNull();
+      }, { timeout: 3000 });
+      expect(input("/name").value).toBe("Branch switching function");
+      expect(input("/description").value).toBe("Common fields survive the operation switch");
+
+      const saveBtn = () => app.element.querySelector<HTMLButtonElement>(".sdk-page-header button.primary")!;
+      await vi.waitFor(() => expect(saveBtn().disabled).toBe(false), { timeout: 3000 });
+      saveBtn().click();
+      await vi.waitFor(() => expect(app.savedPayloads).toHaveLength(1), { timeout: 3000 });
+
+      const saveInput = app.savedPayloads[0]!.call.input as { values?: Record<string, unknown>; submittedFields?: string[] };
+      expect(saveInput.values).toMatchObject({
+        name: "Branch switching function",
+        description: "Common fields survive the operation switch",
+        operation: "OPERATION_WRITE",
+      });
+      expect(new Set(saveInput.submittedFields)).toEqual(new Set(["/name", "/description", "/operation"]));
+      await vi.waitFor(() => {
+        expect(app.element.querySelector(".sdk-page-header")?.textContent).toContain("Branch switching function");
       }, { timeout: 3000 });
     } finally {
       app.app.unmount();
