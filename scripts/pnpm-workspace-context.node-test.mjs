@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { collectMetadataContext, copyWorkspace } from "./pnpm-workspace-context.mjs";
+import { collectMetadataContext, copyWorkspace, copyWorkspaceWithInstallMetadata } from "./pnpm-workspace-context.mjs";
 
 // Local identity only; the user's Git configuration and real repositories are never touched.
 const GIT = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid"];
@@ -131,6 +131,46 @@ test("source edits and commits preserve dependency inputs", (t) => {
   assert.deepEqual(collect(sources, "enterprise", join(fixture.dir, "edited")), before);
   commit(fixture.publicRoot, "source-only change");
   assert.deepEqual(collect(sources, "enterprise", join(fixture.dir, "committed")), before);
+});
+
+test("build context reuses install metadata for test script edits and keeps complete build manifests", (t) => {
+  const fixture = workspaceFixture(t);
+  const sources = sourcesOf(fixture);
+  const relative = "packages/core/package.json";
+  const manifest = {
+    name: "@ontomato/core",
+    dependencies: { yaml: "2.8.3" },
+    scripts: { test: "node --test first.test.mjs" },
+  };
+  const hookManifest = {
+    name: "@enterprise/workbench",
+    scripts: { prepare: "pnpm run generate", generate: "node -e 'process.exit(0)'" },
+  };
+  json(join(fixture.privateRoot, "apps/workbench/package.json"), hookManifest);
+  const build = (label) => {
+    const context = join(fixture.dir, label);
+    json(join(fixture.publicRoot, relative), manifest);
+    const record = collect(sources, "enterprise", context);
+    copyWorkspaceWithInstallMetadata({ sources }, context, record);
+    return {
+      inputs: readFileSync(join(context, "inputs.json"), "utf8"),
+      install: JSON.parse(readFileSync(join(context, "sources/ontomato", relative), "utf8")),
+      workspace: JSON.parse(readFileSync(join(context, "workspace/ontomato", relative), "utf8")),
+      hook: JSON.parse(readFileSync(join(context, "sources/enterprise/apps/workbench/package.json"), "utf8")),
+    };
+  };
+  const before = build("before");
+  manifest.scripts.test = "node --test first.test.mjs second.test.mjs";
+  const scriptOnly = build("script-only");
+  assert.equal(scriptOnly.inputs, before.inputs);
+  assert.deepEqual(scriptOnly.install, { name: manifest.name, dependencies: manifest.dependencies });
+  assert.deepEqual(scriptOnly.workspace, manifest);
+  assert.deepEqual(scriptOnly.hook, hookManifest);
+
+  manifest.dependencies.yaml = "2.8.4";
+  const dependencyChange = build("dependency-change");
+  assert.notEqual(dependencyChange.inputs, before.inputs);
+  assert.deepEqual(dependencyChange.install.dependencies, manifest.dependencies);
 });
 
 test("copies the current bytes of modified dependency metadata", (t) => {

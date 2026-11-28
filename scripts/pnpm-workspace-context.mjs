@@ -20,6 +20,15 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { canonical, output } from "./build-support.mjs";
 
 const ROOT_METADATA = ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
+const INSTALL_FIELDS = [
+  "name", "version", "private", "packageManager", "engines", "os", "cpu", "libc",
+  "dependencies", "devDependencies", "optionalDependencies", "peerDependencies",
+  "dependenciesMeta", "peerDependenciesMeta", "bundledDependencies", "bundleDependencies",
+  "bin", "directories", "pnpm", "resolutions", "license", "licenses",
+];
+const INSTALL_HOOKS = [
+  "pnpm:devPreinstall", "preinstall", "install", "postinstall", "preprepare", "prepare", "postprepare",
+];
 // Build and dependency directories, matching both product repositories' .gitignore.
 const FORBIDDEN = new Set(["node_modules", ".git", ".build", "dist", "target", "coverage"]);
 
@@ -256,4 +265,27 @@ export function copyWorkspace(app, context, record, owners) {
       cpSync(join(source.root, rel), dest);
     }
   }
+}
+
+export function copyWorkspaceWithInstallMetadata(app, context, record) {
+  // The build uses the full captured manifests. Only the earlier install layer gets projections.
+  copyWorkspace(app, context, record);
+  const sources = record.sources.map(({ id, candidates }) => ({
+    id,
+    candidates: candidates.map((candidate) => {
+      const { path } = candidate;
+      if (path !== "package.json" && !path.endsWith("/package.json")) return candidate;
+      const file = join(context, "sources", id, path);
+      const manifest = JSON.parse(readFileSync(file, "utf8"));
+      // Hooks can read the manifest or invoke another script from it.
+      if (INSTALL_HOOKS.some((hook) => Object.hasOwn(manifest.scripts ?? {}, hook))) return candidate;
+      const install = Object.fromEntries(INSTALL_FIELDS
+        .filter((field) => Object.hasOwn(manifest, field))
+        .map((field) => [field, manifest[field]]));
+      const bytes = `${JSON.stringify(install, null, 2)}\n`;
+      writeFileSync(file, bytes);
+      return { path, sha256: sha256(bytes) };
+    }),
+  }));
+  writeFileSync(join(context, "inputs.json"), `${JSON.stringify({ ...record, sources }, null, 2)}\n`);
 }

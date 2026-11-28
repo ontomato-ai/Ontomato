@@ -15,7 +15,7 @@ import {
   sampleSources,
   stagingDirectory,
 } from "../build-support.mjs";
-import { collectMetadataContext, copyWorkspace } from "../pnpm-workspace-context.mjs";
+import { collectMetadataContext, copyWorkspaceWithInstallMetadata } from "../pnpm-workspace-context.mjs";
 import { javaBuiltinApplications } from "./builtin-panels.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -94,7 +94,7 @@ export async function buildWorkbenchImage(app, args) {
     version: stamp,
     sources: entries.map(({ id, revision }) => ({ id, revision })),
   })}\n`);
-  copyWorkspace(app, context, record);
+  copyWorkspaceWithInstallMetadata(app, context, record);
   const sharedSource = app.sources.find((source) => source.root === app.publicRoot);
   cpSync(
     join(app.publicRoot, "agent-skills/ontomato-app-builder"),
