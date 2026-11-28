@@ -89,7 +89,15 @@ public final class DslGrammarValidator {
 
 	private static void checkStepObjects(JSONObject step, int s, List<Map<String, Object>> classDefs,
 			Map<String, Integer> temporaryTables) {
-		JSONArray patterns = stepPatterns(step);
+		JSONObject graph = stepGraph(step);
+		if (graph == null) {
+			return;
+		}
+		if (graph.containsKey("relationship")) {
+			throw invalid("steps[" + s + "].graph.relationship",
+					"Move relationship to graph.patterns[i].relationship in the same pattern as the objects it connects");
+		}
+		JSONArray patterns = graph.getJSONArray("patterns");
 		if (patterns == null) {
 			return;
 		}
@@ -130,13 +138,13 @@ public final class DslGrammarValidator {
 		}
 	}
 
-	private static JSONArray stepPatterns(JSONObject step) {
-		JSONObject graph = step == null ? null : step.getJSONObject("graph");
-		return graph == null ? null : graph.getJSONArray("patterns");
+	private static JSONObject stepGraph(JSONObject step) {
+		return step == null ? null : step.getJSONObject("graph");
 	}
 
 	static boolean hasMultipleObjects(JSONObject step) {
-		JSONArray patterns = stepPatterns(step);
+		JSONObject graph = stepGraph(step);
+		JSONArray patterns = graph == null ? null : graph.getJSONArray("patterns");
 		if (patterns == null) {
 			return false;
 		}

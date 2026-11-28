@@ -2,6 +2,7 @@ package io.ontomato.dataengine.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -19,6 +20,7 @@ import io.ontomato.dataengine.bean.DslExecutionResult;
 import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
+import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.dataAdapter.DslExecutionMode;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
@@ -77,6 +79,30 @@ class HttpRequestUtilGrammarTest {
 		assertTrue(results[1].failed());
 		String message = results[1].failure().cause().getMessage();
 		assertTrue(message.contains("steps[1].output.fields[1].expr"), message);
+		verify(adapter, never()).executeDsl(anyString(), anyString(), any(), any());
+	}
+
+	@Test
+	void graphLevelRelationshipIsRejectedBeforeTheAdapterRuns() throws Exception {
+		DataAdapter adapter = mock(DataAdapter.class);
+		when(adapter.executeDsl(anyString(), anyString(), any(), any()))
+				.thenReturn("[{\"answer\":[{\"id\":\"S1\"}]}]");
+		String dsl = """
+				[{"answer":{"steps":[{"graph":{"patterns":[{"objects":[
+				  {"idx":0,"variable":"s","class":"/Sensor"},
+				  {"idx":1,"variable":"t","class":"/Sensor"}]}],
+				  "relationship":[{"from":0,"to":1,"type":["connected_to"]}]},
+				  "output":{"fields":[{"variable":"t","field":"id","as":"id"}]}}]}}]
+				""";
+
+		DslExecutionResult result = run(adapter, dsl)[1];
+
+		assertTrue(result.failed(), "the misplaced relationship must not be silently ignored");
+		var error = assertInstanceOf(DslContractViolationException.class, result.failure().cause());
+		var violation = error.getViolations().getFirst();
+		assertEquals(DslContractViolationException.Code.INVALID_GRAMMAR, violation.getCode());
+		assertEquals("steps[0].graph.relationship", violation.getDslPath());
+		assertTrue(violation.getDetail().contains("graph.patterns[i].relationship"));
 		verify(adapter, never()).executeDsl(anyString(), anyString(), any(), any());
 	}
 
