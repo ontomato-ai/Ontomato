@@ -1,25 +1,27 @@
 # Business Knowledge Vectorization Failure Causes Save Failure
 
-- **Scope**: business knowledge, query examples, and other content fail to save in the management page.
-- **Mechanism source**: the query backend's various knowledge Daos (`dao/KnowledgeDao.java`, `dao/BussinessExampleDao.java`, etc.) synchronously call `service/ai/EmbeddingService` before saving, with no exception fallback in the call chain.
-- **Last verified**: 2026-08-26.
-- **Verification scope**: 2026-09-22 covers only the fact that business knowledge and business terms were merged into one entry (the standalone term entry, term retrieval, and `BussinessTermDao` were removed); the rest of this file was not re-verified.
+- **Scope**: creating, editing, or approving business knowledge fails while the ontology service is otherwise available.
+- **Mechanism source**: `packages/data-engine-core/src/main/java/io/ontomato/dataengine/dao/KnowledgeDao.java`, `service/ai/EmbeddingService.java`, and `service/vector/VectorRetrievalGate.java`.
 
 ## Symptoms
 
-- Saving business knowledge or query examples fails, while the service as a whole is available.
+- A business knowledge save or approval returns failure, while unrelated reads still work.
+- Several knowledge writes fail in the same way; vector search may also be unavailable or not ready.
 
 ## Possible Causes
 
-This kind of content performs embedding synchronously before writing to the vector index, and the call chain has no try/catch: if the embedding request fails, the save fails, and the failure occurs before the write, so no half-record is left. The embedding model is built on-site from the current configuration; common failure causes: embedding configuration errors (especially baseurl not ending in `/v1`), model service unreachable, auth failure. The same pattern covers multiple save entry points such as knowledge, examples, templates, and metric cards — when one category fails, others usually fail too.
+`KnowledgeDao.insertKnowledge` embeds the knowledge text synchronously inside the vector write gate before the database upsert. If embedding fails, the write does not complete. Embedding is supplied by the agent runtime's configured embedding model; candidate causes are missing embedding configuration, runtime unavailability, model call failure, or an invalid embedding response.
+
+Vector rebuild state is a separate boundary: when the domain's vectors are not in the current ready generation, retrieval is refused. That explains search failure or missing knowledge recall, but it is not by itself proof that a save failed for the same reason.
 
 ## Verification and Localization
 
-1. Use `view_app_config` to check whether the embedding / vector model is configured (model name, whether the key is configured). The diagnosis view does not show the service address; have an administrator check the baseurl suffix on the model configuration page.
-2. When the configuration is normal, ask the user to test the vector model directly on the system configuration page, or confirm the specific embedding call error from backend logs.
-3. Record which page, what kind of content was being saved, what the API returned, and whether all categories fail.
+1. Record the exact save action, returned error, time, and whether all knowledge writes fail.
+2. Read `ontology` and `agent-runtime` logs around that time with `ops.mjs logs`. Look for runtime embedding configuration or embedding call errors rather than inferring them from the page message.
+3. The diagnostic configuration endpoint does not expose model connection parameters. Have an authorized administrator verify the embedding model configuration in the owning settings entry.
+4. Distinguish save failure from recall failure: a successful save followed by no retrieval is a vector readiness or search problem, not this entry.
 
 ## When to Exclude
 
-- Only individual content fails to save while other content of the same kind is normal — more likely a content or index problem, not embedding configuration.
-- Save succeeds but retrieval fails — belongs to vector retrieval or index problems, not this entry.
+- Only one item fails while other knowledge writes succeed — check content, status, or domain ownership first.
+- Business knowledge save succeeds but the retriever does not use it — check approval status, vector readiness, and the retrieval round's admitted input instead.

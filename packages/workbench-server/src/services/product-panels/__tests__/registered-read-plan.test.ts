@@ -95,7 +95,7 @@ const localizedWorkflowNotFound = "Workflow not found in the selected locale";
 let prepareRegisteredDataReads: typeof import("../registered-read-plan").prepareRegisteredDataReads;
 let runPreparedDataReads: typeof import("../registered-read-plan").runPreparedDataReads;
 beforeAll(async () => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] });
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
     packs: {
@@ -1897,7 +1897,7 @@ it("keeps feedback reads within the verified domain and requires the feedback ba
 
 it("uses the matching batch management approval for ops reads and preserves file errors and active refresh", async () => {
   const runtimeRoot = mkdtempSync(join(tmpdir(), "registered-ops-read-"));
-  const layout = { publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] };
+  const layout = { publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] };
   const writeFixture = (relativePath: string, content: unknown) => {
     const file = join(runtimeRoot, relativePath);
     mkdirSync(dirname(file), { recursive: true });
@@ -2027,7 +2027,7 @@ it("renders the registered ops DSL draft only after its read approval, keeping t
 
 it("describes registered ops evidence buttons from the read gate and local evidence without writing retention", async () => {
   const runtimeRoot = mkdtempSync(join(tmpdir(), "registered-ops-buttons-"));
-  const layout = { publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] };
+  const layout = { publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] };
   const retentionFile = join(runtimeRoot, "retention.json");
   const turn = "turn.current.1";
   const foreign = "turn.foreign.1";
@@ -2163,7 +2163,7 @@ it("describes registered ops evidence buttons from the read gate and local evide
 it("presents registered autotest list operations only for admitted rows, including active artifact writes", async () => {
   const { withRunArtifactWrite } = await import("../../../platform/diagnosis/autotest/results/store");
   const runtimeRoot = mkdtempSync(join(tmpdir(), "registered-autotest-list-"));
-  const layout = { publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] };
+  const layout = { publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] };
   const retentionFile = join(runtimeRoot, "retention.json");
   const date = "2026-11-27T00:00:00Z";
   const writeRun = (runId: string, status: string, domainId = viewer.domainId) => {

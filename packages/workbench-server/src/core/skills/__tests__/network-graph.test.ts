@@ -6,7 +6,7 @@ import { installContentLayout } from "../../../content/layout";
 
 vi.mock("../../../logging/logger", () => ({ createLogger: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }));
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "network-skill-"));
-installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: path.resolve("skills") });
+installContentLayout({ runtimeRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [], publicSkillsRoot: path.resolve("skills") });
 const { DomainSkillRegistryManager } = await import("../registry/manager");
 const manager = new DomainSkillRegistryManager();
 afterAll(async () => {

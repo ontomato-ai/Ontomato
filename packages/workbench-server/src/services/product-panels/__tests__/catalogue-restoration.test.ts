@@ -52,7 +52,7 @@ const owner = { domainId: "domain", userId: "reader" };
 const viewer = { token: "reader-token", locale: "en" };
 
 beforeAll(() => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] });
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
     packs: {

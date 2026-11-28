@@ -298,7 +298,7 @@ beforeAll(async () => {
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-pilot-"));
   cataloguePath = await writeBundledAppSdkFixture(contentRoot);
   installContentLayout({
-    runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, runtimeResources: [],
+    runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, knowledgeRoot: contentRoot, runtimeResources: [],
     prompts: [{ from: fileURLToPath(new URL("../../../prompts", import.meta.url)), to: "." }],
   });
 

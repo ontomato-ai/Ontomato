@@ -99,7 +99,7 @@ beforeAll(async () => {
   await ensurePanelOperationsSchema(state.pool);
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "object-actions-"));
   await writeBundledAppSdkFixture(contentRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], knowledgeRoot: contentRoot, runtimeResources: [] });
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture-service");
   const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
 

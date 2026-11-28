@@ -11,7 +11,7 @@ import { ossProduct } from "../product";
 
 // Configure the edition locale before reading localized diagnostic resources.
 configureOssI18n();
-const { readKnowledgeMarkdown } = await import(
+const { KnowledgeNotFoundError, listKnowledgeTree, readKnowledgeMarkdown } = await import(
   "@ontomato/workbench-server/platform/diagnosis/observe/agent/knowledge-store"
 );
 
@@ -37,38 +37,24 @@ afterEach(() => {
 });
 
 describe("open-source runtime default resources", () => {
-  // Extra files and stale default files already in the persistent runtime directory: after syncing, readers see the new defaults and extra files are kept.
-  it("syncs the assembled defaults into the persistent data directory that readers use", async () => {
+  it("reads bundled knowledge directly and syncs runtime defaults", async () => {
     installContentLayout(ossContentLayout(runtimeRoot));
     fs.mkdirSync(data("knowledge"), { recursive: true });
     fs.mkdirSync(data("echart"), { recursive: true });
     fs.writeFileSync(data("knowledge", "site-note.md"), "# Site note\n");
+    fs.writeFileSync(data("knowledge", "index.md"), "# Stale index\n");
     fs.writeFileSync(data("echart", "echarts.min.js"), "stale");
 
     await syncRuntimeDefaultResources();
 
-    expect(readKnowledgeMarkdown("site-note.md").title).toBe("Site note");
+    expect(() => readKnowledgeMarkdown("site-note.md")).toThrow(KnowledgeNotFoundError);
+    expect(listKnowledgeTree().children?.map((entry) => entry.path)).not.toContain("site-note.md");
+    expect(fs.readFileSync(data("knowledge", "index.md"), "utf8")).toBe("# Stale index\n");
     expect(readKnowledgeMarkdown("index.md").content).toBe(
       fs.readFileSync(path.join(workbenchServerResourceRoot, "data", "knowledge", "index.md"), "utf8")
     );
     expect(fs.readFileSync(data("echart", "echarts.min.js"))).toEqual(
       fs.readFileSync(path.join(workbenchServerResourceRoot, "data", "echart", "echarts.min.js"))
     );
-  });
-
-  it("does not copy custom paths from a default source", async () => {
-    const source = tempDir("oss-defaults-");
-    fs.mkdirSync(path.join(source, "custom"));
-    fs.writeFileSync(path.join(source, "custom", "local.md"), "local");
-    fs.writeFileSync(path.join(source, "shipped.md"), "shipped");
-    installContentLayout({
-      ...ossContentLayout(runtimeRoot),
-      runtimeResources: [{ from: source, to: "knowledge" }],
-    });
-
-    await syncRuntimeDefaultResources();
-
-    expect(fs.readFileSync(data("knowledge", "shipped.md"), "utf8")).toBe("shipped");
-    expect(fs.existsSync(data("knowledge", "custom"))).toBe(false);
   });
 });

@@ -96,7 +96,7 @@ beforeAll(async () => {
 
   contentRoot = await mkdtemp(join(tmpdir(), "product-panel-references-"));
   await writeBundledAppSdkFixture(contentRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot: contentRoot, prompts: [], knowledgeRoot: contentRoot, runtimeResources: [] });
   const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());

@@ -124,7 +124,7 @@ beforeAll(async () => {
   cataloguePath = await writeBundledAppSdkFixture(contentRoot);
   const publicSkillsRoot = path.join(contentRoot, "public-skills");
   await mkdir(publicSkillsRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot, prompts: [], knowledgeRoot: contentRoot, runtimeResources: [] });
 
   const { panelOperationsRouter, productPanelsInternalRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { appBuilderRouter } = await import("../routes/app-builder");

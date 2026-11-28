@@ -257,6 +257,18 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     expect((await api(`/api/observe/evidence/runtime/workbench/sessions/${session}`, undefined, "alice:b")).status).toBe(404);
     expect((await api(`/api/observe/evidence/runtime/workbench/sessions/${session}`, undefined, "denied:a")).status).toBe(403);
   }, 60000);
+  it("reads a same-domain assistant session through the evidence route", async () => {
+    const session = randomUUID();
+    const agents = await api("/api/assistant/agents");
+    expect(agents.status, JSON.stringify(agents.body)).toBe(200);
+    const agent = agents.body.agents.find((candidate: { kind?: string }) => candidate.kind === "regular");
+    const created = await api("/api/assistant/sessions", { agentId: agent.id }, "alice:a", session);
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+
+    const evidence = await api("/api/observe/evidence/runtime/workbench/sessions/" + session, undefined, "bob:a");
+    expect(evidence.status, JSON.stringify(evidence.body)).toBe(200);
+    expect(evidence.body).toMatchObject({ session: { id: session }, pendingQuestions: [] });
+  });
   it("closes pending admissions and cancels running work without a host loop", async () => {
     const session = randomUUID(), run = randomUUID(); await api("/api/observe/agent/sessions", { agentId: DIAGNOSIS_AGENT_ID }, "alice:a", session);
     expect((await api(`/api/observe/agent/sessions/${session}/runs/${run}/cancel`, {})).status).toBe(200);

@@ -266,7 +266,7 @@ beforeAll(async () => {
   contentRoot = await mkdtemp(path.join(os.tmpdir(), "panel-m7-content-"));
   publicSkillsRoot = await mkdtemp(path.join(os.tmpdir(), "panel-m7-public-"));
   await writeBundledAppSdkFixture(contentRoot);
-  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: contentRoot, publicSkillsRoot, prompts: [], knowledgeRoot: contentRoot, runtimeResources: [] });
 
   await mkdir(path.join(publicSkillsRoot, "builtin-skill"), { recursive: true });
   await writeFile(
