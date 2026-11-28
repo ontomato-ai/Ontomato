@@ -274,10 +274,7 @@ async function send(text: string) {
               </div>
             </div>
             <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><span>{{ item.text }}</span></div>
-            <template v-else>
-              <ShellResponse :item="item" :session-id="sessionId" :feedback="feedback" />
-              <slot name="message-actions" :item="item" :run-id="item.runId" />
-            </template>
+            <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
           </template>
           <div v-if="pendingInput !== null" class="user-turn" :data-pin="pinTarget === PENDING || undefined">
             <slot v-if="customInput?.(written(pendingInput))" name="input" :input-id="null" :text="written(pendingInput)" :queued="false" />

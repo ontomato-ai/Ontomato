@@ -2,7 +2,8 @@
 import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { copyText } from "@ontomato/foundation-ui/clipboard";
 import { Check, ChevronRight, CircleAlert, CircleHelp, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
-import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { MessageActionContext, ShellFeedbackPort, ShellFeedbackValue } from "../types";
 import SlotOutlet from "./SlotOutlet.vue";
 import TaskCard from "./tasks/TaskCard.vue";
 import QualityReview from "./tasks/QualityReview.vue";
@@ -64,6 +65,15 @@ const usageSummary = computed(() => {
 
 /** The runtime names the answer when the run stops, so feedback has a target only then. */
 const hasActions = computed(() => Boolean(props.item.answerMessageId && props.item.answerText.trim()));
+const messageActionScope = computed<MessageActionContext>(() => ({
+  sessionId: props.sessionId,
+  runId: props.item.runId,
+  messageId: props.item.answerMessageId!,
+  text: props.item.answerText,
+  workspaceCommit: props.item.workspaceCommit,
+  workspaceId: shell.workspaceId,
+  ...(props.item.outcome === undefined ? {} : { outcome: props.item.outcome as RuntimeJsonValue }),
+}));
 const target = computed(() =>
   props.sessionId && !props.item.running && hasActions.value
     ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId! }
@@ -272,7 +282,7 @@ async function submit(value: ShellFeedbackValue) {
         </template>
         <SlotOutlet
           :content="shell.slots.messageActions"
-          :scope="{ sessionId, runId: item.runId, messageId: item.answerMessageId, text: item.answerText, workspaceCommit: item.workspaceCommit, workspaceId: shell.workspaceId }"
+          :scope="messageActionScope"
         />
       </div>
       <div v-if="finishedTimestamp || usageSummary" class="response-meta">

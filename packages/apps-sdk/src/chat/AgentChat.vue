@@ -14,6 +14,7 @@ import {
   type ArtifactSlotScope,
   type ComposerEntry,
   type ConversationInputRun,
+  type MessageActionContext,
   type PageComposerExpand,
   type ShellFeedbackPort,
   type ShellLabels,
@@ -127,8 +128,8 @@ defineSlots<{
   }): unknown;
   /** Context strip rendered directly above the composer. */
   "composer-context"?(): unknown;
-  /** Custom actions rendered beneath a settled assistant response. */
-  "message-actions"?(scope: { item: unknown; runId: string; outcome?: RuntimeJsonValue }): unknown;
+  /** Custom actions rendered in the reply footer alongside copy and feedback actions. */
+  "message-actions"?(scope: MessageActionContext): unknown;
   /** Custom Markdown artifact card renderer with fallback component and props. */
   "artifact-link"?(scope: ArtifactLinkSlotScope): unknown;
   /** Custom inline artifact body renderer with fallback component and props. */

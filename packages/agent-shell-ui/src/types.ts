@@ -1,6 +1,6 @@
 import type { Component } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeRunStatus, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeJsonValue, RuntimeRunStatus, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import type { PageSkillContext } from "@ontomato/contracts/page-context";
 import type { InlineMarkdownNode } from "./artifacts";
 
@@ -207,11 +207,13 @@ export interface ShellRunChange {
 
 /** Context passed to the host's message action slot. */
 export interface MessageActionContext {
-  workspaceCommit: string | null;
-  sessionId: string;
+  sessionId: string | null;
   runId: string;
   messageId: string;
   text: string;
+  workspaceCommit: string | null;
+  workspaceId?: string | null;
+  outcome?: RuntimeJsonValue;
 }
 
 /** Fixed shell text supplied by the host's i18n. */

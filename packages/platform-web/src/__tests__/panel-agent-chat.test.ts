@@ -356,7 +356,8 @@ describe("AgentChat projection member", () => {
     ]);
     await wrapper.setProps({ collapsed: false });
     expect(wrapper.getComponent(ShellAgentChat).element).toBe(chat);
-    expect(wrapper.get('[data-result="run-1"]').text()).toBe("complete");
+    expect(wrapper.get('.response-footer .actions [data-result="run-1"]').text()).toBe("complete");
+    expect(wrapper.findAll('[data-result="run-1"]')).toHaveLength(1);
     expect(client.readHistory).not.toHaveBeenCalled();
     await trigger({ target: { kind: "id", id: DEPT_AGENT.id }, prefill: "Draft", newSession: true });
     await flushPromises();
@@ -454,6 +455,8 @@ describe("AgentChat projection member", () => {
       slots: {
         "header-actions": (scope: { sessionId: string | null; agentId: string | null; title: string; hasInitialInstruction: boolean }) =>
           h("span", { class: "header-meta" }, `${scope.sessionId}|${scope.agentId}|${scope.title}|${scope.hasInitialInstruction}`),
+        "message-actions": (scope: Record<string, unknown>) =>
+          h("span", { class: "panel-msg-action" }, `${scope.sessionId}|${scope.runId}|${scope.messageId}|${scope.text}|${scope.workspaceCommit}|${(scope.outcome as { commit?: string } | undefined)?.commit}`),
       },
     });
     await flushPromises();
@@ -465,6 +468,9 @@ describe("AgentChat projection member", () => {
     expect(wrapper.getComponent(ShellAgentChat).props("agentId")).toBe(DEPT_AGENT.id);
     expect(wrapper.getComponent(ShellAgentChat).element).toBe(innerEl);
     expect(wrapper.get(".header-meta").text()).toBe(`sess-cross|${DEPT_AGENT.id}|Dept Q&A|true`);
+    expect(wrapper.get(".response-footer .actions .panel-msg-action").text()).toBe(
+      "sess-cross|run-hist|m2|See [Summary](outputs/summary.md)|null|undefined",
+    );
     expect(await (wrapper.vm as unknown as { initialInstruction: () => Promise<string> }).initialInstruction()).toBe("Initial prompt");
 
     // Clicking an artifact card emits update:artifact and writes panel artifact state.

@@ -165,6 +165,9 @@ provide(shellContextKey, {
     get artifact() {
       return slots.artifact;
     },
+    get messageActions() {
+      return slots["message-actions"];
+    },
   },
   resolveArtifact: conversation.resolveArtifact,
   inlineArtifactAlreadyShown: (runId, path) => props.inlineArtifactAlreadyShown?.(runId, path) ?? false,
@@ -319,9 +322,6 @@ defineExpose({
         <slot name="input" v-bind="scope" :run="inputRun(scope.inputId)" :preparation-failed="inputPreparationFailed(scope.inputId)" />
       </template>
       <template v-if="slots['composer-context']" #composer-context><slot name="composer-context" /></template>
-      <template v-if="slots['message-actions']" #message-actions="{ item, runId }">
-        <slot name="message-actions" :item="item" :run-id="runId" :outcome="conversation.state.runs[runId]?.outcome" />
-      </template>
     </ShellConversation>
   </div>
 </template>

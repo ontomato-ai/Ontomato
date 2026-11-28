@@ -9,7 +9,7 @@ import ArtifactLinkNode from "../components/ArtifactLinkNode.vue";
 import ArtifactView from "../components/ArtifactView.vue";
 import { messageContextKey, shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
-import type { ArtifactLinkSlotScope, ArtifactSlotScope, OpenArtifact, ShellLabels } from "../types";
+import type { ArtifactLinkSlotScope, ArtifactSlotScope, MessageActionContext, OpenArtifact, ShellLabels } from "../types";
 
 const LABELS = {
   placeholder: "Message",
@@ -483,6 +483,101 @@ describe("AgentChat Pack A enhancements", () => {
     } finally {
       richApp.unmount();
       richRoot.remove();
+    }
+  });
+
+  it("renders #message-actions in ShellResponse footer actions with the unified shell scope including optional outcome", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const commitSha = "a".repeat(40);
+    const client = makeClient({
+      readHistory: vi.fn(async (id: string) => ({
+        session: {
+          id,
+          agentId: "agent-a",
+          title: "Commit chat",
+          workspaceId: "ws-1",
+          createdAt: "2026-11-28T00:00:00.000Z",
+          updatedAt: "2026-11-28T00:00:00.000Z",
+          latestRun: null,
+        },
+        page: { messageSeq: 2, olderCursor: null, nextCursor: null, throughCursor: "cursor-1" },
+        runs: [{
+          id: "run-commit",
+          sessionId: id,
+          status: "stopped" as const,
+          stopReason: "stop" as const,
+          errorMessage: null,
+          answerMessageId: "ans-commit",
+          workspaceCommit: commitSha,
+          createdAt: "2026-11-28T00:00:00.000Z",
+          finishedAt: "2026-11-28T00:00:01.000Z",
+          resolvedSkills: [],
+          executionUserId: null,
+          outcome: { commit: commitSha },
+        }],
+        messages: [
+          { id: "m1", runId: "run-commit", messageSeq: 1, contextSeq: 1, message: { role: "user" as const, content: "Update panel", timestamp: 1 } },
+          {
+            id: "ans-commit",
+            runId: "run-commit",
+            messageSeq: 2,
+            contextSeq: 2,
+            message: {
+              role: "assistant" as const,
+              content: [{ type: "text" as const, text: "Panel updated." }],
+              provider: "test",
+              model: "test",
+              api: "test",
+              usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+              stopReason: "stop" as const,
+              timestamp: 2,
+            },
+          },
+        ],
+        pendingQuestions: [],
+        notifications: [],
+        latestRun: null,
+      })),
+    });
+
+    const received: MessageActionContext[] = [];
+    const app = createApp(() =>
+      h(
+        AgentChat,
+        {
+          client,
+          agentId: "agent-a",
+          agent: null,
+          sessionId: "sess-commit",
+          labels: { ...LABELS, copy: "Copy", elapsed: (time: string) => time },
+        },
+        {
+          "message-actions": (scope: MessageActionContext) => {
+            received.push(scope);
+            return h("button", { type: "button", class: "host-message-action" }, scope.runId);
+          },
+        },
+      ),
+    );
+    app.mount(root);
+    try {
+      await vi.waitFor(() => expect(root.querySelector(".response-footer .actions .host-message-action")).not.toBeNull());
+      expect(root.querySelectorAll(".host-message-action")).toHaveLength(1);
+      expect(root.querySelector('.response-footer .actions button[aria-label="Copy"]')).not.toBeNull();
+      expect(received.at(-1)).toEqual({
+        sessionId: "sess-commit",
+        runId: "run-commit",
+        messageId: "ans-commit",
+        text: "Panel updated.",
+        workspaceCommit: commitSha,
+        workspaceId: "ws-1",
+        outcome: { commit: commitSha },
+      });
+      expect("item" in (received.at(-1) as unknown as Record<string, unknown>)).toBe(false);
+    } finally {
+      app.unmount();
+      root.remove();
     }
   });
 });

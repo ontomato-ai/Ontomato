@@ -51,6 +51,8 @@ export interface ResponseItem {
   key: string;
   runId: string;
   workspaceCommit: string | null;
+  /** Opaque run outcome projected by the host (typed as `unknown` here so Vue `reactive()` does not recurse on JSON types). */
+  outcome?: unknown;
   /** Everything the run did except its answer's text, in order; it streams here while the run is active. */
   process: ProcessBlock[];
   running: boolean;
@@ -389,6 +391,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     item.running = run?.status === "running";
     place(item, null);
     item.workspaceCommit = run?.workspaceCommit ?? null;
+    item.outcome = run?.outcome;
     item.usage = runUsage(state, item.runId);
     item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
     item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;
