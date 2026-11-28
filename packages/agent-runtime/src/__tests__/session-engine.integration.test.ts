@@ -145,14 +145,18 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
       runId: first.run.id, credential: "wbc1.fixture", tk: undefined,
     }]);
     const launched = launches[0];
-    const idle = await fetch(launched.callback + "/probe", { headers: { "X-Ontomato-Callback-Credential": launched.credential } });
-    expect(idle.status).toBe(409);
+    const late = await fetch(launched.callback + "/probe", { headers: { "X-Ontomato-Callback-Credential": launched.credential } });
+    expect(late.status).toBe(401);
+    expect(await late.json()).toMatchObject({ error: { code: "UNAUTHENTICATED" } });
+    expect(leases.size).toBe(0);
     expect(await readFile(path.join(launched.workspace, "outputs", "probe.txt"), "utf8")).toBe("Saved by the skill");
     expect(await readFile(path.join(launched.workspace, "run-id.txt"), "utf8")).toBe(first.run.id);
 
     const second = await run("Second user message", "uninstalled");
     expect(await readFile(path.join(launched.workspace, "run-id.txt"), "utf8")).toBe(second.run.id);
-    expect(launches).toHaveLength(1);
+    expect(launches).toHaveLength(2);
+    expect(launches[1].credential).not.toBe(launched.credential);
+    expect(await runtime.store.sessionEngine(scope, sessionId)).toEqual(binding);
     expect(modelRequests.at(-1)).toContain("First user message");
     await runtime.close();
     expect(leases.size).toBe(0);
@@ -160,8 +164,8 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     await runtime.initialize();
     await run("After restart", "uninstalled");
     expect(await runtime.store.sessionEngine(scope, sessionId)).toEqual(binding);
-    expect(launches).toHaveLength(2);
-    expect(launches[1].credential).not.toBe(launched.credential);
+    expect(launches).toHaveLength(3);
+    expect(launches[2].credential).not.toBe(launches[1].credential);
     expect(modelRequests.at(-1)).toContain("Second user message");
     const history = runtimeSessionHistorySchema.parse(await runtime.history(scope, sessionId, {}));
     expect(history.messages.filter(message => message.message.role === "user")).toHaveLength(3);

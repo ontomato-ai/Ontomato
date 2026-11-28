@@ -866,6 +866,7 @@ ${logs}`);
         authority: { classNames: [], executionKind: "live" },
         requestedBy: null,
         root: { session: sessionRef, runId },
+        userRecipient: { session: sessionRef, actor },
       },
       language: "en",
       input: { role: "user", content: "channel-script", timestamp: Date.now() },
