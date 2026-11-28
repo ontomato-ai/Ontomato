@@ -51,7 +51,7 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
 beforeAll(() => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] });
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
     packs: {

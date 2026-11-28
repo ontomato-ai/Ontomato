@@ -3,9 +3,10 @@ import { diagnosisEvidenceSchema, type DiagnosisEvidence, type DiagnosisTarget }
 import { agentHostRunSnapshotSchema, agentHostSessionSnapshotSchema } from "@ontomato/contracts/agent-host";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
 import { retrievalCallerSchema, retrievalEvidenceSchema } from "@ontomato/contracts/data-retrieval";
+import { assistantSessionSnapshot } from "../assistant/service";
 import { assistantStore } from "../assistant/store";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { publicMessages, publicSnapshot, runStatusView } from "../../platform/agent-runtime/projection";
+import { publicMessages, publicSnapshot } from "../../platform/agent-runtime/projection";
 import { parseTurnKey } from "../../logging/log-context";
 import { backendGet, backendPost, BackendResponseError, AuthFailedError } from "../../utils/backend-client";
 import { getApiConfig } from "../../config/data-query-api";
@@ -91,10 +92,7 @@ export async function readEvidenceSession(provider: "workbench" | "ontology", id
   try { row = await assistantStore.domainSession(id, caller.domainId); }
   catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; await diagnosisSession(id, caller); return diagnosisService.snapshot(id, caller); }
   const snapshot = await new RuntimeClient(caller.domainId).session(id);
-  return agentHostSessionSnapshotSchema.parse({
-    session: { id, agentId: row.agent_id, title: row.title, createdAt: new Date(row.created_at).toISOString(), updatedAt: new Date(row.updated_at).toISOString(), latestRun: snapshot.latestRun ? runStatusView(snapshot.latestRun.run) : null },
-    messages: publicMessages(snapshot.messages), latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null,
-  });
+  return agentHostSessionSnapshotSchema.parse(assistantSessionSnapshot(row, snapshot));
 }
 export async function readEvidenceRun(provider: "workbench" | "ontology", session: string, run: string, caller: EvidenceCaller) {
   if (provider === "ontology") return publicSnapshot(agentHostRunSnapshotSchema.parse(await ontologyRead(`/ontology/ai/sessions/${session}/runs/${run}`, caller)));

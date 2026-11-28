@@ -1,22 +1,21 @@
 # Services
 
-- **Scope**: the ontomato, the query backend, the database, the frontend, and log retrieval services that the current two operations responsibilities commonly depend on; does not describe the topology or current state of any deployment.
-- **Current implementation source**: `src/platform/observe/agent/tools/service-health-tool.ts`, `src/config/api.ts`, each service's startup and proxy entry.
-- **Last verified**: 2026-07-22.
+- **Scope**: the browser, workbench Node service, ontology service, agent runtime, PostgreSQL, external data sources, and log evidence that diagnosis commonly depends on. This file does not describe any deployment's topology or current state.
+- **Implementation source**: `packages/workbench-server/src/api/routes/ops-diagnosis.ts`, `packages/workbench-server/src/platform/diagnosis/observe/service-logs.ts`, and `packages/workbench-server/resources/runtime-skills/ops-diagnosis/SKILL.md`.
 
-## Role and Dependencies
+## Operating Model
 
-- The frontend carries user operations and streaming display; ontomato owns standard query, analysis tasks, the operations Agent, and observable entry points; the query backend handles query configuration; the database executes data queries; the log retrieval service supports backend evidence collection.
-- The business facts in PostgreSQL and the on-disk workspace are the diagnostic basis, and must not be replaced by reverse inference from logs. Log or observability dependency anomalies may only affect evidence collection, and do not necessarily mean the query execution itself failed.
-- Upstream unreachable, service stopped, or resource exhaustion presents downstream as unresponsive pages, interface failures, interrupted queries, or missing evidence; first locate the earliest unavailable dependency, and do not treat the final page wording directly as the root cause.
+- The browser talks to the workbench. The workbench owns product conversations and diagnosis evidence entry points, and starts model-tool runs in the agent runtime.
+- The ontology service owns ontology metadata, business data permissions, DSL execution, retrieval orchestration, formal dataset execution, and business knowledge search. PostgreSQL stores platform and ontology facts such as `json_rule` and knowledge rows.
+- External business data is read through the configured data adapter. A healthy ontology process does not prove that the configured source is reachable or that a query is legal for that source.
 
 ## On-Site Evidence
 
-- `service_health` read-only returns the current deployment's service status and server resource summary; use this return to explain which services are online or offline, and do not statically memorize health conclusions.
-- For deeper connectivity, use `data_query_execute`, `read_metadata`, or `view_app_config` per the target. Tool failures themselves must distinguish login state, proxy chain, target service, and business request errors.
-- For a single execution, prefer reading its workspace `manifest.json`, `raw-logs/`, and `diagnostics/`; when backend log collection succeeds it is the entity `raw-logs/backend.log`. A new workspace does not require a timeline or flow diagram as essential evidence.
+- `ops.mjs health '{}'` returns the ontology maintenance endpoint's process and host-resource view. It is not a whole-deployment health verdict and does not cover the workbench, agent runtime, PostgreSQL, browser, or external data source.
+- `ops.mjs logs ...` reads service logs independently for `workbench`, `ontology`, and `agent-runtime`. PostgreSQL-backed log reading is best-effort and subject to retention; empty logs do not prove that no execution happened.
+- `ops.mjs resolve`, `run`, and `artifact` establish the runtime facts of the target before selecting log windows. Tool or evidence-read failures must be distinguished from business query failures.
 
 ## Deviation Propagation and Verification
 
-- After service recovery, re-execute the minimal request from the original failing entry, and confirm both the user result and necessary diagnostic evidence recover; seeing only a container online does not prove the business link has recovered.
-- If only the evidence-collection service can be recovered while the original query state is unknown, the conclusion should state "evidence-collection capability recovered, business result pending retest".
+- Locate the earliest unavailable dependency instead of treating the final page wording as the root cause. Loss of log evidence only degrades diagnosis; it does not by itself prove the business link failed.
+- After service recovery, rerun the minimal original action and confirm both the user-visible result and the required evidence. “Container or process is up” is not proof that the business link recovered.

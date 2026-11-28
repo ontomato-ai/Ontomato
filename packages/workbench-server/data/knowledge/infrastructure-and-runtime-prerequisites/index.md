@@ -1,27 +1,27 @@
 # Infrastructure and Runtime Prerequisites
 
-This topic describes the runtime prerequisites shared by standard query Turns and analysis agent tasks. First select only one specific topic based on the problem; do not treat checking every prerequisite item-by-item as a fixed flow for every diagnosis.
+This topic describes runtime prerequisites shared by business data retrieval and operations diagnosis. Select only the topic that matches the problem; checking every prerequisite is not a fixed diagnostic flow.
 
 | Goal | File to read |
 | --- | --- |
-| Whether services are online, dependencies reachable, resources abnormal | `services.md` |
-| Whether the current effective model or runtime configuration matches expectations | `configuration.md` |
-| Whether page/API authorization or data visibility scope matches the current user identity | `permissions.md` |
-| Whether classes, fields, relations, dataset descriptions, or actual data relations match query needs | `metadata.md` |
+| Which service or dependency is the earliest unavailable one | `services.md` |
+| Whether the current effective non-secret configuration explains the failure stage | `configuration.md` |
+| Whether page/API authorization or data visibility matches the current identity | `permissions.md` |
+| Whether ontology metadata, visible scope, or actual data facts match the query | `metadata.md` |
 
-The above files store stable meanings and evidence-collection directions, not the current values of service addresses, keys, namespace, model parameters, user permissions, or schema. Dynamic facts continue to be obtained through existing tools, external permission systems, the current round of page/API evidence, and user supplements.
+These files store stable meanings and evidence directions, not current service addresses, keys, namespaces, model parameters, user permissions, or schemas.
 
 ## Failure Modes
 
-Read only when symptom characteristics match; entries only provide candidate directions, and conclusions must return to the current round of evidence.
+Read only when the symptom characteristics match; entries only provide candidate directions, and conclusions must return to current evidence.
 
 | Symptom characteristic | Entry |
 | --- | --- |
-| Results or tables show `****` placeholders | [Mechanism triage for masked placeholders appearing in results](desensitized-placeholder-mechanism-triage.md) |
+| Results or tables contain `****` placeholders | [Mechanism triage for masked placeholders appearing in results](desensitized-placeholder-mechanism-triage.md) |
 | Page/API unavailable or entry missing, pointing to authorization | [Missing permission configuration causes pages inaccessible or data masked](missing-permission-config-blocks-access-or-masks-data.md) |
-| Terms/knowledge/examples fail to save | [Business knowledge vectorization failure causes save failure](business-knowledge-vectorization-failure-blocks-saving.md) |
-| Startup failure or `sys_` table/index `is not exist` | [System index and table initialization failure causes startup or link anomalies](system-index-and-table-init-failure-causes-startup-or-link-errors.md) |
-| Business class/field/relation names report not exist, graph missing links | [Schema/metadata inconsistency causes query anomalies](schema-metadata-mismatch-causes-query-errors.md) |
-| DSL correct, execution succeeds but no result or abnormal result | [Missing data relations or identifier inconsistency causes empty query results](missing-or-inconsistent-data-relations-cause-empty-results.md) |
+| Business knowledge fails to save | [Business knowledge vectorization failure causes save failure](business-knowledge-vectorization-failure-blocks-saving.md) |
+| Ontology service startup failure, or metadata storage missing after startup | [System index and table initialization failure causes startup or link anomalies](system-index-and-table-init-failure-causes-startup-or-link-errors.md) |
+| Ontology class/field/relationship definitions disagree with the query or source mapping | [Schema/metadata inconsistency causes query anomalies](schema-metadata-mismatch-causes-query-errors.md) |
+| Query is legal and executes, but the result is empty or inconsistent with the business baseline | [Missing data relations or identifier inconsistency causes empty query results](missing-or-inconsistent-data-relations-cause-empty-results.md) |
 
-See [Business Data Retrieval](../standard-query-turn/index.md) for retrieval and DSL execution failures.
+For the current retrieval chain and dataset receipt boundary, see [Business Data Retrieval](../standard-query-turn/index.md).

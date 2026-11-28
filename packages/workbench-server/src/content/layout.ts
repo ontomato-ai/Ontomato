@@ -8,7 +8,7 @@ export interface ResourceCopy {
 
 /**
  * Installed by the app before startup according to its own location. Read-only default resources each have an explicit source;
- * runtime data is written only beneath the product runtime root the app provides, and reads and sync targets use the same place.
+ * runtime data is written only beneath the product runtime root the app provides.
  */
 export interface ContentLayout {
   /** Product runtime root: runtime data under its data/, production web pages under its dist/web. */
@@ -21,7 +21,9 @@ export interface ContentLayout {
   publicSkillLabelsPath?: string;
   /** Optional localized documentation overlays, relative to the public skill root. */
   publicSkillTranslationsRoot?: string;
-  /** Default runtime resources, synced into echart, knowledge, and skills under data/. */
+  /** Bundled operations knowledge, read directly in both the workbench and diagnostics. */
+  knowledgeRoot: string;
+  /** Default resources copied into runtime data/. */
   runtimeResources: readonly ResourceCopy[];
 }
 
@@ -78,7 +80,7 @@ export function echartDir(): string {
 }
 
 export function knowledgeDir(): string {
-  return runtimeDataDir("knowledge");
+  return installedLayout().knowledgeRoot;
 }
 
 export function diagnosisSkillsDir(): string {

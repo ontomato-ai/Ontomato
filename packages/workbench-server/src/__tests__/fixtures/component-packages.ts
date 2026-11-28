@@ -58,7 +58,7 @@ export async function startComponentPackageServer(
 ) {
   const root = await mkdtemp(join(tmpdir(), "component-packages-"));
   await writeBundledAppSdkFixture(root);
-  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [] });
   configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
     packs: { en: { messages: { ...en, ...appTextEn }, ...enLocaleMeta } } });
 

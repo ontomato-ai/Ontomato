@@ -1,23 +1,23 @@
 # Metadata
 
-- **Scope**: the JSONRule / ontology graph used by the query backend, the dataset descriptions oriented to the task planner, and the actual classes, fields, relations, and data facts in the database.
-- **Current implementation source**: `src/platform/observe/agent/tools/read-metadata-tool.ts`, `src/platform/observe/agent/tools/data-query-execute-tool.ts`, the task planner's dataset-description read link.
-- **Last verified**: 2026-08-26.
+- **Scope**: the ontology JSONRule, the permission- and scope-filtered metadata visible to a run, and the actual schema and data facts behind the configured adapters.
+- **Implementation source**: `packages/data-engine-core/src/main/java/io/ontomato/dataengine/service/impl/AdminServiceImpl.java`, `service/OntologyQueryService.java`, `util/DBSchemaUtil.java`, and the evidence metadata endpoint in `packages/workbench-server/src/api/routes/ops-diagnosis.ts`.
 
 ## Role and Dependencies
 
-- The JSONRule / ontology graph describes the queryable classes, fields, and relations; the dataset description relevant to the question is the task planner's current understanding scope. The two, together with the database's actual schema, relationship instances, and business data, carry different facts and cannot substitute for each other.
-- Inconsistent identifiers, relationship endpoints, or data types will cause planning, DSL, or execution to deviate; when the metadata structure is correct but relationship instances or business data are missing, a legal empty result may still occur.
-- ontomato proxies external data sources and metadata capabilities and does not keep an authoritative schema locally.
-- `jsonRule.classDef` registration not only serves planning and DSL generation but is also the basis for execution-layer type judgment and permission lineage determination, matched exactly by class name. Runtime temporary class names (`save_table`, `/temp_*`, `/final_class`) are never registered; unregistered class names entering the execution layer trigger a known failure, see [Unregistered class names cause execution NPE or illegal SQL](../standard-query-turn/unregistered-class-name-causes-npe-or-invalid-sql.md).
+- The stored JSONRule carries `datasetdesc`, `classDef`, and `relationship_rule`. Class definitions carry the canonical class name, enabled attributes, types, primary-key marker, and descriptions; relationships carry their endpoint classes. Management projections may use pretty names such as `classDefs` and `relationshipDefs`; do not confuse those projection names with storage keys.
+- The retrieval chain has no separate planning agent. The assistant receives an ontology overview, starts the data retriever, and the retriever uses the admitted question, business knowledge, class scope, visible overview, schema, relationships, and DSL reference.
+- Metadata visible to a caller is filtered by data permission and by the run's class scope. A class missing from visible metadata can be absent from the ontology, outside the run scope, or not readable by the execution identity; these are different causes.
+- The query boundary normalizes only the leading-slash spelling of a class name to the schema's own spelling. Other unknown names are not rewritten. A temporary table is valid only when an earlier step in the same DSL saves it.
+- The ontology service does not keep a second authoritative copy of every external source schema. Adapter mapping and source-side naming are verified through the configured adapter and read-only query evidence.
 
 ## On-Site Evidence
 
-- `read_metadata` reads the current JSONRule / ontology graph by default; use the Markdown format to read the current dataset-description capability. The tool uses the session's latest `tk`, and what it returns is the fact of this invocation.
-- Confirm the actual injected scope from the current task planner prompt; confirm the actually used classes, fields, and relations from the standard ABC's DSL or the Harness final Python; use `data_query_execute` to verify the schema and data in the database.
-- When a query succeeds but is empty, first distinguish filter logic, schema, relationship instances, target identifiers, and value ranges; do not assume fixed relationship fields or import commands.
+- `ops.mjs metadata '{"format":"json"}'` reads the raw ontology schema; `format=markdown` reads the generated dataset-description Markdown. Both are current reads, not facts frozen at the original failed run.
+- Prefer the failed round's runtime artifacts for what the retriever actually saw and submitted: admitted input, scope, recipe or query package, source analysis, output receipt, and final reply. Use current metadata only to test whether the same cause still exists.
+- Use `ops.mjs query` only for a narrow read-only hypothesis. Its rows are a caller-permissioned preview, not proof of the full population.
 
 ## Deviation Propagation and Verification
 
-- Missing full metadata affects dataset descriptions and downstream queries; full metadata present but the current description omitted → deviation starts from task planning; the current description and query logic are both correct but data is empty → continue checking actual data facts.
-- After disposition, re-read the current metadata, retest with the original question, and confirm that task planning, query evidence, and final result recover consistently.
+- Metadata deviation can appear as a visible-scope absence, an ontology rejection, an adapter source error, or a legal but empty result. Identify the first layer that diverges instead of rewriting the final symptom into “metadata problem”.
+- After disposition, reread metadata and retest the original question. Confirm the retriever's input, formal output, and user-visible answer consistently, not only one intermediary artifact.

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { parseJsonText } from "../shared/json-input.mjs";
 
 export async function metricViewCommand(args, env = process.env, request = fetch) {
   const [command, packagePath, labelsPath] = args;
@@ -23,7 +24,7 @@ export async function metricViewCommand(args, env = process.env, request = fetch
   }
   const { collectPackage } = await import("../shared/query-package.mjs");
   const queryPackage = await collectPackage(packagePath);
-  const columnLabels = JSON.parse(await readFile(labelsPath.replace(/^@/, ""), "utf8"));
+  const columnLabels = parseJsonText(await readFile(labelsPath.replace(/^@/, ""), "utf8"), labelsPath.replace(/^@/, ""));
   const { runId } = await call("/runtime-context");
   return call(`/${runId}/test`, { queryPackage, columnLabels });
 }

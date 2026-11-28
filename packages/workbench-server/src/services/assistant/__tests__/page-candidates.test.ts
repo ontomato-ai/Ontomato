@@ -18,7 +18,7 @@ vi.mock("../store", () => ({ assistantStore: { channelAgents: mocks.channelAgent
 vi.mock("../authorization", () => ({ allowedAgents: mocks.allowedAgents }));
 vi.mock("../../product-panels/application-use", () => ({ requirePanelEntry: mocks.requirePanelEntry }));
 
-installContentLayout({ runtimeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "page-candidates-runtime-")), prompts: [], publicSkillsRoot: fs.mkdtempSync(path.join(os.tmpdir(), "page-candidates-public-")), runtimeResources: [] });
+installContentLayout({ runtimeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "page-candidates-runtime-")), prompts: [], publicSkillsRoot: fs.mkdtempSync(path.join(os.tmpdir(), "page-candidates-public-")), knowledgeRoot: process.cwd(), runtimeResources: [] });
 const { listAssistantAgents } = await import("../agents");
 
 const owner = { domainId: "domain", userId: "user" };

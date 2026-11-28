@@ -25,7 +25,7 @@ configureI18n({
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-reads-"));
 const publicSkillsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-public-"));
 const skillTranslationsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-panel-translations-"));
-installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot, publicSkillTranslationsRoot: skillTranslationsRoot });
+installContentLayout({ runtimeRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [], publicSkillsRoot, publicSkillTranslationsRoot: skillTranslationsRoot });
 const { createSkillReadAdapter } = await import("../panel-reads");
 const { countAssistantSkills } = await import("../../assistant/skills");
 

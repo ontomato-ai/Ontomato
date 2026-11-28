@@ -36,6 +36,7 @@ beforeAll(() => {
     runtimeRoot: process.cwd(),
     publicSkillsRoot: process.cwd(),
     prompts: [],
+    knowledgeRoot: process.cwd(),
     runtimeResources: [],
   });
 });

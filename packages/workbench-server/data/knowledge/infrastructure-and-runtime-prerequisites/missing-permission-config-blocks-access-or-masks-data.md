@@ -1,33 +1,27 @@
 # Missing Permission Configuration Causes Pages Inaccessible or Data Masked
 
-- **Scope**: pages, menus, interfaces unavailable, or results masked by real data permissions; when the user's or position's permission configuration is incomplete.
-- **Mechanism source**: the query backend permission system (API/menu permissions, data permissions, assigned via position association); `util/DslPermissionUtil.java` column masking implementation.
-- **Last verified**: 2026-08-26.
+- **Scope**: pages, entries, APIs, evidence operations, or business data are unavailable or visibly restricted because the current identity lacks the corresponding authorization.
+- **Mechanism source**: workbench management operations in `packages/workbench-server/src/api/routes/ops-diagnosis.ts` and ontology query authorization in `packages/data-engine-core/src/main/java/io/ontomato/dataengine/service/QueryPermissions.java`.
 
 ## Symptoms
 
-- Page inaccessible; function entries, buttons, or menus invisible/unavailable.
-- Interface request fails, with error information pointing to permissions, auth, login state, or authorization.
-- Some columns in the query result show `****`.
+- A page, menu entry, button, or evidence operation is unavailable or returns an authorization error.
+- Metadata is incomplete for one identity, query admission is forbidden, rows are fewer than expected, or cells contain `****`.
 
 ## Possible Causes
 
-- **API / menu permission** missing: page or interface inaccessible; distinguish from expired login state, proxy errors, and service failures.
-- **Data permission** missing: row permission filtering reduces visible rows; column permission replaces unauthorized columns with `****`. Permissions are assigned by position; when the user's position has no corresponding permission configured, the visible scope is empty.
-
-## Distinguishing Characteristics
-
-- Entry-layer failure (page/interface) and data-layer masking (`****` in results) are two kinds of permissions, with different investigation entry points.
-- `****` appearing in results cannot directly confirm this entry: at least three mechanisms produce it; first go through [Mechanism triage for masked placeholders appearing in results](desensitized-placeholder-mechanism-triage.md) to falsify other mechanisms.
-- Real permissions are determined by the static configuration of the external permission system, behaving consistently for the same user across sessions and questions.
+- **Management authorization missing**: the identity cannot use the operations evidence, log, knowledge, configuration, or read-only DSL entry required for the action.
+- **Business data permission missing**: the identity has no visible class/field, a relationship endpoint is outside scope, row permission filters the result, or column permission masks output values.
+- Login state, service failure, and proxy failure can imitate authorization failure and must be excluded by the exact status, machine code, and dependency evidence.
 
 ## Verification and Localization
 
-1. Entry layer: record the page, interface, status code, returned message, and user position; distinguish auth failure (login state) from missing authorization (permission not configured).
-2. Data layer: confirm the user's position's API/menu and data permission assignment in permission management; comparing the same operation or query under different known identities is the most direct evidence.
-3. Permission changes must be made by an authorized user in the permission system; after the change, retest with the same identity and confirm only the expected scope is restored.
+1. Record the identity, entry, status code, machine code, time, and whether the same identity can use a neighboring read-only entry.
+2. For data symptoms, compare visible metadata and the exact query result under known identities. Do not infer authorization from the answer text.
+3. For `****`, first follow [Mechanism triage for masked placeholders appearing in results](desensitized-placeholder-mechanism-triage.md) and confirm the placeholder is really in the accepted data.
+4. Permission changes belong to the owning permission system and an authorized administrator. After a change, retest as the same identity and verify that only the intended scope opened.
 
 ## When to Exclude
 
-- backend logs show this query's execution actually failed — this is an execution failure disguised as a "permission" symptom; prioritize execution-failure investigation.
-- Overall anomalies caused by service unavailability or configuration errors — not a permission problem.
+- The dependency or service itself is unavailable — investigate services first.
+- The query is rejected for unknown metadata or invalid DSL shape — investigate metadata or the query artifact rather than permission.
