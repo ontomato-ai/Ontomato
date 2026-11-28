@@ -61,7 +61,14 @@ export function invoke(data, signal, onUpdate) {
 function prepareSession(init) {
   const file = join(init.directories.state, "pi.jsonl");
   if (init.engineRef !== null) {
-    const header = JSON.parse(readFileSync(file, "utf8").split("\n", 1)[0]);
+    let content;
+    try {
+      content = readFileSync(file, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    }
+    const header = JSON.parse(content.split("\n", 1)[0]);
     if (header.type !== "session" || header.id !== init.engineRef) {
       throw new Error("PI native session does not match the requested engine reference");
     }
@@ -88,7 +95,12 @@ export let config;
 
 async function main() {
   const init = await initialized;
-  const { file, definition } = prepareSession(init);
+  const state = prepareSession(init);
+  if (state === null) {
+    bridge.end(JSON.stringify({ type: "native_session_missing" }) + "\n");
+    return;
+  }
+  const { file, definition } = state;
   config = { model: init.model, directories: init.directories, definition };
   const home = mkdtempSync(join(tmpdir(), "ontomato-pi-"));
   process.once("exit", () => rmSync(home, { recursive: true }));

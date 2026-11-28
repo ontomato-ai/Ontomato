@@ -8,7 +8,7 @@ and product acceptance belong to the assembled runtime.
 
 | Id | State | Native behavior and evidence |
 | --- | --- | --- |
-| `open` | supported | The SDK creates native entries, including the fixed platform tool declarations and engine-tool setting. RPC `get_state` returns the native ID. `--session` resumes the exact file. The opening and import tests verify persistence before the first prompt, missing-file rejection, and the same ID after reopening. |
+| `open` | supported | The SDK creates native entries, including the fixed platform tool declarations and engine-tool setting. RPC `get_state` returns the native ID. `--session` resumes the exact file. The opening and import tests verify persistence before the first prompt, the typed missing-file signal, and the same ID after reopening. |
 | `startTurn` | supported | RPC `prompt` invokes the controlled input hook. `agent_settled` ends the run after native work and awaited host events. The tool and gateway tests verify multi-step completion and errors. |
 | `messages` | supported | PI message and step hooks preserve order on the same channel as the awaited tool hooks. The plugin keys the two reported message roles at `message_start`. The tool test checks stream deltas, logical steps and tool results. |
 | `interrupt` | supported | RPC `clear_queue` followed by `abort` stops the native run. FD cancellation aborts its host invocation. Unresolved calls carry only their IDs at settlement. Tests cancel a platform call and native bash and check for replay and remaining processes. |
@@ -25,7 +25,7 @@ and product acceptance belong to the assembled runtime.
 
 FD 3 carries newline-delimited JSON. The plugin sends `init` with directories,
 the gateway lease, and either the native reference or first-open state. The
-engine reads it before entering PI's CLI. PI RPC stays on stdin and stdout.
+engine reads it before entering PI's CLI. If the requested session file is absent, the launcher sends the `native_session_missing` frame on this channel. PI RPC stays on stdin and stdout.
 
 The extension sends `request` with an integer `id`, `method`, and `data`.
 `event` carries a step or message. `consume` reports input IDs in model-context

@@ -7,7 +7,7 @@ import {
 import {
   runtimeImageSchema, runtimeTextSchema,
 } from "@ontomato/contracts/agent-runtime-messages";
-import type { HarnessProcess } from "../contract";
+import { NativeSessionMissing, type HarnessProcess } from "../contract";
 
 const rpcFrame = z.object({ type: z.string(), id: z.string().optional() }).passthrough();
 const rpcResponse = z.object({ success: z.boolean(), data: z.unknown(), error: z.string().optional() });
@@ -28,6 +28,7 @@ const request = z.discriminatedUnion("method", [
   z.object({ method: z.literal("toolUpdate"), data: z.object({ toolCallId: z.string(), partialResult: z.object({ text: z.string(), data: runtimeJsonValueSchema.optional() }) }) }),
   z.object({ method: z.literal("invoke"), data: tool }),
 ]);
+const sessionMissing = z.object({ type: z.literal("native_session_missing") });
 const bridgeFrame = z.union([
   z.object({ type: z.literal("request"), id: z.number().int() }).and(request),
   z.object({ type: z.literal("cancel"), id: z.number().int() }),
@@ -73,7 +74,11 @@ export class PiTransport {
         pending.resolve(response);
       } else onRpc(event);
     });
-    this.read(channel, line => onFrame(bridgeFrame.parse(JSON.parse(line))));
+    this.read(channel, line => {
+      const frame: unknown = JSON.parse(line);
+      if (sessionMissing.safeParse(frame).success) this.end(new NativeSessionMissing());
+      else onFrame(bridgeFrame.parse(frame));
+    });
     process.stdin.on("error", error => this.fail(error));
   }
 

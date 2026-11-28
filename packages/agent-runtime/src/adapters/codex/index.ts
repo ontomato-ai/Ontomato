@@ -4,8 +4,9 @@ import type {
   HarnessOpenRequest, HarnessPlugin, HarnessProcess, HarnessSession, HarnessSteerResult,
   HarnessTurnInput, HarnessTurnRequest, HarnessTurnResult,
 } from "../contract";
+import { NativeSessionMissing } from "../contract";
 import { CodexEvents } from "./events";
-import { toolOutput, toolRequest, userInput } from "./items";
+import { historyItems, toolOutput, toolRequest, userInput } from "./items";
 import { CodexRpcError, CodexTransport, deferred, type CodexNotice, type RpcId } from "./transport";
 
 const binary = "/usr/local/lib/ontomato-codex/bin/codex";
@@ -204,10 +205,7 @@ export function createCodexPlugin(program = binary, entrypoint = launcher): Harn
       path.posix.join(directories.state, "home", ".agents", "skills", name),
     async open(request: HarnessOpenRequest) {
       request.signal.throwIfAborted();
-      // Runtime status messages remain visible after a failed open. They were never part of a native thread.
-      if (request.previousContext?.some(message => message.role !== "assistant" || message.origin !== "runtime"))
-        throw new Error("Codex requires its native thread to resume existing context");
-      const { directories, model, prompt, engineTools, engineRef, tools } = request;
+      const { directories, model, prompt, engineTools, engineRef, previousContext, tools } = request;
       const { token, baseUrl, contextWindow } = model;
       const access = { baseUrl, contextWindow, model: model.model };
       const process = request.sandbox.spawn("/usr/local/bin/node", [entrypoint], {
@@ -230,9 +228,17 @@ export function createCodexPlugin(program = binary, entrypoint = launcher): Harn
           ? await transport.request("thread/start", { ...thread, dynamicTools: tools.map(tool => ({
               type: "function", name: tool.name, description: tool.description, inputSchema: tool.parameters,
             })) })
-          : await transport.request("thread/resume", { ...thread, threadId: engineRef, excludeTurns: true });
+          : await transport.request("thread/resume", { ...thread, threadId: engineRef, excludeTurns: true }).catch(error => {
+              if (error instanceof CodexRpcError && error.code === -32600 &&
+                  error.message === `no rollout found for thread id ${engineRef}`) throw new NativeSessionMissing();
+              throw error;
+            });
         const { thread: { id } } = z.object({ thread: z.object({ id: z.string() }) }).parse(response);
         if (engineRef !== null && id !== engineRef) throw new Error("Codex returned a different thread ID");
+        if (previousContext !== null) {
+          const items = previousContext.flatMap(historyItems);
+          if (items.length) await transport.request("thread/inject_items", { threadId: id, items });
+        }
         session = new CodexSession(id, process, transport, access.model, directories.workspace);
         return session;
       } catch (error) {

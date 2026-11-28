@@ -686,7 +686,12 @@ export class AgentRuntime {
     );
     const messages = await Promise.all(rows
       .filter(row => row.contextSeq! > Number(summary?.covered_seq ?? 0) && row.message.role !== "system")
-      .map(row => this.channel.modelMessage(scope.domainId, row.message)));
+      .map(({ message }): Promise<RuntimeMessage> => {
+        if (message.role === "assistant" && message.origin === "runtime") return Promise.resolve({
+          role: "user", content: `Runtime notice: ${message.errorMessage ?? message.stopReason}`, timestamp: message.timestamp,
+        });
+        return this.channel.modelMessage(scope.domainId, message);
+      }));
     if (summary) messages.unshift({
       role: "user", timestamp: Date.now(), content: `Previous conversation summary:\n${summary.summary}`,
     });

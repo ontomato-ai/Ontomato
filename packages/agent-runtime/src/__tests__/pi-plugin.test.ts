@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
+import { NativeSessionMissing } from "../adapters/contract";
 import type {
   HarnessEvent, HarnessOpenRequest, HarnessProcess, HarnessSession, HarnessTurnHost, HarnessTurnInput,
 } from "../adapters/contract";
@@ -278,13 +279,23 @@ describe("PI 1.4.0 RPC plugin", () => {
       activeRunId = null;
       await owner.delivered(scope, id, "run", async () => false);
       expect(owner.needsOpen(scope, id)).toBe(true);
+
+      await rm(join(directories.state, "pi.jsonl"));
+      const rebuilt = await owner.open(scope, id, {
+        ...options, previousContext: async () => [user("Recovered database context")],
+      });
+      expect(refs).toEqual([opened.handle.engineRef, rebuilt.handle.engineRef]);
+      expect(rebuilt.handle.engineRef).not.toBe(opened.handle.engineRef);
+      expect(owner.needsOpen(scope, id)).toBe(false);
+      expect(await turn(rebuilt.handle, host(), input("third", "Continue after rebuild"))).toMatchObject({ stopReason: "stop" });
+      expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Recovered database context");
     } finally {
       vi.useRealTimers();
       await owner.close();
     }
   });
 
-  it("opens persisted native state, resumes the same ref and declarations, and rejects missing state", async () => {
+  it("opens persisted native state, resumes the same ref and declarations, and signals missing state", async () => {
     const requests = await configure(() => ({ status: "answer", text: "Done" }));
     const session = await open();
     expect(await readFile(join(directories.state, "pi.jsonl"), "utf8")).toContain(session.engineRef);
@@ -299,7 +310,7 @@ describe("PI 1.4.0 RPC plugin", () => {
     await resumed.close();
 
     await rm(join(directories.state, "pi.jsonl"));
-    await expect(open({ engineRef: session.engineRef })).rejects.toThrow(/ENOENT/);
+    await expect(open({ engineRef: session.engineRef })).rejects.toBeInstanceOf(NativeSessionMissing);
   }, 15000);
 
   it("keeps product sessions on platform tools after reopening", async () => {

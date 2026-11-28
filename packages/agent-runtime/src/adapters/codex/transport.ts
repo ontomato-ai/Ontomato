@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import { z } from "zod";
-import type { HarnessProcess } from "../contract";
+import { NativeSessionMissing, type HarnessProcess } from "../contract";
 
 const idSchema = z.union([z.string(), z.number().int()]);
 const notice = z.object({ method: z.string(), params: z.record(z.unknown()).default({}), id: idSchema.optional() });
@@ -38,7 +38,8 @@ export class CodexTransport {
         const frame: unknown = JSON.parse(line);
         const notification = notice.safeParse(frame);
         if (notification.success) {
-          receive(notification.data);
+          if (notification.data.method === "ontomato/native_session_missing") this.end(new NativeSessionMissing());
+          else receive(notification.data);
           return;
         }
         const reply = answer.parse(frame);

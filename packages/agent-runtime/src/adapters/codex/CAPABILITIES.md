@@ -7,7 +7,7 @@ the LiteLLM gateway and a deterministic local Responses upstream. Deployment acc
 
 | Capability | State | Evidence and boundary |
 | --- | --- | --- |
-| open | Supported | `thread/start` with fixed declarations, `thread/resume` with the stored ID and the same native state. The runtime retains existing PI bindings. |
+| open | Supported | `thread/start` with fixed declarations, `thread/resume` with the stored ID and the same native state. `thread/inject_items` persists supplied database context before the first turn. An absent `engine-tools` file or a missing rollout for the requested ID reports `NativeSessionMissing`. |
 | startTurn | Supported | `turn/start` carries the single opening receipt used by the runtime plus text, images and per-turn context. The upstream request has a single client receipt field. |
 | messages | Supported | Item-based message and tool lifecycle, reasoning and text deltas, complete item content and observable logical steps. |
 | interrupt | Supported | `turn/interrupt`, then `thread/backgroundTerminals/clean`. Cancelled dynamic calls without host results stay unsettled even when Codex emits a failed item. |

@@ -3,11 +3,12 @@ import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline";
 import { expect, it, vi } from "vitest";
 import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
+import { NativeSessionMissing } from "../adapters/contract";
 import type { HarnessEvent, HarnessOpenRequest, HarnessProcess, HarnessTurnHost, HarnessTurnInput } from "../adapters/contract";
 import { codexPlugin } from "../adapters/codex";
 import { deferred } from "../adapters/codex/transport";
 
-type Frame = { id?: number; method?: string; params?: Record<string, unknown>; result?: unknown };
+type Frame = { id?: number; method?: string; params?: Record<string, unknown>; result?: unknown; error?: { code: number; message: string } };
 const recording: Frame[] = readFileSync(new URL("../adapters/codex/fixtures/steer-dynamic.jsonl", import.meta.url), "utf8")
   .trim().split("\n").map(line => JSON.parse(line));
 const input = (id: string, content: string): HarnessTurnInput => ({
@@ -29,10 +30,18 @@ function fixture(onSend: (frame: Frame, send: (frame: Frame) => void) => void) {
     frames.push(frame);
     switch (frame.method) {
       case "initialize": send({ id: frame.id, result: {} }); break;
-      case "thread/start":
       case "thread/resume":
+        if (frame.params?.threadId !== "thread") {
+          send({ id: frame.id, error: frame.params?.threadId === "missing"
+            ? { code: -32600, message: "no rollout found for thread id missing" }
+            : { code: -32603, message: "failed to read thread" } });
+          break;
+        }
+        // Fall through to return the reference from the available thread.
+      case "thread/start":
         send({ id: frame.id, result: { thread: { id: "thread" } } });
         break;
+      case "thread/inject_items": send({ id: frame.id, result: {} }); break;
       case "turn/start":
         send({ id: frame.id, result: { turn: { id: "turn", status: "inProgress", error: null } } });
         onSend(frame, send);
@@ -54,20 +63,22 @@ function fixture(onSend: (frame: Frame, send: (frame: Frame) => void) => void) {
   return { open, frames, process };
 }
 
-it("opens the first native thread after an aborted startup but still requires a reference for real prior context", async () => {
+it("persists database context before issuing any Codex turn", async () => {
   const subject = fixture(() => {});
-  await expect(subject.open(null, [input("consumed", "Existing model input").message]))
-    .rejects.toThrow("Codex requires its native thread to resume existing context");
-  const engine = await subject.open(null, [{
-    role: "assistant", origin: "runtime", stopReason: "aborted", timestamp: 1, content: [],
-    api: null, provider: null, model: null, usage: null,
-  }]);
+  const engine = await subject.open(null, [input("consumed", "Existing model input").message]);
   try {
-    expect(engine.engineRef).toBe("thread");
-    expect(subject.frames.map(frame => frame.method)).toEqual(["initialize", "initialized", "thread/start"]);
+    expect(subject.frames.map(frame => frame.method)).toEqual(["initialize", "initialized", "thread/start", "thread/inject_items"]);
+    expect(subject.frames.at(-1)?.params).toMatchObject({
+      threadId: engine.engineRef, items: [{ role: "user", content: [{ type: "input_text", text: "Existing model input" }] }],
+    });
   } finally {
     await engine.close();
   }
+});
+
+it("signals an absent Codex rollout and propagates other resume errors", async () => {
+  await expect(fixture(() => {}).open("missing")).rejects.toBeInstanceOf(NativeSessionMissing);
+  await expect(fixture(() => {}).open("unreadable")).rejects.toMatchObject({ code: -32603 });
 });
 
 it("replays Codex 0.171.0 parallel tool calls, consumes identical steers by client ID and uses the final item once", async () => {

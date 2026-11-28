@@ -1,4 +1,5 @@
 import { readFile, mkdir, readdir, readlink, symlink, unlink, writeFile } from "node:fs/promises";
+import { writeSync } from "node:fs";
 import { join } from "node:path";
 
 const { ONTOMATO_CODEX_BOOT: boot, CODEX_GATEWAY_TOKEN, ...environment } = process.env;
@@ -7,9 +8,22 @@ const codexHome = directories.state;
 const home = join(codexHome, "home");
 const mounted = join(home, ".agents", "skills");
 const engineFlag = join(codexHome, "engine-tools");
+let nativeTools = engineTools;
+if (resume) {
+  let stored;
+  try {
+    stored = await readFile(engineFlag, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    writeSync(1, JSON.stringify({ jsonrpc: "2.0", method: "ontomato/native_session_missing" }) + "\n");
+    process.exit(0);
+  }
+  nativeTools = JSON.parse(stored);
+  if (typeof nativeTools !== "boolean") throw new Error("Invalid Codex engine-tools setting");
+} else {
+  await writeFile(engineFlag, JSON.stringify(nativeTools));
+}
 await mkdir(mounted, { recursive: true });
-const nativeTools = resume ? JSON.parse(await readFile(engineFlag, "utf8")) : engineTools;
-if (!resume) await writeFile(engineFlag, JSON.stringify(nativeTools));
 const desired = new Map(directories.skills.map(skill => [skill.name, skill.directory]));
 for (const name of await readdir(mounted)) {
   const entry = join(mounted, name);

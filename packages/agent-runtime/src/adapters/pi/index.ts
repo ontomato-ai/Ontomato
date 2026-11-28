@@ -27,14 +27,6 @@ function inputContent(input: HarnessTurnInput): (RuntimeText | RuntimeImage)[] {
   return [...context, ...(typeof message.content === "string" ? [text(message.content)] : message.content)];
 }
 
-function importContext(message: RuntimeMessage) {
-  if (message.role === "notification")
-    return { role: "user", content: notification(message), timestamp: message.timestamp };
-  if (message.role === "assistant" && message.origin === "runtime")
-    return { role: "user", content: `Runtime notice: ${message.errorMessage ?? message.stopReason}`, timestamp: message.timestamp };
-  return message;
-}
-
 type BridgeRequest = Extract<PiBridgeFrame, { type: "request" }>;
 type ToolCall = Extract<BridgeRequest, { method: "invoke" }>["data"];
 
@@ -260,7 +252,7 @@ async function open(request: HarnessOpenRequest): Promise<HarnessSession> {
     const { engineRef, previousContext, directories, model, prompt, tools, engineTools } = request;
     transport.send({
       type: "init",
-      data: { engineRef, previousContext: previousContext?.map(importContext) ?? null, directories, model, prompt, tools, engineTools },
+      data: { engineRef, previousContext, directories, model, prompt, tools, engineTools },
     });
     const reply = await transport.rpc("get_state");
     if (!reply.success) throw new Error(reply.error);

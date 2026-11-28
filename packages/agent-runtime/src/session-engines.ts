@@ -5,9 +5,10 @@ import path from "node:path";
 import type { RuntimeAgentDefinition, RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
-import type { HarnessOpenRequest, HarnessPlugin, HarnessSession } from "./adapters/contract";
+import { NativeSessionMissing, type HarnessOpenRequest, type HarnessPlugin, type HarnessSession } from "./adapters/contract";
 import { HarnessRegistry } from "./adapters/registry";
 import { RuntimeError } from "./errors";
+import { runtimeLogger } from "./logging";
 import type { ModelGatewayClient } from "./gateway-client";
 import { litellmEntry, type ModelLease, type ResolvedChatModel } from "./model";
 import { canonical, type RuntimeStore, type Scope } from "./store";
@@ -112,73 +113,92 @@ export class SessionEngines {
       request.signal.throwIfAborted();
       this.callback ??= openSkillCallback(this.callbackDispatcher);
       const { endpoint: callback } = await this.callback;
-      sandbox = await this.sandboxFactory({
-        scope, sessionId: id, sessionDirectory: sessionSandboxDirectory(this.root, scope, id), workspaceId: workspaceId ?? null,
-        skills: request.skills, limits: request.limits, gatewayUrl: lease.url, callback,
-      });
-      const processSpace = sandbox;
-      const engineRef = await this.locked(scope, id, async () => {
-        const { engineRef } = await this.store.sessionEngine(scope, id);
-        if (engineRef === null) {
-          for (const name of await readdir(processSpace.hostState))
-            await removeWorkerFiles(path.join(processSpace.hostState, name));
-        }
-        return engineRef;
-      });
-      let exited = false;
+      const { engineRef } = await this.locked(scope, id, () => this.store.sessionEngine(scope, id));
       const token = randomBytes(32).toString("base64url");
       const credential = Buffer.from(token);
-      const { directories } = processSpace;
-      writeFileSync(path.join(processSpace.hostState, bashEnvironmentFile), bashEnvironment, { mode: 0o644 });
-      rmSync(path.join(processSpace.hostState, activeRunFile), { force: true });
-      const callbackUrl = new URL(
-        `/v1/channel/hosts/${encodeURIComponent(scope.hostId)}/domains/${encodeURIComponent(scope.domainId)}/sessions/${encodeURIComponent(id)}`,
-        processSpace.callbackBaseUrl,
-      ).href;
-      handle = await request.plugin.open({
-        sessionId: id,
-        domainId: scope.domainId,
-        engineRef,
-        previousContext: engineRef === null ? await request.previousContext() : null,
-        sandbox: {
-          spawn(command, args, env) {
-            const child = processSpace.spawn(command, args, {
-              ...env,
-              BASH_ENV: path.posix.join(directories.state, bashEnvironmentFile),
-              ONTOMATO_SKILL_SCENARIO: "platform",
-              ONTOMATO_SESSION_ID: id,
-              ONTOMATO_LANGUAGE: request.language,
-              ONTOMATO_WORKSPACE: directories.workspace,
-              ONTOMATO_SOURCE_DIR: path.posix.join(directories.workspace, "work"),
-              ONTOMATO_OUTPUT_DIR: path.posix.join(directories.workspace, "outputs"),
-              PYTHONPATH: directories.skills.map(skill => path.posix.join(skill.directory, "python")).join(":"),
-              ONTOMATO_ASSISTANT_SESSION_ID: id,
-              ONTOMATO_AGENT_COMMAND_URL: callbackUrl + "/commands",
-              ...businessCallbackEnvironment(callbackUrl, token),
-              ONTOMATO_AGENT_CALLBACK: token,
-            });
-            const markExited = () => { exited = true; };
-            void child.exited.then(markExited, markExited);
-            return child;
+      const openNative = async (engineRef: string | null) => {
+        request.signal.throwIfAborted();
+        sandbox = await this.sandboxFactory({
+          scope, sessionId: id, sessionDirectory: sessionSandboxDirectory(this.root, scope, id), workspaceId: workspaceId ?? null,
+          skills: request.skills, limits: request.limits, gatewayUrl: lease.url, callback,
+        });
+        const processSpace = sandbox;
+        if (engineRef === null) {
+          await this.locked(scope, id, async () => {
+            for (const name of await readdir(processSpace.hostState))
+              await removeWorkerFiles(path.join(processSpace.hostState, name));
+          });
+        }
+        let exited = false;
+        const { directories } = processSpace;
+        writeFileSync(path.join(processSpace.hostState, bashEnvironmentFile), bashEnvironment, { mode: 0o644 });
+        rmSync(path.join(processSpace.hostState, activeRunFile), { force: true });
+        const callbackUrl = new URL(
+          `/v1/channel/hosts/${encodeURIComponent(scope.hostId)}/domains/${encodeURIComponent(scope.domainId)}/sessions/${encodeURIComponent(id)}`,
+          processSpace.callbackBaseUrl,
+        ).href;
+        const handle = await request.plugin.open({
+          sessionId: id,
+          domainId: scope.domainId,
+          engineRef,
+          previousContext: engineRef === null ? await request.previousContext() : null,
+          sandbox: {
+            spawn(command, args, env) {
+              const child = processSpace.spawn(command, args, {
+                ...env,
+                BASH_ENV: path.posix.join(directories.state, bashEnvironmentFile),
+                ONTOMATO_SKILL_SCENARIO: "platform",
+                ONTOMATO_SESSION_ID: id,
+                ONTOMATO_LANGUAGE: request.language,
+                ONTOMATO_WORKSPACE: directories.workspace,
+                ONTOMATO_SOURCE_DIR: path.posix.join(directories.workspace, "work"),
+                ONTOMATO_OUTPUT_DIR: path.posix.join(directories.workspace, "outputs"),
+                PYTHONPATH: directories.skills.map(skill => path.posix.join(skill.directory, "python")).join(":"),
+                ONTOMATO_ASSISTANT_SESSION_ID: id,
+                ONTOMATO_AGENT_COMMAND_URL: callbackUrl + "/commands",
+                ...businessCallbackEnvironment(callbackUrl, token),
+                ONTOMATO_AGENT_CALLBACK: token,
+              });
+              const markExited = () => { exited = true; };
+              void child.exited.then(markExited, markExited);
+              return child;
+            },
           },
-        },
-        directories: sandbox.directories,
-        model: {
-          baseUrl: sandbox.gatewayBaseUrl, token: lease.token,
-          model: config.name, contextWindow: config.contextWindow,
-          maxOutputTokens: config.maxOutputTokens ?? null,
-        },
-        prompt: request.prompt(sandbox.directories),
-        tools: request.tools,
-        engineTools: request.engineTools,
-        limits: request.limits,
-        language: request.language,
-        signal: request.signal,
-      });
-      // The caller can submit the first prompt only after its native reference is committed.
-      // Without that reference, no prompt used the native files and the next open can rebuild them.
-      if (engineRef === null) await this.store.saveEngineRef(scope, id, handle.engineRef);
-      const entry = { scope, id, handle, sandbox, lease, credential, exited: () => exited };
+          directories,
+          model: {
+            baseUrl: processSpace.gatewayBaseUrl, token: lease.token,
+            model: config.name, contextWindow: config.contextWindow,
+            maxOutputTokens: config.maxOutputTokens ?? null,
+          },
+          prompt: request.prompt(directories),
+          tools: request.tools,
+          engineTools: request.engineTools,
+          limits: request.limits,
+          language: request.language,
+          signal: request.signal,
+        });
+        return { handle, sandbox: processSpace, exited: () => exited };
+      };
+
+      let opened;
+      let rebuilt = false;
+      try {
+        opened = await openNative(engineRef);
+      } catch (error) {
+        if (!(error instanceof NativeSessionMissing) || engineRef === null) throw error;
+        await sandbox!.stop();
+        sandbox = undefined;
+        opened = await openNative(null);
+        rebuilt = true;
+      }
+      handle = opened.handle;
+      if (engineRef === null || rebuilt) {
+        // A turn can use the new session only after its native reference is committed.
+        await this.store.saveEngineRef(scope, id, handle.engineRef);
+        if (rebuilt)
+          runtimeLogger.warn(`NATIVE_SESSION_REBUILT ${request.plugin.id} ${engineRef} -> ${handle.engineRef}`);
+      }
+      const entry = { scope, id, lease, credential, ...opened };
       this.live.set(sessionKey, entry);
       return entry;
     } catch (error) {

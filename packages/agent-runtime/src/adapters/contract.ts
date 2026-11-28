@@ -39,11 +39,18 @@ export interface HarnessPlugin {
   readonly skillCatalogDirectory?: (directories: HarnessDirectories, name: string) => string;
   /**
    * Open or resume native state without running a prompt. The runtime commits the returned reference
-   * before it calls startTurn. Throws rather than silently replacing a referenced session.
+   * before it calls startTurn. Throws NativeSessionMissing only if the referenced native session is absent.
    */
   open(request: HarnessOpenRequest): Promise<HarnessSession>;
 }
 export type HarnessEngineId = string;
+
+export class NativeSessionMissing extends Error {
+  constructor() {
+    super("Referenced native session is missing");
+    this.name = "NativeSessionMissing";
+  }
+}
 
 /** Row ids are the table in CAPABILITIES.md, in its order. */
 export const HARNESS_CAPABILITIES = [
@@ -96,12 +103,12 @@ export interface HarnessSession {
 export interface HarnessOpenRequest {
   readonly sessionId: string;
   readonly domainId: string;
-  /** Native session to resume; null for a new one. A missing native session is an error, never a new one. */
+  /** Native session to resume; null for a new one. Only the runtime decides when to rebuild. */
   readonly engineRef: string | null;
   /**
-   * The model context of a session that ran before engines kept their own state, given once: when `engineRef`
-   * is null and the session already has history. The engine writes it into its new native session before
-   * `open` returns; the runtime stores the returned `engineRef` only after that. Null for every other open.
+   * Database model context for a new native session, supplied only when `engineRef` is null. The plugin
+   * persists it before returning from `open`, without running a model turn or executing past tools.
+   * The runtime stores the returned reference after the import succeeds.
    */
   readonly previousContext: readonly RuntimeMessage[] | null;
   /** Where the engine program runs. Paths in `directories` and `model.baseUrl` are as seen inside it. */
