@@ -11,7 +11,7 @@ Use this skill when a conversation needs a chart that can also be added to a das
 
 Write the input to a JSON file and run:
 
-`node skills/echarts/scripts/index.mjs work/input.json`
+`node /skills/echarts/scripts/index.mjs work/input.json`
 
 Reference the printed `outputs/<name>.chart.json` path as a Markdown image. The image description is the title shown in the conversation and becomes the card name when added to a dashboard. Keep the title out of the chart file. Use the package's local path in an external harness.
 
