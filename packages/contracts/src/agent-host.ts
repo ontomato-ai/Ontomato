@@ -24,6 +24,7 @@ import {
   runtimeRunStatusSchema,
   runtimeStopReasonSchema,
   runtimeTimestampSchema,
+  sessionOriginSchema,
 } from "./agent-runtime-values";
 /** Application-neutral metadata for the shell's read-only agent selector. */
 export const agentHostAgentSchema = z
@@ -118,7 +119,7 @@ export const agentHostSessionSchema = z
     updatedAt: runtimeTimestampSchema,
     latestRun: agentHostRunStatusSchema.nullable(),
     /** How the session was started; absent means by its user. scheduled: by one of the user's scheduled tasks. */
-    origin: z.enum(["user", "scheduled", "delegated"]).optional(),
+    origin: sessionOriginSchema.optional(),
   })
   .strict();
 export const agentHostSessionSnapshotSchema = z

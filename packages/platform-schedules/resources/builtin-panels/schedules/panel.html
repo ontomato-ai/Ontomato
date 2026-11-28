@@ -311,7 +311,7 @@
       <p v-if="!inline" class="schedules-note">{{ t("form.identity") }}</p>
 
       <div v-if="mode === 'create'" data-form="create">
-        <projection slot="newForm" @saved="created" @cancel="closeFormDialog">
+        <projection slot="newForm" :values="{ initialValues }" @saved="created" @cancel="cancelCreate">
           <template v-if="inline" #default>
             <object-form-fields :fields="['/task/title', '/agentId', '/instruction', '/task/frequency', '/task/enabled']"></object-form-fields>
             <details class="schedules-task-details">

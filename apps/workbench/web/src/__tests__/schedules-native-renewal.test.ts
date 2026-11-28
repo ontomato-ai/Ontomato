@@ -22,7 +22,7 @@ import module from "../../../../../packages/platform-schedules/resources/builtin
 import runDetailSource from "../../../../../packages/platform-schedules/resources/builtin-panels/scheduled-task-run-detail/panel.json";
 import runDetailHtml from "../../../../../packages/platform-schedules/resources/builtin-panels/scheduled-task-run-detail/panel.html?raw";
 import runDetailModule from "../../../../../packages/platform-schedules/resources/builtin-panels/scheduled-task-run-detail/panel.mjs?raw";
-import { sentPanelReadItems, humanIntents, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot } from "./panel-frame";
+import { confirmDiscard, sentPanelReadItems, humanIntents, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot } from "./panel-frame";
 
 const application = catalogFixture().find(app => app.id === "schedules")!;
 const use = applicationPanelUseSchema.parse(application.panelUses![0]!);
@@ -194,6 +194,50 @@ const panel = {
   content: { html, module, messages: source.content.messages },
 };
 
+const nestedSchedules = { ...panel, id: "builtin-product-schedules-embedded-test" };
+const agentId = "30000000-0000-4000-8000-000000000001";
+const triggerRef = { className: "platform:Trigger", primaryKey: taskId };
+const parent = {
+  ...panelRecord(use.panelId, "Schedule composer host", definePanel({
+    state: {
+      compose: { type: { kind: "scalar", type: "string" }, default: "new" },
+      created: { type: { kind: "object", objectType: "platform:Trigger" } },
+      cancelled: { type: { kind: "scalar", type: "boolean" } },
+      initialValues: { type: { kind: "json" }, default: { "/task/title": "Review", "/instruction": "Summarize the conversation" } },
+    },
+    members: {
+      schedules: {
+        target: { panelId: nestedSchedules.id },
+        inputs: {
+          workspace: { literal: "agent" }, app: { literal: "agents" }, workspaceAgent: { literal: agentId },
+          workspaceCompose: { state: "compose" }, initialValues: { state: "initialValues" },
+        },
+        outputs: {
+          workspaceCompose: { state: "compose" }, createdTask: { state: "created" }, createCancelled: { state: "cancelled" },
+        },
+      },
+    },
+  })),
+  visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
+};
+parent.content.html = `<div>
+  <button data-change-default @click="changeDefault">Change default</button>
+  <button data-reopen @click="reopen">Reopen</button>
+  <output :data-created="values.created?.primaryKey" :data-cancelled="values.cancelled"></output>
+  <projection slot="schedules"></projection>
+</div>`;
+parent.content.module = `import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+await mountPanel({
+  setup() {
+    const { state } = usePanelContext().instance;
+    return {
+      values: state.values,
+      changeDefault: () => state.set("initialValues", { "/task/title": "Next draft" }),
+      reopen: () => state.set("compose", "new"),
+    };
+  },
+});`;
+
 afterEach(() => {
   leaveFrame();
   useApplicationCatalog().applications.value = [];
@@ -216,7 +260,8 @@ it.each([
   { scenario: "opens without renewing a valid credential", credentialStatus: "valid", refused: false },
   { scenario: "opens without renewing when there are no remote tasks", credentialStatus: "no-remote-tasks", refused: false },
   { scenario: "shows the selected task, its history and editing inline in the agent workspace", credentialStatus: "valid", refused: false, inline: true },
-])("$scenario", async ({ credentialStatus, refused, inline }) => {
+  { scenario: "prefills editable values and returns create outcomes to an embedding panel", credentialStatus: "valid", refused: false, embedded: true },
+])("$scenario", async ({ credentialStatus, refused, inline, embedded }) => {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
   ] });
@@ -226,10 +271,21 @@ it.each([
   let ownerCredentialStatus = credentialStatus;
   const historyReads: Array<string | null> = [];
   let checkHistory = false;
-  const writes = humanIntents((operation) => operation === deleteOperation
-    ? { kind: "success", message: deleteMessage, data: { id: taskId } }
-    : { kind: "success", data: {} }, undefined, {
+  const writes = humanIntents((operation) => {
+    if (operation === deleteOperation) return { kind: "success", message: deleteMessage, data: { id: taskId } };
+    if (embedded) return {
+      kind: "success", data: { id: taskId }, created: { objectType: triggerRef.className, primaryKey: taskId },
+      affected: { objects: [{ objectType: triggerRef.className, primaryKey: taskId }], objectTypes: [triggerRef.className] },
+    };
+    return { kind: "success", data: {} };
+  }, undefined, {
     admitted(member, inputs) {
+      if (member === "newForm") return {
+        save: {
+          kind: "form.save", handlerRef: "triggers.create", effect: "write", label: "Create task", batch: false,
+          target: { source: "draft", slot: member }, inputSchema: {}, resultSchema: {},
+        },
+      };
       if ((member === "tasks" || member === "opDelete") && inputs.task) return {
         delete: {
           kind: "action", handlerRef: "triggers.delete", effect: "write", label: "Delete task", batch: false,
@@ -243,22 +299,22 @@ it.each([
     const { path } = request;
     if (path === "/api/data-query/platform/applications/schedules/panel-uses")
       return Response.json({ data: { applicationId: application.id, entry: application.entry, panelUses: [use] } });
-    if (path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+    const entryPanel = embedded ? parent : panel;
+    if (path === `/api/product-panels/${entryPanel.id}`) return panelAnswer(entryPanel, request);
     if (path === `/api/product-panels/${runDetailPanel.id}`) return panelAnswer(runDetailPanel, request);
-    if (path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, Object.fromEntries(projections), request);
+    if (path === `/api/product-panels/${entryPanel.id}/snapshot`) return panelSnapshot(entryPanel, Object.fromEntries(projections), request);
+    if (path === `/api/product-panels/${nestedSchedules.id}/snapshot`) return panelSnapshot(nestedSchedules, Object.fromEntries(projections), request);
     if (path === `/api/product-panels/${runDetailPanel.id}/snapshot`) return panelSnapshot(runDetailPanel, Object.fromEntries(projections), request);
-    if (path === "/api/product-panels/nested") return Response.json({
-      panel: {
-        id: runDetailPanel.id,
-        revision: runDetailPanel.revision,
-        manifest: runDetailPanel.manifest,
-        content: runDetailPanel.content,
-      },
-    });
+    if (path === "/api/product-panels/nested") {
+      const { memberPath } = request.body as { memberPath: Array<{ member: string }> };
+      const { id, revision, manifest, content } = memberPath.at(-1)?.member === "schedules" ? nestedSchedules : runDetailPanel;
+      return Response.json({ panel: { id, revision, manifest, content } });
+    }
     if (path.startsWith("/api/product-projections/")) return Response.json({ projection: projections.get(path.split("/").at(-1)!) });
     if (path === "/api/product-panels/read") {
       const body = request.body as ProductPanelReadRequest;
-      if ("operations" in body && body.memberPath[0].member === "tasks") {
+      const member = body.memberPath.at(-1)!.member;
+      if ("operations" in body && member === "tasks") {
         return Response.json({
           status: "ready",
           value: {
@@ -285,14 +341,13 @@ it.each([
           },
         });
       }
-      if ("operations" in body && body.memberPath[0].member === "opDelete") return writes(request)!;
-      if ("operations" in body) return Response.json({ status: "ready", value: body.memberPath[0].member === "renew" ? {
+      if ("operations" in body && (member === "opDelete" || member === "newForm")) return writes(request)!;
+      if ("operations" in body) return Response.json({ status: "ready", value: member === "renew" ? {
         renewCredential: {
           kind: "action", label: "Renew background credential", handlerRef: "triggers.renewCredential",
           effect: "write", batch: false, target: { source: "input", input: "application" }, inputSchema: {}, resultSchema: {},
         },
       } : {} });
-      const member = body.memberPath[0].member;
       if (member === "pageNotice" && body.dataName === "record") {
         return Response.json({
           status: "ready",
@@ -326,7 +381,7 @@ it.each([
         });
         return Response.json({ status: "ready", value: filtered });
       }
-      if ((member === "focus" || member === "runDetail") && body.dataName === "record") {
+      if ((body.memberPath.at(-2)?.member === "focus" || member === "runDetail") && body.dataName === "record") {
         return Response.json({ status: "ready", value: toRunRecord(body.inputs.runId === olderRun.id ? olderRun : run) });
       }
       if (member === "history" && body.dataName === "rows") {
@@ -345,6 +400,16 @@ it.each([
         const found = allTaskRows.find(item => item.primaryKey === targetId) ?? row;
         return Response.json({ status: "ready", value: found });
       }
+      if (body.dataName === "createForm") {
+        expect(body.inputs.defaultAgentId).toBe(embedded ? agentId : undefined);
+        return Response.json({ status: "ready", value: {
+          fields: ["/task/title", "/instruction", "/agentId"].map(path => ({
+            path, label: path, readOnly: false, required: true, valueSchema: { type: "string" }, control: { kind: "text" },
+          })),
+          values: { task: { title: "" }, instruction: "", agentId: body.inputs.defaultAgentId ?? "" },
+          errors: [], save: { method: "POST", path: "/scheduled-tasks", bodySchema: {} },
+        } });
+      }
       if (body.dataName === "form") {
         return Response.json({ status: "ready", value: {
           fields: [], values: {}, errors: [], revision: 1,
@@ -353,6 +418,7 @@ it.each([
       }
       return Response.json({ status: "empty" });
     }
+    if (embedded && path.startsWith("/api/panel-operation")) return writes(request) ?? nothingAt(request);
     if (path === "/api/panel-operations/intents") {
       if (refused) return Response.json({ error: { code: "DEPENDENCY_UNAVAILABLE", message: "Credential service unavailable" } }, { status: 503 });
       if ((request.body as { operationId: string }).operationId === deleteOperation) return writes(request)!;
@@ -382,6 +448,41 @@ it.each([
       const read = body as ProductPanelReadRequest;
       return read.memberPath[0].member === "pageNotice" && "dataName" in read && read.dataName === "record";
     });
+    if (embedded) {
+      const field = (path: string) => element.querySelector<HTMLInputElement>(`[data-field="${path}"] input`)!;
+      const button = (selector: string) => element.querySelector<HTMLButtonElement>(selector)!;
+      const output = () => element.querySelector("output")!;
+      const formActions = ".schedules-form-actions";
+      await vi.waitFor(() => expect(field("/task/title")?.value ?? element.querySelector("[role=alert]")?.textContent).toBe("Review"));
+      expect(field("/instruction").value).toBe("Summarize the conversation");
+      expect(field("/agentId").value).toBe(agentId);
+      expect(field("/task/title").readOnly).toBe(false);
+      field("/task/title").value = "Edited title";
+      field("/task/title").dispatchEvent(new Event("input", { bubbles: true }));
+      button("[data-change-default]").click();
+      await vi.waitFor(() => expect(field("/task/title").value).toBe("Edited title"));
+
+      button(`${formActions} button.el-button--primary`).click();
+      await vi.waitFor(() => expect(output().dataset.created).toBe(taskId));
+      expect(sent).toContainEqual(expect.objectContaining({
+        path: "/api/panel-operations/intents",
+        body: expect.objectContaining({ call: expect.objectContaining({
+          input: expect.objectContaining({ values: { task: { title: "Edited title" }, instruction: "Summarize the conversation", agentId } }),
+        }) }),
+      }));
+
+      button("[data-reopen]").click();
+      await vi.waitFor(() => expect(field("/task/title")?.value).toBe("Next draft"));
+      expect(output().dataset.created).toBeUndefined();
+      field("/task/title").value = "Discard this change";
+      field("/task/title").dispatchEvent(new Event("input", { bubbles: true }));
+      button(`${formActions} > button:not(.el-button--primary)`).click();
+      expect(output().dataset.cancelled).toBeUndefined();
+      await confirmDiscard();
+      await vi.waitFor(() => expect(output().dataset.cancelled).toBe("true"));
+      expect(element.querySelector('[data-form="create"]')).toBeNull();
+      return;
+    }
     if (inline) {
       await vi.waitFor(() => {
         expect(element.querySelectorAll(".schedules-list-col .sdk-sts-card")).toHaveLength(1);

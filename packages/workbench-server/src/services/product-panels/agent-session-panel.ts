@@ -1,9 +1,11 @@
 import { localReadRegistration, type RegisteredDataReadRegistration } from "./registered-data-read";
 import { z } from "zod";
-import type { PanelRecord } from "@ontomato/contracts/panel-projection";
+import type { AgentHostRunStatus } from "@ontomato/contracts/agent-host";
+import type { PanelRecord, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { AGENT_SESSION, DELETE_AGENT_SESSION, FAVORITE, RENAME_AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
 import { resolveLocale, tForLocale } from "../../i18n";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
+import { runOutcome } from "../../platform/agent-runtime/projection";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { assistantStore } from "../assistant/store";
@@ -68,6 +70,39 @@ export function formatShortDateTime(iso: string | undefined, locale: string): st
   }).format(new Date(ms));
 }
 
+type SessionListOptions = Parameters<typeof assistantStore.listSessions>[1];
+
+const cursorSchema = z.object({ updatedAt: z.string().datetime(), id: z.string().uuid() }).strict();
+type SessionTaskParams = Omit<SessionListOptions, "after" | "hasRun" | "workspaceId"> & {
+  cursor?: string;
+  workspaceId?: string;
+};
+
+function decodeSessionCursor(cursor: string) {
+  try {
+    return cursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString()));
+  } catch {
+    throw new HttpError(400, "Invalid session cursor", "INVALID_REQUEST");
+  }
+}
+
+function encodeSessionCursor(row: { id: string; cursorUpdatedAt: string }) {
+  return Buffer.from(JSON.stringify({ updatedAt: row.cursorUpdatedAt, id: row.id })).toString("base64url");
+}
+
+function sessionRunFields(latestRun: AgentHostRunStatus | null, locale: string | undefined) {
+  const status = latestRun
+    ? runOutcome({ ...latestRun, status: latestRun.delegatedRunning ? "running" : latestRun.status })
+    : "pending";
+  const running = status === "running";
+  return {
+    status,
+    running,
+    runningStatus: running ? sessionText(locale, "running") : "",
+    latestRun: { kind: "json" as const, value: latestRun },
+  };
+}
+
 export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const language = resolveLocale(viewer.locale);
   const untitled = sessionText(viewer.locale, "untitled");
@@ -77,46 +112,71 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
     updatedAt: sessionText(viewer.locale, "updatedAt"),
   };
 
+  async function readSessions(options: SessionListOptions, paginate: boolean): Promise<PanelRecordQuery> {
+    const limit = Math.max(1, Math.min(50, options.limit ?? 20));
+    const [found, favoriteKeys] = await Promise.all([
+      assistantStore.listSessions(owner, { ...options, limit: limit + Number(paginate) }),
+      readFavoriteKeySet(owner),
+    ]);
+    const sessions = found.slice(0, limit);
+    const statuses = sessions.length
+      ? await new RuntimeClient(owner.domainId, undefined, owner.userId).sessionStatuses(sessions.map(item => item.id))
+      : [];
+    const statusesById = new Map(statuses.map(item => [item.session.id, item]));
+    const rows = sessions.map((item): PanelRecord => {
+      const displayTitle = cleanSessionDisplayTitle(item.title, untitled);
+      const favorited = favoriteKeys.has(favoriteTargetKey(AGENT_SESSION, item.id));
+      const updatedAt = item.updated_at.toISOString();
+      const subtitle = [item.agentName, formatShortDateTime(updatedAt, language)].filter(Boolean).join(" · ");
+      const run = sessionRunFields(statusesById.get(item.id)!.latestRun, viewer.locale);
+      return {
+        className: AGENT_SESSION,
+        primaryKey: item.id,
+        label: displayTitle,
+        ...(subtitle ? { subtitle } : {}),
+        fields: {
+          title: displayTitle,
+          agentId: item.agent_id,
+          agentName: item.agentName ?? "",
+          ...(item.agentKind === null ? {} : { agentKind: item.agentKind }),
+          origin: item.origin,
+          ...(item.workspace_id === null ? {} : { workspaceId: item.workspace_id }),
+          createdAt: item.created_at.toISOString(),
+          updatedAt,
+          favorite: favorited,
+          ...run,
+        },
+        ...(run.running ? { tones: { runningStatus: "info" } } : {}),
+        fieldLabels,
+        outputs: {
+          openPath: sessionOpenPath(item.agent_id, item.id),
+          favorited,
+        },
+      };
+    });
+    const hasMore = found.length > limit;
+    return {
+      rows,
+      hasMore,
+      ...(hasMore && { nextCursor: encodeSessionCursor(sessions[limit - 1]!) }),
+    };
+  }
+
   return {
-    async list(params: { search?: string; limit?: number; agentKind?: string; agentId?: string } = {}): Promise<PanelRecord[]> {
-      const [sessions, favoriteKeys] = await Promise.all([
-        assistantStore.listUserSessions(owner, params),
-        readFavoriteKeySet(owner),
-      ]);
-      const statuses = sessions.length
-        ? await new RuntimeClient(owner.domainId, undefined, owner.userId).sessionStatuses(sessions.map(item => item.sessionId))
-        : [];
-      const runningIds = new Set(statuses.filter(item => item.latestRun?.status === "running").map(item => item.session.id));
-      return sessions.map(item => {
-        const displayTitle = cleanSessionDisplayTitle(item.title, untitled);
-        const favorited = favoriteKeys.has(favoriteTargetKey(AGENT_SESSION, item.sessionId));
-        const openPath = sessionOpenPath(item.agentId, item.sessionId);
-        const formattedUpdatedAt = formatShortDateTime(item.updatedAt, language);
-        const subtitle = [item.agentName, formattedUpdatedAt].filter(Boolean).join(" · ");
-        const running = runningIds.has(item.sessionId);
-        const runningStatus = running ? sessionText(viewer.locale, "running") : "";
-        return {
-          className: AGENT_SESSION,
-          primaryKey: item.sessionId,
-          label: displayTitle,
-          ...(subtitle ? { subtitle } : {}),
-          fields: {
-            title: displayTitle,
-            agentId: item.agentId,
-            agentName: item.agentName,
-            updatedAt: item.updatedAt,
-            favorite: favorited,
-            running,
-            runningStatus,
-          },
-          ...(running ? { tones: { runningStatus: "info" as const } } : {}),
-          fieldLabels,
-          outputs: {
-            openPath,
-            favorited,
-          },
-        };
-      });
+    async list({ agentKind, ...params }: { search?: string; limit?: number; agentKind?: string; agentId?: string } = {}): Promise<PanelRecord[]> {
+      return (await readSessions({
+        ...params,
+        ...(agentKind !== undefined && { agentKinds: [agentKind] }),
+        hasRun: true,
+      }, false)).rows;
+    },
+
+    tasks({ cursor, workspaceId, ...params }: SessionTaskParams): Promise<PanelRecordQuery> {
+      return readSessions({
+        ...params,
+        workspaceId: workspaceId === "none" ? null : workspaceId,
+        after: cursor === undefined ? undefined : decodeSessionCursor(cursor),
+      }, true);
     },
 
     async record(sessionId: string): Promise<PanelRecord> {
@@ -127,8 +187,7 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
       ]);
       const displayTitle = cleanSessionDisplayTitle(session.title, untitled);
       const openPath = sessionOpenPath(session.agent_id, session.id);
-      const running = statuses[0]?.latestRun?.status === "running";
-      const runningStatus = running ? sessionText(viewer.locale, "running") : "";
+      const run = sessionRunFields(statuses[0]?.latestRun ?? null, viewer.locale);
       return {
         className: AGENT_SESSION,
         primaryKey: session.id,
@@ -138,10 +197,9 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
           agentId: session.agent_id,
           updatedAt: session.updated_at.toISOString(),
           favorite: favorited,
-          running,
-          runningStatus,
+          ...run,
         },
-        ...(running ? { tones: { runningStatus: "info" as const } } : {}),
+        ...(run.running ? { tones: { runningStatus: "info" as const } } : {}),
         fieldLabels,
         outputs: {
           openPath,
@@ -251,6 +309,10 @@ export const agentSessionServerOperations: readonly PanelWriteServerOperation[] 
 ];
 
 export const agentSessionDataReadRegistrations: RegisteredDataReadRegistration[] = [
+  localReadRegistration(AGENT_SESSION, "tasks", {
+    read: (owner, _ranges, _facts, credentials, _key, params) =>
+      createAgentSessionReadAdapter(owner, credentials).tasks(params as SessionTaskParams),
+  }),
   localReadRegistration(AGENT_SESSION, "list", {
     read: (owner, _ranges, _facts, credentials, _key, params) => createAgentSessionReadAdapter(owner, credentials)
       .list(params as Parameters<ReturnType<typeof createAgentSessionReadAdapter>["list"]>[0]),
