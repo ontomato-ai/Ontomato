@@ -182,6 +182,7 @@ The agents list is the same shape with `platform:AgentDefinition.list` and usual
 <projection slot="tasks" @choose="openTask"></projection>
 
 <projection
+  ref="chat"
   slot="chat"
   :values="{ customInput: isPptRequest, inlineArtifactAlreadyShown }"
   @run-complete="onRunComplete"
@@ -196,11 +197,15 @@ The agents list is the same shape with `platform:AgentDefinition.list` and usual
   <template #artifact-link="link"><!-- application-specific artifact card, fallback otherwise --></template>
 </projection>
 
-<projection slot="preview"></projection>
+<projection slot="preview" :values="{ continueConversation }"></projection>
 <projection v-if="scheduleCompose" slot="schedules"></projection>
 ```
 
 ```js
+const chat = ref(null);
+function continueConversation(message) {
+  return chat.value?.component.requestArtifactAction(message);
+}
 function selectAgent(agent) {
   instance.state.setState({ agent: agent.primaryKey, session: null, artifact: null });
 }
@@ -244,7 +249,8 @@ The application owns the fixed prompt convention, the report filename convention
 1. Put the prompt predicate in `panel.mjs` and pass it as `customInput` through `:values`.
 2. In `#input`, render the application-specific card only for that prompt; otherwise render the normal user-message bubble outside the slot path. Use `input.run` and `input.preparationFailed` for progress and failure display.
 3. In `#artifact-link`, recognize the PPT artifact by its path or media type and render the application card; otherwise render `link.fallback.component` with `link.fallback.props`.
-4. When a run completes, inspect `event.artifacts` and write the chosen artifact target to the shared `artifact` state only if the application wants automatic preview. A common application convention is to select the newest `report.md` or `report-*.md` by `createdAt` and `seq`; the platform deliberately does not decide which artifact is “the report” for every application.
+4. In the preview's `#artifact-actions` slot, build the application-owned prompt from the artifact's `sessionId`, `runId`, `path`, and title, then call `continueConversation(message)`. It reaches the chat through `chat.value.component.requestArtifactAction(message)`: the send is rejected when the platform cannot admit a new run, so the action can show its own failure. Passing the same function as the preview's `continueConversation` value also makes it available to custom artifact renderers that use the shell continuation context.
+5. When a run completes, inspect `event.artifacts` and write the chosen artifact target to the shared `artifact` state only if the application wants automatic preview. A common application convention is to select the newest `report.md` or `report-*.md` by `createdAt` and `seq`; the platform deliberately does not decide which artifact is “the report” for every application.
 
 ## Scheduled task creation from a session
 

@@ -247,14 +247,29 @@ watch(
   },
 );
 
-async function send(text: string) {
+async function sendDetailed(text: string) {
   const observed = display()?.snapshot();
   const initialPage = observed?.known && observed.target?.kind === "page" ? observed.target : undefined;
   const result = await conversation.send(props.agentId, text, { initialPage });
   const sessionId = conversation.state.sessionId;
   if (result?.createdSession && result.createdSession.id === sessionId) emit("update:sessionId", sessionId);
   if (result?.delivery?.sessionRef.sessionId === sessionId) lastRunId.value = result.delivery.runId;
-  return sessionId;
+  return { sessionId, result };
+}
+
+async function send(text: string) {
+  return (await sendDetailed(text)).sessionId;
+}
+
+/** Artifact actions need a new run the reader can watch; a queued answer or refused admission is an error here. */
+async function requestArtifactAction(message: string) {
+  if (!conversation.state.sessionId || conversation.busy.value || conversation.sending.value) {
+    throw new Error(props.labels.working);
+  }
+  const { result } = await sendDetailed(message);
+  if (result?.delivery?.delivery !== "run") {
+    throw new Error(conversation.sendError.value ?? props.labels.working);
+  }
 }
 
 function report(error: unknown) {
@@ -278,6 +293,7 @@ defineExpose({
   reset: () => conversation.open(null),
   cancel: conversation.cancel,
   send,
+  requestArtifactAction,
   busy: conversation.busy,
   session: currentSession,
   hasInitialInstruction,

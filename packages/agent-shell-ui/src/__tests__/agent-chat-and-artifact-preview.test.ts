@@ -19,6 +19,7 @@ const LABELS = {
   backToFile: "Back",
   download: "Download",
   artifactMissing: "Artifact unavailable",
+  working: "The conversation is busy",
 } as unknown as ShellLabels;
 
 function makeArtifact(overrides: Partial<RuntimeArtifact> = {}): RuntimeArtifact {
@@ -575,6 +576,67 @@ describe("AgentChat Pack A enhancements", () => {
         outcome: { commit: commitSha },
       });
       expect("item" in (received.at(-1) as unknown as Record<string, unknown>)).toBe(false);
+    } finally {
+      app.unmount();
+      root.remove();
+    }
+  });
+  it("requestArtifactAction sends in the open session and resolves when a new run is admitted", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const client = makeClient();
+    const chatRef = ref<InstanceType<typeof AgentChat> | null>(null);
+    const app = createApp(() =>
+      h(AgentChat, {
+        ref: chatRef,
+        client,
+        agentId: "agent-a",
+        agent: null,
+        labels: LABELS,
+      }),
+    );
+    app.mount(root);
+    try {
+      await flush();
+      await chatRef.value!.send("Create the source report");
+      await vi.waitFor(() => expect(client.send).toHaveBeenCalledTimes(1));
+      await chatRef.value!.requestArtifactAction("Generate PPT from outputs/report.md");
+      expect(client.send).toHaveBeenCalledTimes(2);
+      expect(client.send).toHaveBeenLastCalledWith("sess-1", {
+        message: "Generate PPT from outputs/report.md",
+      });
+    } finally {
+      app.unmount();
+      root.remove();
+    }
+  });
+
+  it("requestArtifactAction rejects when the conversation cannot admit a new run", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const client = makeClient();
+    const chatRef = ref<InstanceType<typeof AgentChat> | null>(null);
+    const app = createApp(() =>
+      h(AgentChat, {
+        ref: chatRef,
+        client,
+        agentId: "agent-a",
+        agent: null,
+        labels: LABELS,
+      }),
+    );
+    app.mount(root);
+    try {
+      await flush();
+      await expect(chatRef.value!.requestArtifactAction("Generate PPT")).rejects.toThrow("The conversation is busy");
+      expect(client.send).not.toHaveBeenCalled();
+
+      await chatRef.value!.send("Create the source report");
+      await vi.waitFor(() => expect(client.send).toHaveBeenCalledTimes(1));
+      vi.mocked(client.send).mockImplementationOnce(async () => {
+        throw new Error("admission refused");
+      });
+      await expect(chatRef.value!.requestArtifactAction("Generate PPT")).rejects.toThrow("admission refused");
     } finally {
       app.unmount();
       root.remove();

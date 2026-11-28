@@ -409,6 +409,7 @@ watch(
 
 defineExpose({
   cancel: () => innerRef.value?.cancel(),
+  requestArtifactAction: (message: string) => innerRef.value!.requestArtifactAction(message),
   busy: innerBusy,
   session: currentSession,
   hasInitialInstruction,
