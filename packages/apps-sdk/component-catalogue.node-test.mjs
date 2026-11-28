@@ -635,7 +635,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(declared.get("AgentArtifactPreview").outputs, {
       artifact: { kind: "json" },
     });
-    assert.deepEqual((declared.get("AgentArtifactPreview").config ?? []).map((prop) => prop.name), ["showHeader", "inline"]);
+    assert.deepEqual((declared.get("AgentArtifactPreview").config ?? []).map((prop) => prop.name), ["showHeader", "inline", "artifactRenderers", "continueConversation"]);
     const recordGraph = declared.get("RecordGraph");
     const recordGraphConfigNames = (recordGraph.config ?? []).map((prop) => prop.name);
     for (const reclaimedGraphProp of ["nodeSize", "labelSize", "highlightBanner", "showFocusButton", "exportBackground", "exportFilename"]) {

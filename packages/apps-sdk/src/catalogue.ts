@@ -151,7 +151,7 @@ export const components: readonly ComponentMetadata[] = [
     },
     configProps: [
       "showHeader", "placeholderKey", "sessionContext", "collapsed", "greeting", "greetingKey", "description",
-      "descriptionKey", "feedback",
+      "descriptionKey", "feedback", "customInput", "artifactRenderers", "inlineArtifactAlreadyShown",
     ],
   }),
   defineComponentMeta({
@@ -170,7 +170,7 @@ export const components: readonly ComponentMetadata[] = [
     outputs: {
       artifact: { kind: "json" },
     },
-    configProps: ["showHeader", "inline"],
+    configProps: ["showHeader", "inline", "artifactRenderers", "continueConversation"],
   }),
   defineComponentMeta({
     componentId: "AgentPicker",
@@ -1175,11 +1175,11 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "agentId", "agentKind", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAgentId", "defaultAppId", "defaultCommit", "direction", "editMode",
+          "agentId", "agentIds", "agentKind", "agentKinds", "agentTarget", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAgentId", "defaultAppId", "defaultCommit", "direction", "editMode",
           "entryId", "favoritesOnly", "field", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
-          "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
+          "operation", "orgId", "origin", "origins", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
           "runId", "sampleToken", "scope", "search", "section", "selectedTask", "size", "sort", "source", "sourceType", "status",
-          "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version", "workspace", "workspaceAgent",
+          "target", "targetClass", "targetGroup", "template", "type", "values", "verdict", "version", "workspace", "workspaceAgent", "workspaceId",
         ],
       },
     },
