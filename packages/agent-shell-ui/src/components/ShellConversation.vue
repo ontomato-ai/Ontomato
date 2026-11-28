@@ -234,7 +234,7 @@ async function send(text: string) {
         </slot>
         <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" :entry="entry" :send-text="$slots.welcome ? labels.send : undefined" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" :entry="entry" @send="send" @stop="emit('stop')" />
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
       </div>
     </div>
