@@ -51,8 +51,10 @@ public final class AgentJson {
   }
 
   public static void fields(JSONObject input, String... names) {
-    if (!Set.of(names).containsAll(input.keySet()))
-      throw AgentHttpException.invalid("Unsupported request fields: " + String.join(", ", input.keySet().stream().filter(k -> !Set.of(names).contains(k)).sorted().toList()));
+    var accepted = Set.of(names);
+    if (!accepted.containsAll(input.keySet()))
+      throw AgentHttpException.invalid("Unsupported request fields: " + String.join(", ", input.keySet().stream().filter(k -> !accepted.contains(k)).sorted().toList())
+          + ". Accepted fields: " + String.join(", ", accepted.stream().sorted().toList()));
   }
 
   public static JSONObject copy(JSONObject value) {
