@@ -1,4 +1,5 @@
 import type { Component } from "vue";
+import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
 import { parseProductMarkdown } from "@ontomato/markdown";
 import type { ArtifactRendererOverride } from "./types";
@@ -97,6 +98,15 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function artifactDownloadName(artifact: RuntimeArtifact) {
+  const name = fileName(artifact.path);
+  if (fileKind(name) !== "pptx") return name;
+  const date = new Date(artifact.createdAt);
+  if (!Number.isFinite(date.getTime())) return name;
+  const stamp = date.toISOString().replace(/:/g, "-").replace("T", "_");
+  return name.replace(/\.pptx$/i, " " + stamp + ".pptx");
 }
 
 export function saveBlob(blob: Blob, name: string) {

@@ -30,6 +30,8 @@ import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import ReportActions from "./ReportActions.vue";
+import ReportPptTurn from "./ReportPptTurn.vue";
+import { readReportPptMessage } from "../report-ppt";
 import AgentScheduleRows from "./AgentScheduleRows.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
@@ -385,9 +387,12 @@ const shellLabels = useShellLabels();
 const labels = computed(() => {
   const base = shellLabels.value;
   if (!props.splitNavigation) return base;
-  if (locale.value === "zh-CN") return { ...base, newConversation: "新建会话", sessions: "历史会话", conversationTab: "会话", reportTab: "报告", fileTab: "文件预览" };
-  if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", conversationTab: "會話", reportTab: "報告", fileTab: "檔案預覽" };
-  return { ...base, conversationTab: "Conversation", reportTab: "Report", fileTab: "File preview" };
+  if (locale.value === "zh-CN") return { ...base, newConversation: "新建会话", sessions: "历史会话", conversationTab: "会话", reportTab: "报告", fileTab: "文件预览",
+    downloadPptx: "下载 PPTX", fileDetails: "文件详情", downloadFailed: "下载失败，请重试。" };
+  if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", conversationTab: "會話", reportTab: "報告", fileTab: "檔案預覽",
+    downloadPptx: "下載 PPTX", fileDetails: "檔案詳細資訊", downloadFailed: "下載失敗，請重試。" };
+  return { ...base, conversationTab: "Conversation", reportTab: "Report", fileTab: "File preview",
+    downloadPptx: "Download PPTX", fileDetails: "File details", downloadFailed: "Download failed. Try again." };
 });
 function isReportPath(path: string) {
   return path.startsWith("outputs/") && /\.md$/i.test(path);
@@ -398,6 +403,20 @@ async function requestReportPpt(sessionId: string, message: string) {
     throw new Error(labels.value.working);
   }
   await shell.value.requestArtifactAction(message);
+}
+
+function isReportPptInput(message: string) {
+  return Boolean(readReportPptMessage(message));
+}
+
+const inlinePptFiles = ref(new Map<string, { runId: string; path: string }>());
+function showPptFile(inputId: string | null, artifact: { runId: string; path: string } | null) {
+  if (!inputId) return;
+  if (artifact) inlinePptFiles.value.set(inputId, artifact);
+  else inlinePptFiles.value.delete(inputId);
+}
+function inlinePptAlreadyShown(runId: string, path: string) {
+  return [...inlinePptFiles.value.values()].some(file => file.runId === runId && file.path === path);
 }
 
 const dashboards = props.internalPages ? useDashboardStore() : null;
@@ -957,6 +976,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :split-navigation="splitNavigation"
     :inline-artifacts="splitNavigation"
     :primary-artifact-path="internalPages && splitNavigation ? isReportPath : undefined"
+    :custom-input="splitNavigation ? isReportPptInput : undefined"
+    :inline-artifact-already-shown="splitNavigation ? inlinePptAlreadyShown : undefined"
     :history-page-selected="inStandaloneSchedules || inStandaloneDashboard || Boolean(internalPages && inAgentSettings)"
     :conversation-back-label="scheduleReturnPage ? t('common.back') : undefined"
     :neutral-agent-selection="showingTasks || inStandaloneDashboard"
@@ -1119,6 +1140,15 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @objects-changed="inStandaloneSchedules ? loadSchedules() : internalPages && inAgentSettings ? nav.loadAgents() : undefined"
       />
       <slot v-else name="feature" :feature-id="page" />
+    </template>
+    <template v-if="splitNavigation && conversationId" #input="{ inputId, text, queued, run, preparationFailed }">
+      <ReportPptTurn
+        :message="text" :run="run" :pending="inputId === null" :queued="queued" :preparation-failed="preparationFailed"
+        :can-retry="Boolean(shell?.canRequestArtifactAction)"
+        :request="(message) => requestReportPpt(conversationId!, message)"
+        :resolve="(runId, path) => client.resolveArtifact(conversationId!, runId, path)"
+        @result="showPptFile(inputId, $event)"
+      />
     </template>
     <template #artifact-actions="{ artifact, title, caption }">
       <ReportActions

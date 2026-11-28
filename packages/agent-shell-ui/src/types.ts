@@ -1,9 +1,17 @@
 import type { Component } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeRunStatus } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeRunStatus, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import type { PageSkillContext } from "@ontomato/contracts/page-context";
 
 export type ArtifactPresentation = "inline" | "panel";
+
+export interface ConversationInputRun {
+  id: string;
+  status: RuntimeRunStatus;
+  stopReason: RuntimeStopReason | null;
+  errorMessage: string | null;
+  artifacts: readonly RuntimeArtifact[];
+}
 
 /** Props of every artifact renderer; the same renderer serves inline and panel views. */
 export interface ArtifactRendererProps {
@@ -274,6 +282,9 @@ export interface ShellLabels {
   close: string;
   preparing: string;
   artifactMissing: string;
+  downloadPptx?: string;
+  fileDetails?: string;
+  downloadFailed?: string;
   menu: string;
   /** Accessible name of the mark on links that open in a new tab; without it the mark is decorative. */
   opensInNewTab?: string;

@@ -22,6 +22,8 @@ export interface ShellContext {
   /** Host slots for business actions: `artifact-actions` ({artifact, title, caption?}) and `message-actions`. */
   slots: { artifactActions?: Slot; messageActions?: Slot };
   resolveArtifact(runId: string, path: string): Promise<RuntimeArtifact | null>;
+  /** A file already shown by the host next to its input can leave only its label in the reply. */
+  inlineArtifactAlreadyShown?: (runId: string, path: string) => boolean;
   /** Changes whenever a run registers new artifacts, so unresolved references retry. */
   artifactRevision: Ref<number>;
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
