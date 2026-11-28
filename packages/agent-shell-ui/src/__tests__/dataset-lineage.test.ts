@@ -53,6 +53,9 @@ it("states a dataset's queries and conditions under its table and opens the grap
     expect(notes[0].compareDocumentPosition(root.querySelector("table")!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(root.querySelector(".lineage-queries")?.textContent).toContain("Staff by college");
     expect(root.querySelector(".lineage-filter")?.textContent).toBe("Status = active");
+    expect(root.querySelector(".test-graph")).not.toBeNull();
+    root.querySelector<HTMLButtonElement>(".lineage-toggle")!.click();
+    await nextTick();
     expect(root.querySelector(".test-graph")).toBeNull();
     root.querySelector<HTMLButtonElement>(".lineage-toggle")!.click();
     await nextTick();
