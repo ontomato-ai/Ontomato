@@ -194,10 +194,8 @@ public class Neo4jAdapter extends SandboxDataAdapter {
 			JSONObject secondStep = steps.getJSONObject(1);
 			String tmpVariable = secondStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
 					.getJSONArray("objects").getJSONObject(0).getString("variable");
-			CypherQuery second = new CypherQuery();
-			second.counter = query.counter;
-			second.text = buildOutput(flattened, secondStep.getJSONObject("output"), second, true, true, tmpVariable, rowLimit);
-			return second;
+			query.text = buildOutput(flattened, secondStep.getJSONObject("output"), query, true, true, tmpVariable, rowLimit);
+			return query;
 		} catch (DslContractViolationException e) {
 			// located + actionable: let it through unchanged
 			log.warn(e.getMessage());
@@ -501,16 +499,10 @@ public class Neo4jAdapter extends SandboxDataAdapter {
 			String projection;
 			if (expr != null && !expr.isBlank()) {
 				projection = tmpVariable == null ? expr : expr.replace(tmpVariable + ".", "");
-			} else if (fromAliases) {
-				String ref = fieldName;
-				projection = aggregate ? function + "(" + (distinct ? "distinct " : "") + ref + ")" : ref;
 			} else {
-				if (aggregate) {
-					projection = function + "(" + (distinct ? "distinct " : "") + variable + "." + fieldName + ")";
-				} else {
-					projection = variable + "." + fieldName;
-					plainDistinct = plainDistinct || distinct;
-				}
+				String ref = fromAliases ? fieldName : variable + "." + fieldName;
+				projection = aggregate ? function + "(" + (distinct ? "distinct " : "") + ref + ")" : ref;
+				plainDistinct |= !aggregate && distinct;
 			}
 			if (aggregate && as != null && !as.isBlank()) {
 				plan.aggAlias.put(function + "\u0000" + fieldName, as);
