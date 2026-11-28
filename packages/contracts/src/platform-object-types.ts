@@ -1379,7 +1379,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         parameterMode: "fixed",
         params: {
           search: "keyword", limit: "size", cursor: "cursor", agentId: "agentId",
-          agentIds: "agentIds", agentKinds: "agentKinds", origin: "sessionOrigin", workspaceId: "sessionWorkspace",
+          agentIds: "agentIds", agentKinds: "agentKinds", origins: "sessionOrigins", workspaceId: "sessionWorkspace",
         },
         result: "panelRecordQuery",
         rowType: AGENT_SESSION,

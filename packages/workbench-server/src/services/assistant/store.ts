@@ -37,7 +37,7 @@ interface SessionListOptions {
   agentId?: string;
   agentIds?: string[];
   agentKinds?: string[];
-  origin?: SessionRow["origin"];
+  origins?: SessionRow["origin"][];
   workspaceId?: string | null;
   after?: { updatedAt: string; id: string };
   hasRun?: boolean;
@@ -236,12 +236,13 @@ export const assistantStore = {
   /** Lists sessions private to the current user and domain, ordered for keyset pagination. */
   async listSessions(owner: AssistantOwner, options: SessionListOptions) {
     const search = options.search?.trim();
-    const params: unknown[] = [owner.domainId, owner.userId, options.origin ?? "user"];
-    const where = ["s.domain_id=$1", "s.owner_id=$2", "s.origin=$3"];
+    const params: unknown[] = [owner.domainId, owner.userId];
+    const where = ["s.domain_id=$1", "s.owner_id=$2"];
     const bind = (value: unknown) => {
       params.push(value);
       return `$${params.length}`;
     };
+    if (options.origins !== undefined) where.push(`s.origin=ANY(${bind(options.origins)}::text[])`);
     if (options.hasRun) where.push("s.latest_run_id IS NOT NULL");
     if (search) {
       const pattern = bind(`%${search.replace(/[\\%_]/g, "\\$&")}%`);

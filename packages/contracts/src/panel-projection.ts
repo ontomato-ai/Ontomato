@@ -312,7 +312,7 @@ export const panelReadParameterSchemas = {
   agentId: runtimeIdSchema,
   agentIds: z.array(runtimeIdSchema),
   agentKinds: z.array(z.string().trim().min(1)),
-  sessionOrigin: sessionOriginSchema,
+  sessionOrigins: z.array(sessionOriginSchema).describe("Omit to include sessions from any origin."),
   sessionWorkspace: z.union([runtimeIdSchema, z.literal("none")])
     .describe('A workspace UUID, or "none" to match sessions with no workspace.'),
   agentSkillTarget: agentSkillTargetSchema,
@@ -368,7 +368,6 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "objectGrantField":
     case "agentKind":
     case "agentId":
-    case "sessionOrigin":
     case "sessionWorkspace":
     case "agentSkillTarget":
     case "workspaceCommit":
@@ -406,6 +405,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
       return input?.kind === "scalar" && input.type === "string";
     case "agentIds":
     case "agentKinds":
+    case "sessionOrigins":
       return input?.kind === "json" || (input?.kind === "list" && input.items.kind === "scalar" && input.items.type === "string");
     case "productTemplate":
     case "favoritesOnly":

@@ -351,7 +351,7 @@ test("reference pickers declare the named reads they use", async () => {
   assert.deepEqual(panelReadResultSchemas.panelOptionList.parse({ options: [option] }), { options: [option] });
 });
 
-test("session tasks accept declarative agent filters, origin and a workspace selector", async () => {
+test("session tasks accept declarative agent filters, multiple origins and a workspace selector", async () => {
   const { registerDirectProjectionRequestSchema } = await import("./product-panels");
   const { panelReadParameterSchemas, panelReadInputMatches } = await import("./panel-projection");
   const input = { kind: "list", items: { kind: "scalar", type: "string" } } as const;
@@ -364,16 +364,22 @@ test("session tasks accept declarative agent filters, origin and a workspace sel
       params: {
         agentIds: { input: "agents" },
         agentKinds: { literal: ["regular", "custom"] },
-        origin: { literal: "delegated" },
+        origins: { literal: ["user", "scheduled"] },
         workspaceId: { literal: "none" },
       },
     } },
   };
   registerDirectProjectionRequestSchema.parse(projection);
+  const { origins: _origins, ...params } = projection.data.rows.params;
+  assert.equal(registerDirectProjectionRequestSchema.safeParse({
+    ...projection,
+    data: { rows: { ...projection.data.rows, params: { ...params, origin: { literal: "user" } } } },
+  }).success, false);
   assert.equal(panelReadInputMatches("agentIds", input), true);
+  assert.equal(panelReadInputMatches("sessionOrigins", input), true);
   assert.equal(panelReadParameterSchemas.agentIds.safeParse(["invalid-uuid"]).success, false);
   assert.equal(panelReadParameterSchemas.agentKinds.safeParse("regular").success, false);
-  assert.equal(panelReadParameterSchemas.sessionOrigin.safeParse("unknown").success, false);
+  assert.equal(panelReadParameterSchemas.sessionOrigins.safeParse(["user", "unknown"]).success, false);
   assert.equal(panelReadParameterSchemas.sessionWorkspace.safeParse("unknown").success, false);
 });
 

@@ -1713,7 +1713,7 @@ it("reads favorites and sessions with compiled parameters and only contacts Runt
   vi.stubGlobal("fetch", fetch);
 
   const sessionParams = { search: "Plan", limit: 1, agentKind: "regular", agentId };
-  const taskParams = { agentIds: [agentId], agentKinds: ["regular"], origin: "scheduled", workspaceId, limit: 1 };
+  const taskParams = { agentIds: [agentId], agentKinds: ["regular"], origins: ["user", "scheduled"], workspaceId, limit: 1 };
   const cases = [
     { typeId: FAVORITE, method: "status", params: { object: { className: DASHBOARD, primaryKey: "followed" } }, result: "panelRecord" },
     { typeId: FAVORITE, method: "dashboardCardsStatus", params: {}, result: "panelRecord" },
@@ -1744,7 +1744,9 @@ it("reads favorites and sessions with compiled parameters and only contacts Runt
   }
   expect(mocks.favoriteState).toHaveBeenCalledWith(viewer);
   expect(mocks.isFavorite).toHaveBeenCalledWith(viewer, DASHBOARD, "followed");
-  expect(mocks.sessions).toHaveBeenCalledWith(viewer, { search: "Plan", limit: 1, agentKinds: ["regular"], agentId, hasRun: true });
+  expect(mocks.sessions).toHaveBeenCalledWith(viewer, {
+    search: "Plan", limit: 1, agentKinds: ["regular"], agentId, origins: ["user"], hasRun: true,
+  });
   expect(mocks.sessions).toHaveBeenCalledWith(viewer, { ...taskParams, limit: 2 });
   expect(mocks.session).toHaveBeenCalledWith(sessionId, viewer);
   expect(fetch).toHaveBeenCalledTimes(3);

@@ -96,18 +96,20 @@ it("binds session filters inside the owner's query before applying the page limi
   mocks.query.mockResolvedValue({ rows: [] });
   const after = { updatedAt: "2026-11-25T00:00:00.000123Z", id: sessionId };
   await assistantStore.listSessions(owner, {
-    agentIds: [agentId], agentKinds: ["regular", "custom"], origin: "delegated",
+    agentIds: [agentId], agentKinds: ["regular", "custom"], origins: ["user", "scheduled"],
     workspaceId: null, after, search: "%Plan", limit: 3,
   });
   const [sql, params] = mocks.query.mock.lastCall!;
-  expect(sql).toContain("s.domain_id=$1 AND s.owner_id=$2 AND s.origin=$3");
+  expect(sql).toContain("s.domain_id=$1 AND s.owner_id=$2 AND s.origin=ANY($3::text[])");
   expect(sql).toContain("s.agent_id=ANY($5::uuid[]) AND a.kind=ANY($6::text[])");
   expect(sql).toContain("s.workspace_id IS NULL AND (s.updated_at,s.id)<($7::timestamptz,$8::uuid)");
   expect(sql).toContain("ORDER BY s.updated_at DESC, s.id DESC");
-  expect(params).toEqual([owner.domainId, owner.userId, "delegated", "%\\%Plan%", [agentId], ["regular", "custom"], after.updatedAt, after.id, 3]);
+  expect(params).toEqual([owner.domainId, owner.userId, ["user", "scheduled"], "%\\%Plan%", [agentId], ["regular", "custom"], after.updatedAt, after.id, 3]);
 
-  await assistantStore.listSessions(owner, { hasRun: true, agentId, workspaceId });
-  const [legacySql, legacyParams] = mocks.query.mock.lastCall!;
-  expect(legacySql).toContain("s.latest_run_id IS NOT NULL AND s.agent_id=$4 AND s.workspace_id=$5");
-  expect(legacyParams.slice(0, 5)).toEqual([owner.domainId, owner.userId, "user", agentId, workspaceId]);
+  await assistantStore.listSessions(owner, { agentId, workspaceId, limit: 3 });
+  const [unfilteredSql, unfilteredParams] = mocks.query.mock.lastCall!;
+  expect(unfilteredSql).not.toContain("s.origin");
+  expect(unfilteredSql).not.toContain("s.latest_run_id IS NOT NULL");
+  expect(unfilteredSql).toContain("s.agent_id=$3 AND s.workspace_id=$4");
+  expect(unfilteredParams).toEqual([owner.domainId, owner.userId, agentId, workspaceId, 3]);
 });

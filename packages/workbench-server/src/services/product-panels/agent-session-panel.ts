@@ -167,6 +167,7 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
       return (await readSessions({
         ...params,
         ...(agentKind !== undefined && { agentKinds: [agentKind] }),
+        origins: ["user"],
         hasRun: true,
       }, false)).rows;
     },
