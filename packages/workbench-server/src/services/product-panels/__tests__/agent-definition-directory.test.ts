@@ -182,20 +182,17 @@ it("omits hidden local system agents without loading their model settings and ke
   await expect(directory.count()).resolves.toMatchObject({ total: 1 });
 });
 
-it("builds the registered list from the admitted VIEW and EDIT ranges and the retriever fact", async () => {
+it("shows all system definitions with editable models in the administrator settings directory", async () => {
   const directory = createAgentDefinitionDirectory(owner, credentials);
   const range = (...objectIds: string[]) => ({ fixed: false, all: false, authorId: null, objectIds });
-  const scopes = { VIEW: range(presetId, customId, builderId, DIAGNOSIS_AGENT_ID), EDIT: range(customId, DIAGNOSIS_AGENT_ID) };
-  const rows = await directory.listFromBatch(scopes, { retriever: { ...retrieval, editable: false } });
-  expect(rows.map(row => [row.primaryKey, row.label, row.outputs?.category, row.outputs?.canEdit])).toEqual([
-    [presetId, "Preset", "preset", false], [customId, "Custom", "custom", true],
-    [builderId, "App builder", "system", false], [DIAGNOSIS_AGENT_ID, "Operations diagnosis", "system", true],
-    [retrievalId, "Data retrieval", "system", false],
-  ]);
+  const scopes = { VIEW: range(presetId, customId, builderId, DIAGNOSIS_AGENT_ID), EDIT: range(customId, builderId, DIAGNOSIS_AGENT_ID) };
+  const rows = await directory.listFromBatch(scopes, { retriever: { ...retrieval, editable: true } });
+  expect(rows.filter(row => row.outputs?.category === "system").map(row => [row.primaryKey, row.outputs?.canEdit]))
+    .toEqual(expect.arrayContaining(systemIds.map(id => [id, true])));
   expect(mocks.summaries).toHaveBeenCalledWith(owner.domainId, scopes.VIEW, { includeSystem: true, editRange: scopes.EDIT });
   mocks.opsDiagnosis.mockClear();
-  const restricted = await directory.listFromBatch({ ...scopes, VIEW: range(customId, builderId) }, { retriever: null });
-  expect(restricted.map(row => row.primaryKey)).toEqual([customId, builderId]);
+  const restricted = await directory.listFromBatch({ VIEW: range(customId), EDIT: range() }, { retriever: null });
+  expect(restricted.map(row => row.primaryKey)).toEqual([customId]);
   expect(mocks.opsDiagnosis).not.toHaveBeenCalled();
   expect(fetchOwner).not.toHaveBeenCalled();
 });

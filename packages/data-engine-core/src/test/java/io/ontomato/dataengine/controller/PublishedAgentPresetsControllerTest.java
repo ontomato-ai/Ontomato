@@ -39,6 +39,6 @@ class PublishedAgentPresetsControllerTest {
         verify(store).domainPolicy("domain");
         verify(store).grantObject(new ObjectGrant("default", new ObjectTarget("domain", Kind.AGENT, id), Verb.USE, null));
         verifyNoMoreInteractions(store);
-        verify(roles).initialize("domain", List.of(id));
+        verify(roles).initialize("domain", List.of(id), true);
     }
 }
