@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.dataAdapter;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -71,44 +72,80 @@ public final class DslGrammarValidator {
 		if (steps == null) {
 			return;
 		}
+		Map<String, Integer> temporaryTables = new HashMap<>();
 		for (int s = 0; s < steps.size(); s++) {
 			JSONObject step = steps.getJSONObject(s);
 			checkOutputFields(step, s);
 			checkOutputTopK(step, "steps[" + s + "].output.fields");
-			JSONArray patterns = step == null || step.getJSONObject("graph") == null
-					? null
-					: step.getJSONObject("graph").getJSONArray("patterns");
-			if (patterns == null) {
+			checkStepObjects(step, s, classDefs, temporaryTables);
+			rememberTemporaryTable(step, s, temporaryTables);
+		}
+	}
+
+	private static void checkStepObjects(JSONObject step, int s, List<Map<String, Object>> classDefs,
+			Map<String, Integer> temporaryTables) {
+		JSONArray patterns = step == null || step.getJSONObject("graph") == null
+				? null
+				: step.getJSONObject("graph").getJSONArray("patterns");
+		if (patterns == null) {
+			return;
+		}
+		for (int p = 0; p < patterns.size(); p++) {
+			JSONObject pattern = patterns.getJSONObject(p);
+			JSONArray objects = pattern == null ? null : pattern.getJSONArray("objects");
+			if (objects == null) {
 				continue;
 			}
-			for (int p = 0; p < patterns.size(); p++) {
-				JSONObject pattern = patterns.getJSONObject(p);
-				JSONArray objects = pattern == null ? null : pattern.getJSONArray("objects");
-				if (objects == null) {
+			for (int o = 0; o < objects.size(); o++) {
+				JSONObject object = objects.getJSONObject(o);
+				JSONObject conditions = object == null ? null : object.getJSONObject("conditions");
+				checkTemporaryTableConditions(object, conditions, temporaryTables,
+						"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions");
+				checkConditionKeys(conditions,
+						"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions");
+				checkVectorTopK(conditions == null ? null : conditions.getJSONObject("vector"),
+						"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions.vector");
+				JSONObject timeseries = conditions == null ? null : conditions.getJSONObject("timeseries");
+				if (timeseries == null) {
 					continue;
 				}
-				for (int o = 0; o < objects.size(); o++) {
-					JSONObject object = objects.getJSONObject(o);
-					JSONObject conditions = object == null ? null : object.getJSONObject("conditions");
-					checkConditionKeys(conditions,
-							"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions");
-					checkVectorTopK(conditions == null ? null : conditions.getJSONObject("vector"),
-							"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions.vector");
-					JSONObject timeseries = conditions == null ? null : conditions.getJSONObject("timeseries");
-					if (timeseries == null) {
-						continue;
-					}
-					// An unresolvable class is a different failure; do not disguise it as a grammar error.
-					Map<String, Object> classDef = findClassDef(classDefs, object.getString("class"));
-					if (classDef == null) {
-						continue;
-					}
-					String path = "steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions.timeseries";
-					checkTimeseriesFields(timeseries.getJSONObject("properties"), path, object.getString("class"),
-							classDef);
+				// An unresolvable class is a different failure; do not disguise it as a grammar error.
+				Map<String, Object> classDef = findClassDef(classDefs, object.getString("class"));
+				if (classDef == null) {
+					continue;
 				}
+				String path = "steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions.timeseries";
+				checkTimeseriesFields(timeseries.getJSONObject("properties"), path, object.getString("class"),
+						classDef);
 			}
 		}
+	}
+
+	/** Remember the temporary table a step saves, so later steps can recognize objects that read it. */
+	private static void rememberTemporaryTable(JSONObject step, int s, Map<String, Integer> temporaryTables) {
+		JSONObject output = step == null ? null : step.getJSONObject("output");
+		String table = output == null ? null : output.getString("save_table");
+		if (table != null) temporaryTables.put(table, s);
+	}
+
+	/**
+	 * An object that reads a temporary table takes no conditions: the DSL rules put object filters in the step
+	 * that saves the table (product owner, 2026-10-10). Adapters do not translate them, so accepting one would
+	 * silently drop the filter.
+	 */
+	private static void checkTemporaryTableConditions(JSONObject object, JSONObject conditions,
+			Map<String, Integer> temporaryTables, String path) {
+		Integer saved = object == null ? null : temporaryTables.get(object.getString("class"));
+		if (saved == null || conditions == null || conditions.values().stream().allMatch(DslGrammarValidator::emptyCondition)) {
+			return;
+		}
+		throw invalid(path, "`" + object.getString("class") + "` is the temporary table saved by steps[" + saved
+				+ "]; an object that reads a temporary table takes no conditions. Filter the objects in steps[" + saved
+				+ "] before it saves the table");
+	}
+
+	private static boolean emptyCondition(Object value) {
+		return value == null || value instanceof Map<?, ?> map && map.isEmpty() || value instanceof List<?> list && list.isEmpty();
 	}
 
 	/** Each {@code and}/{@code or} entry of a {@code vector} condition may carry a valid {@code topK}. */

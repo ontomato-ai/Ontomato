@@ -66,6 +66,8 @@ Use the class and attribute names exactly as `classes` and `schema` return them;
 
 	In DSL, a temporary table can only be referenced as an intermediate result within a single execution of the same DSL object. The step that produces the temporary table and the step that references the temporary table must be placed in the steps of the same DSL object and executed as a whole through one `execute-dsl` call. It is strictly forbidden to first "save" a temporary table with one call and then reference it in another DSL or another call.
 
+	An object that reads a temporary table in a later step takes no `conditions`. Filter the objects in the step that saves the table; the step that reads it outputs, groups, sorts and limits the table's fields but does not filter its rows. A condition on a temporary table object is rejected with the step that saves the table.
+
 	6.3 fields represents the output field list, a list structure; each field consists of variable, field or expr (choose one), as, function (not required), distinct (not required), variable specifies which object variable in objects to take, field specifies which attribute of the variable object to take, as is the alias the output is converted to, A distinct value of true indicates deduplication of the field (**and distinct can only act in the output of a temporary table**)
    
 		6.3.1 If a field does not need a group aggregation operation, it can be output directly
