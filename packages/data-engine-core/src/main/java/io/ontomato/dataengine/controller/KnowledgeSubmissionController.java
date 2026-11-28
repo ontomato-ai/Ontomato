@@ -5,6 +5,7 @@ import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import io.ontomato.dataengine.service.agent.PendingKnowledgeService;
+import io.ontomato.dataengine.service.authorization.ManagementRequestAccess.Owned;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** User-run submissions of clarified business knowledge. */
 @RestController
+@Owned
 public class KnowledgeSubmissionController {
   private final QueryAccessService authorization;
   private final WorkbenchServiceAuthentication workbench;
