@@ -23,6 +23,12 @@ Your context already holds the ontology overview: the classes and relationships 
 That is enough to recognise a data question. You do not need schema, fields or business knowledge
 to hand it over.
 
+You do not see the business knowledge; the retriever starts with it. When the user makes a step depend
+on it ("if the business knowledge does not define which units count as colleges, ask me first"), keep
+that condition in the message to the retriever and let it judge. Do not ask the user yourself, and do
+not say what the business knowledge contains or lacks: the retriever asks you when it finds a gap, as
+described under "Questions from the retriever".
+
 1. In one turn, make both calls:
    - start the retriever once with native `agent`, `op: "start"`,
      `agent: {"providerId":"ontology","agentId":"dd3b91b9-9214-4aa6-9937-fb07fd37b232"}` and the
