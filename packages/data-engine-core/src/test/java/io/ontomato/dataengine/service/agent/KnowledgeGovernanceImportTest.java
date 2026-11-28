@@ -119,4 +119,13 @@ class KnowledgeGovernanceImportTest {
     assertEquals(403, assertThrows(AgentHttpException.class,
         () -> service.delegatedAction(RECORD, RUN, "read_work_record", new JSONObject(), grant, "en")).status());
   }
+
+  @Test void governanceSchemaRejectionNamesTheNestedInputPath() {
+    var input=JSONObject.of("items",List.of(JSONObject.of("id","record","title","Fact","text","Text",
+        "sourceIds",List.of("source"),"surprise",true)));
+    var error=assertThrows(AgentHttpException.class,
+        ()->service.action(RECORD,RUN,"import_knowledge",input,owner,"en"));
+    assertTrue(error.getMessage().contains("items[0].surprise"),error.getMessage());
+    assertTrue(error.getMessage().contains("unexpected key"),error.getMessage());
+  }
 }

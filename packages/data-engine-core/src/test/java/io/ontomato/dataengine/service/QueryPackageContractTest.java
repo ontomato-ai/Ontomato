@@ -215,4 +215,49 @@ class QueryPackageContractTest {
     function.setCode("a second definition");
     assertThrows(IllegalArgumentException.class, () -> QueryPackage.prepareReadFunction(function, definitions()));
   }
+
+  @Test
+  void schemaRejectionNamesTheDeepestInputPathAndUnexpectedKey() throws Exception {
+    var invalid = QueryPackage.copy(bundle());
+    invalid.getJSONObject("manifest").getJSONObject("computation").getJSONArray("operations").getJSONObject(0)
+        .put("inputs", JSONArray.of(JSONObject.of("operation", "sum", "role", "value", "key", "extra")));
+    var error = assertThrows(IllegalArgumentException.class, () -> QueryPackage.validate(invalid));
+    assertTrue(error.getMessage().contains("manifest.computation.operations[0].inputs[0].key"), error.getMessage());
+    assertTrue(error.getMessage().contains("unexpected key"), error.getMessage());
+    assertTrue(error.getMessage().contains("operation"), error.getMessage());
+  }
+
+  @Test
+  void columnLabelMismatchListsMissingAndExtraOutputs() {
+    var graph = JSONObject.of("nodes", JSONArray.of(
+        JSONObject.of("kind", "output", "key", "total"), JSONObject.of("kind", "output", "key", "count")));
+    var error = assertThrows(IllegalArgumentException.class,
+        () -> QueryPackage.labels(graph, JSONObject.of("total", "Total", "legacy", "Legacy")));
+    assertTrue(error.getMessage().contains("missing labels for [count]"), error.getMessage());
+    assertTrue(error.getMessage().contains("extra labels for [legacy]"), error.getMessage());
+  }
+
+  @Test
+  void oneComputationOperationCanConsumeAnotherOperation() {
+    String query = "{\"problem\":\"employee salaries\",\"answer\":{\"steps\":[{\"graph\":{\"patterns\":[{\"objects\":[{\"idx\":0,\"variable\":\"e\",\"class\":\"/Employee\"}]}]},\"output\":{\"to_user\":true,\"fields\":[{\"variable\":\"e\",\"field\":\"salary\",\"as\":\"salary\"}]}}]}}";
+    var pkg = JSONObject.of("manifest", JSONObject.of(
+        "schema", "ontomato.query-package.v1",
+        "entry", JSONObject.of("kind", "python", "path", "calculate.py"),
+        "queries", JSONObject.of("main", "queries/main.json"),
+        "modules", new JSONArray(), "parameterDefs", new JSONArray(), "parameterBindings", new JSONArray(),
+        "computation", JSONObject.of(
+            "operations", JSONArray.of(
+                JSONObject.of("id", "rows", "operation", "project", "expression", "main.salary",
+                    "inputs", JSONArray.of(JSONObject.of("query", "main", "key", "salary", "role", "value"))),
+                JSONObject.of("id", "total", "operation", "aggregate", "expression", "sum(rows)",
+                    "inputs", JSONArray.of(JSONObject.of("operation", "rows", "role", "value")))),
+            "outputs", JSONArray.of(JSONObject.of("key", "total", "from", "total")))),
+        "files", JSONArray.of(
+            JSONObject.of("path", "queries/main.json", "content", query),
+            JSONObject.of("path", "calculate.py", "content", "# ontomato-python:2\nimport json\nfrom query_runtime import execute_dsl_file\nrows = execute_dsl_file('queries/main.json')\nvalues = [row['salary'] for row in rows]\nprint(json.dumps({'answer': [{'total': sum(values)}]}))\n")));
+    var accepted = QueryPackage.accept(pkg);
+    assertEquals("rows", accepted.getJSONObject("manifest").getJSONObject("computation")
+        .getJSONArray("operations").getJSONObject(1).getJSONArray("inputs").getJSONObject(0).getString("operation"));
+  }
+
 }

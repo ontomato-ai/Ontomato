@@ -76,4 +76,11 @@ class AgentContractBoundaryTest {
       assertThrows(IllegalArgumentException.class, () -> service.insert("person", raw, null, "d"));
     verifyNoInteractions(registry);
   }
+
+  @Test void authoringSchemaRejectionNamesTheInputPath() {
+    var error = assertThrows(io.ontomato.dataengine.service.agent.AgentHttpException.class,
+        () -> AuthoringContract.validate("resetRequest", JSONObject.of("surprise", true)));
+    assertTrue(error.getMessage().contains("surprise"), error.getMessage());
+    assertTrue(error.getMessage().contains("unexpected key"), error.getMessage());
+  }
 }

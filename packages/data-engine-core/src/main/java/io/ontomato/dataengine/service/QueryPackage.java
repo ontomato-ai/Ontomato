@@ -4,16 +4,19 @@ import com.alibaba.fastjson2.*;
 import com.alibaba.fastjson2.schema.JSONSchema;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
+import io.ontomato.dataengine.util.JsonSchemaError;
 import java.util.*;
 
 /** A closed query source bundle. DSL provenance is derived; Python computation is declared. */
 public final class QueryPackage {
   private QueryPackage() {}
+  private static final JSONObject SCHEMA_JSON;
   private static final JSONSchema SHAPE;
   static {
     try (var in = QueryPackage.class.getResourceAsStream("/ontology-contracts/query-package.schema.json")) {
       if (in == null) throw new IllegalStateException("Missing query package schema");
-      SHAPE = JSONSchema.of(JSON.parseObject(in.readAllBytes()));
+      SCHEMA_JSON = JSON.parseObject(in.readAllBytes());
+      SHAPE = JSONSchema.of(SCHEMA_JSON);
     } catch (Exception e) { throw new ExceptionInInitializerError(e); }
   }
 
@@ -23,7 +26,7 @@ public final class QueryPackage {
 
   public static JSONObject validate(JSONObject value) {
     var result = SHAPE.validate(value);
-    if (!result.isSuccess()) throw new IllegalArgumentException("Invalid query package: " + result.getMessage());
+    if (!result.isSuccess()) throw new IllegalArgumentException("Invalid query package: " + JsonSchemaError.explain(SCHEMA_JSON, value, result.getMessage()));
     var manifest = value.getJSONObject("manifest");
     var files = files(value);
     var expected = new HashSet<String>();
@@ -218,8 +221,16 @@ public final class QueryPackage {
   }
 
   public static void labels(JSONObject graph, JSONObject labels) {
-    if (labels == null || !new HashSet<>(QuerySourceAnalysis.outputKeys(graph)).equals(labels.keySet()))
-      throw new IllegalArgumentException("Column labels must match package outputs");
+    Set<String> outputs = new LinkedHashSet<>(QuerySourceAnalysis.outputKeys(graph));
+    Set<String> declared = labels == null ? Set.of() : labels.keySet();
+    if (!outputs.equals(declared)) {
+      Set<String> missing = new LinkedHashSet<>(outputs);
+      missing.removeAll(declared);
+      Set<String> extra = new LinkedHashSet<>(declared);
+      extra.removeAll(outputs);
+      throw new IllegalArgumentException("Column labels must match package outputs; missing labels for "
+          + missing + "; extra labels for " + extra);
+    }
     for (Object item : graph.getJSONArray("nodes")) {
       var node = (JSONObject) item;
       if ("output".equals(node.getString("kind"))) {
