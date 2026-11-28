@@ -59,7 +59,7 @@ class AgentWritePostgresContractTest {
           Map.of("className", "org", "attrs", List.of(id)),
           Map.of("className", "person", "attrs", List.of(id, Map.of("name", "org_id", "type", "varchar"),
               Map.of("name", "label", "type", "varchar")))), "relationship_rule",
-          Map.of("staff", JSONObject.of("fromclass", "person", "toclass", "org", "fromField", "org_id", "toField", "id", "type", "n:1")));
+          Map.of("staff", JSONObject.of("fromclass", "person", "toclass", "org", "fromField", "org_id", "toField", "id", "type", OntologyRelation.KIND_FK)));
       var connection = new DataAdapterConnection();
       connection.put("url", scoped);
       connection.put("user", user);
