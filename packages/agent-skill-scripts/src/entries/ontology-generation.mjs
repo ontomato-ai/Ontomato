@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { parseJsonText } from "../shared/json-input.mjs";
 
 export async function generationCommand(args, env = process.env, request = fetch) {
   const [command, ...values] = args;
@@ -19,7 +20,7 @@ export async function generationCommand(args, env = process.env, request = fetch
     if (!response.ok || result.error) throw new Error(typeof result.error === "string" ? result.error : result.error?.message ?? `HTTP ${response.status}`);
     return result;
   }
-  const bodyFile = async (name) => JSON.parse(await readFile(name.replace(/^@/, ""), "utf8"));
+  const bodyFile = async (name) => parseJsonText(await readFile(name.replace(/^@/, ""), "utf8"), name.replace(/^@/, ""));
   let operation = command, body;
   switch (command) {
     case "explain":

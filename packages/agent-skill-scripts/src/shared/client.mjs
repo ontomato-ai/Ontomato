@@ -3,13 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
-export function readJson(argument) {
-  return JSON.parse(
-    argument.startsWith("@")
-      ? fs.readFileSync(argument.slice(1), "utf8")
-      : argument,
-  );
-}
+import { readJsonArgument as readJson } from "./json-input.mjs";
+export { readJson };
 function commandHeaders(headers) {
   return typeof headers === "function" ? headers() : headers;
 }

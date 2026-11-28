@@ -1,4 +1,5 @@
 import { readFile, lstat } from "node:fs/promises";
+import { parseJsonText } from "./json-input.mjs";
 import path from "node:path";
 
 export function packagePath(name) {
@@ -25,7 +26,7 @@ async function source(root, name) {
 export async function collectPackage(filename) {
   const absolute = path.resolve(filename.replace(/^@/, ""));
   if ((await lstat(absolute)).isSymbolicLink()) throw new Error("Package links are not allowed");
-  const text = await readFile(absolute, "utf8"), value = JSON.parse(text);
+  const text = await readFile(absolute, "utf8"), value = parseJsonText(text, filename.replace(/^@/, ""));
   if (value.schema !== "ontomato.query-package.v1") {
     if (!value.answer?.steps) throw new Error('Expected one DSL object, {"problem": "...", "answer": {"steps": [...]}} (not an array), or a query-package manifest with "schema": "ontomato.query-package.v1"');
     return dslPackage(text);

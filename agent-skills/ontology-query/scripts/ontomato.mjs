@@ -7,13 +7,32 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 
-// packages/agent-skill-scripts/src/shared/client.mjs
+// packages/agent-skill-scripts/src/shared/json-input.mjs
 import fs from "node:fs";
-function readJson(argument) {
-  return JSON.parse(
-    argument.startsWith("@") ? fs.readFileSync(argument.slice(1), "utf8") : argument
-  );
+var WINDOW = 60;
+function parseJsonText(text, source) {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const position = Number(/position (\d+)/.exec(error.message)?.[1]);
+    if (!Number.isInteger(position)) throw new Error(`${source}: ${error.message}`, { cause: error });
+    const lineStart = text.lastIndexOf("\n", position - 1) + 1;
+    const lineEnd = text.indexOf("\n", position);
+    const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
+    const column = position - lineStart;
+    const from = Math.max(0, column - WINDOW), to = Math.min(line.length, column + WINDOW);
+    const excerpt = (from > 0 ? "\u2026" : "") + line.slice(from, to) + (to < line.length ? "\u2026" : "");
+    const caret = " ".repeat(column - from + (from > 0 ? 1 : 0)) + "^";
+    throw new Error(`${source}: ${error.message}
+${excerpt}
+${caret}`, { cause: error });
+  }
 }
+function readJsonArgument(argument) {
+  return argument.startsWith("@") ? parseJsonText(fs.readFileSync(argument.slice(1), "utf8"), argument.slice(1)) : parseJsonText(argument, "inline JSON");
+}
+
+// packages/agent-skill-scripts/src/shared/client.mjs
 function commandHeaders(headers2) {
   return typeof headers2 === "function" ? headers2() : headers2;
 }
@@ -78,7 +97,7 @@ async function ontologyQueryCommand(cfg2, argv, headers2 = {}) {
     body = { className: args2[0], attribute: args2[1], like, limit };
   } else if (command2 === "execute-dsl") {
     endpoint = "/execute-dsl";
-    body = { dsl: readJson(args2[0]) };
+    body = { dsl: readJsonArgument(args2[0]) };
   } else if (command2 === "metrics" || command2 === "knowledge") {
     const limit = finiteNumber(take(args2, "--limit") ?? "10", "--limit"), cursor = take(args2, "--cursor") ?? null;
     endpoint = command2 === "metrics" ? "/metrics/search" : "/knowledge/search";
@@ -92,7 +111,7 @@ async function ontologyQueryCommand(cfg2, argv, headers2 = {}) {
     const bindingId = take(args2, "--binding");
     if (!revision) throw new Error("--revision from metrics is required");
     endpoint = "/metrics/execute";
-    body = { id: args2[0], revision, parameters: args2[1] ? readJson(args2[1]) : {}, ...bindingId ? { bindingId } : {} };
+    body = { id: args2[0], revision, parameters: args2[1] ? readJsonArgument(args2[1]) : {}, ...bindingId ? { bindingId } : {} };
   } else
     throw new Error(
       "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge"
@@ -231,7 +250,7 @@ async function runMetricCommand(args2) {
     id: args2[0],
     revision,
     ...bindingId ? { bindingId } : {},
-    ...params ? { parameters: readJson(params) } : {}
+    ...params ? { parameters: readJsonArgument(params) } : {}
   }, question);
   const target = `outputs/metrics/${key}.dataset.json`;
   const output = path.resolve(target), root = path.resolve(process.env.ONTOMATO_OUTPUT_DIR ?? "outputs");
