@@ -6,11 +6,11 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Applies the shipped object policies when Workbench installs preset definitions. */
+/** Applies the shipped object policies when an owner installs preset agent definitions. */
 @Service
 public class PresetAgentPolicies {
     public interface RolePolicies {
-        void initialize(String domainId, List<String> ids);
+        void initialize(String domainId, List<String> ids, boolean grantRoleUse);
     }
 
     private final AuthorizationStore store;
@@ -21,12 +21,13 @@ public class PresetAgentPolicies {
         this.roles = roles;
     }
 
+    /** Workbench presets also keep their existing direct role USE grants. */
     @Transactional
-    public void initialize(String domainId, List<String> ids) {
+    public void initialize(String domainId, List<String> ids, boolean grantRoleUse) {
         String policyId = store.domainPolicy(domainId).policyId();
         for (String id : ids) {
             store.grantObject(new ObjectGrant(policyId, new ObjectTarget(domainId, Kind.AGENT, id), Verb.USE, null));
         }
-        roles.initialize(domainId, ids);
+        roles.initialize(domainId, ids, grantRoleUse);
     }
 }

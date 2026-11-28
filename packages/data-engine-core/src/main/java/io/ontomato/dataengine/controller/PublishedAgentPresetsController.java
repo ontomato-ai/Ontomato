@@ -37,7 +37,7 @@ public class PublishedAgentPresetsController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The domain and installed agent IDs are required.");
         }
         if (!presets.ids().isEmpty()) {
-            policies.initialize(presets.domainId(), presets.ids().stream().distinct().map(UUID::toString).toList());
+            policies.initialize(presets.domainId(), presets.ids().stream().distinct().map(UUID::toString).toList(), true);
         }
     }
 }

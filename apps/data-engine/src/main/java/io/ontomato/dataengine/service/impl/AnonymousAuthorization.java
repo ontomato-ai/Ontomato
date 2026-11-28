@@ -74,7 +74,7 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     }
 
     @Override
-    public void initialize(String domainId, List<String> ids) {
+    public void initialize(String domainId, List<String> ids, boolean grantRoleUse) {
         // The anonymous subject already has these agent verbs and has no roles.
     }
 

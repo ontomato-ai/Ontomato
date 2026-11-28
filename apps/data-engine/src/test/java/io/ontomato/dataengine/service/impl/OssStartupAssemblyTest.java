@@ -43,7 +43,7 @@ class OssStartupAssemblyTest {
         var presets = new PresetAgentPolicies(authorization, authorization);
         var target = new ObjectTarget("1", Kind.AGENT, "preset");
 
-        presets.initialize("1", List.of(target.id()));
+        presets.initialize("1", List.of(target.id()), true);
 
         for (Verb verb : List.of(Verb.USE, Verb.VIEW, Verb.EDIT)) {
             assertTrue(authorization.objectEntitlement("system", target, verb));
