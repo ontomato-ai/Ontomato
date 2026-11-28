@@ -250,7 +250,7 @@ it("publishes settlement events after volatile positions", async () => {
   const runtime = fixtureRuntime(store, active);
   Object.assign(runtime, {
     workspaces: { saveSession: async () => null },
-    sessionEngines: { idle: () => {} },
+    sessionEngines: { settled: async () => {} },
     channel: { nextLocked: async () => undefined, stopped: async () => {} },
     waiters: new Map(),
     sessionRunSubscribers: new Map(),

@@ -838,11 +838,11 @@ export class AgentRuntime {
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
       await this.store.finish(scope, run.id, reason, failure, workspaceCommit, () => this.allocateSeq(active));
-      this.sessionEngines.idle(scope, run.sessionId);
       // The lifecycle notice follows the finish commit, independently of subsequent intent preparation.
       this.publishSessionRun(scope, { type: "run_stopped", sessionId: run.sessionId, runId: run.id });
       const stopped = (await this.store.run(scope, run.id)).run;
       next = await this.channel.nextLocked(scope, stopped);
+      await this.sessionEngines.settled(scope, stopped, next !== undefined);
       for (const envelope of await this.store.events(scope, run.id))
         if (envelope.cursor.seq > before) this.publish(active, envelope);
     });
