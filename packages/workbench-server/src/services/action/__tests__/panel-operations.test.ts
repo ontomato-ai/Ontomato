@@ -159,10 +159,23 @@ describe("action panel server operations", () => {
 
   it("reports the identity assigned by the owner when creating an action", async () => {
     const operation = write(`${ACTION}.save`);
-    const { host } = hostWith(() => Response.json({ success: true, data: { id: "a-new" } }));
-    await expect(operation.execute(host, { kind: "draft" }, { values: { name: "Approve order" } })).resolves.toMatchObject({
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: { id: "a-new" } }));
+    const values = { name: "Approve order", target: null };
+    await expect(operation.execute(host, { kind: "draft" }, { values })).resolves.toMatchObject({
       kind: "success", created: { objectType: ACTION, primaryKey: "a-new" },
     });
+    expect(sent[0]?.path).toBe("/api/data-query/action/save");
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual(values);
+  });
+
+  it("rejects an explicit id on a new action before saving it", async () => {
+    const operation = write(`${ACTION}.save`);
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: { id: "a-new" } }));
+
+    await expect(operation.execute(host, { kind: "draft" }, {
+      values: { name: "Approve order", id: null },
+    })).rejects.toMatchObject({ code: "TARGET_ID_MISMATCH" });
+    expect(sent).toHaveLength(0);
   });
 
   it("accepts action and draft targets for form saves", () => {

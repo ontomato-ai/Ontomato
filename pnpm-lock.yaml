@@ -206,9 +206,6 @@ importers:
       '@ontomato/foundation-ui':
         specifier: workspace:*
         version: link:../foundation-ui
-      '@ontomato/markdown':
-        specifier: workspace:*
-        version: link:../markdown
       echarts:
         specifier: 6.0.0
         version: 6.0.0

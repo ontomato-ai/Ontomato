@@ -948,7 +948,7 @@ public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owne
     JSONObject values = request.getJSONObject("values");
     // A stored Action and a refresh carry no verdict; an incoming draft is checked and its errors returned with it.
     List<ObjectNode> errors = List.of();
-    if (values == null) values = PanelFormFields.asset(action);
+    if (values == null) values = PanelFormFields.definitionValues(action, !existing);
     else if (request.get("changedField") == null) errors = ActionForm.fieldErrors(values);
     if (existing) values.remove("status");
     String readOnlyReason = null;
