@@ -94,7 +94,7 @@ vi.mock("../../assistant/store", () => ({
   },
 }));
 
-installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), runtimeResources: [] });
+installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), knowledgeRoot: tmpdir(), runtimeResources: [] });
 configureI18n({
   defaultLocale: "en",
   languageSwitchEnabled: true,

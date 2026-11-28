@@ -4,7 +4,7 @@ import path from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 import { installContentLayout } from "../../../content/layout";
 import { APP_BUILDER_SKILL } from "../../app-builder/definition";
-installContentLayout({ runtimeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "authoring-runtime-")), prompts: [], publicSkillsRoot: fs.mkdtempSync(path.join(os.tmpdir(), "authoring-public-")), runtimeResources: [] });
+installContentLayout({ runtimeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "authoring-runtime-")), prompts: [], publicSkillsRoot: fs.mkdtempSync(path.join(os.tmpdir(), "authoring-public-")), knowledgeRoot: process.cwd(), runtimeResources: [] });
 const { adoptAppBuilderDefinition, executeAuthoring } = await import("../authoring");
 
 const mocks = vi.hoisted(() => ({

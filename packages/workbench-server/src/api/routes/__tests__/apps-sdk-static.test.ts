@@ -40,7 +40,7 @@ let port: number;
 
 beforeAll(async () => {
   root = mkdtempSync(path.join(tmpdir(), "apps-sdk-static-"));
-  installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: root });
+  installContentLayout({ runtimeRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [], publicSkillsRoot: root });
   const installed = path.join(root, "data", "apps-sdk");
   const buildRoot = path.join(root, "dist/apps-sdk");
   const versionRoot = path.join(buildRoot, VERSION);

@@ -28,7 +28,7 @@ vi.mock("../../assistant/store", () => ({
   },
 }));
 
-installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), runtimeResources: [] });
+installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), knowledgeRoot: tmpdir(), runtimeResources: [] });
 const { createAgentDefinitionDirectory } = await import("../agent-definition-directory");
 const { agentDefinitionOperations } = await import("../agent-definition-operations");
 

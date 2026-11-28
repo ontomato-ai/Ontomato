@@ -1,25 +1,21 @@
 # Configuration
 
-- **Scope**: the query backend's current effective business configuration, ontomato's system model configuration, and the models, vectorization, and data connections that depend on them; does not save any environment's current values.
-- **Current implementation source**: `src/platform/observe/agent/tools/view-app-config-tool.ts`, `src/config/system-model.ts`, `src/config/index.ts` and the query backend configuration-read implementation.
-- **Last verified**: 2026-07-22.
-- **Verification scope**: 2026-09-22 covers only the fact that business knowledge and business terms were merged into one entry (the standalone term entry, term retrieval, and `BussinessTermDao` were removed); the rest of this file was not re-verified.
+- **Scope**: the current effective non-secret configuration exposed to operations diagnosis, and the configuration-owned dependencies that can explain a failure stage. No environment's current values are stored here.
+- **Implementation source**: `packages/workbench-server/src/api/routes/ops-diagnosis.ts`, `packages/data-engine-core/src/main/java/io/ontomato/dataengine/controller/BusinessConfigController.java`, `service/impl/BusinessConfigServiceImpl.java`, and `config/BusinessConfig.java`.
 
 ## Role and Dependencies
 
-- The current running configuration may come from deployment initial values or persisted configuration; once saved, the running effective value and how it takes effect are the diagnostic facts, not just the example file or another environment's configuration.
-- Model connections, auth, custom request parameters, data connections, and some execution parameters affect the query or analysis link; save links that need vectorization also depend on the corresponding embedding capability. A configuration that looks suspicious is only a candidate cause, and still needs to be combined with the current error or connection test.
-- the query backend vector-retrieves business knowledge by question relevance; only confirmed knowledge participates in augmentation; the embedding capability also affects whether later knowledge augmentation is available.
-- Knowledge augmentation failure needs to be combined with this round's planning, query, and error evidence to judge the impact scope; it does not mean the whole query is necessarily interrupted.
-- Configuration descriptions and configuration values have different responsibilities: descriptions explain modification entry points and how they take effect, and do not represent current values.
+- `ops.mjs config '{}'` reads the ontology service's `/businessConfig/getConfigAndDesc`. `data.config` is the diagnostic non-secret view; `data.desc` is the backend's own description of how configuration is read and takes effect.
+- This view intentionally omits keys, passwords, raw headers, and model connection parameters. Model selection and embedding execution belong to the agent runtime; absence from this view is not evidence that a model is unconfigured.
+- Domain business configuration owns the selected data adapter, its saved connection facts, optional multi-source routing, business-language settings, and query/knowledge parameters. The diagnostic view exposes only named non-secret fields, so connection correctness still needs an authorized connection test or a concrete query error.
 
 ## On-Site Evidence
 
-- Use `view_app_config` to read the query backend's current effective configuration; `data.config` lists the current non-secret fields, and `data.desc` is the backend-provided modification and effect description. Read the minimal configuration segment per goal.
-- Service addresses, keys, passwords and headers are not returned, only whether a connection is configured, so whether credentials are still valid cannot be judged from it; combine with specific call errors or have the user test at the authorized management entry.
-- Configuration read failure, not configured, and configuration read but call failure are different states. Record the tool return, related service status, and the specific stage where the error occurred; do not substitute fixed URL patterns for on-site verification.
+- Treat the returned configuration as the effective fact of this read, not as a copy of a deployment template or another environment.
+- Distinguish three states: configuration read failed, a needed value is not configured, and configuration was read but the dependent call failed. Record which stage produced the error.
+- A suspicious value is only a candidate cause. Confirm it with the failing call, service logs, or an authorized management-page test.
 
 ## Deviation Propagation and Verification
 
-- Configuration deviation can first appear at the model call, vectorization save, data connection, or runtime parameter stage, and present downstream as missing planning, query failure, or page errors.
-- After authorized modification, first confirm the target configuration has become the current effective value, then retest the original failing action; a successful test only proves that request pattern can be called, and the final business link still needs separate verification.
+- Configuration deviation can surface as adapter creation failure, data-source connection failure, business knowledge embedding failure, or query execution failure. Do not expand the cause beyond the stage evidenced.
+- After an authorized change, first confirm that the effective value changed, then retest the original failing action. A successful connection test only proves that dependency can be reached; the original business link still needs separate verification.

@@ -58,7 +58,7 @@ beforeAll(async () => {
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
     packs: { en: { ...enLocaleMeta, messages: en } },
   });
-  installContentLayout({ runtimeRoot: tmpdir(), publicSkillsRoot: tmpdir(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: tmpdir(), publicSkillsRoot: tmpdir(), prompts: [], knowledgeRoot: tmpdir(), runtimeResources: [] });
   const { createProductPanelReadRouter } = await import("../product-panel-data");
   readRouter = createProductPanelReadRouter(authenticate);
   ({ assistantExecutionRouter } = await import("../assistant-execution"));

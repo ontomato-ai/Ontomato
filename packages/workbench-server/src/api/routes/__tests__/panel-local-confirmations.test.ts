@@ -45,7 +45,7 @@ beforeAll(async () => {
     languageSwitchEnabled: false,
     packs: { en: { messages: en, ...enLocaleMeta } },
   });
-  installContentLayout({ runtimeRoot: tmpdir(), publicSkillsRoot: tmpdir(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: tmpdir(), publicSkillsRoot: tmpdir(), prompts: [], knowledgeRoot: tmpdir(), runtimeResources: [] });
   const { panelOperationsRouter } = await import("../product-panels");
   const app = express();
   app.use(express.json());

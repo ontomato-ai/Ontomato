@@ -68,7 +68,7 @@ beforeAll(async () => {
   } });
   runtimeRoot = await mkdtemp(path.join(os.tmpdir(), "current-product-"));
   await writeBundledAppSdkFixture(runtimeRoot);
-  installContentLayout({ runtimeRoot, publicSkillsRoot: runtimeRoot, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot, publicSkillsRoot: runtimeRoot, prompts: [], knowledgeRoot: runtimeRoot, runtimeResources: [] });
 });
 afterAll(() => rm(runtimeRoot, { recursive: true }));
 

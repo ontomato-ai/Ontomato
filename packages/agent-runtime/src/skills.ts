@@ -40,9 +40,10 @@ export function skillDocumentBody(document: string): string {
   return document.slice(frontmatter[0].length);
 }
 
+/** A skill writes its own directory as `<this-skill>`; the preloaded copy names the mounted directory instead. */
 export function preloadedSkillDocument(name: string, directory: string, document: string): string {
   return `Skill "${name}" is already loaded below. Its files are in ${directory}, and paths in it are relative to that directory. Do not read its SKILL.md again.\n\n`
-    + skillDocumentBody(document);
+    + skillDocumentBody(document).replaceAll("<this-skill>", directory);
 }
 export class SkillRegistry {
   constructor(

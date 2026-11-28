@@ -42,6 +42,7 @@ beforeAll(() => {
     runtimeRoot,
     prompts: [{ from: path.join(workbenchServerResourceRoot, "prompts"), to: "." }],
     publicSkillsRoot: path.join(os.tmpdir(), "no-public-skills"),
+    knowledgeRoot: runtimeRoot,
     runtimeResources: [],
   });
   syncDefaultPrompts();

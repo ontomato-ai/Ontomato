@@ -19,6 +19,7 @@ beforeEach(() => {
     runtimeRoot: root,
     prompts: [],
     publicSkillsRoot: root,
+    knowledgeRoot: root,
     runtimeResources: [],
   });
 });

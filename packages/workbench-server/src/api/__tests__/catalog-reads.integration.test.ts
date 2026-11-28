@@ -137,7 +137,7 @@ beforeAll(async () => {
 
   root = await mkdtemp(join(tmpdir(), "m2-catalogue-"));
   await writeBundledAppSdkFixture(root);
-  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: root, publicSkillsRoot: root, prompts: [], knowledgeRoot: root, runtimeResources: [] });
   const { productPanelsRouter, panelOperationsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());

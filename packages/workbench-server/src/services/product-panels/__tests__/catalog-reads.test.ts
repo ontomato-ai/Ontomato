@@ -82,7 +82,7 @@ const stored = [
 ];
 
 beforeAll(() => {
-  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
+  installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], knowledgeRoot: process.cwd(), runtimeResources: [] });
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
     packs: { en: { ...enLocaleMeta, messages: en } },

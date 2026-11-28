@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 import { collectPackage } from "../shared/query-package.mjs";
+import { parseJsonText } from "../shared/json-input.mjs";
 
 const base = process.env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
 if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
@@ -10,7 +11,7 @@ const active = flags.includes("--active");
 const args = flags.filter(flag => flag !== "--active");
 if (!["deliver", "preview", "begin", "close"].includes(command))
   throw new Error("Use deliver @query with --meta @delivery.json [--out outputs/result.dataset.json]");
-const json = async (file) => JSON.parse(await readFile(file.replace(/^@/, ""), "utf8"));
+const json = async (file) => parseJsonText(await readFile(file.replace(/^@/, ""), "utf8"), file.replace(/^@/, ""));
 const options = {};
 for (let i = 0; i < args.length; i += 2) {
   if (!["--meta", "--params", "--out"].includes(args[i]) || !args[i + 1] || options[args[i]])
