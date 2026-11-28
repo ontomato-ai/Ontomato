@@ -30,3 +30,5 @@ Scripts read environment first and `application.yml` beside the skill directory 
 | `run-metric <id> --revision <revision> --question <question> [--binding id \| --params @file]` | Starts one retrieval metric run, waits for its output, writes `outputs/metrics/<key>.dataset.json` and prints `{path,title,rowCount,columns,truncation,receiptId}` |
 
 `--binding` selects an owned parameter set. `--params` supplies a JSON object; it is mutually exclusive with `--binding`. [DSL reference](references/dsl.md) describes the DSL command responses.
+
+A command that succeeds prints its result on stdout and exits 0. A command that fails prints only the error message on stderr, nothing on stdout, and exits 1; the message is the service's own error, for example `limit must be between 1 and 100`. A script that parses a command's output checks the exit status first and parses stdout only after success. Keep stderr out of a file you parse (no `2>&1`): parsing an error message as JSON fails with `JSONDecodeError` and hides the real error.

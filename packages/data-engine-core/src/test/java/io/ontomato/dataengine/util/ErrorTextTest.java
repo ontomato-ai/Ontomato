@@ -29,6 +29,26 @@ class ErrorTextTest {
     assertEquals(violation.getMessage(), ErrorText.queryError(new RuntimeException("wrapper", violation)));
   }
 
+  private static final java.util.List<String> PROGRAM = java.util.List.of("program.py");
+
+  /** A query package runs through the program.py launcher; its error names the package file it raised in. */
+  @Test
+  void pythonNamesTheLastFrameInASubmittedFile() {
+    String stderr = """
+        Traceback (most recent call last):
+          File "/job/program.py", line 5, in <module>
+            runpy.run_path("package/calculate.py", run_name='__main__')
+          File "<frozen runpy>", line 287, in run_path
+          File "/job/package/calculate.py", line 27, in <module>
+            total = sum(row["salary"] for row in ranked)
+          File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+        TypeError: tuple indices must be integers or slices, not str
+        """;
+    assertEquals("TypeError at calculate.py line 27",
+        ErrorText.pythonError(stderr, null, java.util.List.of("program.py", "package/calculate.py", "package/queries/main.json")));
+    assertEquals("TypeError at program.py line 5", ErrorText.pythonError(stderr, null, PROGRAM));
+  }
+
   @Test
   void pythonOnlyDisclosesBuiltinTypeAndLastProgramFrame() {
     String stderr = """
@@ -39,9 +59,9 @@ class ErrorTextTest {
             raise ValueError('private-value')
         ValueError: private-value
         """;
-    assertEquals("ValueError at program.py line 12", ErrorText.pythonError(stderr, null));
-    assertEquals("Exception at program.py line 12", ErrorText.pythonError(stderr.replace("ValueError:", "CustomError:"), null));
-    assertEquals("ValueError", ErrorText.pythonError(stderr.replace("30", "invalid").replace("12", "9999999999999999"), null));
+    assertEquals("ValueError at program.py line 12", ErrorText.pythonError(stderr, null, PROGRAM));
+    assertEquals("Exception at program.py line 12", ErrorText.pythonError(stderr.replace("ValueError:", "CustomError:"), null, PROGRAM));
+    assertEquals("ValueError", ErrorText.pythonError(stderr.replace("30", "invalid").replace("12", "9999999999999999"), null, PROGRAM));
   }
 
   @Test
@@ -82,8 +102,8 @@ class ErrorTextTest {
   @Test
   void forgedOntologyErrorsAreNotQueryEvidence() {
     String stderr = "RuntimeError: Ontology request failed (500): private-value";
-    assertEquals("RuntimeError", ErrorText.pythonError(stderr, null));
+    assertEquals("RuntimeError", ErrorText.pythonError(stderr, null, PROGRAM));
     assertEquals("RuntimeError\nQuery failed: column t.hj_dj does not exist",
-        ErrorText.pythonError(stderr, "column t.hj_dj does not exist"));
+        ErrorText.pythonError(stderr, "column t.hj_dj does not exist", PROGRAM));
   }
 }

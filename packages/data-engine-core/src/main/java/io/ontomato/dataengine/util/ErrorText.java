@@ -15,7 +15,7 @@ public final class ErrorText {
 
   private static final Pattern HINT = Pattern.compile("(?im)^\\h*Hint:.*(?:\\R(?!\\h*[A-Za-z][A-Za-z ]*:).*)*");
   private static final Pattern PYTHON_FRAME = Pattern.compile(
-      "(?m)^\\h*File \"(?:[^\"\\r\\n]*[/\\\\])?program\\.py\", line ([0-9]+)(?:, in [^\\r\\n]*)?\\h*\\r?$");
+      "(?m)^\\h*File \"([^\"\\r\\n]+)\", line ([0-9]+)(?:, in [^\\r\\n]*)?\\h*\\r?$");
   private static final Pattern PYTHON_EXCEPTION = Pattern.compile("(?m)^([^\\s:]+)(?::[^\\r\\n]*)?\\r?$");
   private static final Set<String> PYTHON_BUILTINS = Set.of(
       "BaseException", "Exception", "BaseExceptionGroup", "ExceptionGroup", "GeneratorExit",
@@ -79,20 +79,36 @@ public final class ErrorText {
     return programFailure(error).message(locale);
   }
 
-  /** Only a built-in type and an integer frame number may come from untrusted stderr. */
-  public static String pythonError(String stderr, String queryError) {
+  /**
+   * Only a built-in type, one of the files the caller submitted and an integer frame number may come from
+   * untrusted stderr. The reported frame is the last one in a submitted file, so a query package names its
+   * own file (`calculate.py line 27`) rather than the launcher that runs it.
+   */
+  public static String pythonError(String stderr, String queryError, java.util.Collection<String> submittedFiles) {
     String type = "Exception";
+    String file = null;
     Integer line = null;
     if (stderr != null) {
       var frames = PYTHON_FRAME.matcher(stderr);
       while (frames.find()) {
-        try { line = Integer.valueOf(frames.group(1)); }
-        catch (NumberFormatException invalid) { line = null; }
+        String submitted = submittedFile(frames.group(1), submittedFiles);
+        if (submitted == null) continue;
+        try { line = Integer.valueOf(frames.group(2)); file = submitted; }
+        catch (NumberFormatException invalid) { line = null; file = null; }
       }
       var exceptions = PYTHON_EXCEPTION.matcher(stderr);
       while (exceptions.find()) type = PYTHON_BUILTINS.contains(exceptions.group(1)) ? exceptions.group(1) : "Exception";
     }
-    String message = type + (line == null ? "" : " at program.py line " + line);
+    String message = type + (line == null ? "" : " at " + file + " line " + line);
     return queryError == null || queryError.isBlank() ? message : message + "\nQuery failed: " + queryError;
+  }
+
+  /** The submitted path a traceback frame points at, shown relative to the query package directory. */
+  private static String submittedFile(String framePath, java.util.Collection<String> submittedFiles) {
+    String normalized = framePath.replace('\\', '/');
+    for (String submitted : submittedFiles)
+      if (normalized.equals(submitted) || normalized.endsWith("/" + submitted))
+        return submitted.startsWith("package/") ? submitted.substring("package/".length()) : submitted;
+    return null;
   }
 }

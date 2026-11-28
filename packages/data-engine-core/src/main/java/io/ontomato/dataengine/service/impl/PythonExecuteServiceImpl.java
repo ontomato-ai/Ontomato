@@ -131,7 +131,8 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
       if (!"stopped".equals(snapshot.getString("status"))
           || !Integer.valueOf(0).equals(snapshot.getInteger("exitCode"))
           || snapshot.getString("errorMessage") != null) {
-        result.setError(io.ontomato.dataengine.util.ErrorText.pythonError(stderr, grants.queryError(authority.domainId(), id)));
+        result.setError(io.ontomato.dataengine.util.ErrorText.pythonError(stderr, grants.queryError(authority.domainId(), id),
+            files.stream().map(file -> file.get("path")).toList()));
         result.setResult(null);
       }
       if (outputs.contains("query-status.json")) {
