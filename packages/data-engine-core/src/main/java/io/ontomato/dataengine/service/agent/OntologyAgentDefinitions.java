@@ -63,8 +63,7 @@ public class OntologyAgentDefinitions {
   public List<SkillVersion> publish() throws Exception {
     var files = new ArrayList<Map<String, String>>();
     // The retriever reads its own guide to Python packages; the developer contract stays with the generators.
-    for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "references/dataset.md",
-        "references/query-package.md"))
+    for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "references/query-package.md"))
       files.add(
           Map.of("path", path, "content", resource("ontology-skills/data-retrieval/" + path)));
     var dataset = runtime.publishSkill("ontology-retrieval-skills", DATASET_SKILL, files);

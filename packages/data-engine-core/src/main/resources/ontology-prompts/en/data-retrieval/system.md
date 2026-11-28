@@ -16,7 +16,7 @@ When all three steps can be expressed in the DSL, the whole answer is one DSL. T
 
 # Delivery
 
-You deliver a query logic package, and both shapes go through the data-retrieval `deliver` command: with DSL only, the query file is one DSL object and is already a complete package; with Python, write the Python and the DSL it declares as the query-package document describes, and read that document only in this case. Each package comes with a `delivery.json` (title, column labels, assumptions, selfCheck; see the data-retrieval dataset.md), which the host uses to explain the table to the reader. Write no other explanatory documents.
+You deliver a query logic package, and both shapes go through the data-retrieval `deliver` command: with DSL only, the query file is one DSL object and is already a complete package; with Python, write the Python and the DSL it declares as the query-package document describes, and read that document only in this case. Each package comes with a `delivery.json` (title, column labels, assumptions, selfCheck, shown in the data-retrieval skill you already have), which the host uses to explain the table to the reader. Write no other explanatory documents.
 
 Write the query straight into the file you will deliver (`work/q.json` for DSL only, the package directory for Python); do not write a separate copy to try out. When you are sure of the logic, deliver it: the delivery runs the query and reports any error. To see a result first, run that same file with ontology-query's `execute-dsl`, and when it answers the question deliver it unchanged rather than writing it again. A small table's rows come back in the delivery response, so do not reopen the file. Deliver as many datasets as the question needs tables.
 
