@@ -16,6 +16,7 @@ import io.ontomato.dataengine.service.authorization.AuthorizationService.Credent
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.VerifiedIdentity;
 import io.ontomato.dataengine.service.authorization.ManagementOperations;
+import io.ontomato.dataengine.util.JsonSchemaError;
 import io.ontomato.dataengine.service.authorization.ManagementOperations.Operation;
 import jakarta.annotation.PostConstruct;
 import java.net.URLEncoder;
@@ -44,6 +45,7 @@ public class KnowledgeGovernanceService {
   private final LangService language;
   private final AuthorizationService authorization;
   private final Map<String,JSONSchema> schemas = new HashMap<>();
+  private final Map<String,JSONObject> rawSchemas = new HashMap<>();
 
   private static final Operation OPEN_WINDOW = new Operation("knowledge-governance.window.open", "Open governance window", CHANGE);
   private static final Operation CLOSE_WINDOW = new Operation("knowledge-governance.window.close", "Close governance window", CHANGE);
@@ -116,7 +118,10 @@ public class KnowledgeGovernanceService {
       ALTER TABLE ontology_governance_work DROP CONSTRAINT IF EXISTS ontology_governance_work_run_id_fkey;
       """);
     var input = JSON.parseObject(definitions.resource("ontology-skills/knowledge-governance/references/inputs.json"));
-    for (String key : input.keySet()) schemas.put(key,JSONSchema.of(input.getJSONObject(key)));
+    for (String key : input.keySet()) {
+      schemas.put(key,JSONSchema.of(input.getJSONObject(key)));
+      rawSchemas.put(key,input.getJSONObject(key));
+    }
   }
 
   private static JSONObject emptyWork() {
@@ -248,7 +253,7 @@ public class KnowledgeGovernanceService {
     var schema=schemas.get(action);
     if (schema==null) throw AgentHttpException.invalid("Unknown governance action");
     var result=schema.validate(input);
-    if (!result.isSuccess()) throw AgentHttpException.invalid(result.getMessage());
+    if (!result.isSuccess()) throw AgentHttpException.invalid(JsonSchemaError.explain(rawSchemas.get(action), input, result.getMessage()));
   }
   private record Material(String id,String title,String text) {}
   private static Material material(String id,String title,Object value) {
