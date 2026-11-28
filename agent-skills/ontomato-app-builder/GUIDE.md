@@ -188,8 +188,9 @@ For built-in panel checks, see [platform development](references/platform-develo
 | --- | --- |
 | `dataset-desc`, `classes` | Current domain and available object classes |
 | `schema <class> ...`, `relationships <class> ...` | Technical attributes, types and actual relationship mappings |
+| `dsl-reference <class> ...` | DSL syntax and examples for the selected classes |
 | `distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]` | Live values of one attribute, under the current user's permissions |
-| `execute-dsl <json or @file>` | Query live data under the current user's permissions; use the bundled [DSL reference](references/dsl.md) |
+| `execute-dsl <json or @file>` | Query live data under the current user's permissions using the syntax from `dsl-reference` |
 | `function list [<filter json or @file>]` | Full Function definitions; optional `operation` and `className` filters |
 | `function get <id>`, `function save <definition>`, `function delete <id>` | Read, save or delete a Function; save returns its definition including ID |
 | `metric-view find <class> [<question>]`, `action find <class> [<question>]` | Published interfaces related to the object |
