@@ -10,7 +10,7 @@ import { assertManagement } from "../../identity/management";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { PanelReadServerOperation } from "../product-panels/server-operations";
-import { localReadRegistration, managedRegisteredOpsRead, type RegisteredDataReadRegistration } from "../product-panels/registered-data-read";
+import { localReadRegistration, type RegisteredDataReadRegistration, type RegisteredLocalDataRead } from "../product-panels/registered-data-read";
 import type { ProductOwner } from "../product-governance/service-authentication";
 import { countFeedback, listFeedback } from "./feedback-store";
 import { exportFeedback, feedbackExportTimeZone } from "./feedback-export";
@@ -73,7 +73,8 @@ function feedbackRow(record: FeedbackRecord, fieldLabels: Record<string, string>
   };
 }
 
-function feedbackReads(owner: ProductOwner, locale: string | undefined, requireAccess: () => Promise<void> | void) {
+function feedbackReads(owner: ProductOwner, viewer: AssistantCredentials, requireAccess: () => Promise<void> | void) {
+  const locale = viewer.locale;
   const t = (key: string) => tForLocale(locale, key);
   const fieldLabels = () => ({
     sourceType: t("api.feedback.filters.sourceType"),
@@ -106,6 +107,7 @@ function feedbackReads(owner: ProductOwner, locale: string | undefined, requireA
         limit: effectiveSize,
         offset,
         locale,
+        viewer,
       });
       const labels = fieldLabels();
       return {
@@ -142,6 +144,7 @@ function feedbackReads(owner: ProductOwner, locale: string | undefined, requireA
         feedbackId: primaryKey,
         all: true,
         locale,
+        viewer,
       });
       const found = page.records[0];
       if (!found) throw new HttpError(404, "Feedback record not found", "NOT_FOUND");
@@ -150,11 +153,21 @@ function feedbackReads(owner: ProductOwner, locale: string | undefined, requireA
   };
 }
 
-export function createRegisteredFeedbackReadAdapter(owner: ProductOwner, locale: string | undefined, javaFacts: unknown) {
-  return feedbackReads(owner, locale, () => {
+export function createRegisteredFeedbackReadAdapter(owner: ProductOwner, viewer: AssistantCredentials, javaFacts: unknown) {
+  return feedbackReads(owner, viewer, () => {
     if (javaFacts !== workbenchManagement.feedbackRead.id)
       throw new HttpError(502, "Invalid feedback read approval", "PANEL_READ_OWNER_RESPONSE_INVALID");
   });
+}
+
+function managedFeedbackRead(
+  read: (adapter: ReturnType<typeof createRegisteredFeedbackReadAdapter>, primaryKey: string, params: Record<string, unknown>) => Promise<unknown>,
+): RegisteredLocalDataRead {
+  return {
+    readJavaFacts: true,
+    read: (owner, _ranges, facts, credentials, primaryKey, params) =>
+      read(createRegisteredFeedbackReadAdapter(owner, credentials, facts), primaryKey!, params),
+  };
 }
 
 const exportInputSchema = queryInputSchema.pick({ search: true, sourceType: true, rating: true })
@@ -180,6 +193,7 @@ export const feedbackExportOperation = {
       sourceType: sourceType === "all" ? undefined : sourceType,
       rating: rating === "all" ? undefined : rating,
       locale: credentials.locale,
+      viewer: credentials,
       timeZone: feedbackExportTimeZone(timeZone),
     });
     if (file.count === 0) {
@@ -195,9 +209,9 @@ export const feedbackExportOperation = {
 
 export const feedbackDataReadRegistrations: RegisteredDataReadRegistration[] = [
   localReadRegistration(FEEDBACK_RECORD, "query",
-    managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, _key, params) => reads.query(params))),
+    managedFeedbackRead((reads, _key, params) => reads.query(params))),
   localReadRegistration(FEEDBACK_RECORD, "counts",
-    managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, _key, params) => reads.counts(params))),
+    managedFeedbackRead((reads, _key, params) => reads.counts(params))),
   localReadRegistration(FEEDBACK_RECORD, "record",
-    managedRegisteredOpsRead(createRegisteredFeedbackReadAdapter, (reads, key) => reads.record(key))),
+    managedFeedbackRead((reads, key) => reads.record(key))),
 ];

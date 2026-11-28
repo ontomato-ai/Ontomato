@@ -1820,7 +1820,13 @@ it("keeps feedback reads within the verified domain and requires the feedback ba
       { id: targetId, message: { role: "assistant", content: "Answer" } },
     ] } as Awaited<ReturnType<typeof RuntimeClient.prototype.run>>;
   });
-  const fetch = vi.fn();
+  const fetch = vi.fn(async (_input: unknown, init?: { body?: unknown }) => {
+    expect(JSON.parse(String(init?.body))).toEqual({ kind: "member", ids: ["author"] });
+    return new Response(JSON.stringify({ options: [{ id: "author", name: "Author Name", kind: "member" }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
   vi.stubGlobal("fetch", fetch);
 
   const approval = { status: "ready", payload: workbenchManagement.feedbackRead.id };
@@ -1865,10 +1871,10 @@ it("keeps feedback reads within the verified domain and requires the feedback ba
       { status: "error", code: "INVALID_REQUEST" },
       { status: "error", code: "NOT_FOUND", message: "Feedback record not found" },
       { status: "ready", value: { rows: [{ primaryKey: feedbackId, fields: {
-        userInput: input, userInputPreview: `Line one ${"a".repeat(71)}…`,
+        userId: "Author Name", userInput: input, userInputPreview: `Line one ${"a".repeat(71)}…`,
       } }], nextCursor: "2", total: 3 } },
       { status: "ready", value: [{ key: "all", count: 2 }, { key: "qa", count: 2 }, { key: "analysis_task", count: 0 }] },
-      { status: "ready", value: { primaryKey: feedbackId, fields: { assistantOutput: "Answer" } } },
+      { status: "ready", value: { primaryKey: feedbackId, fields: { userId: "Author Name", assistantOutput: "Answer" } } },
     ]);
     expect(query.mock.calls.map(([, parameters]) => parameters)).toEqual([
       [viewer.domainId, null, null, null, null, null, null, null, missingId],
@@ -1882,7 +1888,7 @@ it("keeps feedback reads within the verified domain and requires the feedback ba
         type: FEEDBACK_RECORD, name: method, parameters: { ...params, ...(primaryKey !== undefined && { primaryKey }) },
       })),
     );
-    expect(fetch).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(2);
   } finally {
     pool.mockRestore();
     runtime.mockRestore();

@@ -3,7 +3,7 @@ import type {
   FeedbackSourceType,
 } from "@ontomato/contracts/feedback";
 import { Request, Response, Router } from "express";
-import type { AuthenticatedRequest } from "../../utils/request-identity";
+import { credentialsFromRequest, type AuthenticatedRequest } from "../../utils/request-identity";
 import { listFeedback } from "../../services/admin/feedback-store";
 import { exportFeedback, feedbackExportTimeZone } from "../../services/admin/feedback-export";
 import { workbenchManagement } from "@ontomato/contracts/workbench-management";
@@ -39,6 +39,7 @@ router.get(
       rating: normalizeRating(req.query.rating) || undefined,
       keyword: typeof req.query.keyword === "string" ? req.query.keyword : undefined,
       locale: identity.locale,
+      viewer: credentialsFromRequest(identity),
     });
     res
       .set({
@@ -77,6 +78,7 @@ router.get(
       limit: Number(req.query.limit || 20),
       offset: Number(req.query.offset || 0),
       locale: (req as AuthenticatedRequest).locale,
+      viewer: credentialsFromRequest(req as AuthenticatedRequest),
     });
     res.json({ success: true, data });
   }),
@@ -106,6 +108,7 @@ router.get(
       limit: Number(req.query.limit || 500),
       offset: 0,
       locale: identity.locale,
+      viewer: credentialsFromRequest(identity),
     });
     res.json({ success: true, data });
   }),
@@ -121,6 +124,7 @@ router.get(
       feedbackId: feedbackId(req.params.id),
       all: true,
       locale: identity.locale,
+      viewer: credentialsFromRequest(identity),
     });
     const record = data.records[0];
     if (!record) throw new HttpError(404, "Feedback record not found", "NOT_FOUND");
