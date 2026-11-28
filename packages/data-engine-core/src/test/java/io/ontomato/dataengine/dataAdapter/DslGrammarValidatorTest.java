@@ -33,6 +33,21 @@ class DslGrammarValidatorTest {
 	}
 
 	@Test
+	void duplicateObjectIndexIsRejectedAtTheRepeatedObject() {
+		JSONObject dsl = JSON.parseObject("""
+				{"answer":{"steps":[{"graph":{"patterns":[{"objects":[
+				  {"idx":0,"variable":"s","class":"/Sensor"},
+				  {"idx":0,"variable":"t","class":"/Sensor"}
+				]}]},"output":{"fields":[{"variable":"s","field":"id","as":"id"}]}}]}}
+				""");
+		DslContractViolationException failure = assertThrows(DslContractViolationException.class,
+				() -> DslGrammarValidator.validate(dsl, CLASS_DEFS));
+		var violation = failure.getViolations().get(0);
+		assertEquals(DslContractViolationException.Code.INVALID_GRAMMAR, violation.getCode());
+		assertEquals("steps[0].patterns[0].objects[1].idx", violation.getDslPath());
+	}
+
+	@Test
 	void aBucketFieldPassesTheGate() {
 		assertDoesNotThrow(() -> DslGrammarValidator.validate(timeseriesDsl("/Sensor", "reading"), CLASS_DEFS));
 	}

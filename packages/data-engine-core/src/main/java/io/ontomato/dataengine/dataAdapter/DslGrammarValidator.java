@@ -2,8 +2,10 @@ package io.ontomato.dataengine.dataAdapter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -13,9 +15,8 @@ import com.alibaba.fastjson2.JSONObject;
 /**
  * The DSL-layer grammar gate: checks only what can be judged without a data source.
  *
- * <p>Today that is one rule — a {@code timeseries} condition must reference an attribute of type
- * {@code bucket}, which is the construct's own precondition. A contradiction like that is a property
- * of the DSL itself, not of any deployment, so it is rejected here with
+ * <p>A contradiction such as a duplicate object index or a {@code timeseries} condition on a
+ * non-bucket attribute is rejected here with
  * {@link DslContractViolationException.Code#INVALID_GRAMMAR} before any adapter is asked to render it.</p>
  *
  * <p>Anything a deployment <em>cannot</em> render stays an adapter-level concern
@@ -96,15 +97,22 @@ public final class DslGrammarValidator {
 			if (objects == null) {
 				continue;
 			}
+			Set<Integer> indices = new HashSet<>();
 			for (int o = 0; o < objects.size(); o++) {
 				JSONObject object = objects.getJSONObject(o);
-				JSONObject conditions = object == null ? null : object.getJSONObject("conditions");
-				checkTemporaryTableConditions(object, conditions, temporaryTables,
-						"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions");
-				checkConditionKeys(conditions,
-						"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions");
+				if (object == null) {
+					continue;
+				}
+				String objectPath = "steps[" + s + "].patterns[" + p + "].objects[" + o + "]";
+				Integer idx = object.getInteger("idx");
+				if (idx != null && !indices.add(idx)) {
+					throw invalid(objectPath + ".idx", "Object index " + idx + " is already used in this pattern");
+				}
+				JSONObject conditions = object.getJSONObject("conditions");
+				checkTemporaryTableConditions(object, conditions, temporaryTables, objectPath + ".conditions");
+				checkConditionKeys(conditions, objectPath + ".conditions");
 				checkVectorTopK(conditions == null ? null : conditions.getJSONObject("vector"),
-						"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions.vector");
+						objectPath + ".conditions.vector");
 				JSONObject timeseries = conditions == null ? null : conditions.getJSONObject("timeseries");
 				if (timeseries == null) {
 					continue;
@@ -114,9 +122,8 @@ public final class DslGrammarValidator {
 				if (classDef == null) {
 					continue;
 				}
-				String path = "steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions.timeseries";
-				checkTimeseriesFields(timeseries.getJSONObject("properties"), path, object.getString("class"),
-						classDef);
+				checkTimeseriesFields(timeseries.getJSONObject("properties"), objectPath + ".conditions.timeseries",
+						object.getString("class"), classDef);
 			}
 		}
 	}
